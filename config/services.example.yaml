@@ -80,7 +80,7 @@ plans:
     monthly_price: 20
   claude:
     name: "Claude Pro / Max"
-    notes: "5-hour and weekly limits on subscription; multi-account via cswap."
+    notes: "Anthropic Claude Code 5h/weekly; multi-account via cswap. Not Google Antigravity's Claude/GPT pool."
     monthly_price: 20
     # Optional: per-duration value multiplier (Claude 5h blocks are higher-quality per dollar)
     value_multiplier:
@@ -99,7 +99,7 @@ plans:
     monthly_price: 30
   gemini:
     name: "Google AI Pro / Ultra"
-    notes: "Often exposed via Antigravity / Gemini CLI. Gemini and Claude/GPT allotments are independent pools."
+    notes: "Antigravity: Gemini and Claude/GPT are independent Google pools. Claude/GPT here is Google-sold, not Anthropic/cswap."
     monthly_price: 20
   opencode:
     name: "OpenCode Go"

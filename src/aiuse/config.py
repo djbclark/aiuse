@@ -81,7 +81,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "claude": {
             "name": "Claude Pro / Max",
-            "notes": "5-hour and weekly limits; multi-account via cswap.",
+            "notes": (
+                "Anthropic Claude Code 5h/weekly; multi-account via cswap. "
+                "Not the same as Google Antigravity's Claude/GPT pool."
+            ),
             "monthly_price": 20,
             "value_multiplier": {"5h": 1.4},
         },
@@ -106,8 +109,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "gemini": {
             "name": "Google AI Pro / Ultra",
             "notes": (
-                "Often exposed via Antigravity / Gemini CLI. Gemini and "
-                "Claude/GPT allotments are independent pools (score and list separately)."
+                "Antigravity / Gemini CLI. Gemini and Claude/GPT are independent "
+                "Google pools (list separately). Claude/GPT here is Google-sold, "
+                "not Anthropic Claude Code (cswap)."
             ),
             "monthly_price": 20,
         },
