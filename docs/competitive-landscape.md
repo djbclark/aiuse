@@ -1,7 +1,7 @@
 # Competitive landscape: multi-provider AI quota tools
 
-**Date:** 2026-07-25  
-**Product:** [`aiuse`](https://github.com/djbclark/aiuse) (current packaging **2.1.5**)  
+**Date:** 2026-07-25 (updated after multi-source ship)  
+**Product:** [`aiuse`](https://github.com/djbclark/aiuse) (packaging **2.1.6**)  
 **Audience:** operators and agents deciding product positioning or “what next?” features.
 
 This note surveys tools that surface AI **subscription / coding-agent quotas**, then
@@ -19,17 +19,28 @@ to depend on it.
 
 It:
 
-1. **Collects** live allotments from five sources on `PATH` / loopback:
-   [cswap](https://github.com/realiti4/claude-swap),
-   [CodexBar](https://codexbar.app/),
-   [caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker),
-   [OpenUsage](https://www.openusage.ai/),
-   [tokscale](https://github.com/junhoyeo/tokscale)
-   (`packaging/install-deps.sh` installs them).
+1. **Collects** live allotments from **five** external data sources (PATH tools
+   and/or OpenUsage loopback HTTP):
+
+   | Source | Interface | Role |
+   | ------ | --------- | ---- |
+   | [**cswap**](https://github.com/realiti4/claude-swap) | `cswap list --json` | Multi-account Claude (**canonical**) |
+   | [**CodexBar**](https://codexbar.app/) | `codexbar usage --format json` | Broad live quotas (**preferred** non-Claude) |
+   | [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) | `caut usage --json` | Independent multi-provider peer / fill-in |
+   | [**OpenUsage**](https://www.openusage.ai/) | CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in |
+   | [**tokscale**](https://github.com/junhoyeo/tokscale) | `tokscale usage --json` | Independent peer; **preferred** for Copilot |
+
+   Install the full set: **`./packaging/install-deps.sh`** (also
+   `just install-deps` in this repo, or site
+   `just -f ~/ops/site-djbclark/justfile install-aiuse-deps`, which shells out to
+   that same script when the aiuse checkout is present).
+
 2. **Classifies** windows as burn / conserve / on-pace (pace scoring) and treats
    non-expiring prepaid / pay-as-you-go as inventory (`n/a`), not use-or-lose.
 3. **Ranks** every account into a single **priority ladder** for a human reading
    bottom → top: “what should I burn soon?” vs “already empty / no deadline.”
+4. **Cross-checks** all live sources **pairwise** (correctness over minimal scrape
+   count). Selection still picks one primary row per provider for the ladder.
 
 Default ladder tags (see also [`pretty-display.md`](pretty-display.md)):
 
@@ -51,9 +62,9 @@ Most tools stop at **Layer 1**. Few reach **Layer 2**.
 | **1. Monitor** | How much is left? When does it reset? What did I spend? | Menu bar bars, tables, dashboards, status lines |
 | **2. Decide** | *Which* pool / account should get the next work? | Ranked recommendations, routing advice, burn/conserve |
 
-`aiuse` is intentionally a **Layer 2 thin aggregator** on top of Layer 1 collectors
-(cswap / CodexBar / caut / OpenUsage / tokscale). Competitors that also scrape or
-own adapters still usually ship only Layer 1 UX.
+`aiuse` is intentionally a **Layer 2 thin aggregator** on top of Layer 1 tools
+(the five sources above). Competitors that also scrape or own adapters still
+usually ship only Layer 1 UX.
 
 A readable Mac-oriented Layer 1 survey:
 [AI Token Usage Monitors for macOS](https://denshub.com/en/ai-token-usage-monitors-macos/)
@@ -68,11 +79,11 @@ across your whole portfolio.
 
 | Project | Form | Multi-provider | Ranking / “use next”? | Relation to `aiuse` |
 | ------- | ---- | -------------- | --------------------- | ------------------- |
-| **[CodexBar](https://codexbar.app/)** | macOS menu bar + CLI | Very wide (40+ coding agents) | **No** (display / alerts) | Primary non-Claude collector |
-| **[cswap](https://github.com/realiti4/claude-swap)** | Claude multi-account CLI | Claude-focused | **No** | Canonical multi-account Claude source |
-| **[tokscale](https://github.com/junhoyeo/tokscale)** | CLI (tokens / costs / some quotas) | Several | **No** | Cross-check / fill-in collector |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Rust CLI (CodexBar-style) | 16+ | **No** (tables / JSON) | Peer of CodexBar CLI; cross-platform |
-| **[OpenUsage](https://www.openusage.ai/)** | macOS app + local HTTP API | ~15 plugins | **No** (state API for scripts) | Integration surface; not decisions |
+| **[CodexBar](https://codexbar.app/)** | macOS menu bar + CLI | Very wide (40+ coding agents) | **No** (display / alerts) | **Primary** non-Claude collector (in-tree) |
+| **[cswap](https://github.com/realiti4/claude-swap)** | Claude multi-account CLI | Claude-focused | **No** | **Canonical** multi-account Claude (in-tree) |
+| **[tokscale](https://github.com/junhoyeo/tokscale)** | CLI (tokens / costs / some quotas) | Several | **No** | Cross-check / Copilot-preferred (in-tree) |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Rust CLI (CodexBar-style) | 16+ | **No** (tables / JSON) | **Default** cross-check peer (in-tree) |
+| **[OpenUsage](https://www.openusage.ai/)** | macOS app + CLI / loopback HTTP | ~15 plugins | **No** (state API for scripts) | **Default** cross-check peer (in-tree) |
 | **[SessionWatcher](https://www.sessionwatcher.com/)** | Paid macOS menu bar | Claude, Codex, Copilot, Cursor, Gemini… | **No** | Pure monitor |
 | **[UsageScope](https://www.usagescope.com/)** | Mac App Store menu bar | Narrower set | **No** | Pure monitor |
 | **[ClaudeBar](https://github.com/tddworks/ClaudeBar)** | Free OSS menu bar | Several | **No** | Pure monitor |
@@ -83,7 +94,7 @@ across your whole portfolio.
 **Implication for “what pool next?”:** Layer 1 leaves the hard comparison to the
 human. You can open CodexBar and *eyeball* which bar is fullest before reset; nothing
 scores pace, shared allotments, multi-account Claude, or prepaid vs subscription
-economics for you.
+economics for you. `aiuse` uses several Layer 1 tools as **inputs**, then ranks.
 
 ---
 
@@ -136,11 +147,12 @@ plan-dollar waste than about not hitting a wall mid-task.
 Legend: **Yes** / **Partial** / **No** / **N/A**. “Decision quality” is about
 helping a human pick the **next token pool**, not raw telemetry accuracy.
 
-| Capability | **aiuse** | **quotabot** | **onWatch** | **CodexBar / caut / OpenUsage** | **SessionWatcher / CUStats / ccusage** |
-| ---------- | --------- | ------------ | ----------- | ------------------------------- | -------------------------------------- |
-| Multi-provider live quotas | Yes (via collectors) | Yes (own adapters) | Yes | Yes | Partial |
+| Capability | **aiuse** | **quotabot** | **onWatch** | **CodexBar / caut / OpenUsage alone** | **SessionWatcher / CUStats / ccusage** |
+| ---------- | --------- | ------------ | ----------- | ------------------------------------- | -------------------------------------- |
+| Multi-provider live quotas | Yes (5 sources) | Yes (own adapters) | Yes | Yes | Partial |
 | Multi-account Claude | Yes (cswap-first) | Yes (claims) | Partial | Partial (varies) | Usually No |
 | Always-on menu bar | No | Desktop widget | Menubar beta | CodexBar / OpenUsage Yes | Often Yes |
+| Multi-source cross-check | **Yes** (all-pairs default) | Own consistency | History/anomaly | N/A (single product) | Rare |
 | Local history / charts | Snapshots + optional learn | Yes (analytics) | **Strong** | Varies | Varies |
 | Exhaustion *forecast* | Pace / projected waste | Runway in `suggest` | **Strong** | Rare | Rare |
 | **Automatic rank of “use next”** | **Yes** (priority ladder) | **Yes** (`suggest`) | Partial (headroom) | **No** | **No** |
@@ -149,9 +161,10 @@ helping a human pick the **next token pool**, not raw telemetry accuracy.
 | Prepaid / non-expiring treated as non-urgent | **Yes** (`n/a` band) | Subscription-oriented | Limits-focused | Often shows as “balance” | N/A |
 | Plan $ / value-at-risk | Yes (config `monthly_price`) | Cost policy advanced | Subscription intelligence claims | Rare | Rare |
 | Agent-facing routing (MCP / proxy advice) | JSON CLI only | **Strong** (MCP, LiteLLM) | Dashboard / API-ish | OpenUsage HTTP state | No |
-| Cross-platform CLI | Yes (Python) | Yes (Dart/CLI) | Yes (Go) | caut Yes; CodexBar Mac | Mixed |
+| Cross-platform CLI | Yes (Python) | Yes (Dart/CLI) | Yes (Go) | caut Yes; CodexBar/OpenUsage Mac | Mixed |
 | Trust model | Shells out to tools you already run | Own credential/grant story | Local daemon, zero telemetry claim | App permissions / cookies | Varies |
-| Implementation maturity | Small focused CLI; tests + packaging | Early 0.x | Active OSS product | CodexBar mature | Mixed |
+| Dep install story | `packaging/install-deps.sh` | Own installer | Own installer | Per-app | Per-app |
+| Implementation maturity | Small focused CLI; tests + packaging | Early 0.x | Active OSS product | CodexBar/OpenUsage mature | Mixed |
 
 ---
 
@@ -165,7 +178,8 @@ to:
 1. Avoid **wasting** allotments that reset unused.  
 2. Avoid **locking out** mid-task (over-burning a short window).  
 3. Ignore **non-deadlines** (prepaid API tokens that roll).  
-4. Decide in **seconds**, without opening five dashboards.
+4. Decide in **seconds**, without opening five dashboards.  
+5. Trust the numbers more when **independent tools disagree** (multi-source).
 
 ### Decision dimensions
 
@@ -178,9 +192,10 @@ to:
 | **E. Multi-account same product** | Which Claude email / org to use | cswap multi-row + ladder | Multi-account support claimed | Codex multi-account beta | Painful |
 | **F. Economic weight** | Prefer burning expensive waste first | Plan price / value-at-risk | Advanced cost policy | “Upgrade/downgrade” analytics | Rare |
 | **G. Next *request* routing** | Tell an agent where to send call N+1 | Weak (human CLI; JSON only) | **Strong** | Partial (see capacity) | None |
-| **H. Continuous ambient awareness** | Glance without a deliberate `aiuse` run | Weak (run CLI / LaunchAgent) | Widget + watch | Dashboard / menubar | **Strong** |
+| **H. Continuous ambient awareness** | Glance without a deliberate `aiuse` run | Weak (run CLI / LaunchAgent) | Widget + watch | Dashboard / menubar | **Strong** (CodexBar/OpenUsage) |
 | **I. Trust / blast radius** | Minimal new credential surface | High (reuse PATH tools) | Medium (own grants/logins) | Medium (daemon + keys) | Varies by app |
-| **J. Automation / cron** | Scriptable ranked output + exit codes | Strong (`--json`, exit codes) | Strong (MCP / JSON) | Daemon snapshots | OpenUsage HTTP / CLI JSON |
+| **J. Measurement honesty** | Spot tool disagreement | **Strong** (all-pairs cross-check) | Own adapters | History/anomaly | Single source |
+| **K. Automation / cron** | Scriptable ranked output + exit codes | Strong (`--json`, exit codes, hourly agent) | Strong (MCP / JSON) | Daemon snapshots | OpenUsage HTTP / CLI JSON |
 
 ### Where `aiuse` is **better** for a human deciding the next pool
 
@@ -209,11 +224,17 @@ to:
    Via cswap, multiple emails appear as separate ladder rows with independent
    urgency — important when one Max account is empty and another is full.
 
-6. **Thin trust surface.**  
-   No new long-lived scraper identity if you already use CodexBar/cswap/tokscale.
-   You inherit *their* auth model (and their bugs), which is a deliberate trade.
+6. **Multi-source correctness.**  
+   With **cswap + CodexBar + caut + OpenUsage + tokscale** enabled by default,
+   disagreements surface as cross-checks instead of silent single-tool wrongness.
+   Selection still prefers the authoritative primary (cswap for Claude, etc.).
 
-7. **Scriptable operator workflow.**  
+7. **Thin trust surface.**  
+   No new long-lived scraper identity if you already use the five tools above.
+   You inherit *their* auth model (and their bugs), which is a deliberate trade.
+   Operator install path: `packaging/install-deps.sh`.
+
+8. **Scriptable operator workflow.**  
    LaunchAgent snapshots + `--json` + exit codes support “hourly collect,
    human decides later from ladder/history” without a daemon product.
 
@@ -229,10 +250,11 @@ to:
    agent picking a backend for the next call. `aiuse` optimizes the **human**
    portfolio decision, not automatic failover.
 
-3. **Depends on external collector quality.**  
-   If CodexBar is wrong about OpenCode Go local vs web, or cswap JSON is stale,
-   `aiuse` can rank garbage confidently. onWatch/quotabot own more of the
-   fetch path (different failure modes, not zero risk).
+3. **Depends on external collector quality (and count).**  
+   Five sources improve honesty but cost wall-clock (still ~max of parallel
+   collectors) and PATH complexity. If CodexBar is wrong about OpenCode Go local
+   vs web, or cswap JSON is stale, ranking can still be wrong — cross-checks
+   flag it more often than they auto-fix it.
 
 4. **Weaker historical analytics UI.**  
    onWatch (and quotabot analytics) beat `aiuse --full` History for rich charts,
@@ -244,12 +266,10 @@ to:
    Layer 1 menubar + quotabot routing close the loop faster for power users who
    want the tool to *act*. `aiuse` stops at ranked advice.
 
-6. **Provider coverage ceiling is collector coverage.**  
-   CodexBar’s breadth helps, but exotic providers only appear if a collector
-   does. quotabot/onWatch may cover a different set natively.
-
-7. **OIDC / packaging is separate from product quality** — distribution is solid
-   (PyPI + Homebrew), but that is orthogonal to decision quality.
+6. **OpenUsage needs the app (or CLI) present.**  
+   Unlike pure CLI tools, OpenUsage’s best path is menu-bar app + loopback (or
+   Settings → Command Line install). Documented in
+   [`collectors-caut-openusage.md`](collectors-caut-openusage.md).
 
 ### Head-to-head narrative (human operator)
 
@@ -258,135 +278,105 @@ to:
 | “I have five subscriptions and two Claude accounts; what should I spend this afternoon so nothing wastes?” | **`aiuse`** |
 | “My agent needs a backend for the next tool call without hitting a spent short window.” | **quotabot** |
 | “Will I run out before dinner, and is something weird resetting early?” | **onWatch** (or Layer 1 + mental math) |
-| “I just want green/yellow/red in the menu bar while coding.” | **CodexBar** (or SessionWatcher / OpenUsage) |
+| “I just want green/yellow/red in the menu bar while coding.” | **CodexBar** and/or **OpenUsage** |
 | “How many tokens did Claude Code burn locally this week?” | **ccusage** / local logs — not plan % (see project policy) |
 | “Deepseek balance vs Claude weekly — do I rush Deepseek?” | **`aiuse`** (`n/a` vs use/slow) |
+| “CodexBar says X, OpenUsage says Y — who do I trust?” | **`aiuse` cross-checks** surface the gap; you still decide |
 
-**Synthesis:** for a **human deciding the next expiring pool**, `aiuse` is among the
-strongest options publicly documented, especially vs pure monitors. **quotabot** is
-the main peer on ranking, oriented toward **live routing** rather than a
-use-or-lose portfolio ladder. **onWatch** is the main peer on **forecast and
-history**. Many operators will reasonably run **CodexBar (ambient) + `aiuse`
-(decision)** rather than treating them as substitutes.
+**Synthesis:** for a **human deciding the next expiring pool**, `aiuse` remains
+among the strongest options publicly documented, especially vs pure monitors.
+**quotabot** is the main peer on ranking, oriented toward **live routing** rather
+than a use-or-lose portfolio ladder. **onWatch** is the main peer on **forecast
+and history**. Many operators will reasonably run **CodexBar and/or OpenUsage
+(ambient) + `aiuse` (rank)** rather than treating them as substitutes.
 
 ---
 
-## Architecture positioning (why peers are not drop-in replacements)
+## Architecture positioning
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 |  Human / cron / scripts                                      |
-|    “what pool next?”  “exit if burn alerts”                  |
+|    “what pool next?”  “exit if burn/conserve alerts”         |
 └────────────────────────────┬────────────────────────────────┘
                              │
                       ┌──────▼──────┐
                       │   aiuse     │  rank, pace, n/a, JSON
+                      │  (Layer 2)  │  all-pairs cross-check
                       └──────┬──────┘
-           ┌─────────────────┼─────────────────┐
-           ▼                 ▼                 ▼
-       cswap            CodexBar           tokscale
-     (Claude N)      (many providers)    (cross-check)
+           ┌─────────┬───────┼───────┬─────────┐
+           ▼         ▼       ▼       ▼         ▼
+        cswap    CodexBar   caut  OpenUsage  tokscale
+       (Claude)  (primary) (peer) (peer/HTTP) (peer/Copilot)
 ```
 
 | Style | Examples | Pros | Cons for “what next?” |
 | ----- | -------- | ---- | --------------------- |
 | **Aggregator** | `aiuse` | Reuses mature collectors; multi-source cross-check | Ranking quality ≤ collector quality |
-| **Integrated monitor+own fetch** | CodexBar, caut, OpenUsage | Great ambient UX | No portfolio ranking |
+| **Integrated monitor+own fetch** | CodexBar, caut, OpenUsage | Great ambient UX | No portfolio ranking alone |
 | **Integrated decision+own fetch** | quotabot, onWatch | End-to-end control, routing/forecast | Duplicates collector problem; different trust model |
 
 ---
 
-## Gaps and opportunities (for `aiuse`)
+## Should we add *more* peers as collectors?
 
-Useful only if the product goal remains **human portfolio decisions**:
+**Short answer:** only if they pass the rules below. **caut** and **OpenUsage**
+already shipped as **default** peers (2.1.6). Do **not** add quotabot, onWatch,
+or ccusage as ranking inputs.
 
-1. **Optional ambient companion** — not rebuild CodexBar; document “use CodexBar for
-   glance, `aiuse` for rank,” or surface ladder via OpenUsage-style local HTTP.
-2. **Agent-facing `suggest`** — one JSON “winner” for MCP (quotabot-shaped) without
-   becoming a proxy; still grounded in pace + n/a rules.
-3. **Richer history UX** — onWatch-level charts are not required, but clearer
-   “this week you chronically underused X” already partially exists.
-4. **Keep prepaid / shared-allotment edge** — easy for monitors to regress; treat as
-   regression-tested product claims.
-5. **Do not chase ccusage-as-plan-%** — local token burn ≠ subscription windows
-   ([`claude-local-usage.md`](claude-local-usage.md)).
+`aiuse`’s collector contract is: shell out to a PATH tool (or loopback HTTP),
+normalize to `AccountUsage` / `QuotaWindow`, prefer authoritative sources, keep
+others as cross-checks ([`runner.py`](../src/aiuse/collectors/runner.py)).
 
----
-
-## Should we add peers as extra collectors?
-
-**Short answer:** **not by default.** Almost every peer either **duplicates**
-CodexBar/cswap/tokscale, answers a **different question** (local token burn, ambient
-UI, request routing), or would **inflate runtime and auth surface** without improving
-“which pool next?” ranking much. Prefer deepening the three existing collectors and
-the decision layer.
-
-`aiuse`’s collector contract is: shell out to a PATH tool, normalize to
-`AccountUsage` / `QuotaWindow`, prefer authoritative sources, keep others as
-cross-checks ([`runner.py`](../src/aiuse/collectors/runner.py)). New collectors only
-pay off if they add **unique live plan windows** or a **reliably independent
-measurement** of the same window.
-
-### Candidate-by-candidate
+### Candidate-by-candidate (post-2.1.6)
 
 | Candidate | As a new `aiuse` collector? | Why |
 | --------- | --------------------------- | --- |
-| **CodexBar / cswap / tokscale** | Already in | Keep investing here (timeouts, web vs local, cswap last-good, tokscale fan-out if upstream lands). |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | **Only if** CodexBar is unavailable (Linux/Windows without CodexBar, or Mac users who refuse the app) | CodexBar-parity CLI with stable `caut.v1` JSON — high **overlap** with CodexBar on Mac. Optional `collectors.caut` as alternate multi-provider path, not a third concurrent scrape of the same cookies. |
-| **[OpenUsage](https://www.openusage.ai/)** (`curl 127.0.0.1:6736/v1/usage`) | **Maybe optional later** | Nice local HTTP bus if the operator already runs OpenUsage. Does **not** replace collectors: still depends on another process and its plugins. Best as **opt-in** when CodexBar is broken for a provider OpenUsage still sees — not a default parallel fetch. |
-| **[onWatch](https://onwatch.onllm.dev/)** | **No (as live collect)** | Different product: always-on daemon + SQLite history. Polling it would add a heavy dependency; for ranking you want **fresh** plan %, not a second cache of the same APIs. Reuse ideas (exhaustion forecast UX), not the binary as a collector. |
-| **[quotabot](https://github.com/blisspixel/quotabot)** | **No** | Peer **decision/routing** layer (`suggest`, MCP), not a clean “usage JSON only” feed. Consuming it would either duplicate ranking or invent adapter-on-adapter. Better: learn from ranking UX; stay independent for portfolio scoring. |
-| **SessionWatcher / ClaudeBar / UsageScope / CUStats** | **No** | Menu-bar / web monitors; no stable first-class machine API aimed at aggregators; high permission/auth coupling. |
-| **[ccusage](https://ccusage.com/)** / OpenUsage.sh-style **local burn** tools | **No for plan ranking** | Local JSONL token *spend* is **not** subscription 5h/7d plan authority ([`claude-local-usage.md`](claude-local-usage.md)). At most a future optional “burn rate context” note — never a ladder driver. |
-| **Provider-native APIs** (Anthropic usage, OpenAI Usage API, …) | **Out of scope unless** you abandon the PATH-tool model | Would make `aiuse` a second CodexBar. Explicit non-goal today. |
+| **cswap / CodexBar / tokscale / caut / OpenUsage** | **Already in** (default) | Full multi-source set; install via `packaging/install-deps.sh` |
+| **[onWatch](https://onwatch.onllm.dev/)** | **No (as live collect)** | Daemon/history product; not a clean one-shot usage JSON feed for ranking |
+| **[quotabot](https://github.com/blisspixel/quotabot)** | **No** | Peer **decision/router**, not a passive data source |
+| **SessionWatcher / ClaudeBar / UsageScope / CUStats** | **No** | Monitors without a stable aggregator API |
+| **[ccusage](https://ccusage.com/)** / local burn tools | **No for plan ranking** | Spend history ≠ subscription windows |
+| **Provider-native APIs** | **Out of scope** unless abandoning PATH-tool model | Would make `aiuse` a second CodexBar |
 
-### Decision rules (when a fourth collector *would* be worth it)
+### Decision rules (when a *sixth* collector would be worth it)
 
-Add a collector only if **all** of the following hold:
-
-1. **Unique signal** — plan window or account that CodexBar + cswap + tokscale
-   systematically miss (or mis-source), **or** a second independent live read for
-   cross-check when tokscale is weak for that provider.
-2. **Stable machine interface** — CLI `--json` or loopback HTTP with a documented
-   schema (caut / OpenUsage style), not scraping a GUI.
-3. **Optional by default** — `collectors.<name>.enabled: false` until proven; never
-   force every operator to install the peer.
-4. **Latency budget** — fits the concurrent 45s collect model; no long-lived daemon
-   requirement for a one-shot `aiuse` run.
-5. **Does not confuse ranking** — prepaid stays non-urgent; local burn never becomes
-   plan %.
-
-**Update (2026-07-25):** **caut** and **OpenUsage** are now **default collectors**
-for multi-source cross-checks (operator preference: correctness over runtime).
-See [`collectors-caut-openusage.md`](collectors-caut-openusage.md) and site
-`just install-aiuse-deps` / `./packaging/install-deps.sh`. Selection still prefers
-cswap (Claude) / CodexBar (default) / tokscale (Copilot); caut and OpenUsage
-contribute independent measurements and fill-in.
-
-| Priority | Candidate | Role |
-| -------- | --------- | ---- |
-| **Done** | **caut** | Default collector + cross-check peer |
-| **Done** | **OpenUsage** | Default collector (CLI and/or HTTP :6736) |
-| Parked | quotabot / onWatch / ccusage as *inputs* | Decision peers or burn tools — not ranking drivers |
+1. **Unique signal** — plan window or account the five sources systematically miss,
+   **or** a reliably independent read for a weak peer pair.
+2. **Stable machine interface** — CLI `--json` or loopback HTTP with a documented schema.
+3. **Optional until proven** — or default only if correctness benefit is clear (as with caut/OpenUsage).
+4. **Latency budget** — fits concurrent collect; no required long-lived daemon for one-shot runs.
+5. **Does not confuse ranking** — prepaid stays non-urgent; local burn never becomes plan %.
 
 ### Better investment than more collectors
 
-For “what pool next?” quality, higher ROI than a fourth scraper:
+1. **Collector reliability** — cswap last-good (Step 33), CodexBar web-preferred providers.
+2. **Decision layer** — ladder edge cases, shared allotment, prepaid `n/a`, history blend.
+3. **Optional `suggest`-style single winner** in JSON for agents — *output*, not a new input tool.
+4. **Companion stack** — CodexBar/OpenUsage ambient + `aiuse` rank (document, don’t rebuild).
 
-1. **Collector reliability** — cswap last-good (Step 33), CodexBar web-preferred
-   providers, clearer error vs empty.
-2. **Decision layer** — ladder edge cases, shared allotment, prepaid `n/a`, history
-   burn blend (already partly done).
-3. **Optional `suggest`-style single winner** in JSON for agents — *output* feature,
-   not a new input tool.
-4. **Document companion stack** — CodexBar (ambient) + `aiuse` (rank); OpenUsage
-   optional if the user already likes it.
+---
+
+## Install / operator stack (this site)
+
+| Piece | How |
+| ----- | --- |
+| **aiuse** itself | `pipx install aiuse` / `brew install aiuse` |
+| **All five data sources** | `./packaging/install-deps.sh` or `just install-deps` |
+| **Site wrapper** | `just -f ~/ops/site-djbclark/justfile install-aiuse-deps` → execs the same script |
+| **Check only** | `./packaging/install-deps.sh --check` or `just install-deps-check` / site `aiuse-deps-status` |
+| **OpenUsage CLI** | Optional: app Settings → Command Line → Install (HTTP works while app runs) |
+| **Hourly collect** | site LaunchAgent `com.djbclark.aiuse` |
+
+Details: [`collectors-caut-openusage.md`](collectors-caut-openusage.md),
+[`collector-concurrency.md`](collector-concurrency.md),
+[`packaging.md`](packaging.md).
 
 ---
 
 ## Sources (snapshot 2026-07-25)
 
-- Project code and docs in this repo (`README.md`, `docs/pretty-display.md`, collectors).
+- Project code and docs in this repo (`README.md`, collectors, `packaging/install-deps.sh`).
 - [quotabot README](https://github.com/blisspixel/quotabot)
 - [onWatch product site](https://onwatch.onllm.dev/)
 - [caut / coding_agent_usage_tracker](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)
