@@ -4,15 +4,15 @@
 **Branch:** `main` (clean, synced with `origin/main`)  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **219** passing  
-**Version:** **2.1.6** on PyPI + Homebrew + local `pipx` / `brew`
+**Tests:** `.venv/bin/python -m pytest -q` — **221** passing  
+**Version:** **2.1.7** on PyPI + Homebrew + local `pipx` / `brew`
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 
 ## Reopen checklist (operator)
 
 1. Open Cursor workspace at **`~/src/aiuse`**.
-2. Confirm: `aiuse --version` → `2.1.6`; `aiuse doctor` → five collectors green
+2. Confirm: `aiuse --version` → `2.1.7`; `aiuse doctor` → five collectors green
    (OpenUsage may be “CLI missing; HTTP :6736 responding”).
 3. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status`
    — expect `com.djbclark.aiuse` loaded ([`scheduling.md`](scheduling.md)).
@@ -30,10 +30,10 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **Site install** | site-djbclark: `just install-ai-quota-tools`, brew fragment openusage, caut via cargo |
 | **Docs** | [`collectors-caut-openusage.md`](collectors-caut-openusage.md); [`competitive-landscape.md`](competitive-landscape.md) refreshed for five sources |
 | **Dep installer** | [`packaging/install-deps.sh`](../packaging/install-deps.sh); `just install-deps`; site `just install-aiuse-deps` |
-| **Packaging** | **2.1.6** PyPI + Homebrew (no new PyPI/brew ship for this doc pass) |
+| **Packaging** | **2.1.7** PyPI + Homebrew |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.6  
-PyPI: https://pypi.org/project/aiuse/2.1.6/
+Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.7  
+PyPI: https://pypi.org/project/aiuse/2.1.7/
 
 ## Loose-ends scan
 
@@ -41,7 +41,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.6/
 | --- | --- | --- |
 | Working tree / push | Expect clean after 2.1.6 ship | None |
 | Tests | 219 green | None |
-| Installers | 2.1.6 on PyPI + tap | None |
+| Installers | 2.1.7 on PyPI + tap | None |
 | OpenUsage CLI on PATH | Optional | Settings → Command Line → Install if desired |
 | OpenUsage.app | Must be running (or CLI installed) for that collector | `open -ga OpenUsage` |
 | LaunchAgent | Hourly persist + learn | Let it run |
@@ -72,7 +72,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.6/
 
 ```bash
 just -f ~/ops/site-djbclark/justfile ai-quota-status
-aiuse --version   # 2.1.6
+aiuse --version   # 2.1.7
 aiuse doctor
 aiuse --no-tui -q | head -25
 .venv/bin/python -m pytest -q
