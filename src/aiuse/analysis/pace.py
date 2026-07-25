@@ -79,11 +79,7 @@ def classify_pace(
     if pace.projected_waste_fraction is None and pace.projected_exhaust_at is None:
         return "unknown"
     # Too early in the window (no learned rate) → do not trust burn/conserve yet.
-    if (
-        pace.elapsed_fraction is not None
-        and pace.elapsed_fraction < min_elapsed_fraction
-        and not has_learned_rate
-    ):
+    if pace.elapsed_fraction is not None and pace.elapsed_fraction < min_elapsed_fraction and not has_learned_rate:
         return "on_pace"
     if pace.projected_exhaust_at and resets_at:
         if pace.projected_exhaust_at < resets_at - timedelta(hours=conserve_min_lead_hours):
@@ -94,6 +90,7 @@ def classify_pace(
         return "burn"
     return "on_pace"
 
+
 def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None, list[QuotaWindow]]:
     """Longest-duration window with usable remaining() governs; the rest are children.
 
@@ -102,9 +99,7 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
     """
     scored = [
         (
-            w.window_minutes
-            or nominal_window_minutes(classify_window_minutes(w.window_minutes))
-            or 0,
+            w.window_minutes or nominal_window_minutes(classify_window_minutes(w.window_minutes)) or 0,
             0 if "included" in (w.label or "").casefold() else 1,
             w,
         )

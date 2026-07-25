@@ -101,9 +101,7 @@ def build_report_sections(
             retention = int(analysis_cfg.get("snapshot_retention_days") or 90)
         except (TypeError, ValueError):
             retention = 90
-        learned_burn_rates = compute_learned_burn_rates(
-            current=snapshot, retention_days=retention
-        )
+        learned_burn_rates = compute_learned_burn_rates(current=snapshot, retention_days=retention)
 
     if full:
         sections.append(
@@ -118,11 +116,7 @@ def build_report_sections(
         provider_lines: list[str] = []
         if accounts:
             for acc in accounts:
-                provider_lines.extend(
-                    _render_account(
-                        acc, s, config=config, learned_burn_rates=learned_burn_rates
-                    )
-                )
+                provider_lines.extend(_render_account(acc, s, config=config, learned_burn_rates=learned_burn_rates))
         else:
             provider_lines.append(s.dim("(no provider data collected)"))
         sections.append(
@@ -160,9 +154,7 @@ def build_report_sections(
                 kind="tips",
             )
         )
-        detailed = _render_action_plan(
-            alerts, s, width=width, waking_hours_per_day=waking_hours
-        )
+        detailed = _render_action_plan(alerts, s, width=width, waking_hours_per_day=waking_hours)
         detailed_lines = [line for line in detailed if line is not None]
         # Match classic full report: single plan when it fits; else detailed + glance.
         header_rows = 2  # title + rule in classic path
@@ -197,9 +189,7 @@ def build_report_sections(
                 )
             )
 
-    glance = _render_brief_action_plan(
-        alerts, s, width=width, max_lines=ACTION_PLAN_MAX_LINES - 2
-    )
+    glance = _render_brief_action_plan(alerts, s, width=width, max_lines=ACTION_PLAN_MAX_LINES - 2)
     sections.append(
         ReportSection(
             title="Action plan — at a glance",
@@ -224,10 +214,7 @@ def alert_headline(alert: UseOrLoseAlert) -> str:
     icon = URGENCY_ICON.get(alert.urgency, "   ").strip() or "·"
     who = alert.account or "default"
     if alert.kind == "prepaid":
-        return (
-            f"{icon} {provider_display_name(alert.provider)} · {who} · "
-            f"{alert.window_label} (no expiry)"
-        )
+        return f"{icon} {provider_display_name(alert.provider)} · {who} · {alert.window_label} (no expiry)"
     when = _human_deadline(alert.days_until_reset)
     verb = "pace" if alert.kind == "conserve" else "use"
     return (

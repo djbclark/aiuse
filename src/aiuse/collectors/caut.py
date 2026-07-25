@@ -12,14 +12,14 @@ from aiuse.models import (
     AccountUsage,
     BillingKind,
     QuotaWindow,
-    coerce_float as _f,
     keep_copilot_report_window,
-    parse_dt,
+)
+from aiuse.models import (
+    coerce_float as _f,
 )
 
 from .base import CollectorError, run_json, which
 from .codexbar import PREPAID_HINTS, _billing_kind, _slot_label, _window
-
 
 # Providers caut can actually fetch rate-limit windows for on a typical Mac
 # (as of caut 0.1.0 / 2026-07). Others return "unsupported source … Auto".

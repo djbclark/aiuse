@@ -375,7 +375,9 @@ def test_no_tokscale_works_when_collector_is_boolean_true(monkeypatch):
 
     monkeypatch.setattr(cli, "run_collectors", fake_collectors)
     monkeypatch.setattr(cli, "analyze_use_or_lose", lambda *_a, **_k: [])
-    monkeypatch.setattr(cli, "load_config", lambda _p=None: {"collectors": {"tokscale": True}, "analysis": {}, "timeouts": {}})
+    monkeypatch.setattr(
+        cli, "load_config", lambda _p=None: {"collectors": {"tokscale": True}, "analysis": {}, "timeouts": {}}
+    )
     assert cli.main(["--no-tokscale", "--json", "--alerts-only"]) == 0
     assert captured["tokscale"] == {"enabled": False}
 

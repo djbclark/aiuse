@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -18,7 +18,6 @@ from aiuse.models import (
     QuotaWindow,
     Snapshot,
     Urgency,
-    UseOrLoseAlert,
     parse_dt,
 )
 from aiuse.report import alert_priority_band
@@ -115,9 +114,7 @@ def test_fixture_expectations(fixture, monkeypatch):
 
     account = _account_from_fixture(fixture)
     expected = fixture["expected"]
-    config = fixture.get("config") or {
-        "analysis": {"scoring_mode": "pace", "learn_from_history": False}
-    }
+    config = fixture.get("config") or {"analysis": {"scoring_mode": "pace", "learn_from_history": False}}
 
     # Governing label (shared allotment structure)
     if expected.get("governing_label") is not None:

@@ -13,11 +13,7 @@ def pick_suggestion(alerts: list[UseOrLoseAlert]) -> UseOrLoseAlert | None:
     Conserve alerts mean slow down — they never win as “use next.”
     INFO / prepaid inventory never wins.
     """
-    burns = [
-        a
-        for a in alerts
-        if a.kind == "burn" and a.urgency not in (Urgency.INFO, Urgency.NONE)
-    ]
+    burns = [a for a in alerts if a.kind == "burn" and a.urgency not in (Urgency.INFO, Urgency.NONE)]
     if not burns:
         return None
     # Higher score first; more remaining and sooner reset as light tie-breakers.
@@ -64,7 +60,4 @@ def format_suggestion_line(alert: UseOrLoseAlert | None) -> str:
         when_s = f"within ~{max(1, int(round(when * 24)))}h"
     else:
         when_s = f"within {when:.1f} days"
-    return (
-        f"suggest: {name} · {who} · {alert.window_label}: "
-        f"{rem:.0f}% left · use {when_s} · score {alert.score:.0f}"
-    )
+    return f"suggest: {name} · {who} · {alert.window_label}: {rem:.0f}% left · use {when_s} · score {alert.score:.0f}"

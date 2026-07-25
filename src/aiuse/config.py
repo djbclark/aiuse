@@ -220,6 +220,8 @@ def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None
     if not path_s.startswith("/"):
         path_s = "/" + path_s
     return base_s + path_s
+
+
 KNOWN_ANALYSIS_KEYS = frozenset(DEFAULT_CONFIG["analysis"].keys())
 KNOWN_PACE_KEYS = frozenset(DEFAULT_CONFIG["analysis"]["pace"].keys())
 KNOWN_SCORING_MODES = frozenset({"pace", "multi_dim", "legacy"})
@@ -293,10 +295,7 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
     elif isinstance(collectors, dict):
         for name, entry in collectors.items():
             if name not in KNOWN_COLLECTOR_KEYS:
-                issues.append(
-                    f"warning: unknown collector {name!r} "
-                    f"(known: {', '.join(sorted(KNOWN_COLLECTOR_KEYS))})"
-                )
+                issues.append(f"warning: unknown collector {name!r} (known: {', '.join(sorted(KNOWN_COLLECTOR_KEYS))})")
             if isinstance(entry, bool):
                 continue
             if not isinstance(entry, dict):
@@ -316,8 +315,7 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
         mode = analysis.get("scoring_mode")
         if mode is not None and str(mode) not in KNOWN_SCORING_MODES:
             issues.append(
-                f"warning: analysis.scoring_mode {mode!r} is not one of "
-                f"{', '.join(sorted(KNOWN_SCORING_MODES))}"
+                f"warning: analysis.scoring_mode {mode!r} is not one of {', '.join(sorted(KNOWN_SCORING_MODES))}"
             )
         pace = analysis.get("pace")
         if pace is not None and not isinstance(pace, dict):
@@ -346,8 +344,7 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             canon = _DEAD_PLAN_KEYS.get(str(name).lower().replace(" ", "-"))
             if canon:
                 issues.append(
-                    f"warning: plans key {name!r} is dead — use {canon!r} "
-                    f"(collector id aliases to that config key)"
+                    f"warning: plans key {name!r} is dead — use {canon!r} (collector id aliases to that config key)"
                 )
 
     return issues
@@ -493,9 +490,7 @@ def _default_services_yaml_text() -> str:
     try:
         import yaml
     except ImportError as exc:
-        raise SystemExit(
-            "PyYAML is required to generate services.yaml. Install with: pip install pyyaml"
-        ) from exc
+        raise SystemExit("PyYAML is required to generate services.yaml. Install with: pip install pyyaml") from exc
 
     payload = {
         "analysis": _deep_copy(DEFAULT_CONFIG["analysis"]),

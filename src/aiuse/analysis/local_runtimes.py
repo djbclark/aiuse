@@ -5,7 +5,7 @@ from __future__ import annotations
 import socket
 from typing import Any
 
-from aiuse.models import AccountUsage, BillingKind, Snapshot, Urgency, UseOrLoseAlert
+from aiuse.models import BillingKind, Snapshot, Urgency, UseOrLoseAlert
 
 # Safe loopback defaults — never remote hosts unless the operator configures them.
 _DEFAULT_ENDPOINTS: list[dict[str, Any]] = [
@@ -66,10 +66,7 @@ def maybe_local_runtime_alerts(
                 remaining_percent=0.0,
                 days_until_reset=None,
                 plan=None,
-                message=(
-                    f"local: {name} reachable at {where} (not ranked — use when "
-                    "cloud subscriptions are empty)."
-                ),
+                message=(f"local: {name} reachable at {where} (not ranked — use when cloud subscriptions are empty)."),
                 source="probe",
                 score=0.0,
                 kind="prepaid",  # inventory-style; n/a band, never burn urgency

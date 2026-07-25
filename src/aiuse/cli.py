@@ -119,10 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--status",
         action="store_true",
-        help=(
-            "Print one-line status for prompts/status bars and exit "
-            "(also: aiuse status / aiuse prompt)"
-        ),
+        help=("Print one-line status for prompts/status bars and exit (also: aiuse status / aiuse prompt)"),
     )
     p.add_argument(
         "--suggest",
@@ -204,8 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--full",
         action="store_true",
         help=(
-            "Pretty report: per-provider detail, cross-checks, tips, and detailed "
-            "action plan (default is glance-first)"
+            "Pretty report: per-provider detail, cross-checks, tips, and detailed action plan (default is glance-first)"
         ),
     )
     detail.add_argument(
@@ -454,9 +450,7 @@ def collect_exit_code(snapshot: Snapshot, alerts: list[UseOrLoseAlert]) -> int:
     """
     if snapshot.collector_errors and not snapshot.accounts:
         return EXIT_FAILURE
-    if any(
-        a.urgency not in (Urgency.INFO, Urgency.NONE) for a in alerts
-    ):
+    if any(a.urgency not in (Urgency.INFO, Urgency.NONE) for a in alerts):
         return EXIT_ALERTS
     return EXIT_OK
 
@@ -479,8 +473,7 @@ def _run_generate_config() -> int:
         return 0
     if result["created"] and result["skipped"] and not result["errors"]:
         print(
-            "Some files already existed and were left unchanged. "
-            "Remove or rename them if you want fresh defaults.",
+            "Some files already existed and were left unchanged. Remove or rename them if you want fresh defaults.",
             file=sys.stderr,
         )
         return 1
@@ -631,9 +624,7 @@ def diagnose(
             detail = path
             # openusage CLI --help can be heavy; skip version probe for it.
             if probe and collector_key != "openusage":
-                ok, summary = probe_tool_version(
-                    cmd, version_argv, timeout=_PROBE_TIMEOUT_S, run_fn=run_fn
-                )
+                ok, summary = probe_tool_version(cmd, version_argv, timeout=_PROBE_TIMEOUT_S, run_fn=run_fn)
                 if ok:
                     detail = f"{path} · {summary}"
                 else:
@@ -669,9 +660,7 @@ def diagnose(
 
     if problems:
         lines.append(f"Problems: {problems} issue(s) (missing tools and/or config errors).")
-        lines.append(
-            "Install/authenticate tools, fix timeouts, or disable collectors in services.yaml."
-        )
+        lines.append("Install/authenticate tools, fix timeouts, or disable collectors in services.yaml.")
         exit_code = 1
     else:
         lines.append("No hard problems detected for enabled collectors.")

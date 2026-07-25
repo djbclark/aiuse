@@ -73,9 +73,7 @@ def _account_from_item(
 ) -> AccountUsage:
     email = item.get("email")
     number = item.get("number")
-    active = bool(item.get("active")) or (
-        number is not None and active_number is not None and number == active_number
-    )
+    active = bool(item.get("active")) or (number is not None and active_number is not None and number == active_number)
     usage_status = str(item.get("usageStatus") or "unavailable")
     usage = item.get("usage") if isinstance(item.get("usage"), dict) else None
 
@@ -199,9 +197,7 @@ def _usage_credits_from_spend(usage: dict[str, Any]) -> UsageCredits | None:
     limit = _number(spend.get("limit"))
     pct = _number(spend.get("pct") if spend.get("pct") is not None else spend.get("usedPercent"))
     currency = str(spend.get("currency") or "USD")
-    resets = parse_dt(
-        spend.get("resetsAt") or spend.get("resets_at") or spend.get("resetAt") or spend.get("reset_at")
-    )
+    resets = parse_dt(spend.get("resetsAt") or spend.get("resets_at") or spend.get("resetAt") or spend.get("reset_at"))
     if used is None and limit is None and pct is None and resets is None:
         return None
     remaining: float | None = None
@@ -227,11 +223,7 @@ def _append_spend_note(notes: list[str], credits: UsageCredits | None) -> None:
         notes.append(
             f"Usage credits: {credits.used:g} of {credits.limit:g} {cur} spent"
             + (f" ({credits.used_percent:g}% of limit)" if credits.used_percent is not None else "")
-            + (
-                f"; {credits.remaining:g} {cur} headroom"
-                if credits.remaining is not None
-                else ""
-            )
+            + (f"; {credits.remaining:g} {cur} headroom" if credits.remaining is not None else "")
             + "."
         )
     elif credits.used is not None:

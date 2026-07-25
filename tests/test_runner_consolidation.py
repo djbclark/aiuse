@@ -247,9 +247,7 @@ def test_claude_cross_check_includes_tokscale_when_cswap_live():
     _selected, checks = _select_and_cross_check([cswap_row, tokscale_row], cswap_authoritative=True)
 
     assert any(
-        check.status == "warning"
-        and "percentage points" in check.message
-        and "tokscale" in check.sources
+        check.status == "warning" and "percentage points" in check.message and "tokscale" in check.sources
         for check in checks
     )
 
@@ -265,13 +263,9 @@ def test_errored_cswap_with_matching_codexbar_email_gets_specific_warning():
     codexbar_row.windows[0].label = "Claude weekly"
     codexbar_row.windows[0].used_percent = 50
 
-    _selected, checks = _select_and_cross_check(
-        [cswap_ok, cswap_err, codexbar_row], cswap_authoritative=True
-    )
+    _selected, checks = _select_and_cross_check([cswap_ok, cswap_err, codexbar_row], cswap_authoritative=True)
     messages = [c.message for c in checks if c.account == "user@example.com"]
     assert messages, checks
     assert any("could not read canonical usage" in m for m in messages)
-    assert any(
-        "do not replace" in m.lower() or "do not substitute" in m.lower() for m in messages
-    )
+    assert any("do not replace" in m.lower() or "do not substitute" in m.lower() for m in messages)
     assert not any("reporting inconsistency" in m.lower() for m in messages)

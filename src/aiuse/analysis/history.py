@@ -132,9 +132,7 @@ def compute_learned_burn_rates(
                 except (TypeError, ValueError):
                     continue
 
-                current_remaining = _find_current_remaining(
-                    current, prev_account, prev_window, match_resets=True
-                )
+                current_remaining = _find_current_remaining(current, prev_account, prev_window, match_resets=True)
                 burn_rate: float | None = None
                 pair_weight = weight
 
@@ -149,9 +147,7 @@ def compute_learned_burn_rates(
                         continue
                 else:
                     # No same-cycle match: try same label (possible reset).
-                    loose = _find_current_remaining(
-                        current, prev_account, prev_window, match_resets=False
-                    )
+                    loose = _find_current_remaining(current, prev_account, prev_window, match_resets=False)
                     if loose is None or loose <= prev_remaining_f:
                         continue
                     # Reset between snapshots: attribute remaining at prev as
@@ -355,9 +351,7 @@ def _duration_key(window_minutes: Any) -> str | None:
     return None
 
 
-def count_snapshots(
-    *, retention_days: int = _DEFAULT_RETENTION_DAYS, max_count: int = 10_000
-) -> int:
+def count_snapshots(*, retention_days: int = _DEFAULT_RETENTION_DAYS, max_count: int = 10_000) -> int:
     """How many retained snapshot files are on disk (newest-first load)."""
     return len(load_recent_snapshots(retention_days=retention_days, max_count=max_count))
 
@@ -558,8 +552,7 @@ def history_insights(
     candidates = [
         item
         for item in late
-        if float(item.get("avg_remaining_pct") or 0) >= 40.0
-        and int(item.get("sample_count") or 0) >= 2
+        if float(item.get("avg_remaining_pct") or 0) >= 40.0 and int(item.get("sample_count") or 0) >= 2
     ]
     out["burn_candidates_from_history"] = candidates[:8]
     return out
@@ -609,17 +602,14 @@ def history_section_lines(
 
     if not should_learn_from_history(cfg):
         raw = cfg.get("learn_from_history", "auto")
-        explicitly_off = raw is False or (
-            isinstance(raw, str) and raw.strip().lower() in {"false", "no", "off", "0"}
-        )
+        explicitly_off = raw is False or (isinstance(raw, str) and raw.strip().lower() in {"false", "no", "off", "0"})
         if explicitly_off:
             lines.append("  Learning disabled (learn_from_history: false).")
         else:
             n = len(recent)
             need = max(0, _DEFAULT_MIN_SNAPSHOTS - n)
             lines.append(
-                f"  Learning waits for {need} more snapshot{'s' if need != 1 else ''} "
-                f"(need {_DEFAULT_MIN_SNAPSHOTS}+)."
+                f"  Learning waits for {need} more snapshot{'s' if need != 1 else ''} (need {_DEFAULT_MIN_SNAPSHOTS}+)."
             )
         return lines
 
@@ -629,14 +619,9 @@ def history_section_lines(
         for key, (rate, n) in sorted(rates.items()):
             provider, _, duration = key.partition(":")
             name = provider_display_name(provider)
-            lines.append(
-                f"    · {name} {duration}: ~{rate * 100:.0f}%/day "
-                f"({n} sample{'s' if n != 1 else ''})"
-            )
+            lines.append(f"    · {name} {duration}: ~{rate * 100:.0f}%/day ({n} sample{'s' if n != 1 else ''})")
     else:
-        lines.append(
-            "  No learned burn rates yet (need enough same-window samples across time)."
-        )
+        lines.append("  No learned burn rates yet (need enough same-window samples across time).")
 
     late = late_cycle_remaining_summary(retention_days=retention)
     if late:

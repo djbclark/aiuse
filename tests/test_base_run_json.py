@@ -41,7 +41,7 @@ def test_concatenated_json_prefers_larger_trailing_payload(monkeypatch):
 
 
 def test_banner_then_single_json_value_still_works(monkeypatch):
-    stdout = "note: ok\n{\"ok\": true}"
+    stdout = 'note: ok\n{"ok": true}'
     monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _fake_run(stdout))
     assert run_json(["tool"]) == {"ok": True}
 
@@ -62,6 +62,7 @@ def test_banner_noise_only_raises(monkeypatch):
     )
     with pytest.raises(CollectorError, match="invalid JSON|no JSON"):
         run_json(["tool"])
+
 
 def test_empty_stdout_raises(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _fake_run(""))

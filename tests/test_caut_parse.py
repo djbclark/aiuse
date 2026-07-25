@@ -1,7 +1,7 @@
 """Unit tests for caut collector parsing (no live CLI required)."""
 
 from aiuse.collectors.caut import _from_row, _row_has_live_quota, collect_caut
-from aiuse.models import AccountUsage, BillingKind, QuotaWindow
+from aiuse.models import BillingKind
 
 
 def test_caut_claude_windows():

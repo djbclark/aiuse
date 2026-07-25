@@ -96,10 +96,10 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(
             (
                 "openusage",
-                lambda t=ou_timeout, f=force, l=launch, b=base: collect_openusage(
+                lambda t=ou_timeout, f=force, tl=launch, b=base: collect_openusage(
                     timeout=t,
                     force_refresh=f,
-                    try_launch_app=l,
+                    try_launch_app=tl,
                     base_url=b,
                 ),
             )
@@ -263,8 +263,7 @@ def _provider_multi_source_cross_checks(
     checks: list[CrossCheck] = []
 
     live_by_source: dict[str, list[AccountUsage]] = {
-        source: [a for a in rows if _has_live_data(a)]
-        for source, rows in by_source.items()
+        source: [a for a in rows if _has_live_data(a)] for source, rows in by_source.items()
     }
     live_by_source = {s: rows for s, rows in live_by_source.items() if rows}
     source_ids = sorted(live_by_source.keys())
@@ -281,9 +280,7 @@ def _provider_multi_source_cross_checks(
                 # Peer present but not live — prefer warning when it errored.
                 peer_errors: list[str] = []
                 for peer in peers:
-                    peer_errors.extend(
-                        a.error for a in by_source.get(peer, []) if a.error
-                    )
+                    peer_errors.extend(a.error for a in by_source.get(peer, []) if a.error)
                 peer_labels = ", ".join(_source_name(s) for s in peers)
                 if peer_errors:
                     checks.append(
@@ -293,8 +290,7 @@ def _provider_multi_source_cross_checks(
                             status="warning",
                             sources=[_source_name(only)] + [_source_name(s) for s in peers],
                             message=(
-                                f"{_source_name(only)} returned live data, but "
-                                f"{peer_labels} failed: {peer_errors[0]}"
+                                f"{_source_name(only)} returned live data, but {peer_labels} failed: {peer_errors[0]}"
                             ),
                         )
                     )
@@ -362,8 +358,7 @@ def _provider_multi_source_cross_checks(
                     status="warning",
                     sources=[_source_name(other), _source_name(source)],
                     message=(
-                        f"{_source_name(other)} returned live data, but "
-                        f"{_source_name(source)} failed: {errors[0]}"
+                        f"{_source_name(other)} returned live data, but {_source_name(source)} failed: {errors[0]}"
                     ),
                 )
             )
@@ -459,10 +454,7 @@ def _claude_authority_checks(
                     account=cswap_row.account,
                     status="unavailable",
                     sources=["cswap"] + [_source_name(s) for s in sorted(by_source) if s != "cswap"],
-                    message=(
-                        f"No independent Claude quota cross-check is available for "
-                        f"{cswap_row.account}."
-                    ),
+                    message=(f"No independent Claude quota cross-check is available for {cswap_row.account}."),
                 )
             )
     return checks
@@ -524,11 +516,7 @@ def _match_peer_account(
     """Match a peer row by case-insensitive account email when possible."""
     if anchor.account:
         email_match = next(
-            (
-                row
-                for row in peers
-                if row.account and row.account.lower() == anchor.account.lower()
-            ),
+            (row for row in peers if row.account and row.account.lower() == anchor.account.lower()),
             None,
         )
         if email_match is not None:
@@ -638,8 +626,7 @@ def _matching_window(
         (
             candidate
             for candidate in unmatched
-            if candidate.resets_at is not None
-            and abs((candidate.resets_at - target.resets_at).total_seconds()) <= 900
+            if candidate.resets_at is not None and abs((candidate.resets_at - target.resets_at).total_seconds()) <= 900
         ),
         None,
     )

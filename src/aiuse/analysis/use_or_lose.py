@@ -249,9 +249,7 @@ def analyze_use_or_lose(
         retention = int(analysis_cfg.get("snapshot_retention_days", 90))
         learned_flex = compute_learned_flexibility(current=snapshot, retention_days=retention)
         if mode == "pace":
-            learned_burn_rates = compute_learned_burn_rates(
-                current=snapshot, retention_days=retention
-            )
+            learned_burn_rates = compute_learned_burn_rates(current=snapshot, retention_days=retention)
 
     for account in snapshot.accounts:
         if account.error and not account.windows:
@@ -403,9 +401,7 @@ def analyze_use_or_lose(
                         value_multiplier=window_value_mult,
                     )
                 if pace.projected_waste_fraction is not None:
-                    pace.projected_waste_usd = round(
-                        (pace.projected_waste_fraction or 0.0) * v_cycle, 2
-                    )
+                    pace.projected_waste_usd = round((pace.projected_waste_fraction or 0.0) * v_cycle, 2)
 
                 if verdict == "burn":
                     if pace.projected_waste_usd is not None and pace.projected_waste_usd < min_value_usd:
@@ -569,11 +565,7 @@ def analyze_use_or_lose(
             avg_remaining = wasted["avg_remaining_pct"]
             samples = wasted["sample_count"]
             live_resets_at = live_resets_by_key.get(f"{provider}:{label}")
-            days = (
-                (live_resets_at - utcnow()).total_seconds() / 86400.0
-                if live_resets_at is not None
-                else None
-            )
+            days = (live_resets_at - utcnow()).total_seconds() / 86400.0 if live_resets_at is not None else None
             alerts.append(
                 UseOrLoseAlert(
                     urgency=Urgency.INFO,
@@ -695,9 +687,7 @@ def _score_multi_dimension(
     # --- value_urgency (0-100) ---
     value_urgency = 0.0
     if profile.value_at_risk_usd is not None and plan_price_for_norm > 0:
-        value_urgency = max(
-            0.0, min(100.0, (profile.value_at_risk_usd / plan_price_for_norm) * 100)
-        )
+        value_urgency = max(0.0, min(100.0, (profile.value_at_risk_usd / plan_price_for_norm) * 100))
 
     # --- flexibility_urgency (0-100) ---
     flexibility_urgency = 0.0
@@ -787,8 +777,7 @@ def _pace_message(
         labels = ", ".join(c.label for c in suppressed_children)
         if verdict == "conserve":
             child_note = (
-                f" Avoid burning {labels} sessions — they draw the same budget "
-                f"you're already close to exhausting."
+                f" Avoid burning {labels} sessions — they draw the same budget you're already close to exhausting."
             )
         else:
             child_note = f" (this also covers your {labels} — no need to burn it separately)"

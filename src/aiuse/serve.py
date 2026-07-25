@@ -31,6 +31,7 @@ from aiuse.models import (
     parse_dt,
     utcnow,
 )
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
 DEFAULT_MAX_AGE_SECONDS = 3600.0
@@ -46,8 +47,7 @@ def run_serve(
     """Block serving until KeyboardInterrupt. Returns process exit code."""
     if host not in ("127.0.0.1", "localhost", "::1"):
         print(
-            f"error: refuse to bind non-loopback host {host!r} "
-            "(pass 127.0.0.1 / localhost only)",
+            f"error: refuse to bind non-loopback host {host!r} (pass 127.0.0.1 / localhost only)",
             flush=True,
         )
         return 1
@@ -122,8 +122,7 @@ def run_serve(
 
     server = ThreadingHTTPServer((host, port), Handler)
     print(
-        f"aiuse serve  http://{host}:{port}/v1/  "
-        f"(loopback only; max_age={max_age_seconds:g}s; Ctrl-C to stop)",
+        f"aiuse serve  http://{host}:{port}/v1/  (loopback only; max_age={max_age_seconds:g}s; Ctrl-C to stop)",
         flush=True,
     )
     try:
@@ -167,11 +166,7 @@ class _ServeState:
         snapshot = run_collectors(self.config)
         alerts = analyze_use_or_lose(snapshot, self.config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=self.config))
-        analysis_cfg = (
-            self.config.get("analysis")
-            if isinstance(self.config.get("analysis"), dict)
-            else {}
-        )
+        analysis_cfg = self.config.get("analysis") if isinstance(self.config.get("analysis"), dict) else {}
         if should_persist_snapshots(analysis_cfg):
             try:
                 save_snapshot(snapshot, alerts)

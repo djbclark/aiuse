@@ -27,11 +27,9 @@ from aiuse.report import (
 
 
 def test_ladder_includes_waste_forecast_fragment():
-    from datetime import timedelta
 
     from aiuse.report import render_priority_ladder
 
-    now = utcnow()
     alert = UseOrLoseAlert(
         urgency=Urgency.HIGH,
         provider="claude",
@@ -289,9 +287,7 @@ def test_render_report_shows_usage_credits_section():
             resets_at=now + timedelta(days=5),
         ),
     )
-    text = render_report(
-        Snapshot(collected_at=now, accounts=[acc]), [], config={}, color=False, full=True
-    )
+    text = render_report(Snapshot(collected_at=now, accounts=[acc]), [], config={}, color=False, full=True)
     assert "usage credits" in text.lower()
     assert "50 of 100 USD" in text or "spent: 50" in text
     assert "remaining headroom" in text.lower()
@@ -943,6 +939,7 @@ def test_glance_respects_custom_width():
     wide = _render_brief_action_plan(alerts, _Style(False), width=120, max_lines=10)
     assert all(len(_strip_ansi(line)) <= 50 for line in narrow)
     assert any(len(_strip_ansi(line)) > 50 for line in wide)
+
 
 def test_render_cross_checks_use_soft_labels():
     now = utcnow()

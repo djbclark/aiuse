@@ -6,10 +6,10 @@ import re
 from typing import Any
 
 from aiuse.models import (
+    WINDOW_NOMINAL_MINUTES,
     AccountUsage,
     BillingKind,
     QuotaWindow,
-    WINDOW_NOMINAL_MINUTES,
     coerce_float,
     keep_copilot_report_window,
     parse_dt,

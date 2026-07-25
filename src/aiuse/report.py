@@ -141,9 +141,7 @@ def render_report(
     plan_width = glance_width if glance_width is not None else width
     accounts = _sorted_accounts(snapshot.accounts)
     n_accounts = len(accounts)
-    n_actionable = sum(
-        1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE)
-    )
+    n_actionable = sum(1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE))
 
     lines.append(s.bold("=" * width))
     title = "AI USAGE — USE IT OR LOSE IT (full)"
@@ -167,9 +165,7 @@ def render_report(
             retention = int(analysis_cfg.get("snapshot_retention_days") or 90)
         except (TypeError, ValueError):
             retention = 90
-        learned_burn_rates = compute_learned_burn_rates(
-            current=snapshot, retention_days=retention
-        )
+        learned_burn_rates = compute_learned_burn_rates(current=snapshot, retention_days=retention)
 
     lines.append("")
     lines.append(s.bold("## History"))
@@ -182,11 +178,7 @@ def render_report(
     lines.append(s.dim("-" * width))
     if accounts:
         for acc in accounts:
-            lines.extend(
-                _render_account(
-                    acc, s, config=config, learned_burn_rates=learned_burn_rates
-                )
-            )
+            lines.extend(_render_account(acc, s, config=config, learned_burn_rates=learned_burn_rates))
     else:
         lines.append(s.dim("  (no provider data collected)"))
 
@@ -348,16 +340,12 @@ def _band_sort_lane(band: int) -> int:
     return _LANE_ACTIVE
 
 
-def _ladder_sort_key(
-    lane: int, urgency: float, provider: str, account: str | None
-) -> tuple:
+def _ladder_sort_key(lane: int, urgency: float, provider: str, account: str | None) -> tuple:
     """Lane first, then urgency within the lane; stable by name."""
     return (lane, urgency, provider.casefold(), (account or "").casefold())
 
 
-def _ladder_coverage_key(
-    provider: str, account: str | None, pool_id: str = ""
-) -> tuple[str, str, str]:
+def _ladder_coverage_key(provider: str, account: str | None, pool_id: str = "") -> tuple[str, str, str]:
     """Provider + account + independent pool (Gemini vs Claude/GPT, etc.)."""
     return (provider.casefold(), (account or "").casefold(), pool_id)
 
@@ -417,11 +405,7 @@ def render_status_line(
             detail = f"{detail} (+{len(snapshot.collector_errors) - 1} more)"
         return _clamp_display_width(f"error: {detail}", max_width)
 
-    actionable = [
-        a
-        for a in alerts
-        if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind != "prepaid"
-    ]
+    actionable = [a for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind != "prepaid"]
     burns = [a for a in actionable if a.kind == "burn"]
     conserves = [a for a in actionable if a.kind == "conserve"]
 
@@ -429,9 +413,7 @@ def render_status_line(
         n_acc = len(snapshot.accounts)
         if n_acc == 0:
             return _clamp_display_width("ok: no accounts (nothing to rank)", max_width)
-        return _clamp_display_width(
-            "ok: nothing urgent under current thresholds", max_width
-        )
+        return _clamp_display_width("ok: nothing urgent under current thresholds", max_width)
 
     # Highest score first (same ordering as analyze_use_or_lose).
     top = max(actionable, key=lambda a: (a.score, a.remaining_percent))
@@ -455,6 +437,7 @@ def render_status_line(
         bits.append(f"{len(conserves)} slow")
     line = " · ".join(bits)
     return _clamp_display_width(line, max_width)
+
 
 def render_priority_ladder(
     alerts: list[UseOrLoseAlert],
@@ -489,11 +472,7 @@ def render_priority_ladder(
             alert.account,
         )
         entries.append((key, _priority_alert_line(alert, s, band)))
-        covered.add(
-            _ladder_coverage_key(
-                alert.provider, alert.account, _pool_id_for_label(alert.window_label)
-            )
-        )
+        covered.add(_ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label)))
 
     accounts = _sorted_accounts(snapshot.accounts) if snapshot is not None else []
     for account in accounts:
@@ -503,9 +482,7 @@ def render_priority_ladder(
                 continue
             entries.append(
                 (
-                    _ladder_sort_key(
-                        _LANE_ERROR, -1000.0, account.provider, account.account
-                    ),
+                    _ladder_sort_key(_LANE_ERROR, -1000.0, account.provider, account.account),
                     _priority_error_line(account, s),
                 )
             )
@@ -541,11 +518,7 @@ def render_priority_ladder(
             window = _pick_representative_window(pool) if pool else None
             band = _BAND_MID
             lane = _LANE_ACTIVE
-            urgency = (
-                _window_use_urgency(window)
-                if window is not None
-                else _account_use_urgency(account)
-            )
+            urgency = _window_use_urgency(window) if window is not None else _account_use_urgency(account)
             entries.append(
                 (
                     _ladder_sort_key(
@@ -605,11 +578,7 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     verb = "pace" if alert.kind == "conserve" else "use"
     # Forecast before the deadline phrase so width-clamp keeps the useful bit.
     forecast = _forecast_fragment(alert, compact=True)
-    body = (
-        f"{name} · {who} · "
-        f"{alert.window_label}: {alert.remaining_percent:.0f}% left"
-        f"{forecast} · {verb} {when}"
-    )
+    body = f"{name} · {who} · {alert.window_label}: {alert.remaining_percent:.0f}% left{forecast} · {verb} {when}"
     return f"{_priority_tag(s, band)} {body}"
 
 
@@ -664,9 +633,7 @@ def render_stderr_meta(
     s = _Style(use_color(force=color))
     accounts = _sorted_accounts(snapshot.accounts)
     n_accounts = len(accounts)
-    n_actionable = sum(
-        1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE)
-    )
+    n_actionable = sum(1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE))
     lines: list[str] = []
     meta = f"Collected at {snapshot.collected_at.isoformat()}"
     meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
@@ -688,18 +655,10 @@ def render_stderr_meta(
 
 def _capacity_summary_line(alerts: list[UseOrLoseAlert], s: _Style) -> str | None:
     """One-line burn-capacity blurb shared with the detailed action plan."""
-    action = [
-        a
-        for a in alerts
-        if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind != "conserve"
-    ]
+    action = [a for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind != "conserve"]
     if not action:
         return None
-    conserve = [
-        a
-        for a in alerts
-        if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind == "conserve"
-    ]
+    conserve = [a for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind == "conserve"]
     total_value_usd = sum(
         a.flexibility_profile.value_at_risk_usd
         for a in action
@@ -711,9 +670,7 @@ def _capacity_summary_line(alerts: list[UseOrLoseAlert], s: _Style) -> str | Non
             f"  Available capacity this cycle: {s.bold(f'${total_value_usd:.2f}')} "
             f"across {len(action)} windows ({providers} providers)."
         )
-    return s.dim(
-        f"  {len(action)} windows with unused capacity across {providers} providers."
-    )
+    return s.dim(f"  {len(action)} windows with unused capacity across {providers} providers.")
 
 
 def _physical_line_count(lines: list[str]) -> int:
@@ -740,9 +697,7 @@ def _render_action_plan_section(
     if traditional_summary:
         detailed_body = _render_traditional_summary(alerts, s, width=width)
     else:
-        detailed_body = _render_action_plan(
-            alerts, s, width=width, waking_hours_per_day=waking_hours_per_day
-        )
+        detailed_body = _render_action_plan(alerts, s, width=width, waking_hours_per_day=waking_hours_per_day)
 
     header_title = "## Action plan — use these before they reset"
     # Section = title + rule + body (+ optional trailing blank already in body)
@@ -758,9 +713,7 @@ def _render_action_plan_section(
 
     # Too tall for one screen: full detail, then a compact plan the viewport
     # can hold without scrolling back.
-    brief_body = _render_brief_action_plan(
-        alerts, s, width=width, max_lines=ACTION_PLAN_MAX_LINES - 2
-    )
+    brief_body = _render_brief_action_plan(alerts, s, width=width, max_lines=ACTION_PLAN_MAX_LINES - 2)
     out: list[str] = [
         s.bold("## Action plan (detailed)"),
         s.dim("-" * width),
@@ -778,10 +731,7 @@ def _tips_lines(s: _Style) -> list[str]:
     return [
         s.dim("  • Unused subscription windows expire at reset — burn on real work."),
         s.dim("  • Prepaid API balances usually roll; no rush unless a promo expires."),
-        s.dim(
-            "  • Claude multi-account: cswap is canonical "
-            "(CodexBar/caut/OpenUsage/tokscale ≈ active session)."
-        ),
+        s.dim("  • Claude multi-account: cswap is canonical (CodexBar/caut/OpenUsage/tokscale ≈ active session)."),
         s.dim("  • Re-run: ai · JSON: ai --json · quiet: ai -q · setup: ai doctor · ai --help"),
     ]
 
@@ -1050,9 +1000,7 @@ def _render_action_plan(
             lines.append(s.dim("  plan value silently wasted each month:"))
             lines.append("")
             for alert in sorted(throttled, key=lambda a: (-a.score,)):
-                lines.append(
-                    _throttled_waste_line(alert, s, waking_hours_per_day=waking_hours_per_day)
-                )
+                lines.append(_throttled_waste_line(alert, s, waking_hours_per_day=waking_hours_per_day))
             lines.append("")
 
     if info:
@@ -1287,9 +1235,7 @@ def _render_account(
         lines.append(f"    {bar} {rem_colored} {used_s:10} {s.dim(reset_s)}")
 
         if rem is not None and w.window_minutes:
-            detail = _consumption_line(
-                w, rem, acc.provider, plans, analysis, s, learned_burn_rates=rates
-            )
+            detail = _consumption_line(w, rem, acc.provider, plans, analysis, s, learned_burn_rates=rates)
             if detail:
                 lines.append(s.dim(f"    {detail}"))
 

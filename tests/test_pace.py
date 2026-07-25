@@ -138,7 +138,7 @@ def test_missing_window_minutes_uses_nominal_inferred_confidence():
     #
     # To get inferred, we'd need kind without window_minutes. Leave a note and
     # test the measured path; for inferred, temporarily set minutes=None after
-    #... cannot. Skip inferred unless we extend classify. Plan expects inferred
+    # ... cannot. Skip inferred unless we extend classify. Plan expects inferred
     # when window_minutes falsy but kind exists — impossible with current
     # classify. I'll set window_minutes to 0? 0 is falsy in Python for `or`
     # but classify(0) might return None. window_minutes=0: classify(0) is None
@@ -243,5 +243,3 @@ def test_early_window_on_pace_even_if_usage_looks_high():
         has_learned_rate=False,
     )
     assert kind == "on_pace"
-
-

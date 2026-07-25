@@ -21,9 +21,11 @@ from aiuse.models import (
     BillingKind,
     QuotaWindow,
     UsageCredits,
-    coerce_float as _f,
     keep_copilot_report_window,
     parse_dt,
+)
+from aiuse.models import (
+    coerce_float as _f,
 )
 
 from .base import CollectorError, run_json, which
@@ -109,8 +111,7 @@ def collect_openusage(
     errors = payload.get("errors") or []
     if errors and accounts:
         err_note = "OpenUsage errors: " + "; ".join(
-            f"{e.get('providerId', '?')}: {e.get('message', e)}" if isinstance(e, dict) else str(e)
-            for e in errors[:8]
+            f"{e.get('providerId', '?')}: {e.get('message', e)}" if isinstance(e, dict) else str(e) for e in errors[:8]
         )
         accounts[0].notes = list(accounts[0].notes) + [err_note]
 
@@ -318,9 +319,7 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         )
 
     # Billing classification
-    if provider in _PREPAID_PROVIDERS and balance_usd is not None and not any(
-        w.resets_at is not None for w in windows
-    ):
+    if provider in _PREPAID_PROVIDERS and balance_usd is not None and not any(w.resets_at is not None for w in windows):
         billing = BillingKind.PREPAID_BALANCE
     elif windows and any(w.resets_at is not None for w in windows):
         billing = BillingKind.SUBSCRIPTION_WINDOW

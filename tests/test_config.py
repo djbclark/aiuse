@@ -121,14 +121,17 @@ def test_ensure_config_dir_creates_nested_levels(monkeypatch, tmp_path):
 def test_validate_config_clean_defaults():
     # Empty dict is fine (defaults not required for validation of known keys)
     assert validate_config({}) == []
-    assert validate_config(
-        {
-            "timeouts": {"default": 45},
-            "collectors": {"cswap": {"enabled": True}},
-            "analysis": {"scoring_mode": "pace"},
-            "plans": {"claude": {"monthly_price": 20}},
-        }
-    ) == []
+    assert (
+        validate_config(
+            {
+                "timeouts": {"default": 45},
+                "collectors": {"cswap": {"enabled": True}},
+                "analysis": {"scoring_mode": "pace"},
+                "plans": {"claude": {"monthly_price": 20}},
+            }
+        )
+        == []
+    )
 
 
 def test_validate_config_unknown_and_bad_timeouts():

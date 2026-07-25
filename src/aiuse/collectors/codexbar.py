@@ -84,7 +84,9 @@ def collect_codexbar(
         # Discover the actual enabled-provider list ourselves so each can be
         # queried as its own concurrent subprocess, instead of asking CodexBar
         # for "enabled providers" in one call that it resolves serially.
-        discovered = _discover_enabled_providers(timeout=discovery_timeout if discovery_timeout is not None else timeout)
+        discovered = _discover_enabled_providers(
+            timeout=discovery_timeout if discovery_timeout is not None else timeout
+        )
         if discovered:
             provider_list = discovered
 
@@ -340,10 +342,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     used_percent=(cost_used / cost_limit) * 100.0,
                     resets_at=parse_dt(provider_cost.get("resetsAt")),
                 )
-                notes.append(
-                    f"On-demand: ${cost_used:.2f} of ${cost_limit:.2f} "
-                    f"({remaining:.2f} remaining)."
-                )
+                notes.append(f"On-demand: ${cost_used:.2f} of ${cost_limit:.2f} ({remaining:.2f} remaining).")
     reset_credits = usage.get("codexResetCredits")
     if isinstance(reset_credits, dict) and reset_credits.get("availableCount") is not None:
         notes.append(f"Codex limit-reset credits available: {reset_credits['availableCount']}.")
@@ -367,9 +366,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                 balance_usd = float(match.group(1))
                 # Never flip subscription windows (with resets) to prepaid just
                 # because a "$" figure appears in a description string.
-                if billing == BillingKind.UNKNOWN and not any(
-                    window.resets_at is not None for window in windows
-                ):
+                if billing == BillingKind.UNKNOWN and not any(window.resets_at is not None for window in windows):
                     billing = BillingKind.PREPAID_BALANCE
 
     return AccountUsage(

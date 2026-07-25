@@ -13,7 +13,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     utcnow,
 )
-from aiuse.serve import _ServeState, _payload_from_disk_row
+from aiuse.serve import _payload_from_disk_row, _ServeState
 
 
 def test_payload_from_disk_row_picks_suggestion():
@@ -94,7 +94,7 @@ def test_serve_state_live_collect(monkeypatch):
 
 
 def test_http_handler_health(monkeypatch):
-    from aiuse.serve import DEFAULT_HOST, run_serve
+    from aiuse.serve import DEFAULT_HOST
 
     # Smoke: import path and host guard
     assert DEFAULT_HOST == "127.0.0.1"

@@ -236,17 +236,13 @@ def test_late_cycle_and_history_insights(tmp_path: Path):
         assert late[0]["duration_kind"] == "weekly"
         assert late[0]["avg_remaining_pct"] == pytest.approx(67.5, abs=0.1)
 
-        insights = history_insights(
-            snap, analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90}
-        )
+        insights = history_insights(snap, analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90})
         assert insights["learning_active"] is True
         assert insights["snapshot_count"] >= 2
         assert insights["usually_left_late_cycle"]
         assert insights["burn_candidates_from_history"]
 
-        lines = history_section_lines(
-            snap, analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90}
-        )
+        lines = history_section_lines(snap, analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90})
         joined = "\n".join(lines)
         assert "Usually left late" in joined
         assert "History suggests burning" in joined

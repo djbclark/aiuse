@@ -93,8 +93,14 @@ def test_ignores_short_5h_window():
     )
     alerts = analyze_use_or_lose(
         snap,
-        {"analysis": {
-                "learn_from_history": False,"scoring_mode": "legacy", "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
+        {
+            "analysis": {
+                "learn_from_history": False,
+                "scoring_mode": "legacy",
+                "use_multi_dim_scoring": False,
+                "min_remaining_percent": 40,
+            }
+        },
     )
     assert not any(a.window_label == "5-hour" for a in alerts)
 
@@ -167,8 +173,14 @@ def test_well_used_window_not_flagged():
     )
     alerts = analyze_use_or_lose(
         snap,
-        {"analysis": {
-                "learn_from_history": False,"scoring_mode": "legacy", "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
+        {
+            "analysis": {
+                "learn_from_history": False,
+                "scoring_mode": "legacy",
+                "use_multi_dim_scoring": False,
+                "min_remaining_percent": 40,
+            }
+        },
     )
     assert alerts == []
 
@@ -254,8 +266,7 @@ def test_alert_has_no_dollar_value_estimate():
     alert = analyze_use_or_lose(
         snap,
         {
-            "analysis": {
-                "learn_from_history": False,"scoring_mode": "legacy", "use_multi_dim_scoring": False},
+            "analysis": {"learn_from_history": False, "scoring_mode": "legacy", "use_multi_dim_scoring": False},
             "plans": {"codex": {"name": "Codex Plus", "monthly_usd": 20}},
         },
     )[0]
@@ -497,12 +508,8 @@ def test_value_urgency_normalized_to_own_plan_not_global_max():
         value_at_risk_usd=15.0,  # 50% of $30
     )
     cfg = {"plans": {"a": {"monthly_price": 10}, "b": {"monthly_price": 30}}}
-    _, score_cheap = _score_multi_dimension(
-        profile=cheap, remaining=50.0, days=5.0, config=cfg, monthly_price=10.0
-    )
-    _, score_exp = _score_multi_dimension(
-        profile=expensive, remaining=50.0, days=5.0, config=cfg, monthly_price=30.0
-    )
+    _, score_cheap = _score_multi_dimension(profile=cheap, remaining=50.0, days=5.0, config=cfg, monthly_price=10.0)
+    _, score_exp = _score_multi_dimension(profile=expensive, remaining=50.0, days=5.0, config=cfg, monthly_price=30.0)
     # Same relative value urgency + same other terms → equal composite scores
     assert score_cheap == pytest.approx(score_exp, abs=0.01)
 
@@ -765,7 +772,6 @@ def test_pace_mode_burn_weekly():
     alerts = analyze_use_or_lose(snap, _pace_cfg())
     assert len(alerts) == 1
     assert alerts[0].kind == "burn"
-
 
 
 def test_cursor_shared_allotment_scores_included_not_exhausted_api():
@@ -1087,8 +1093,7 @@ def test_legacy_mode_via_use_multi_dim_false():
     )
     alerts = analyze_use_or_lose(
         snap,
-        {"analysis": {
-                "learn_from_history": False,"use_multi_dim_scoring": False, "min_remaining_percent": 40}},
+        {"analysis": {"learn_from_history": False, "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
     )
     assert len(alerts) >= 1
     assert all(a.kind == "burn" for a in alerts)  # default kind; no pace path
