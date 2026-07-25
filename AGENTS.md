@@ -103,6 +103,7 @@ install steps, CLI flags, and config. Install helpers:
 | `docs/handoff.md`                            | Latest session wrap-up, loose ends, verify commands.                                     | First stop after this file when resuming.                        |
 | `docs/fix-implementation-plan.md`            | Review-derived task list (Steps 1–32 + Phase 7 optional 33–35). **1–32 and 34 done.**    | Historical scope / remaining optional steps only.                |
 | `docs/json-contract.md`                      | Stable `aiuse --json` fields and exit codes for scripts.                                 | Cron / automation consumers.                                     |
+| `docs/companion-stack.md`                    | Ambient menu-bar tools + `aiuse status` / `prompt` one-liner.                            | Shell prompt / status bar integration.                           |
 | `docs/scheduling.md`                         | macOS LaunchAgent hourly (`persist_snapshots`).                                          | Installing scheduled collection.                                 |
 | `docs/history-learning.md`                   | Snapshot persist vs `learn_from_history`; `--full` history line.                         | Enabling / debugging history insights.                           |
 | `docs/collector-concurrency.md`              | How collectors run in parallel and timeout (45s).                                        | Perf / hang questions.                                           |

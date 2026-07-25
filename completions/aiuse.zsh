@@ -12,6 +12,7 @@ _aiuse() {
     '--show-config-path[print default config paths]'
     '--generate-config[write default config files]'
     '--doctor[environment check (also: aiuse doctor)]'
+    '--status[one-line status for prompts (also: aiuse status / prompt)]'
     '--print-completion[print shell completion]:shell:(bash zsh)'
     '(-t --timeout)'{-t,--timeout}'[force tool timeout seconds]:seconds'
     '--format[output format]:format:(pretty json)'
@@ -31,6 +32,8 @@ _aiuse() {
     '--save[write JSON snapshot]:path:_files'
     '--traditional-summary[legacy flat summary]'
     'doctor:environment check'
+    'status:one-line status for prompts/status bars'
+    'prompt:synonym of status'
   )
   _arguments -s -S $opts
 }

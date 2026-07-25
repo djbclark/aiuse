@@ -29,7 +29,7 @@ from aiuse.config import (
     validate_config,
 )
 from aiuse.models import Snapshot, Urgency, UseOrLoseAlert, provider_display_name
-from aiuse.report import render_report, render_stderr_meta
+from aiuse.report import render_report, render_status_line, render_stderr_meta
 
 # External CLIs this project shells out to (must already be installed/auth'd).
 # Version argv is a light probe only (no usage/auth API).
@@ -54,6 +54,7 @@ config & setup:
   aiuse --generate-config     write defaults under ~/.config/aiuse/ (never overwrites)
   aiuse --show-config-path    print services.yaml and config.toml paths
   aiuse doctor                PATH tools, version probe, config validation, timeouts
+  aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
   aiuse -q / --quiet          no progress on stderr (JSON stdout stays clean either way)
@@ -108,6 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Check tools on PATH (plus light --version probe), config validation, "
             "and timeouts; no usage collection (also: aiuse doctor)"
+        ),
+    )
+    p.add_argument(
+        "--status",
+        action="store_true",
+        help=(
+            "Print one-line status for prompts/status bars and exit "
+            "(also: aiuse status / aiuse prompt)"
         ),
     )
     p.add_argument(
@@ -229,15 +238,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _normalize_argv(argv: list[str] | None) -> list[str] | None:
-    """Allow ``aiuse doctor`` as a synonym for ``aiuse --doctor``."""
+    """Allow bare subcommand synonyms (``doctor``, ``status``, ``prompt``, …)."""
     if argv is None:
         # Mutate a copy of sys.argv[1:] so argparse still sees full process argv
         # only through parse_args; we pass an explicit list instead.
         raw = sys.argv[1:]
     else:
         raw = list(argv)
-    if raw and raw[0] == "doctor":
+    if not raw:
+        return raw if argv is not None else raw
+    head = raw[0]
+    if head == "doctor":
         return ["--doctor", *raw[1:]]
+    if head in ("status", "prompt"):
+        return ["--status", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -257,7 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     _apply_cli_overrides(config, args)
 
     as_json = bool(args.json) or args.format == "json"
-    quiet = bool(args.quiet)
+    status_mode = bool(getattr(args, "status", False))
+    quiet = bool(args.quiet) or status_mode
 
     def _progress(msg: str) -> None:
         if not quiet:
@@ -293,6 +308,10 @@ def main(argv: list[str] | None = None) -> int:
         _progress(f"Wrote {path}")
 
     exit_code = collect_exit_code(snapshot, alerts)
+
+    if status_mode:
+        print(render_status_line(snapshot, alerts))
+        return exit_code
 
     if as_json:
         if args.alerts_only:

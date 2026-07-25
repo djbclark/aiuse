@@ -49,6 +49,32 @@ def test_doctor_subcommand_synonym(monkeypatch, tmp_path, capsys):
     assert "aiuse doctor" in capsys.readouterr().out
 
 
+def test_status_subcommand_prints_one_line(monkeypatch, capsys):
+    from aiuse.models import AccountUsage, BillingKind, Snapshot, utcnow
+
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            )
+        ],
+    )
+    monkeypatch.setattr(cli, "run_collectors", lambda _c: snap)
+    monkeypatch.setattr(cli, "analyze_use_or_lose", lambda _s, _c: [])
+    monkeypatch.setattr(cli, "should_persist_snapshots", lambda _c: False)
+    assert cli.main(["status", "-q"]) == 0
+    out = capsys.readouterr().out.strip()
+    assert "\n" not in out
+    assert out.startswith("ok:")
+
+    assert cli.main(["prompt", "-q"]) == 0
+    out2 = capsys.readouterr().out.strip()
+    assert out2.startswith("ok:")
+
+
 def test_doctor_missing_enabled_tool_exits_1(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 

@@ -401,6 +401,59 @@ def _pick_representative_window(windows: list[QuotaWindow]) -> QuotaWindow | Non
     return usable[0]
 
 
+def render_status_line(
+    snapshot: Snapshot,
+    alerts: list[UseOrLoseAlert],
+    *,
+    max_width: int = 120,
+) -> str:
+    """Single-line status for shell prompts / status bars (``aiuse status``).
+
+    No ANSI; compact summary of the most urgent burn/conserve alert (if any).
+    """
+    if snapshot.collector_errors and not snapshot.accounts:
+        detail = snapshot.collector_errors[0]
+        if len(snapshot.collector_errors) > 1:
+            detail = f"{detail} (+{len(snapshot.collector_errors) - 1} more)"
+        return _clamp_display_width(f"error: {detail}", max_width)
+
+    actionable = [
+        a
+        for a in alerts
+        if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind != "prepaid"
+    ]
+    burns = [a for a in actionable if a.kind == "burn"]
+    conserves = [a for a in actionable if a.kind == "conserve"]
+
+    if not actionable:
+        n_acc = len(snapshot.accounts)
+        if n_acc == 0:
+            return _clamp_display_width("ok: no accounts (nothing to rank)", max_width)
+        return _clamp_display_width(
+            "ok: nothing urgent under current thresholds", max_width
+        )
+
+    # Highest score first (same ordering as analyze_use_or_lose).
+    top = max(actionable, key=lambda a: (a.score, a.remaining_percent))
+    name = provider_display_name(top.provider)
+    label = top.window_label
+    rem = top.remaining_percent
+    if top.kind == "conserve":
+        head = f"slow: {name} {label} {rem:.0f}%"
+    elif rem <= 0.0:
+        head = f"empty: {name} {label}"
+    else:
+        head = f"use: {name} {label} {rem:.0f}%"
+
+    bits: list[str] = [head]
+    if burns:
+        bits.append(f"{len(burns)} burn" + ("s" if len(burns) != 1 else ""))
+    if conserves:
+        bits.append(f"{len(conserves)} slow")
+    line = " · ".join(bits)
+    return _clamp_display_width(line, max_width)
+
+
 def render_priority_ladder(
     alerts: list[UseOrLoseAlert],
     *,

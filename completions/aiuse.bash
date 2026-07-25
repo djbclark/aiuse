@@ -11,12 +11,12 @@ _aiuse_completions() {
   local opts="
     --help --version
     --config -c
-    --show-config-path --generate-config --doctor --print-completion
+    --show-config-path --generate-config --doctor --status --print-completion
     -t --timeout
     --format --json --no-color --no-tui -q --quiet --alerts-only --brief --full
     --no-tokscale --no-cswap --no-codexbar
     --providers --min-remaining --max-days --save --traditional-summary
-    doctor
+    doctor status prompt
   "
 
   case "${prev}" in

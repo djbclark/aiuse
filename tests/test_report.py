@@ -22,7 +22,53 @@ from aiuse.report import (
     _Style,
     _throttled_waste_line,
     render_report,
+    render_status_line,
 )
+
+
+def test_status_line_nothing_urgent():
+    snap = Snapshot(collected_at=utcnow(), accounts=[AccountUsage(provider="codex", source="codexbar")])
+    line = render_status_line(snap, [])
+    assert line.startswith("ok:")
+    assert "nothing urgent" in line
+    assert "\n" not in line
+
+
+def test_status_line_top_burn():
+    alerts = [
+        UseOrLoseAlert(
+            urgency=Urgency.HIGH,
+            provider="claude",
+            account="a@x.com",
+            window_label="Claude Code weekly",
+            remaining_percent=91.0,
+            days_until_reset=2.0,
+            plan=None,
+            message="burn",
+            source="cswap",
+            score=80.0,
+            kind="burn",
+        ),
+        UseOrLoseAlert(
+            urgency=Urgency.MEDIUM,
+            provider="codex",
+            account=None,
+            window_label="Codex weekly",
+            remaining_percent=50.0,
+            days_until_reset=3.0,
+            plan=None,
+            message="burn2",
+            source="codexbar",
+            score=40.0,
+            kind="burn",
+        ),
+    ]
+    snap = Snapshot(collected_at=utcnow(), accounts=[])
+    line = render_status_line(snap, alerts)
+    assert line.startswith("use:")
+    assert "Claude Code weekly" in line
+    assert "91%" in line
+    assert "2 burns" in line
 
 
 def test_per_provider_accounts_are_sorted_by_display_name():
