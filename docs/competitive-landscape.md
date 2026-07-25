@@ -385,6 +385,8 @@ window, stable JSON window fields, optional use-or-lose sort modes. How to
 package those for multi-language reuse (JSON Schema, YAML enums, golden
 vectors, not a Python-only library):
 [`shared-quota-semantics.md`](shared-quota-semantics.md).
+**Implement in `aiuse` first, then open peer tickets:**
+[issue #9](https://github.com/djbclark/aiuse/issues/9).
 
 ---
 

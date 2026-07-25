@@ -2,6 +2,8 @@
 
 **Date:** 2026-07-25  
 **Status:** Design note — proposed shared surface for multi-project reuse  
+**Implement:** [djbclark/aiuse#9](https://github.com/djbclark/aiuse/issues/9)
+(in-repo package + CI dogfood first; peer outreach is the **last** step)  
 **Related:** [`competitive-landscape.md`](competitive-landscape.md),
 [`json-contract.md`](json-contract.md), in-tree models in
 [`src/aiuse/models.py`](../src/aiuse/models.py) and pace math in

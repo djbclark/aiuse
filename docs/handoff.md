@@ -33,6 +33,7 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **Packaging** | **2.1.7** PyPI + Homebrew |
 | **Feature backlog (pull ideas in)** | Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8): suggest, forecast, ambient, MCP, history, local note, health_path |
 | **Shared semantics design** | [`shared-quota-semantics.md`](shared-quota-semantics.md) — JSON Schema / YAML enums / pace formulas / golden vectors for multi-language peer reuse |
+| **Shared semantics implement** | [Issue #9](https://github.com/djbclark/aiuse/issues/9) — package + CI dogfood first; open tickets with peer apps only as the last step |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.7  
 PyPI: https://pypi.org/project/aiuse/2.1.7/
@@ -66,8 +67,8 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
 1. **Wait / poll Step 33** — cswap lastGoodUsage when #170 merges.
 2. **Product issues #2–#8** — pick one pull-into-aiuse feature (start with
    `suggest` #2 or forecast UX #3 if agents/scripts matter).
-3. **Shared semantics fixtures** — grow `docs/shared-quota-semantics/` golden
-   vectors from existing pytest rules (optional, no release required).
+3. **Shared semantics #9** — implement package (schemas/fixtures/CI); peer
+   outreach only after it works in-tree.
 4. **caut** — optional `claude auth login` if you want more Claude cross-checks;
    Codex windows need upstream caut work (see collectors-caut-openusage.md).
 5. **OpenUsage CLI install** (operator) — Settings → Command Line → Install.
