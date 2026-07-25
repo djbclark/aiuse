@@ -28,8 +28,9 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **Prepaid / n/a ladder** | Deepseek etc. non-expiring → `n/a` band (empty → n/a → slow → mid → use) |
 | **Multi-source collectors** | **caut** + **OpenUsage** enabled by default; generalized all-pairs cross-check |
 | **Site install** | site-djbclark: `just install-ai-quota-tools`, brew fragment openusage, caut via cargo |
-| **Docs** | [`collectors-caut-openusage.md`](collectors-caut-openusage.md), [`competitive-landscape.md`](competitive-landscape.md) |
-| **Packaging** | **2.1.6** PyPI + Homebrew |
+| **Docs** | [`collectors-caut-openusage.md`](collectors-caut-openusage.md); [`competitive-landscape.md`](competitive-landscape.md) refreshed for five sources |
+| **Dep installer** | [`packaging/install-deps.sh`](../packaging/install-deps.sh); `just install-deps`; site `just install-aiuse-deps` |
+| **Packaging** | **2.1.6** PyPI + Homebrew (no new PyPI/brew ship for this doc pass) |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.6  
 PyPI: https://pypi.org/project/aiuse/2.1.6/
