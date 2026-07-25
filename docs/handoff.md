@@ -35,6 +35,7 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **Shared semantics design** | [`shared-quota-semantics.md`](shared-quota-semantics.md) — JSON Schema / YAML enums / pace formulas / golden vectors for multi-language peer reuse |
 | **Shared semantics implement** | [Issue #9](https://github.com/djbclark/aiuse/issues/9) — package + CI dogfood first; open tickets with peer apps only as the last step |
 | **Public announce (operator)** | [Issue #10](https://github.com/djbclark/aiuse/issues/10) — venues (prefer non-vendor-siloed) + draft copy; do not auto-post |
+| **GitHub hygiene** | Repo description, homepage, and topics set on `djbclark/aiuse` |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.7  
 PyPI: https://pypi.org/project/aiuse/2.1.7/
@@ -43,14 +44,18 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
 
 | Item | Status | Action |
 | --- | --- | --- |
-| Working tree / push | Expect clean after 2.1.6 ship | None |
-| Tests | 219 green | None |
-| Installers | 2.1.7 on PyPI + tap | None |
+| Working tree / push | Clean; synced with `origin/main` | None |
+| Tests | **221** green | None |
+| Installers | 2.1.7 on PyPI + Homebrew tap | None |
+| GitHub repo metadata | Description + homepage + topics set | None |
 | OpenUsage CLI on PATH | Optional | Settings → Command Line → Install if desired |
 | OpenUsage.app | Must be running (or CLI installed) for that collector | `open -ga OpenUsage` |
 | LaunchAgent | Hourly persist + learn | Let it run |
-| **Step 33** | Blocked: [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170) | Wait for upstream |
+| **Step 33** / [#1](https://github.com/djbclark/aiuse/issues/1) | Blocked: [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170) | Wait for upstream |
 | **Step 35** | Parked (ccusage ≠ plan %) | Do not start unless asked |
+| Product backlog | [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8) open | Operator picks next feature |
+| Shared package | [#9](https://github.com/djbclark/aiuse/issues/9) design done; implement not started | Optional next coding track |
+| Public announce | [#10](https://github.com/djbclark/aiuse/issues/10) draft ready; not posted | Operator posts when ready |
 
 ## Operator preferences (standing)
 
