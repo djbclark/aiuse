@@ -54,13 +54,13 @@ define project conventions (order-of-magnitude only):
 | # | Hours | Norm. tok | Norm. $ | Title |
 | --- | --- | --- | --- | --- |
 | [#1](https://github.com/djbclark/aiuse/issues/1) | 1–3h after cswap#170 | ~50k–300k | ~$0.5–8 | Track upstream cswap last-good (blocked) |
-| [#2](https://github.com/djbclark/aiuse/issues/2) | 2–8h | ~0.2–2M | ~$2–40 | `suggest` — single winner |
-| [#3](https://github.com/djbclark/aiuse/issues/3) | 1–4h | ~0.1–0.8M | ~$1–15 | Louder forecast on ladder / `--full` |
-| [#4](https://github.com/djbclark/aiuse/issues/4) | 1–4h | ~50k–0.5M | ~$0.5–10 | Companion stack docs + one-line status |
+| [#2](https://github.com/djbclark/aiuse/issues/2) | 2–8h | ~0.2–2M | ~$2–40 | **done** `suggest` — single winner |
+| [#3](https://github.com/djbclark/aiuse/issues/3) | 1–4h | ~0.1–0.8M | ~$1–15 | **done** Louder forecast on ladder / `--full` |
+| [#4](https://github.com/djbclark/aiuse/issues/4) | 1–4h | ~50k–0.5M | ~$0.5–10 | **done** Companion stack docs + one-line status |
 | [#5](https://github.com/djbclark/aiuse/issues/5) | 8–24h | ~1–8M | ~$10–150 | MCP / loopback query surface |
 | [#6](https://github.com/djbclark/aiuse/issues/6) | 4–16h | ~0.5–4M | ~$5–80 | Deeper History |
-| [#7](https://github.com/djbclark/aiuse/issues/7) | 1–4h | ~0.1–0.6M | ~$1–12 | Local runtime fallback note |
-| [#8](https://github.com/djbclark/aiuse/issues/8) | 1–4h | ~0.1–0.6M | ~$1–12 | `health_path` / probe overrides |
+| [#7](https://github.com/djbclark/aiuse/issues/7) | 1–4h | ~0.1–0.6M | ~$1–12 | **done** Local runtime fallback note |
+| [#8](https://github.com/djbclark/aiuse/issues/8) | 1–4h | ~0.1–0.6M | ~$1–12 | **done** `health_path` / probe overrides |
 | [#9](https://github.com/djbclark/aiuse/issues/9) | 16–40h | ~2–15M | ~$20–300 | Shared quota-semantics package |
 | [#10](https://github.com/djbclark/aiuse/issues/10) | 0.5–2h | ~10k–100k | ~$0–2 | Announce (operator; not product code) |
 | **GitHub hygiene** | Repo description, homepage, and topics set on `djbclark/aiuse` |
