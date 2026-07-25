@@ -16,8 +16,9 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
    (OpenUsage may be “CLI missing; HTTP :6736 responding”).
 3. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status`
    — expect `com.djbclark.aiuse` loaded ([`scheduling.md`](scheduling.md)).
-4. Quota tools: `just -f ~/ops/site-djbclark/justfile ai-quota-status`
-   (caut + OpenUsage.app; optional CLI install from OpenUsage Settings).
+4. Data sources: `./packaging/install-deps.sh --check` or
+   `just -f ~/ops/site-djbclark/justfile aiuse-deps-status`
+   (cswap, codexbar, caut, OpenUsage, tokscale).
 
 ## Done this stretch (2026-07-25)
 
@@ -49,8 +50,8 @@ PyPI: https://pypi.org/project/aiuse/2.1.6/
 ## Operator preferences (standing)
 
 - Commit early/often; push after every commit.
-- Do not install/configure cswap / codexbar / tokscale *in aiuse code* (PATH tools only).
-- caut / OpenUsage are PATH/loopback collectors — site install is site-djbclark.
+- Do not install/configure external collectors *inside* aiuse feature PRs;
+  operators use `packaging/install-deps.sh` or site `just install-aiuse-deps`.
 - Do not use ccusage as plan 5h/7d authority.
 - Open-ended “what next?” → **do not restart fix plan at Step 1**.
 - Scheduled agents → **site-djbclark** `site_agents`.

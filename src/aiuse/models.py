@@ -260,7 +260,7 @@ class UsageCredits:
 class AccountUsage:
     """Normalized usage for one provider account."""
 
-    source: str  # cswap | codexbar | tokscale
+    source: str  # cswap | codexbar | caut | openusage | tokscale
     provider: str
     account: str | None = None
     plan: str | None = None

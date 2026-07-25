@@ -3,8 +3,21 @@
 Distribution name / CLI: **`aiuse`**. Compatibility console script **`ai`**
 calls the same entrypoint (`aiuse.ai_stub:main`).
 
-External tools (`cswap`, `codexbar`, `tokscale`) stay separate PATH installs —
-this package only ships the aggregator CLI.
+External data sources stay separate installs (this package only ships the
+aggregator CLI). Install all five with:
+
+```bash
+./packaging/install-deps.sh
+# or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
+```
+
+| Tool | Typical install |
+| --- | --- |
+| **cswap** | `uv tool install claude-swap` |
+| **codexbar** | `brew install --cask codexbar` |
+| **caut** | `cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker` |
+| **openusage** | `brew install --cask openusage` (+ optional CLI from app Settings; or leave app running for `:6736`) |
+| **tokscale** | PATH shim via `npx tokscale@latest` (created by `install-deps.sh`) |
 
 ## Status
 

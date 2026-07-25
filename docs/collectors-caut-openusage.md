@@ -16,14 +16,26 @@
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**
 
-## Machine install (this operator: site-djbclark)
+## Machine install
 
-From `~/ops/site-djbclark`:
+**All five aiuse data sources** (cswap, CodexBar, caut, OpenUsage, tokscale):
 
 ```bash
-just install-ai-quota-tools   # OpenUsage cask + caut via cargo
-just ai-quota-status
+# From an aiuse checkout:
+./packaging/install-deps.sh
+./packaging/install-deps.sh --check
+
+# From site-djbclark (preferred on this Mac):
+just install-aiuse-deps
+just aiuse-deps-status
 just brew-project            # claim openusage cask in Merged-Brewfile
+```
+
+**caut + OpenUsage only** (subset):
+
+```bash
+just install-ai-quota-tools
+just ai-quota-status
 ```
 
 ### caut

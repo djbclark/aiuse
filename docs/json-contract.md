@@ -53,7 +53,7 @@ Cross-check notes alone never set exit code 2.
 
 | Field               | Type              | Stable?                                                               |
 | ------------------- | ----------------- | --------------------------------------------------------------------- |
-| `source`            | string            | yes — `cswap` \| `codexbar` \| `tokscale`                             |
+| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage` \| `tokscale`   |
 | `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)            |
 | `account`           | string \| null    | email or label when known                                             |
 | `plan`              | string \| null    | plan name if reported                                                 |

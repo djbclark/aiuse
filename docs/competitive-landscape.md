@@ -19,10 +19,13 @@ to depend on it.
 
 It:
 
-1. **Collects** live allotments by shelling out to tools already on `PATH`
-   ([cswap](https://github.com/realiti4/claude-swap),
+1. **Collects** live allotments from five sources on `PATH` / loopback:
+   [cswap](https://github.com/realiti4/claude-swap),
    [CodexBar](https://codexbar.app/),
-   [tokscale](https://github.com/junhoyeo/tokscale)).
+   [caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker),
+   [OpenUsage](https://www.openusage.ai/),
+   [tokscale](https://github.com/junhoyeo/tokscale)
+   (`packaging/install-deps.sh` installs them).
 2. **Classifies** windows as burn / conserve / on-pace (pace scoring) and treats
    non-expiring prepaid / pay-as-you-go as inventory (`n/a`), not use-or-lose.
 3. **Ranks** every account into a single **priority ladder** for a human reading
@@ -49,8 +52,8 @@ Most tools stop at **Layer 1**. Few reach **Layer 2**.
 | **2. Decide** | *Which* pool / account should get the next work? | Ranked recommendations, routing advice, burn/conserve |
 
 `aiuse` is intentionally a **Layer 2 thin aggregator** on top of Layer 1 collectors
-(CodexBar / cswap / tokscale). Competitors that also scrape or own adapters still
-usually ship only Layer 1 UX.
+(cswap / CodexBar / caut / OpenUsage / tokscale). Competitors that also scrape or
+own adapters still usually ship only Layer 1 UX.
 
 A readable Mac-oriented Layer 1 survey:
 [AI Token Usage Monitors for macOS](https://denshub.com/en/ai-token-usage-monitors-macos/)
@@ -356,8 +359,9 @@ Add a collector only if **all** of the following hold:
 **Update (2026-07-25):** **caut** and **OpenUsage** are now **default collectors**
 for multi-source cross-checks (operator preference: correctness over runtime).
 See [`collectors-caut-openusage.md`](collectors-caut-openusage.md) and site
-`just install-ai-quota-tools`. Selection still prefers cswap/CodexBar/tokscale as
-before; peers contribute independent measurements.
+`just install-aiuse-deps` / `./packaging/install-deps.sh`. Selection still prefers
+cswap (Claude) / CodexBar (default) / tokscale (Copilot); caut and OpenUsage
+contribute independent measurements and fill-in.
 
 | Priority | Candidate | Role |
 | -------- | --------- | ---- |

@@ -406,7 +406,8 @@ def _default_toml_text() -> str:
         "# Both are optional; built-in defaults apply when a file is missing.\n"
         "\n"
         "[timeouts]\n"
-        "# Wall-clock seconds for every external CLI (cswap, codexbar, tokscale).\n"
+        "# Wall-clock seconds for every external data source\n"
+        "# (cswap, codexbar, caut, openusage, tokscale).\n"
         "# Tools either return quickly or hang — long budgets only delay failure.\n"
         f"default = {DEFAULT_SUBPROCESS_TIMEOUT:g}\n"
         "\n"
@@ -414,9 +415,12 @@ def _default_toml_text() -> str:
         "# cswap = 45\n"
         "# codexbar = 45\n"
         "# codexbar_discovery = 45   # `codexbar config providers` (local, usually ms)\n"
+        "# caut = 45\n"
+        "# openusage = 45\n"
         "# tokscale = 45\n"
         "\n"
         "# CLI `--timeout` / `-t` overrides every tool for that run.\n"
+        "# Install tools: packaging/install-deps.sh\n"
     )
 
 

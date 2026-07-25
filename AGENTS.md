@@ -88,9 +88,11 @@ project knowledge in **their own** repo.
 
 `aiuse` is a CLI that aggregates live AI-subscription quota data (Claude, Codex,
 Copilot, Grok, Gemini/Antigravity, OpenCode Go, prepaid balances, …) from
-three external tools already on `PATH` (`cswap`, `CodexBar`, `tokscale`), then
-tells the user what to burn before it resets unused. See `README.md` for the
-full description, install steps, CLI flags, and config.
+**five external data sources** (`cswap`, `CodexBar`, `caut`, `OpenUsage`,
+`tokscale` — PATH tools and/or OpenUsage loopback HTTP), then tells the user
+what to burn before it resets unused. See `README.md` for the full description,
+install steps, CLI flags, and config. Install helpers:
+`packaging/install-deps.sh` and site `just install-aiuse-deps`.
 
 ## Where things live
 
@@ -140,9 +142,11 @@ full description, install steps, CLI flags, and config.
 
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
 - Run tests with `.venv/bin/python -m pytest -q` (currently 200+ passing).
-- This repo shells out to three external tools that must already be
-  installed/authenticated (`cswap`, `codexbar`, `tokscale`) — do not attempt
-  to install, configure, or authenticate them as part of a code change.
+- This repo shells out to external tools that must already be
+  installed/authenticated (`cswap`, `codexbar`, `caut`, `openusage` and/or
+  OpenUsage.app, `tokscale`) — do not attempt to install, configure, or
+  authenticate them as part of a normal feature change. Operators install via
+  `packaging/install-deps.sh` or site `just install-aiuse-deps`.
 - **Commit early and often; push after every commit.** Prefer a commit at any
   opportune moment (green tests after a coherent change, end of a plan step,
   finished investigation docs) over holding a large uncommitted pile. More

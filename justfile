@@ -2,6 +2,14 @@
 
 set shell := ["bash", "-uc"]
 
+# Install external data-source tools (cswap, codexbar, caut, OpenUsage, tokscale).
+install-deps:
+    ./packaging/install-deps.sh
+
+# Report missing data-source tools (exit 1 if any missing).
+install-deps-check:
+    ./packaging/install-deps.sh --check
+
 # Run the Python test suite.
 test:
     uv run --extra dev pytest

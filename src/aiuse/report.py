@@ -630,7 +630,10 @@ def _tips_lines(s: _Style) -> list[str]:
     return [
         s.dim("  • Unused subscription windows expire at reset — burn on real work."),
         s.dim("  • Prepaid API balances usually roll; no rush unless a promo expires."),
-        s.dim("  • Claude multi-account: cswap is canonical (CodexBar/tokscale ≈ active session)."),
+        s.dim(
+            "  • Claude multi-account: cswap is canonical "
+            "(CodexBar/caut/OpenUsage/tokscale ≈ active session)."
+        ),
         s.dim("  • Re-run: ai · JSON: ai --json · quiet: ai -q · setup: ai doctor · ai --help"),
     ]
 
@@ -1234,6 +1237,8 @@ def _source_description(source: str) -> str:
     return {
         "cswap": "canonical source: cswap",
         "codexbar": "selected live source: CodexBar",
+        "caut": "selected live source: caut",
+        "openusage": "selected live source: OpenUsage",
         "tokscale": "selected live source: tokscale",
     }.get(source, f"source: {source}")
 

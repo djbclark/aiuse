@@ -19,8 +19,8 @@ class Aiuse < Formula
 
   def caveats
     <<~EOS
-      Preferred PATH tools: cswap, codexbar, tokscale; optional caut + OpenUsage
-      for multi-source cross-checks. Config lives under ~/.config/aiuse/.
+      Data sources (install via packaging/install-deps.sh): cswap, codexbar,
+      caut, OpenUsage (app and/or CLI), tokscale. Config: ~/.config/aiuse/.
     EOS
   end
 

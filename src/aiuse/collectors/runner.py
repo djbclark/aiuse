@@ -673,6 +673,10 @@ def _source_name(source: str) -> str:
     return SOURCE_LABELS.get(source, source)
 
 
+# Re-export for docs / install scripts that want a single inventory.
+ALL_DATA_SOURCES: tuple[str, ...] = ("cswap", "codexbar", "caut", "openusage", "tokscale")
+
+
 def collector_tools_present() -> dict[str, bool]:
     """PATH presence for doctor / diagnostics."""
     return {

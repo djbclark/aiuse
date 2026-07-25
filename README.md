@@ -84,7 +84,7 @@ cp config/config.example.toml "${XDG_CONFIG_HOME:-$HOME/.config}/aiuse/config.to
 Run `aiuse --show-config-path` to print both paths. `aiuse --generate-config` creates
 missing parent dirs (`~/.config`, `~/.config/aiuse`) and writes defaults; if a file
 already exists it is left alone and reported on stderr. Provider credentials stay
-with cswap, CodexBar, and tokscale — these files do not hold tokens or emails.
+with cswap, CodexBar, caut, OpenUsage, and tokscale — these files do not hold tokens or emails.
 
 ## Daily workflow
 
@@ -92,6 +92,9 @@ with cswap, CodexBar, and tokscale — these files do not hold tokens or emails.
 # Once: create defaults under ~/.config/aiuse/ (never overwrites)
 aiuse --generate-config
 aiuse doctor                 # PATH tools + config presence + timeouts
+# Once per machine: install data-source tools (cswap, codexbar, caut, OpenUsage, tokscale)
+./packaging/install-deps.sh
+# or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
 
 # Morning / before a long coding block
 aiuse                        # priority ladder on stdout (use-soon at bottom); meta on stderr
@@ -159,7 +162,7 @@ aiuse --doctor
 | `--alerts-only`                                  | Recommendations only (respects pretty vs json)                                   |
 | `--traditional-summary`                          | Legacy flat summary format instead of unified action plan                        |
 | `--print-completion bash\|zsh`                   | Print shell completion script to stdout                                          |
-| `--no-tokscale` / `--no-cswap` / `--no-codexbar` | Skip specific collectors                                                         |
+| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage` | Skip specific collectors                                          |
 | `--providers copilot,grok`                       | Query specific CodexBar providers (CSV, one per subprocess)                      |
 | `-t` / `--timeout SECONDS`                       | Force subprocess timeout for all external tools (default **45**)                 |
 | `--generate-config`                              | Write default `~/.config/aiuse/*` files; never overwrites existing               |
@@ -177,9 +180,10 @@ aiuse --doctor
 | **2** | Collect succeeded and at least one **burn** or **conserve** alert is present. Cross-check disagreements alone do **not** set 2. Bad `--timeout` values also use 2.                                                                 |
 
 `aiuse doctor` checks config file presence, **config validation** (unknown keys, bad
-timeouts, dead plan aliases), tools on `PATH`, and a light **version probe**
-(`cswap --version`, `codexbar -V`, `tokscale --version`). It does **not** call
-usage APIs or verify login sessions.
+timeouts, dead plan aliases), all five data-source tools on `PATH` (and OpenUsage
+loopback HTTP when the CLI is missing), and a light **version probe**
+(`cswap --version`, `codexbar -V`, `caut --version`, `tokscale --version`). It does
+**not** call usage APIs or verify login sessions.
 
 ## What “use it or lose it” means
 
@@ -187,13 +191,13 @@ Most **subscription** coding plans (Claude Pro/Max, ChatGPT Plus/Codex, Cursor, 
 
 This tool:
 
-1. Pulls **remaining %** and **reset times** from cswap for each distinct Claude Code account and from CodexBar/tokscale for other providers.
+1. Pulls **remaining %** and **reset times** from **cswap** (Claude multi-account), **CodexBar** (broad live quotas), **caut** and **OpenUsage** (cross-check peers / fill-in), and **tokscale** (independent measurement; preferred for Copilot).
 2. Scores windows with **pace-based** logic (default): compare how far through the cycle you are vs how much you've used, then project waste or early lockout.
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from.
 5. Default pretty output is a **priority ladder** on stdout (depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
 6. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last).
-7. Cross-checks overlapping sources; Claude multi-account stays canonical in cswap (with cache hydrate + fallbacks).
+7. Cross-checks **all live sources** pairwise; Claude multi-account stays canonical in cswap (with cache hydrate + fallbacks).
 
 This command intentionally does not report historical local-token usage or
 API-equivalent cost estimates.
@@ -238,7 +242,7 @@ Codex · account=you@example.com · plan=plus · selected live source: CodexBar
 ```
 src/aiuse/
   cli.py                 # entrypoint
-  collectors/            # cswap, codexbar, tokscale
+  collectors/            # cswap, codexbar, caut, openusage, tokscale
   analysis/use_or_lose.py
   report.py
 config/services.example.yaml
@@ -279,7 +283,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.
-- cswap, CodexBar, and tokscale run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s** (`-t` / `config.toml [timeouts]`).
+- All enabled collectors (cswap, CodexBar, caut, OpenUsage, tokscale) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s** (`-t` / `config.toml [timeouts]`).
 - Per-window detail still shows $ value, flexibility class, and a **pace** ratio when computable.
 - Duplicate live measurements are retained for cross-checking but only one copy drives recommendations.
 - Dollar values use plan `monthly_price` with waking-hours correction (default 16h/day).
@@ -295,6 +299,8 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/cursor-quota.md`](docs/cursor-quota.md) — Cursor Included/Auto/API + on-demand vs CodexBar slots.
 - [`docs/pretty-display.md`](docs/pretty-display.md) — why pretty output uses Rich (not Textual / not Rich `Layout`) so the full report stays in scrollback.
 - [`docs/packaging.md`](docs/packaging.md) — pipx / PyPI / Homebrew; Trusted Publishing (OIDC) release flow.
+- [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all five data-source tools (cswap, CodexBar, caut, OpenUsage, tokscale).
+- [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md) — caut + OpenUsage setup and cross-check priority.
 - [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?”.
 - [`docs/scheduling.md`](docs/scheduling.md) — LaunchAgent hourly (`persist_snapshots`).
 - [`docs/history-learning.md`](docs/history-learning.md) — snapshot history vs `learn_from_history`.
