@@ -48,9 +48,18 @@ normal collect run (0 / 1 / 2).
 
 ## What not to expect from `aiuse`
 
-- No Swift/macOS menu-bar binary
-- No request routing / proxy (stay Layer 2)
+- No Swift/macOS menu-bar binary (`status` is a **pull** one-liner, not a widget)
+- No request routing / proxy / LiteLLM leases (stay Layer 2; use `suggest` / `serve` for ranked advice only)
 - Ambient % for a single provider is better in CodexBar/OpenUsage
+- Full history charts / anomaly BI — use onWatch-class tools; `aiuse` History is operational
+
+## Related product surfaces (shipped)
+
+| Command | Doc |
+| --- | --- |
+| `aiuse suggest` | Single burn winner; JSON field in [`json-contract.md`](json-contract.md) |
+| `aiuse serve` | Loopback HTTP [`agent-api.md`](agent-api.md) |
+| `aiuse --full` History | [`history-learning.md`](history-learning.md) |
 
 ## Related
 

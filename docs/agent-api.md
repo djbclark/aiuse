@@ -1,8 +1,9 @@
 # Agent API (loopback HTTP)
 
-**Issue #5 (MVP):** `aiuse serve` exposes read-only ranking JSON on
+**Issue #5 (MVP, shipped):** `aiuse serve` exposes read-only ranking JSON on
 **127.0.0.1 only** for multi-step agents. It is not a model proxy and does not
-emit credentials.
+emit credentials. Full MCP stdio remains an optional follow-up if agents need
+native MCP (see [`handoff.md`](handoff.md)).
 
 ## Start
 

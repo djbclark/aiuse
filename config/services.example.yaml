@@ -72,6 +72,17 @@ analysis:
         refill_capacity_unit: "requests"
         refill_capacity: 100
 
+  # Optional: TCP probes for local LLM runtimes (advisory INFO only; never ranked).
+  # Off by default. When enabled and when=empty, fires only if cloud rows look empty.
+  # local_runtimes:
+  #   enabled: false
+  #   when: empty   # empty | always
+  #   probe_timeout_seconds: 0.35
+  #   allow_non_loopback: false
+  #   endpoints:
+  #     - { name: Ollama, host: "127.0.0.1", port: 11434 }
+  #     - { name: LM Studio, host: "127.0.0.1", port: 1234 }
+
 # Plan metadata for value-at-risk and display context.
 plans:
   codex:

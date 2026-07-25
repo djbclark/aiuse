@@ -99,17 +99,22 @@ aiuse doctor                 # PATH tools + config presence + timeouts
 
 # Morning / before a long coding block
 aiuse                        # priority ladder on stdout (use-soon at bottom); meta on stderr
-aiuse --full                 # long report: per-provider, tips, detailed plan
+aiuse --full                 # long report: per-provider, tips, History, detailed plan
 aiuse --brief                # same as default (compat alias)
 aiuse --no-tui               # classic plain-text report (also used when piping)
 aiuse -q                     # ladder only (no stderr meta / Collecting…)
+aiuse suggest                # single best burn pool (or “nothing urgent”)
+aiuse status                 # one line for shell prompts / status bars
+aiuse prompt                 # synonym of status
 
-# Scripting / cron (JSON on stdout; use exit codes)
+# Scripting / cron / agents (JSON on stdout; use exit codes)
 aiuse -q --json
+aiuse suggest --json         # includes top-level suggestion
 # exit 0 = ok, no burn/conserve alerts
 # exit 1 = hard failure (collectors failed, no accounts)
 # exit 2 = success with at least one burn/conserve alert
 # field contract: docs/json-contract.md
+# loopback HTTP for multi-step agents: aiuse serve  (docs/agent-api.md)
 
 # Shell completion (bash or zsh)
 eval "$(aiuse --print-completion bash)"
@@ -135,7 +140,14 @@ PYTHONPATH=src python -m ai
 aiuse --json
 aiuse --format json
 aiuse --json --alerts-only
+aiuse suggest --json
 aiuse --save ~/tmp/ai-snapshot.json   # also write JSON file
+
+# Decision helpers
+aiuse suggest              # single best burn pool
+aiuse status               # one line for prompts / status bars
+aiuse prompt               # synonym of status
+aiuse serve                # loopback HTTP for agents (docs/agent-api.md)
 
 # Faster / partial
 aiuse --providers copilot,grok,codex   # query these separately
@@ -154,13 +166,17 @@ aiuse --doctor
 | Flag                                             | Effect                                                                           |
 | ------------------------------------------------ | -------------------------------------------------------------------------------- |
 | _(none)_ / `--format pretty`                     | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
-| `--full`                                         | Long pretty report: per-provider, cross-checks, tips, detailed plan              |
-| `--json` / `--format json`                       | Full snapshot + alerts as JSON                                                   |
+| `--full`                                         | Long pretty report: per-provider, cross-checks, tips, History, detailed plan     |
+| `--json` / `--format json`                       | Full snapshot + alerts + `suggestion` + `history` as JSON                        |
 | `--brief`                                        | Alias of default priority-ladder pretty report                                   |
 | `--no-tui`                                       | Force classic plain-text pretty report                                           |
 | `--no-color`                                     | Disable ANSI colors in plain-text pretty mode                                    |
 | `-q` / `--quiet`                                 | Suppress progress messages on stderr                                             |
 | `--alerts-only`                                  | Recommendations only (respects pretty vs json)                                   |
+| `suggest` / `--suggest`                          | Single best burn pool (or nothing urgent); pair with `--json` for structured     |
+| `status` / `prompt` / `--status`                 | One-line status for shell prompts / status bars                                  |
+| `serve` / `--serve`                              | Loopback HTTP API for agents (`127.0.0.1`; see [`docs/agent-api.md`](docs/agent-api.md)) |
+| `--port` / `--max-age`                           | Serve bind port (default 8787) and snapshot cache max age                        |
 | `--traditional-summary`                          | Legacy flat summary format instead of unified action plan                        |
 | `--print-completion bash\|zsh`                   | Print shell completion script to stdout                                          |
 | `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage` | Skip specific collectors                                          |
@@ -197,11 +213,12 @@ This tool:
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from.
 5. Default pretty output is a **priority ladder** on stdout (depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
-6. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last).
+6. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout …`, projected waste %) appear on ladder/status lines when pace can project them.
 7. Cross-checks **all live sources** pairwise; Claude multi-account stays canonical in cswap (with cache hydrate + fallbacks).
+8. Optional surfaces: `aiuse suggest` (single burn winner), `aiuse status` / `prompt` (one-liner), `aiuse serve` (loopback ranking API for agents). Snapshot history can blend into pace when enabled (`docs/history-learning.md`).
 
 This command intentionally does not report historical local-token usage or
-API-equivalent cost estimates.
+API-equivalent cost estimates (use ccusage-class tools for local burn, not plan %).
 
 ## Example output
 
@@ -303,7 +320,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/packaging.md`](docs/packaging.md) — pipx / PyPI / Homebrew; Trusted Publishing (OIDC) release flow.
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all five data-source tools (cswap, CodexBar, caut, OpenUsage, tokscale).
 - [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md) — caut + OpenUsage setup and cross-check priority.
-- [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?”; strategy + feature issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8).
+- [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?” after product issues **#2–#9** (shipped).
 - [`docs/shared-quota-semantics.md`](docs/shared-quota-semantics.md) — design note for shared ranking semantics.
 - [`docs/shared-quota-semantics/`](docs/shared-quota-semantics/) — **v0.1 package** (schemas, formulas, golden fixtures; dogfooded in pytest).
 - [`docs/companion-stack.md`](docs/companion-stack.md) — CodexBar/OpenUsage ambient + `aiuse status` one-liner + LaunchAgent.

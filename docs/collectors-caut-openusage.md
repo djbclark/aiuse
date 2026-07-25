@@ -84,7 +84,16 @@ collectors:
     force_refresh: true
     try_launch_app: true
     base_url: "http://127.0.0.1:6736"
+    # Doctor / preflight probe path (payload collect still uses base_url + /v1/limits).
+    health_path: "/v1/limits"
+    # Or full URL override:
+    # probe_url: "http://127.0.0.1:6736/v1/limits"
 ```
+
+`health_path` / `probe_url` apply to doctor and optional HTTP preflight: “is the
+loopback up?” without treating a 404 on `/` as collector death when the payload
+path still returns 200. Other collectors accept the same keys when they expose
+HTTP; PATH-only tools ignore them.
 
 CLI skips: `--no-caut`, `--no-openusage`.
 

@@ -76,5 +76,7 @@ and leaves learning on `auto`.
 
 ## Related
 
-- [`json-contract.md`](json-contract.md) — exit codes for scheduled runs
+- [`json-contract.md`](json-contract.md) — exit codes + `history` object shape
 - [`config/services.example.yaml`](../config/services.example.yaml) — example keys
+- [`competitive-landscape.md`](competitive-landscape.md) — History vs onWatch BI
+- [`scheduling.md`](scheduling.md) — LaunchAgent that densifies snapshots

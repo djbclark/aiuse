@@ -23,7 +23,10 @@ at the **bottom**. Read **bottom → top** to pick what to use next. Collection
 time, capacity blurb, and `Detail: aiuse --full` go to **stderr** (suppressed
 with `-q`).
 
-`--full` keeps the long report on stdout. `--brief` aliases the default.
+`--full` keeps the long report on stdout (including History when snapshots
+exist). `--brief` aliases the default. Ladder and `aiuse status` lines may
+append compact **forecast** fragments from pace (`~lockout …`, projected waste %)
+when projections exist.
 
 ### Color for readability
 

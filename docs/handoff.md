@@ -23,6 +23,7 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 
 | Area | Notes |
 | --- | --- |
+| **Docs pass** | Competitive landscape refreshed for post-#2–#9; README/AGENTS/shared-semantics/companion/agent-api aligned |
 | **2.1.10 release** | Shared quota-semantics v0.1 package + dogfood tests; handoff/loose-ends refresh |
 | **2.1.9 release** | Product issues #2–#8 (suggest, status/prompt, serve, forecast, History, health_path, local runtimes) |
 | **2.1.8** | Antigravity dual pools (Gemini vs Google Claude/GPT) |
@@ -95,6 +96,7 @@ just -f ~/ops/site-djbclark/justfile site-agents-status
 
 | Doc | Purpose |
 | --- | --- |
+| [`competitive-landscape.md`](competitive-landscape.md) | Positioning vs quotabot / onWatch / Layer 1 (post-#2–#9) |
 | [`companion-stack.md`](companion-stack.md) | Ambient tools + status/prompt |
 | [`agent-api.md`](agent-api.md) | `aiuse serve` loopback HTTP |
 | [`history-learning.md`](history-learning.md) | Snapshots + History section |

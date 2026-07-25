@@ -59,8 +59,8 @@ PATH-aggregator selection priority, or credential stores. Share **meaning**, not
 | **Decision band labels** | Ladder vocabulary | report bands: error→empty→n/a→slow→mid→use |
 | **Alert kind enum** | `burn` \| `conserve` \| `prepaid` | `UseOrLoseAlert.kind` |
 | **Cross-check status words** | Multi-source honesty | `consistent` \| `warning` \| `unavailable` |
-| **Health / payload path split** | Loopback honesty | proposed [#8](https://github.com/djbclark/aiuse/issues/8) |
-| **Golden test vectors** | Prevent semantic drift | tests under `tests/` (to extract) |
+| **Health / payload path split** | Loopback honesty | shipped [#8](https://github.com/djbclark/aiuse/issues/8) (`health_path` / `probe_url`) |
+| **Golden test vectors** | Prevent semantic drift | [`shared-quota-semantics/fixtures/`](shared-quota-semantics/fixtures/) + pytest dogfood |
 
 ### Keep private (product / architecture)
 
@@ -70,10 +70,10 @@ PATH-aggregator selection priority, or credential stores. Share **meaning**, not
 | cswap authority / source priority | Policy choice, not universal truth |
 | LaunchAgent + snapshot learning | Operator workflow |
 | Priority-ladder **pretty** UX | Presentation |
-| MCP / `suggest` CLI / agent router | Product surface ([#2](https://github.com/djbclark/aiuse/issues/2), [#5](https://github.com/djbclark/aiuse/issues/5)) |
-| Local runtime probes (Ollama, …) | Host-specific; optional note only ([#7](https://github.com/djbclark/aiuse/issues/7)) |
-| Ambient menubar companion stack | Compose with CodexBar/OpenUsage ([#4](https://github.com/djbclark/aiuse/issues/4)) |
-| Deep history BI dashboard | onWatch-class product ([#6](https://github.com/djbclark/aiuse/issues/6)) |
+| MCP / `suggest` CLI / agent API | Product surface (shipped: suggest + `serve`; MCP stdio optional) |
+| Local runtime probes (Ollama, …) | Host-specific; optional INFO note only ([#7](https://github.com/djbclark/aiuse/issues/7) done) |
+| Ambient menubar companion stack | Compose with CodexBar/OpenUsage ([#4](https://github.com/djbclark/aiuse/issues/4) done) |
+| Deep history BI dashboard | onWatch-class product (aiuse History is operational, not full BI) |
 
 ### Ideas to **push outward** to Layer 1 tools (issues/docs, not code merge)
 
@@ -296,8 +296,8 @@ Portable shape for “single winner” without implying a proxy:
 }
 ```
 
-Null suggestion = nothing urgent. This is what [#2](https://github.com/djbclark/aiuse/issues/2)
-implements inside `aiuse`; the **schema** can be shared even if routing stays private.
+Null suggestion = nothing urgent. Shipped in `aiuse` via [#2](https://github.com/djbclark/aiuse/issues/2)
+(`aiuse suggest` / JSON `suggestion`); the **schema** is shared even if routing stays private.
 
 ### 8. Health probe convention (collectors)
 
@@ -371,17 +371,18 @@ if UI strings differ.
 
 ---
 
-## Mapping to open `aiuse` feature issues
+## Mapping to product issues (all shipped in-tree)
 
-| Issue | Product work in `aiuse` | Shared-spec angle |
-| ----- | ----------------------- | ----------------- |
-| [#2 suggest](https://github.com/djbclark/aiuse/issues/2) | CLI/JSON single winner | `suggestion` schema + eligibility rules |
-| [#3 forecast](https://github.com/djbclark/aiuse/issues/3) | Louder exhaust/waste UX | Pace fields already shareable; copy is private |
-| [#4 ambient companion](https://github.com/djbclark/aiuse/issues/4) | Docs / one-line status | **Not shared** — compose Layer 1 |
-| [#5 MCP/loopback](https://github.com/djbclark/aiuse/issues/5) | Agent surface | Optional transport; payload = shared JSON |
-| [#6 deeper History](https://github.com/djbclark/aiuse/issues/6) | Teach from snapshots | Learned rate field only; storage private |
-| [#7 local runtime](https://github.com/djbclark/aiuse/issues/7) | INFO note when empty | Optional enum value; probes private |
-| [#8 health_path](https://github.com/djbclark/aiuse/issues/8) | Doctor/config | Collector descriptor schema (shareable) |
+| Issue | Product work in `aiuse` | Shared-spec angle | Status |
+| ----- | ----------------------- | ----------------- | ------ |
+| [#2 suggest](https://github.com/djbclark/aiuse/issues/2) | CLI/JSON single winner | `suggestion` schema + eligibility rules | **Done** |
+| [#3 forecast](https://github.com/djbclark/aiuse/issues/3) | Louder exhaust/waste UX | Pace fields already shareable; copy is private | **Done** |
+| [#4 ambient companion](https://github.com/djbclark/aiuse/issues/4) | Docs / one-line status | **Not shared** — compose Layer 1 | **Done** |
+| [#5 MCP/loopback](https://github.com/djbclark/aiuse/issues/5) | `aiuse serve` MVP (MCP stdio optional later) | Optional transport; payload = shared JSON | **Done (MVP)** |
+| [#6 deeper History](https://github.com/djbclark/aiuse/issues/6) | Teach from snapshots | Learned rate field only; storage private | **Done** |
+| [#7 local runtime](https://github.com/djbclark/aiuse/issues/7) | INFO note when empty | Optional enum value; probes private | **Done** |
+| [#8 health_path](https://github.com/djbclark/aiuse/issues/8) | Doctor/config | Collector descriptor schema (shareable) | **Done** |
+| [#9 shared semantics](https://github.com/djbclark/aiuse/issues/9) | v0.1 package + pytest dogfood | This directory | **Done** |
 
 ---
 
@@ -407,14 +408,14 @@ formula defaults bump major. Adding optional fields is minor.
 
 **v0.1 checklist:**
 
-1. Freeze enums + window/account JSON Schema from this doc.
-2. Publish pace formulas + default thresholds as numbered rules.
-3. Extract 8–12 golden vectors from `aiuse` tests (prepaid, shared allotment,
-   conserve, burn, early window, empty, error, multi-account labels).
-4. Document how `aiuse` maps internal Python models → shared schema (1:1 for
-   most fields already).
+1. ~~Freeze enums + window/account JSON Schema from this doc.~~ **Done** (in-tree).
+2. ~~Publish pace formulas + default thresholds as numbered rules.~~ **Done**.
+3. ~~Extract golden vectors (prepaid, shared allotment, conserve, burn, early
+   window, empty, error, …).~~ **Done** under `fixtures/` + pytest dogfood.
+4. ~~Document how `aiuse` maps internal Python models → shared schema.~~ **Done**
+   ([`shared-quota-semantics/README.md`](shared-quota-semantics/README.md)).
 5. Open short upstream issues on 1–2 Layer 1 tools linking fixtures (prepaid,
-   `window_minutes`), not demanding they adopt ranking.
+   `window_minutes`), not demanding they adopt ranking — **optional / last**.
 
 ---
 
@@ -436,15 +437,16 @@ compatibility proof.
 
 ## What `aiuse` should do next (local, low risk)
 
-1. **Keep implementing** product issues #2–#8 in-tree (Python remains source of
-   UX truth).
-2. **Extract fixtures** gradually: when a test encodes a semantic rule (prepaid
-   → n/a, governing window only, …), also write it under
-   `docs/shared-quota-semantics/fixtures/` in the neutral shape.
-3. **Do not** block features on a separate org/repo; grow the directory until a
+Product issues **#2–#9** are **shipped** (2.1.9 / 2.1.10). Remaining low-risk work:
+
+1. **Grow golden fixtures** when new semantic edge cases land (prepaid → n/a,
+   governing window only, Antigravity dual pools, …).
+2. **Do not** block features on a separate org/repo; grow this directory until a
    peer wants co-ownership, then split.
-4. When opening upstream issues on monitors, link **one fixture + one rule id**
+3. When opening upstream issues on monitors, link **one fixture + one rule id**
    (P1, S1, …) rather than “please read our Python.”
+4. Optional: MCP stdio on top of `aiuse serve` if agents need native MCP
+   (product surface, not semantics).
 
 ---
 
