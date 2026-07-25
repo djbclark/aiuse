@@ -41,18 +41,24 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 
 ### Issue estimates (scan)
 
-| # | Est. | Title |
-| --- | --- | --- |
-| [#1](https://github.com/djbclark/aiuse/issues/1) | 1–3h after cswap#170 | Track upstream cswap last-good usage (blocked) |
-| [#2](https://github.com/djbclark/aiuse/issues/2) | 2–8h | `suggest` — single winner for next token pool |
-| [#3](https://github.com/djbclark/aiuse/issues/3) | 1–4h | Louder exhaustion / burn-rate forecast |
-| [#4](https://github.com/djbclark/aiuse/issues/4) | 1–4h | Ambient companion stack docs + one-line status |
-| [#5](https://github.com/djbclark/aiuse/issues/5) | 8–24h | Optional MCP / loopback query surface |
-| [#6](https://github.com/djbclark/aiuse/issues/6) | 4–16h | Deeper History (burn patterns, chronic underuse) |
-| [#7](https://github.com/djbclark/aiuse/issues/7) | 1–4h | Local runtime fallback note when empty |
-| [#8](https://github.com/djbclark/aiuse/issues/8) | 1–4h | `health_path` / probe URL overrides |
-| [#9](https://github.com/djbclark/aiuse/issues/9) | 16–40h | Shared quota-semantics package |
-| [#10](https://github.com/djbclark/aiuse/issues/10) | 0.5–2h | Announce (operator post; not product code) |
+There is **no industry standard** for “normalized tokens” as task size. GitHub
+issue titles use **`[est. hours · ~tok]`**; bodies define **norm. tok** as a
+**project convention**: rough total agent tokens (prompt + completion, all
+turns/models) for an AI-assisted implementation — order-of-magnitude only,
+not tokenizer- or price-normalized across vendors.
+
+| # | Hours | Norm. tok | Title |
+| --- | --- | --- | --- |
+| [#1](https://github.com/djbclark/aiuse/issues/1) | 1–3h after cswap#170 | ~50k–300k | Track upstream cswap last-good (blocked) |
+| [#2](https://github.com/djbclark/aiuse/issues/2) | 2–8h | ~0.2–2M | `suggest` — single winner |
+| [#3](https://github.com/djbclark/aiuse/issues/3) | 1–4h | ~0.1–0.8M | Louder forecast on ladder / `--full` |
+| [#4](https://github.com/djbclark/aiuse/issues/4) | 1–4h | ~50k–0.5M | Companion stack docs + one-line status |
+| [#5](https://github.com/djbclark/aiuse/issues/5) | 8–24h | ~1–8M | MCP / loopback query surface |
+| [#6](https://github.com/djbclark/aiuse/issues/6) | 4–16h | ~0.5–4M | Deeper History |
+| [#7](https://github.com/djbclark/aiuse/issues/7) | 1–4h | ~0.1–0.6M | Local runtime fallback note |
+| [#8](https://github.com/djbclark/aiuse/issues/8) | 1–4h | ~0.1–0.6M | `health_path` / probe overrides |
+| [#9](https://github.com/djbclark/aiuse/issues/9) | 16–40h | ~2–15M | Shared quota-semantics package |
+| [#10](https://github.com/djbclark/aiuse/issues/10) | 0.5–2h | ~10k–100k | Announce (operator; not product code) |
 | **GitHub hygiene** | Repo description, homepage, and topics set on `djbclark/aiuse` |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.8  
