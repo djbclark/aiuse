@@ -59,6 +59,7 @@ config & setup:
   aiuse doctor                PATH tools, version probe, config validation, timeouts
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
+  aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
   aiuse -q / --quiet          no progress on stderr (JSON stdout stays clean either way)
@@ -130,6 +131,24 @@ def build_parser() -> argparse.ArgumentParser:
             "Print the single best burn recommendation (or nothing urgent); "
             "with --json includes top-level suggestion (also: aiuse suggest)"
         ),
+    )
+    p.add_argument(
+        "--serve",
+        action="store_true",
+        help="Run loopback HTTP API for agents (also: aiuse serve). See docs/agent-api.md",
+    )
+    p.add_argument(
+        "--port",
+        type=int,
+        default=8787,
+        help="Port for aiuse serve (default 8787, 127.0.0.1 only)",
+    )
+    p.add_argument(
+        "--max-age",
+        type=float,
+        default=3600.0,
+        metavar="SECONDS",
+        help="Max age of cached snapshot for serve without ?refresh=1 (default 3600)",
     )
     p.add_argument(
         "--print-completion",
@@ -266,6 +285,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--status", *raw[1:]]
     if head == "suggest":
         return ["--suggest", *raw[1:]]
+    if head == "serve":
+        return ["--serve", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -281,6 +302,14 @@ def main(argv: list[str] | None = None) -> int:
         return _print_completion(args.print_completion)
     if args.doctor:
         return _run_doctor(config_path=args.config, timeout_override=args.timeout)
+    if getattr(args, "serve", False):
+        from aiuse.serve import run_serve
+
+        return run_serve(
+            port=int(args.port),
+            config_path=args.config,
+            max_age_seconds=float(args.max_age),
+        )
     config = load_config(args.config)
     _apply_cli_overrides(config, args)
 

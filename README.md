@@ -306,6 +306,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?”; strategy + feature issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8).
 - [`docs/shared-quota-semantics.md`](docs/shared-quota-semantics.md) — language-neutral schemas, pace formulas, and golden-vector plan for sharing ranking/prepaid/shared-allotment meaning across tools.
 - [`docs/companion-stack.md`](docs/companion-stack.md) — CodexBar/OpenUsage ambient + `aiuse status` one-liner + LaunchAgent.
+- [`docs/agent-api.md`](docs/agent-api.md) — `aiuse serve` loopback HTTP for agents (`/v1/suggest`, `/v1/ladder`, …).
 - [`docs/scheduling.md`](docs/scheduling.md) — LaunchAgent hourly (`persist_snapshots`).
 - [`docs/history-learning.md`](docs/history-learning.md) — snapshot history vs `learn_from_history`.
 - [`docs/claude-local-usage.md`](docs/claude-local-usage.md) — Local Claude Code files / ccusage (token burn) vs subscription 5h/7d % from the OAuth usage API.

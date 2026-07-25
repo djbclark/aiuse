@@ -14,6 +14,9 @@ _aiuse() {
     '--doctor[environment check (also: aiuse doctor)]'
     '--status[one-line status for prompts (also: aiuse status / prompt)]'
     '--suggest[single best burn pool (also: aiuse suggest)]'
+    '--serve[loopback HTTP API for agents (also: aiuse serve)]'
+    '--port[serve port]:port'
+    '--max-age[serve cache max age seconds]:seconds'
     '--print-completion[print shell completion]:shell:(bash zsh)'
     '(-t --timeout)'{-t,--timeout}'[force tool timeout seconds]:seconds'
     '--format[output format]:format:(pretty json)'
@@ -36,6 +39,7 @@ _aiuse() {
     'status:one-line status for prompts/status bars'
     'prompt:synonym of status'
     'suggest:single best burn pool next'
+    'serve:loopback HTTP API for agents'
   )
   _arguments -s -S $opts
 }
