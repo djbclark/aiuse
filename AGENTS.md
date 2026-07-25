@@ -110,6 +110,7 @@ full description, install steps, CLI flags, and config.
 | `docs/cursor-quota.md`                       | Cursor Included/Auto/API + on-demand vs CodexBar slots.                                  | When Cursor % or CONSERVE disagrees with the Cursor usage UI.    |
 | `docs/pretty-display.md`                     | Rich vs Textual for long scrollback-safe reports.                                        | When changing pretty/TTY display.                                |
 | `docs/packaging.md`                          | pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow.                        | When releasing or changing install UX.                           |
+| `docs/competitive-landscape.md`              | Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; “what pool next?”.           | Positioning, feature gaps, competitive questions.                |
 | `docs/claude-local-usage.md`                 | Local `stats-cache` / JSONL / ccusage vs subscription 5h/7d %.                           | When someone proposes parsing `~/.claude` instead of cswap.      |
 | `docs/code-review-2026-07-23.html`           | Adversarial code review (45 findings) that the plan was derived from. Open in a browser. | For the _why_ behind a plan step.                                |
 | `docs/consumption-flexibility-plan.md`       | Original scoring design. **Superseded** by pace-based scoring in the fix plan Phase 2.   | Historical context only.                                         |

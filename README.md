@@ -289,6 +289,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/cursor-quota.md`](docs/cursor-quota.md) — Cursor Included/Auto/API + on-demand vs CodexBar slots.
 - [`docs/pretty-display.md`](docs/pretty-display.md) — why pretty output uses Rich (not Textual / not Rich `Layout`) so the full report stays in scrollback.
 - [`docs/packaging.md`](docs/packaging.md) — pipx / PyPI / Homebrew; Trusted Publishing (OIDC) release flow.
+- [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?”.
 - [`docs/scheduling.md`](docs/scheduling.md) — LaunchAgent hourly (`persist_snapshots`).
 - [`docs/history-learning.md`](docs/history-learning.md) — snapshot history vs `learn_from_history`.
 - [`docs/claude-local-usage.md`](docs/claude-local-usage.md) — Local Claude Code files / ccusage (token burn) vs subscription 5h/7d % from the OAuth usage API.
@@ -299,4 +300,4 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`completions/`](completions/) — bash/zsh completion (`aiuse --print-completion bash`).
 - [`docs/review-workflow.js`](docs/review-workflow.js) — the Claude Code Workflow script that generated the review, checked in for reproducibility.
 - [`docs/memory/`](docs/memory/) — thin Claude symlink target for this project; see `AGENTS.md` for persistence policy and links to `~/ops/site-private` generic memory.
-- Local quota dashboards in the same category as OpenUsage / CodexBar menu bar tools
+- Local quota dashboards in the same category as OpenUsage / CodexBar — see [`docs/competitive-landscape.md`](docs/competitive-landscape.md).

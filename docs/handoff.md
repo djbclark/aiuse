@@ -26,6 +26,7 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **G — History** | `persist_snapshots` + `learn_from_history: auto` |
 | **G — deeper UX** | `--full` **History** section; blended-with-history pace notes; `learned_sample_count` in JSON |
 | **Prepaid ladder** | Deepseek/OpenRouter non-expiring → `n/a` band (empty → n/a → slow → mid → use) |
+| **Competitive note** | [`competitive-landscape.md`](competitive-landscape.md) — Layer 1 monitors vs Layer 2 ranking (quotabot / onWatch) |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.5  
 PyPI: https://pypi.org/project/aiuse/2.1.5/
