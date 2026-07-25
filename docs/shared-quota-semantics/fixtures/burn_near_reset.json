@@ -1,0 +1,39 @@
+{
+  "id": "burn_near_reset",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "codex",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Codex weekly",
+        "used_percent": 5.0,
+        "remaining_percent": 95.0,
+        "resets_at": "2026-07-26T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "pace": {
+        "waste_alert_fraction": 0.30,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    },
+    "plans": { "codex": { "monthly_price": 20 } }
+  },
+  "expected": {
+    "pace_verdict": "burn",
+    "alert_kind": "burn",
+    "band": "use",
+    "suggestion_eligible": true,
+    "notes": "Late week, almost unused → burn"
+  }
+}

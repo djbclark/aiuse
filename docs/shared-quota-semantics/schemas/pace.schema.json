@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djbclark/aiuse/docs/shared-quota-semantics/schemas/pace.schema.json",
+  "title": "PaceProfile",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "elapsed_fraction": { "type": ["number", "null"] },
+    "used_fraction": { "type": "number" },
+    "pace_ratio": { "type": ["number", "null"] },
+    "projected_used_fraction": { "type": ["number", "null"] },
+    "projected_waste_fraction": { "type": ["number", "null"] },
+    "projected_waste_usd": { "type": ["number", "null"] },
+    "projected_exhaust_at": { "type": ["string", "null"] },
+    "governing": { "type": "boolean" },
+    "gated_by": { "type": ["string", "null"] },
+    "confidence": { "type": "string" },
+    "learned_sample_count": { "type": "integer", "minimum": 0 }
+  }
+}

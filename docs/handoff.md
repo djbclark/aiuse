@@ -61,7 +61,7 @@ define project conventions (order-of-magnitude only):
 | [#6](https://github.com/djbclark/aiuse/issues/6) | 4–16h | ~0.5–4M | ~$5–80 | **done** Deeper History + JSON `history` |
 | [#7](https://github.com/djbclark/aiuse/issues/7) | 1–4h | ~0.1–0.6M | ~$1–12 | **done** Local runtime fallback note |
 | [#8](https://github.com/djbclark/aiuse/issues/8) | 1–4h | ~0.1–0.6M | ~$1–12 | **done** `health_path` / probe overrides |
-| [#9](https://github.com/djbclark/aiuse/issues/9) | 16–40h | ~2–15M | ~$20–300 | Shared quota-semantics package |
+| [#9](https://github.com/djbclark/aiuse/issues/9) | 16–40h | ~2–15M | ~$20–300 | **done v0.1** package + fixtures; peer tickets last |
 | [#10](https://github.com/djbclark/aiuse/issues/10) | 0.5–2h | ~10k–100k | ~$0–2 | Announce (operator; not product code) |
 | **GitHub hygiene** | Repo description, homepage, and topics set on `djbclark/aiuse` |
 

@@ -117,7 +117,8 @@ install steps, CLI flags, and config. Install helpers:
 | `docs/pretty-display.md`                     | Rich vs Textual for long scrollback-safe reports.                                        | When changing pretty/TTY display.                                |
 | `docs/packaging.md`                          | pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow.                        | When releasing or changing install UX.                           |
 | `docs/competitive-landscape.md`              | Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; “what pool next?”.           | Positioning, feature gaps, competitive questions.                |
-| `docs/shared-quota-semantics.md`             | Language-neutral schemas/formulas/fixtures to share ranking semantics with peers.        | Cross-project interop; upstreaming prepaid/shared-allotment ideas. |
+| `docs/shared-quota-semantics.md`             | Design for language-neutral ranking semantics.                                           | Background for the package.                                      |
+| `docs/shared-quota-semantics/`               | **v0.1 package**: schemas, enums, formulas, golden fixtures (+ pytest dogfood).          | Contract tests / peer interop.                                   |
 | Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8) | Feature backlog: suggest, forecast, ambient, MCP, history, local note, health_path. | “Pull ideas into aiuse” from competitive strategy. |
 | [Issue #9](https://github.com/djbclark/aiuse/issues/9) | Implement shared quota-semantics package; peer tickets **last**. | Dogfood schemas/fixtures in aiuse before upstreaming. |
 | `docs/collectors-caut-openusage.md`          | caut + OpenUsage install, config, multi-source cross-check priority.                     | New collectors / doctor PATH / site install.                     |

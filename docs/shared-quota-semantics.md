@@ -1,9 +1,11 @@
 # Shared quota semantics (language-neutral)
 
 **Date:** 2026-07-25  
-**Status:** Design note — proposed shared surface for multi-project reuse  
+**Status:** **v0.1.0 implemented in-tree** at
+[`docs/shared-quota-semantics/`](shared-quota-semantics/) (schemas, enums,
+formulas, golden fixtures). Design note below remains the rationale.  
 **Implement:** [djbclark/aiuse#9](https://github.com/djbclark/aiuse/issues/9)
-(in-repo package + CI dogfood first; peer outreach is the **last** step)  
+— package + pytest dogfood shipped; peer outreach still optional/last.  
 **Related:** [`competitive-landscape.md`](competitive-landscape.md),
 [`json-contract.md`](json-contract.md), in-tree models in
 [`src/aiuse/models.py`](../src/aiuse/models.py) and pace math in

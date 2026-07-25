@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djbclark/aiuse/docs/shared-quota-semantics/schemas/fixture.schema.json",
+  "title": "GoldenFixture",
+  "type": "object",
+  "required": ["id", "now", "account", "expected"],
+  "additionalProperties": true,
+  "properties": {
+    "id": { "type": "string" },
+    "now": { "type": "string" },
+    "account": {
+      "type": "object",
+      "required": ["provider", "billing_kind"],
+      "additionalProperties": true,
+      "properties": {
+        "provider": { "type": "string" },
+        "account": { "type": ["string", "null"] },
+        "billing_kind": {
+          "type": "string",
+          "enum": ["subscription_window", "prepaid_balance", "payg_api", "unknown"]
+        },
+        "windows": { "type": "array" },
+        "balance_usd": { "type": ["number", "null"] },
+        "error": { "type": ["string", "null"] },
+        "source": { "type": "string" }
+      }
+    },
+    "config": { "type": "object" },
+    "expected": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "band": {
+          "type": "string",
+          "enum": ["error", "empty", "n_a", "slow", "mid", "use"]
+        },
+        "alert_kind": {
+          "type": ["string", "null"],
+          "enum": ["burn", "conserve", "prepaid", null]
+        },
+        "pace_verdict": {
+          "type": ["string", "null"],
+          "enum": ["conserve", "burn", "on_pace", "unknown", null]
+        },
+        "suggestion_eligible": { "type": "boolean" },
+        "governing_label": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

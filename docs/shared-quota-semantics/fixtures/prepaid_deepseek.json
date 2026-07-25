@@ -1,0 +1,18 @@
+{
+  "id": "prepaid_deepseek",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "deepseek",
+    "account": null,
+    "billing_kind": "prepaid_balance",
+    "balance_usd": 42.0,
+    "windows": []
+  },
+  "expected": {
+    "band": "n_a",
+    "alert_kind": "prepaid",
+    "suggestion_eligible": false,
+    "notes": "Non-expiring balance must never rank as burn"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djbclark/aiuse/docs/shared-quota-semantics/schemas/window.schema.json",
+  "title": "QuotaWindow",
+  "type": "object",
+  "required": ["label"],
+  "additionalProperties": true,
+  "properties": {
+    "label": { "type": "string" },
+    "used_percent": { "type": ["number", "null"] },
+    "remaining_percent": { "type": ["number", "null"] },
+    "resets_at": { "type": ["string", "null"] },
+    "window_minutes": { "type": ["integer", "null"] },
+    "reset_description": { "type": ["string", "null"] }
+  }
+}

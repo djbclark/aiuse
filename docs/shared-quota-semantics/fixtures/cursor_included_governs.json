@@ -1,0 +1,45 @@
+{
+  "id": "cursor_included_governs",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "cursor",
+    "account": "user@example.com",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Cursor included",
+        "used_percent": 61.0,
+        "remaining_percent": 39.0,
+        "resets_at": "2026-08-04T12:00:00+00:00",
+        "window_minutes": 44640
+      },
+      {
+        "label": "Cursor Auto",
+        "used_percent": 55.0,
+        "remaining_percent": 45.0,
+        "resets_at": "2026-08-04T12:00:00+00:00",
+        "window_minutes": 44640
+      },
+      {
+        "label": "Cursor API",
+        "used_percent": 100.0,
+        "remaining_percent": 0.0,
+        "resets_at": "2026-08-04T12:00:00+00:00",
+        "window_minutes": 44640
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "provider_overrides": { "cursor": { "shared_allotment": true } }
+    }
+  },
+  "expected": {
+    "governing_label": "Cursor included",
+    "suggestion_eligible": false,
+    "notes": "API empty must not conserve when Included still has headroom"
+  }
+}

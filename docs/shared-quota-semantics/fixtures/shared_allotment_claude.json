@@ -1,0 +1,43 @@
+{
+  "id": "shared_allotment_claude",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "cswap",
+    "provider": "claude",
+    "account": "user@example.com",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Claude Code 5-hour",
+        "used_percent": 3.0,
+        "remaining_percent": 97.0,
+        "resets_at": "2026-07-25T16:00:00+00:00",
+        "window_minutes": 300
+      },
+      {
+        "label": "Claude Code weekly",
+        "used_percent": 64.0,
+        "remaining_percent": 36.0,
+        "resets_at": "2026-07-27T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "provider_overrides": { "claude": { "shared_allotment": true } },
+      "pace": {
+        "waste_alert_fraction": 0.30,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    }
+  },
+  "expected": {
+    "governing_label": "Claude Code weekly",
+    "suggestion_eligible": false,
+    "notes": "Fresh 5h must not outrank on-pace weekly under shared allotment"
+  }
+}
