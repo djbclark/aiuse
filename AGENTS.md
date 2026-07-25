@@ -11,28 +11,22 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-07-25):** Package/CLI renamed to **`aiuse`**. Fix-plan Steps
-**1–32** and **34** are done. Product polish through doctor/brief/exit
-codes/completions/JSON contract is done. Config is **`~/.config/aiuse/`** only
-(legacy `~/.config/ai/` no longer read). Packaging **2.1.9** (PyPI + Homebrew).
-Collectors: cswap + CodexBar + **caut** + **OpenUsage** + tokscale with
-multi-source cross-checks. Prepaid/`n/a` ladder band. Hourly LaunchAgent,
-history learning `auto`. There is **no mandatory numbered step**. Open-ended
-“what next?” → read [`docs/handoff.md`](docs/handoff.md), then offer choices —
-**do not restart at Step 1**.
+**Status (2026-07-25):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
+**34** done. Product issues **#2–#9** done (suggest, status/serve, History,
+health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.10**
+(PyPI + Homebrew). Five collectors; prepaid/`n/a` band; hourly LaunchAgent;
+history learning `auto`. **No mandatory numbered step.** Open-ended “what
+next?” → [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 
-1. **Session handoff / loose ends:** [`docs/handoff.md`](docs/handoff.md)
-   (latest wrap-up, deferred items, verification commands).
-2. **Blocked / wait on upstream (Step 33).** When
-   [realiti4/claude-swap#170](https://github.com/realiti4/claude-swap/issues/170)
-   merges, consume official `lastGoodUsage` in `collectors/cswap.py` (cache
-   hydrate → fallback). Tracked: [djbclark/aiuse#1](https://github.com/djbclark/aiuse/issues/1).
-   Design: [`docs/cswap-reliability.md`](docs/cswap-reliability.md).
-3. **Operator-driven only** — live smoke (A), new features, or leave the
-   hourly agent collecting. Do **not** restart completed packaging / History UX.
-4. **Parked (do not start unless asked):**
-   - **Step 35** — local ccusage / stats-cache burn (not plan %). See Phase 7
-     and [`docs/claude-local-usage.md`](docs/claude-local-usage.md).
+1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
+2. **Blocked (Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1)):** wait
+   for [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170), then
+   consume official `lastGoodUsage` in `collectors/cswap.py`
+   ([`docs/cswap-reliability.md`](docs/cswap-reliability.md)).
+3. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
+   when ready; leave hourly agent collecting; optional OpenUsage CLI install.
+4. **Parked:** Step **35** (ccusage ≠ plan %) —
+   [`docs/claude-local-usage.md`](docs/claude-local-usage.md).
 5. **Historical:** [`docs/fix-implementation-plan.md`](docs/fix-implementation-plan.md),
    [`docs/code-review-2026-07-23.html`](docs/code-review-2026-07-23.html).
 

@@ -1,7 +1,7 @@
 # Competitive landscape: multi-provider AI quota tools
 
 **Date:** 2026-07-25 (updated after multi-source ship)  
-**Product:** [`aiuse`](https://github.com/djbclark/aiuse) (packaging **2.1.9**)  
+**Product:** [`aiuse`](https://github.com/djbclark/aiuse) (packaging **2.1.10**)  
 **Audience:** operators and agents deciding product positioning or “what next?” features.
 
 This note surveys tools that surface AI **subscription / coding-agent quotas**, then
