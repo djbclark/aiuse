@@ -5,14 +5,14 @@
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `.venv/bin/python -m pytest -q` — **226** passing  
-**Version:** **2.1.7** on PyPI + Homebrew + local `pipx` / `brew`
+**Version:** **2.1.8** on PyPI + Homebrew + local `pipx` / `brew`
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 
 ## Reopen checklist (operator)
 
 1. Open Cursor workspace at **`~/src/aiuse`**.
-2. Confirm: `aiuse --version` → `2.1.7`; `aiuse doctor` → five collectors green
+2. Confirm: `aiuse --version` → `2.1.8`; `aiuse doctor` → five collectors green
    (OpenUsage may be “CLI missing; HTTP :6736 responding”).
 3. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status`
    — expect `com.djbclark.aiuse` loaded ([`scheduling.md`](scheduling.md)).
@@ -24,22 +24,23 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 
 | Area | Notes |
 | --- | --- |
-| **Antigravity dual pools** | Gemini vs Claude/GPT are independent allotments — score + ladder list both ([`antigravity-pools.md`](antigravity-pools.md)) |
+| **2.1.8 release** | Antigravity dual pools (Gemini vs Google Claude/GPT) + Anthropic/cswap vs Google docs; PyPI + Homebrew |
+| **Antigravity dual pools** | Gemini vs Claude/GPT independent allotments ([`antigravity-pools.md`](antigravity-pools.md)) |
 | Fix plan Steps **1–32** + **34** | Complete (no restart) |
 | **Prepaid / n/a ladder** | Deepseek etc. non-expiring → `n/a` band (empty → n/a → slow → mid → use) |
 | **Multi-source collectors** | **caut** + **OpenUsage** enabled by default; generalized all-pairs cross-check |
 | **Site install** | site-djbclark: `just install-ai-quota-tools`, brew fragment openusage, caut via cargo |
 | **Docs** | [`collectors-caut-openusage.md`](collectors-caut-openusage.md); [`competitive-landscape.md`](competitive-landscape.md) refreshed for five sources |
 | **Dep installer** | [`packaging/install-deps.sh`](../packaging/install-deps.sh); `just install-deps`; site `just install-aiuse-deps` |
-| **Packaging** | **2.1.7** PyPI + Homebrew |
+| **Packaging** | **2.1.8** PyPI + Homebrew |
 | **Feature backlog (pull ideas in)** | Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8): suggest, forecast, ambient, MCP, history, local note, health_path |
 | **Shared semantics design** | [`shared-quota-semantics.md`](shared-quota-semantics.md) — JSON Schema / YAML enums / pace formulas / golden vectors for multi-language peer reuse |
 | **Shared semantics implement** | [Issue #9](https://github.com/djbclark/aiuse/issues/9) — package + CI dogfood first; open tickets with peer apps only as the last step |
 | **Public announce (operator)** | [Issue #10](https://github.com/djbclark/aiuse/issues/10) — venues (prefer non-vendor-siloed) + draft copy; do not auto-post |
 | **GitHub hygiene** | Repo description, homepage, and topics set on `djbclark/aiuse` |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.7  
-PyPI: https://pypi.org/project/aiuse/2.1.7/
+Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.8  
+PyPI: https://pypi.org/project/aiuse/2.1.8/
 
 ## Loose-ends scan
 
@@ -47,7 +48,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
 | --- | --- | --- |
 | Working tree / push | Clean; synced with `origin/main` | None |
 | Tests | **226** green | None |
-| Installers | 2.1.7 on PyPI + Homebrew tap | None |
+| Installers | 2.1.8 on PyPI + Homebrew tap | None |
 | GitHub repo metadata | Description + homepage + topics set | None |
 | OpenUsage CLI on PATH | Optional | Settings → Command Line → Install if desired |
 | OpenUsage.app | Must be running (or CLI installed) for that collector | `open -ga OpenUsage` |
@@ -88,7 +89,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
 
 ```bash
 just -f ~/ops/site-djbclark/justfile ai-quota-status
-aiuse --version   # 2.1.7
+aiuse --version   # 2.1.8
 aiuse doctor
 aiuse --no-tui -q | head -25
 .venv/bin/python -m pytest -q
