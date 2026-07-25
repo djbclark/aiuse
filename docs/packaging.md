@@ -21,7 +21,7 @@ this package only ships the aggregator CLI.
 
 Git tag **`v2.0.0`** is historical (pre-rename `src/ai/`). First renamed PyPI
 release was **`2.1.0`** (API token). **`2.1.1`** was the first release uploaded
-by GitHub Actions via Trusted Publishing. Current published release: **`2.1.5`**.
+by GitHub Actions via Trusted Publishing. Current published release: **`2.1.6`**.
 
 ## Install (end users)
 

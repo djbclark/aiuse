@@ -11,14 +11,15 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-07-24):** Package/CLI renamed to **`aiuse`**. Fix-plan Steps
+**Status (2026-07-25):** Package/CLI renamed to **`aiuse`**. Fix-plan Steps
 **1–32** and **34** are done. Product polish through doctor/brief/exit
 codes/completions/JSON contract is done. Config is **`~/.config/aiuse/`** only
-(legacy `~/.config/ai/` no longer read). Packaging **2.1.5** (PyPI + Homebrew),
-hourly LaunchAgent, history learning `auto`, and `--full` History UX are done.
-There is **no mandatory numbered step**. Open-ended “what next?” → read
-[`docs/handoff.md`](docs/handoff.md), then offer choices — **do not restart at
-Step 1**.
+(legacy `~/.config/ai/` no longer read). Packaging **2.1.6** (PyPI + Homebrew).
+Collectors: cswap + CodexBar + **caut** + **OpenUsage** + tokscale with
+multi-source cross-checks. Prepaid/`n/a` ladder band. Hourly LaunchAgent,
+history learning `auto`. There is **no mandatory numbered step**. Open-ended
+“what next?” → read [`docs/handoff.md`](docs/handoff.md), then offer choices —
+**do not restart at Step 1**.
 
 1. **Session handoff / loose ends:** [`docs/handoff.md`](docs/handoff.md)
    (latest wrap-up, deferred items, verification commands).
