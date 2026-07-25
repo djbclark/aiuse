@@ -301,7 +301,8 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/packaging.md`](docs/packaging.md) — pipx / PyPI / Homebrew; Trusted Publishing (OIDC) release flow.
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all five data-source tools (cswap, CodexBar, caut, OpenUsage, tokscale).
 - [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md) — caut + OpenUsage setup and cross-check priority.
-- [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?”.
+- [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?”; strategy + feature issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8).
+- [`docs/shared-quota-semantics.md`](docs/shared-quota-semantics.md) — language-neutral schemas, pace formulas, and golden-vector plan for sharing ranking/prepaid/shared-allotment meaning across tools.
 - [`docs/scheduling.md`](docs/scheduling.md) — LaunchAgent hourly (`persist_snapshots`).
 - [`docs/history-learning.md`](docs/history-learning.md) — snapshot history vs `learn_from_history`.
 - [`docs/claude-local-usage.md`](docs/claude-local-usage.md) — Local Claude Code files / ccusage (token burn) vs subscription 5h/7d % from the OAuth usage API.

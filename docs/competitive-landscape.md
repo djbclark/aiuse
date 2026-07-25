@@ -357,6 +357,37 @@ others as cross-checks ([`runner.py`](../src/aiuse/collectors/runner.py)).
 
 ---
 
+## Strategy: stay independent; borrow selectively
+
+**Move code into a competitor:** **No.** Keep `aiuse` as a Layer 2 thin
+aggregator. Merging into CodexBar/OpenUsage/caut/cswap/tokscale/quotabot/onWatch
+either kills portfolio ranking, duplicates collector ownership, or forces a
+router/menubar product shape that is not this project’s job.
+
+**Move ideas into `aiuse`:** **Yes** — tracked as enhancement issues:
+
+| Idea (source) | Issue |
+| ------------- | ----- |
+| `suggest`-style single winner (quotabot) | [#2](https://github.com/djbclark/aiuse/issues/2) |
+| Louder exhaustion / burn-rate forecast (onWatch) | [#3](https://github.com/djbclark/aiuse/issues/3) |
+| Ambient companion stack docs + optional one-liner (CodexBar/OpenUsage) | [#4](https://github.com/djbclark/aiuse/issues/4) |
+| Optional MCP or loopback query surface (quotabot / OpenUsage HTTP) | [#5](https://github.com/djbclark/aiuse/issues/5) |
+| Deeper History that teaches (onWatch + own snapshots) | [#6](https://github.com/djbclark/aiuse/issues/6) |
+| Local runtime fallback *note* when clouds empty (quotabot) | [#7](https://github.com/djbclark/aiuse/issues/7) |
+| `health_path` / probe URL overrides per collector | [#8](https://github.com/djbclark/aiuse/issues/8) |
+
+**Explicitly skip absorbing:** full menubar app, own scraper matrix, request
+routing / LiteLLM leases, ccusage-as-plan-%.
+
+**Move ideas into competitors (semantics, not code merge):** **Yes,
+selectively** — prepaid = no use-or-lose urgency, shared-allotment / governing
+window, stable JSON window fields, optional use-or-lose sort modes. How to
+package those for multi-language reuse (JSON Schema, YAML enums, golden
+vectors, not a Python-only library):
+[`shared-quota-semantics.md`](shared-quota-semantics.md).
+
+---
+
 ## Install / operator stack (this site)
 
 | Piece | How |

@@ -31,6 +31,8 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **Docs** | [`collectors-caut-openusage.md`](collectors-caut-openusage.md); [`competitive-landscape.md`](competitive-landscape.md) refreshed for five sources |
 | **Dep installer** | [`packaging/install-deps.sh`](../packaging/install-deps.sh); `just install-deps`; site `just install-aiuse-deps` |
 | **Packaging** | **2.1.7** PyPI + Homebrew |
+| **Feature backlog (pull ideas in)** | Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8): suggest, forecast, ambient, MCP, history, local note, health_path |
+| **Shared semantics design** | [`shared-quota-semantics.md`](shared-quota-semantics.md) — JSON Schema / YAML enums / pace formulas / golden vectors for multi-language peer reuse |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.7  
 PyPI: https://pypi.org/project/aiuse/2.1.7/
@@ -62,11 +64,15 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
 ## Next options (when resuming)
 
 1. **Wait / poll Step 33** — cswap lastGoodUsage when #170 merges.
-2. **caut** — optional `claude auth login` if you want more Claude cross-checks;
+2. **Product issues #2–#8** — pick one pull-into-aiuse feature (start with
+   `suggest` #2 or forecast UX #3 if agents/scripts matter).
+3. **Shared semantics fixtures** — grow `docs/shared-quota-semantics/` golden
+   vectors from existing pytest rules (optional, no release required).
+4. **caut** — optional `claude auth login` if you want more Claude cross-checks;
    Codex windows need upstream caut work (see collectors-caut-openusage.md).
-3. **OpenUsage CLI install** (operator) — Settings → Command Line → Install.
-4. **Let it run** — multi-source snapshots densify history.
-5. **Full release** — only if operator asks (PyPI + Homebrew).
+5. **OpenUsage CLI install** (operator) — Settings → Command Line → Install.
+6. **Let it run** — multi-source snapshots densify history.
+7. **Full release** — only if operator asks (PyPI + Homebrew).
 
 ## Quick verification
 
