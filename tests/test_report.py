@@ -578,6 +578,81 @@ def test_priority_ladder_includes_on_pace_providers():
     assert "\n\n" not in text
 
 
+def test_deepseek_prepaid_has_no_use_urgency():
+    """Deepseek CodexBar row is prepaid tokens — not '100% left · use before reset'."""
+    from aiuse.models import BillingKind, QuotaWindow
+    from aiuse.report import (
+        _account_use_urgency,
+        alert_use_urgency,
+        render_priority_ladder,
+    )
+
+    deepseek = AccountUsage(
+        source="codexbar",
+        provider="deepseek",
+        account="CodexBar",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=4.99,
+        windows=[
+            QuotaWindow(
+                label="Deepseek quota 1 (name not supplied by CodexBar)",
+                used_percent=0.0,
+                remaining_percent=100.0,
+                resets_at=None,
+            )
+        ],
+    )
+    # Fake 100% window must not score like a subscription burn candidate.
+    assert _account_use_urgency(deepseek) == 20.0
+
+    sub = AccountUsage(
+        source="codexbar",
+        provider="cursor",
+        account="c@x.com",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Cursor included",
+                used_percent=40.0,
+                remaining_percent=60.0,
+                resets_at=utcnow() + timedelta(days=10),
+                window_minutes=44640,
+            )
+        ],
+    )
+    assert _account_use_urgency(sub) > _account_use_urgency(deepseek)
+
+    snap = Snapshot(collected_at=utcnow(), accounts=[deepseek, sub])
+    text = render_priority_ladder([], snapshot=snap, color=False)
+    deep_line = next(line for line in text.splitlines() if "eepseek" in line)
+    assert "no expiry" in deep_line
+    assert "balance $4.99" in deep_line
+    assert "100%" not in deep_line
+    assert "use before" not in deep_line.casefold()
+    # Prepaid sorts above (less urgent than) subscription mid rows.
+    cursor_line = next(line for line in text.splitlines() if "Cursor" in line)
+    assert text.index(deep_line) < text.index(cursor_line)
+
+    large = UseOrLoseAlert(
+        urgency=Urgency.INFO,
+        provider="openrouter",
+        account="default",
+        window_label="balance $18.90",
+        remaining_percent=0.0,
+        days_until_reset=None,
+        plan=None,
+        message="prepaid",
+        source="codexbar",
+        score=0.0,
+        kind="prepaid",
+    )
+    assert alert_use_urgency(large) == 20.0
+    prepaid_text = render_priority_ladder([large], color=False)
+    assert "no expiry" in prepaid_text
+    assert "use before" not in prepaid_text.casefold()
+    assert "100%" not in prepaid_text
+
+
 def test_brief_aliases_default_priority_ladder():
     now = utcnow()
     acc = AccountUsage(provider="codex", source="codexbar", account="a@x.com")

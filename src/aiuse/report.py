@@ -16,6 +16,7 @@ from aiuse.analysis.pace import compute_pace
 from aiuse.analysis.use_or_lose import DAYS_PER_MONTH, _classify_flexibility, _compute_value_at_risk
 from aiuse.models import (
     AccountUsage,
+    BillingKind,
     CrossCheck,
     Snapshot,
     Urgency,
@@ -242,6 +243,9 @@ def alert_priority_band(alert: UseOrLoseAlert) -> int:
     rem = alert.remaining_percent
     if alert.urgency == Urgency.NONE:
         return _BAND_MID
+    # Prepaid API balances never expire — inventory only, never empty/use tags.
+    if alert.kind == "prepaid":
+        return _BAND_MID
     if alert.kind == "conserve" and rem <= 1.0:
         return _BAND_EMPTY
     if rem <= 0.0 and alert.kind != "burn":
@@ -271,6 +275,10 @@ def alert_use_urgency(alert: UseOrLoseAlert) -> float:
     score = float(alert.score)
     days_clamped = min(max(days, 0.0), 60.0)
 
+    # Non-expiring prepaid tokens — never compete with subscription burn urgency.
+    if alert.kind == "prepaid":
+        return 20.0
+
     if alert.kind == "conserve" or (rem <= 1.0 and alert.kind != "burn"):
         # Emptier + longer until reset → lower (top of list).
         return 8.0 + rem * 0.25 - days_clamped * 0.55 + score * 0.04
@@ -286,8 +294,17 @@ def alert_use_urgency(alert: UseOrLoseAlert) -> float:
     return 42.0 + rem * 0.18 - days_clamped * 0.3
 
 
+def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
+    """Purchased API credits that roll until spent (Deepseek, OpenRouter, …)."""
+    return account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
+
+
 def _account_use_urgency(account: AccountUsage) -> float:
     """On-pace / no-alert accounts: mild mid urgency from remaining + reset."""
+    # CodexBar often encodes prepaid balances as a fake 100%-remaining window
+    # with no reset — never treat that as use-or-lose urgency.
+    if _account_is_non_expiring_prepaid(account):
+        return 20.0
     windows = [w for w in account.windows if w.remaining() is not None]
     if windows:
         windows.sort(
@@ -396,10 +413,15 @@ def _priority_tag(s: _Style, band: int) -> str:
 
 def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     who = alert.account or "default"
+    name = s.bold(provider_display_name(alert.provider))
+    if alert.kind == "prepaid":
+        # Inventory only — no "use before reset" language for non-expiring tokens.
+        body = f"{name} · {who} · {alert.window_label} (no expiry)"
+        return f"{_priority_tag(s, band)} {body}"
     when = _human_deadline(alert.days_until_reset)
     verb = "pace" if alert.kind == "conserve" else "use"
     body = (
-        f"{s.bold(provider_display_name(alert.provider))} · {who} · "
+        f"{name} · {who} · "
         f"{alert.window_label}: {alert.remaining_percent:.0f}% left · {verb} {when}"
     )
     return f"{_priority_tag(s, band)} {body}"
@@ -416,6 +438,15 @@ def _priority_account_line(account: AccountUsage, s: _Style, band: int) -> str:
     """One mid/ok line for a live account that did not raise a burn/conserve alert."""
     who = account.account or "default"
     name = s.bold(provider_display_name(account.provider))
+    # Prepaid / pay-as-you-go: show balance inventory, never fake window % urgency.
+    if _account_is_non_expiring_prepaid(account):
+        if account.balance_usd is not None:
+            body = f"{name} · {who} · balance ${account.balance_usd:.2f} (no expiry)"
+        elif account.credits_remaining is not None:
+            body = f"{name} · {who} · credits {account.credits_remaining:g} (no expiry)"
+        else:
+            body = f"{name} · {who} · prepaid API (no expiry)"
+        return f"{_priority_tag(s, band)} {body}"
     windows = [w for w in account.windows if w.remaining() is not None]
     if windows:
         # Prefer Included / longest window (governing), then highest remaining.

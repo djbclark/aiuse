@@ -55,6 +55,7 @@ def test_flags_nearly_unused_weekly_window():
         snap,
         {
             "analysis": {
+                "learn_from_history": False,
                 "scoring_mode": "legacy",
                 "use_multi_dim_scoring": False,
                 "min_remaining_percent": 40,
@@ -92,7 +93,8 @@ def test_ignores_short_5h_window():
     )
     alerts = analyze_use_or_lose(
         snap,
-        {"analysis": {"scoring_mode": "legacy", "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
+        {"analysis": {
+                "learn_from_history": False,"scoring_mode": "legacy", "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
     )
     assert not any(a.window_label == "5-hour" for a in alerts)
 
@@ -109,9 +111,39 @@ def test_prepaid_is_info_only():
             )
         ],
     )
-    alerts = analyze_use_or_lose(snap, {})
+    alerts = analyze_use_or_lose(snap, {"analysis": {"learn_from_history": False}})
     assert len(alerts) == 1
     assert alerts[0].urgency == Urgency.INFO
+    assert alerts[0].kind == "prepaid"
+    assert alerts[0].score == 0.0
+    assert "balance $18.90" in alerts[0].window_label
+
+
+def test_deepseek_prepaid_under_threshold_is_not_alerted():
+    """Deepseek is purchased API tokens — no burn urgency even with a fake 100% window."""
+    snap = Snapshot(
+        collected_at=_now(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="deepseek",
+                account="CodexBar",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=4.99,
+                windows=[
+                    QuotaWindow(
+                        label="Deepseek quota 1 (name not supplied by CodexBar)",
+                        used_percent=0.0,
+                        remaining_percent=100.0,
+                        resets_at=None,
+                        reset_description="$4.99 (Paid: $4.99 / Granted: $0.00)",
+                    )
+                ],
+            )
+        ],
+    )
+    alerts = analyze_use_or_lose(snap, {"analysis": {"learn_from_history": False}})
+    assert alerts == []
 
 
 def test_well_used_window_not_flagged():
@@ -135,7 +167,8 @@ def test_well_used_window_not_flagged():
     )
     alerts = analyze_use_or_lose(
         snap,
-        {"analysis": {"scoring_mode": "legacy", "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
+        {"analysis": {
+                "learn_from_history": False,"scoring_mode": "legacy", "use_multi_dim_scoring": False, "min_remaining_percent": 40}},
     )
     assert alerts == []
 
@@ -163,6 +196,7 @@ def test_max_days_override_allows_later_window():
         snap,
         {
             "analysis": {
+                "learn_from_history": False,
                 "scoring_mode": "legacy",
                 "use_multi_dim_scoring": False,
                 "min_remaining_percent": 40,
@@ -194,7 +228,7 @@ def test_expired_window_is_not_actionable():
             )
         ],
     )
-    assert analyze_use_or_lose(snap, {}) == []
+    assert analyze_use_or_lose(snap, {"analysis": {"learn_from_history": False}}) == []
 
 
 def test_alert_has_no_dollar_value_estimate():
@@ -220,7 +254,8 @@ def test_alert_has_no_dollar_value_estimate():
     alert = analyze_use_or_lose(
         snap,
         {
-            "analysis": {"scoring_mode": "legacy", "use_multi_dim_scoring": False},
+            "analysis": {
+                "learn_from_history": False,"scoring_mode": "legacy", "use_multi_dim_scoring": False},
             "plans": {"codex": {"name": "Codex Plus", "monthly_usd": 20}},
         },
     )[0]
@@ -508,6 +543,7 @@ def test_multi_dim_does_not_drop_low_remaining_weekly_window():
         snap,
         {
             "analysis": {
+                "learn_from_history": False,
                 "scoring_mode": "multi_dim",
                 "use_multi_dim_scoring": True,
                 "min_remaining_percent": 40,
@@ -547,6 +583,7 @@ def test_multi_dim_includes_throttled_5h():
         snap,
         {
             "analysis": {
+                "learn_from_history": False,
                 "scoring_mode": "multi_dim",
                 "use_multi_dim_scoring": True,
                 "min_value_at_risk_usd": 0.0,
@@ -583,6 +620,7 @@ def test_multi_dim_filters_tiny_value():
         snap,
         {
             "analysis": {
+                "learn_from_history": False,
                 "scoring_mode": "multi_dim",
                 "use_multi_dim_scoring": True,
                 "min_value_at_risk_usd": 10.0,
@@ -606,6 +644,8 @@ def _pace_cfg(**overrides: object) -> dict:
         "min_value_at_risk_usd": 0.0,
         "min_value_fraction": 0.0,
         "waking_hours_per_day": 16,
+        # Unit tests must not pull chronic-waste INFO from the operator's real snapshots.
+        "learn_from_history": False,
     }
     analysis.update(overrides)
     return {"analysis": analysis, "plans": {"claude": {"monthly_price": 20}}}
@@ -987,7 +1027,8 @@ def test_legacy_mode_via_use_multi_dim_false():
     )
     alerts = analyze_use_or_lose(
         snap,
-        {"analysis": {"use_multi_dim_scoring": False, "min_remaining_percent": 40}},
+        {"analysis": {
+                "learn_from_history": False,"use_multi_dim_scoring": False, "min_remaining_percent": 40}},
     )
     assert len(alerts) >= 1
     assert all(a.kind == "burn" for a in alerts)  # default kind; no pace path

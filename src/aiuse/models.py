@@ -308,7 +308,7 @@ class UseOrLoseAlert:
 
     flexibility_profile: FlexibilityProfile | None = None
     window_minutes: int | None = None
-    kind: str = "burn"  # burn | conserve
+    kind: str = "burn"  # burn | conserve | prepaid
     pace: PaceProfile | None = None
 
     def to_dict(self) -> dict[str, Any]:

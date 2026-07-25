@@ -223,6 +223,11 @@ def alert_headline(alert: UseOrLoseAlert) -> str:
     """One-line headline for an alert (plain text)."""
     icon = URGENCY_ICON.get(alert.urgency, "   ").strip() or "·"
     who = alert.account or "default"
+    if alert.kind == "prepaid":
+        return (
+            f"{icon} {provider_display_name(alert.provider)} · {who} · "
+            f"{alert.window_label} (no expiry)"
+        )
     when = _human_deadline(alert.days_until_reset)
     verb = "pace" if alert.kind == "conserve" else "use"
     return (

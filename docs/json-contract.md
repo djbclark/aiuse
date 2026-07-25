@@ -117,7 +117,7 @@ Cross-check notes alone never set exit code 2.
 | `source`               | string            | data source for the window                                    |
 | `score`                | number            | sort priority (higher = more important)                       |
 | `window_minutes`       | int \| null       |                                                               |
-| `kind`                 | string            | `burn` \| `conserve`                                          |
+| `kind`                 | string            | `burn` \| `conserve` \| `prepaid` (non-expiring API balance)  |
 | `consumption_analysis` | object \| omitted | flexibility profile when present                              |
 | `pace`                 | object \| omitted | pace profile when present                                     |
 

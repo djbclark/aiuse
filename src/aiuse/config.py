@@ -113,6 +113,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "notes": "Has 5h / weekly / monthly windows when subscribed.",
             "monthly_price": 10,
         },
+        "deepseek": {
+            "name": "DeepSeek (prepaid API)",
+            "notes": "No monthly subscription — purchased tokens do not expire; never use-or-lose.",
+        },
+        "openrouter": {
+            "name": "OpenRouter (prepaid)",
+            "notes": "API credits usually roll until spent (not use-or-lose).",
+        },
     },
     "collectors": {
         "cswap": {"enabled": True},

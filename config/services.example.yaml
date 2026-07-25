@@ -108,6 +108,9 @@ plans:
   openrouter:
     name: "OpenRouter (prepaid)"
     notes: "API credits usually roll until spent (not use-or-lose)."
+  deepseek:
+    name: "DeepSeek (prepaid API)"
+    notes: "No monthly subscription — purchased tokens do not expire; never use-or-lose."
   openai:
     name: "OpenAI API"
     notes: "Pay-as-you-go; no use-or-lose monthly allotment unless you buy credits with expiry."

@@ -254,15 +254,17 @@ def analyze_use_or_lose(
         if account.billing_kind == BillingKind.PAYG_API:
             continue
         if account.billing_kind == BillingKind.PREPAID_BALANCE:
-            # Prepaid usually rolls; only note large idle balances as INFO
+            # Purchased API tokens / prepaid credits (Deepseek, OpenRouter, …)
+            # do not expire on a subscription cycle — never attach burn urgency.
+            # Large idle balances may still appear as inventory INFO (kind=prepaid).
             if account.balance_usd is not None and account.balance_usd >= 10:
                 alerts.append(
                     UseOrLoseAlert(
                         urgency=Urgency.INFO,
                         provider=account.provider,
                         account=account.account,
-                        window_label="prepaid balance",
-                        remaining_percent=100.0,
+                        window_label=f"balance ${account.balance_usd:.2f}",
+                        remaining_percent=0.0,
                         days_until_reset=None,
                         plan=account.plan,
                         message=(
@@ -271,7 +273,8 @@ def analyze_use_or_lose(
                             "not urgent like subscription windows)."
                         ),
                         source=account.source,
-                        score=5.0,
+                        score=0.0,
+                        kind="prepaid",
                     )
                 )
             continue
