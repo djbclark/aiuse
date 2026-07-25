@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from aiuse.__init__ import __version__
 from aiuse.analysis.history import save_snapshot, should_persist_snapshots
+from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.base import which
 from aiuse.collectors.runner import run_collectors
@@ -282,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     _progress("Collecting usage from local tools…")
     snapshot = run_collectors(config)
     alerts = analyze_use_or_lose(snapshot, config)
+    alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
 
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
     if should_persist_snapshots(analysis_cfg):

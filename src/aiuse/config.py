@@ -72,6 +72,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "cursor": {"shared_allotment": True},
             "grok": {"weekly": {"flexibility": 0.5, "refill_capacity_unit": "requests", "refill_capacity": 100}},
         },
+        # Advisory only: probe local LLM ports when cloud quotas look empty.
+        "local_runtimes": {
+            "enabled": False,
+            "when": "empty",  # empty | always
+            "probe_timeout_seconds": 0.35,
+            "allow_non_loopback": False,
+            "endpoints": [
+                {"name": "Ollama", "host": "127.0.0.1", "port": 11434},
+                {"name": "LM Studio", "host": "127.0.0.1", "port": 1234},
+            ],
+        },
     },
     "plans": {
         "codex": {
