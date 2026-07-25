@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from aiuse.analysis.history import (
@@ -553,11 +553,27 @@ def analyze_use_or_lose(
 
     if should_learn_from_history(analysis_cfg):
         retention = int(analysis_cfg.get("snapshot_retention_days", 90))
+        # Chronic-waste stats are averaged across past cycles and carry no reset
+        # time of their own — but the matching *live* window in this snapshot
+        # usually has one, so borrow it instead of reporting "time unknown".
+        live_resets_by_key: dict[str, datetime | None] = {}
+        for live_account in snapshot.accounts:
+            live_provider = provider_config_key(live_account.provider)
+            for live_window in live_account.windows:
+                key = f"{live_provider}:{live_window.label}"
+                if live_window.resets_at is not None or key not in live_resets_by_key:
+                    live_resets_by_key[key] = live_window.resets_at
         for wasted in chronic_waste_summary(current=snapshot, retention_days=retention):
             provider = wasted["provider"]
             label = wasted["label"]
             avg_remaining = wasted["avg_remaining_pct"]
             samples = wasted["sample_count"]
+            live_resets_at = live_resets_by_key.get(f"{provider}:{label}")
+            days = (
+                (live_resets_at - utcnow()).total_seconds() / 86400.0
+                if live_resets_at is not None
+                else None
+            )
             alerts.append(
                 UseOrLoseAlert(
                     urgency=Urgency.INFO,
@@ -565,7 +581,7 @@ def analyze_use_or_lose(
                     account=None,
                     window_label=label,
                     remaining_percent=avg_remaining,
-                    days_until_reset=None,
+                    days_until_reset=days,
                     plan=None,
                     message=(
                         f"{provider_display_name(provider)} {label}: {avg_remaining:.0f}% left on average "
