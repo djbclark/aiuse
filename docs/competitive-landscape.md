@@ -310,6 +310,75 @@ Useful only if the product goal remains **human portfolio decisions**:
 
 ---
 
+## Should we add peers as extra collectors?
+
+**Short answer:** **not by default.** Almost every peer either **duplicates**
+CodexBar/cswap/tokscale, answers a **different question** (local token burn, ambient
+UI, request routing), or would **inflate runtime and auth surface** without improving
+“which pool next?” ranking much. Prefer deepening the three existing collectors and
+the decision layer.
+
+`aiuse`’s collector contract is: shell out to a PATH tool, normalize to
+`AccountUsage` / `QuotaWindow`, prefer authoritative sources, keep others as
+cross-checks ([`runner.py`](../src/aiuse/collectors/runner.py)). New collectors only
+pay off if they add **unique live plan windows** or a **reliably independent
+measurement** of the same window.
+
+### Candidate-by-candidate
+
+| Candidate | As a new `aiuse` collector? | Why |
+| --------- | --------------------------- | --- |
+| **CodexBar / cswap / tokscale** | Already in | Keep investing here (timeouts, web vs local, cswap last-good, tokscale fan-out if upstream lands). |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | **Only if** CodexBar is unavailable (Linux/Windows without CodexBar, or Mac users who refuse the app) | CodexBar-parity CLI with stable `caut.v1` JSON — high **overlap** with CodexBar on Mac. Optional `collectors.caut` as alternate multi-provider path, not a third concurrent scrape of the same cookies. |
+| **[OpenUsage](https://www.openusage.ai/)** (`curl 127.0.0.1:6736/v1/usage`) | **Maybe optional later** | Nice local HTTP bus if the operator already runs OpenUsage. Does **not** replace collectors: still depends on another process and its plugins. Best as **opt-in** when CodexBar is broken for a provider OpenUsage still sees — not a default parallel fetch. |
+| **[onWatch](https://onwatch.onllm.dev/)** | **No (as live collect)** | Different product: always-on daemon + SQLite history. Polling it would add a heavy dependency; for ranking you want **fresh** plan %, not a second cache of the same APIs. Reuse ideas (exhaustion forecast UX), not the binary as a collector. |
+| **[quotabot](https://github.com/blisspixel/quotabot)** | **No** | Peer **decision/routing** layer (`suggest`, MCP), not a clean “usage JSON only” feed. Consuming it would either duplicate ranking or invent adapter-on-adapter. Better: learn from ranking UX; stay independent for portfolio scoring. |
+| **SessionWatcher / ClaudeBar / UsageScope / CUStats** | **No** | Menu-bar / web monitors; no stable first-class machine API aimed at aggregators; high permission/auth coupling. |
+| **[ccusage](https://ccusage.com/)** / OpenUsage.sh-style **local burn** tools | **No for plan ranking** | Local JSONL token *spend* is **not** subscription 5h/7d plan authority ([`claude-local-usage.md`](claude-local-usage.md)). At most a future optional “burn rate context” note — never a ladder driver. |
+| **Provider-native APIs** (Anthropic usage, OpenAI Usage API, …) | **Out of scope unless** you abandon the PATH-tool model | Would make `aiuse` a second CodexBar. Explicit non-goal today. |
+
+### Decision rules (when a fourth collector *would* be worth it)
+
+Add a collector only if **all** of the following hold:
+
+1. **Unique signal** — plan window or account that CodexBar + cswap + tokscale
+   systematically miss (or mis-source), **or** a second independent live read for
+   cross-check when tokscale is weak for that provider.
+2. **Stable machine interface** — CLI `--json` or loopback HTTP with a documented
+   schema (caut / OpenUsage style), not scraping a GUI.
+3. **Optional by default** — `collectors.<name>.enabled: false` until proven; never
+   force every operator to install the peer.
+4. **Latency budget** — fits the concurrent 45s collect model; no long-lived daemon
+   requirement for a one-shot `aiuse` run.
+5. **Does not confuse ranking** — prepaid stays non-urgent; local burn never becomes
+   plan %.
+
+Under those rules, the **only** near-term candidates worth prototyping are:
+
+| Priority | Candidate | Role |
+| -------- | --------- | ---- |
+| P2 (optional) | **caut** | CodexBar substitute on non-Mac / CodexBar-free hosts |
+| P3 (optional) | **OpenUsage** HTTP | Opportunistic fill-in if already running; never required |
+| Parked | Everything else | No collector work |
+
+**Do not** add quotabot, onWatch, ccusage, or menubar-only apps as default data
+sources. They compete with or confuse the decision layer more than they feed it.
+
+### Better investment than more collectors
+
+For “what pool next?” quality, higher ROI than a fourth scraper:
+
+1. **Collector reliability** — cswap last-good (Step 33), CodexBar web-preferred
+   providers, clearer error vs empty.
+2. **Decision layer** — ladder edge cases, shared allotment, prepaid `n/a`, history
+   burn blend (already partly done).
+3. **Optional `suggest`-style single winner** in JSON for agents — *output* feature,
+   not a new input tool.
+4. **Document companion stack** — CodexBar (ambient) + `aiuse` (rank); OpenUsage
+   optional if the user already likes it.
+
+---
+
 ## Sources (snapshot 2026-07-25)
 
 - Project code and docs in this repo (`README.md`, `docs/pretty-display.md`, collectors).
