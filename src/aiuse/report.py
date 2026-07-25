@@ -222,16 +222,25 @@ def render_report(
     return "\n".join(lines)
 
 
-# Ladder display tags (not the sort order). Sort is a continuous use-urgency.
+# Ladder display tags. error/empty/n/a are fixed lanes; slow/mid/use share a
+# continuous use-urgency continuum within the active lane.
 _BAND_ERROR = 0  # could not fetch usage
 _BAND_EMPTY = 1  # totally depleted
-_BAND_CONSERVE = 2  # pace yourself
-_BAND_MID = 3  # on pace / advisory / low urgency
-_BAND_USE = 4  # important to use soon
+_BAND_NA = 2  # non-expiring prepaid / payg — no use-or-lose urgency
+_BAND_CONSERVE = 3  # pace yourself
+_BAND_MID = 4  # on pace / advisory / low urgency
+_BAND_USE = 5  # important to use soon
+
+# Sort lanes (primary key): error → empty → n/a → active continuum
+_LANE_ERROR = 0
+_LANE_EMPTY = 1
+_LANE_NA = 2
+_LANE_ACTIVE = 3
 
 _BAND_TAG = {
     _BAND_ERROR: ("error", "red"),
     _BAND_EMPTY: ("empty", "red"),
+    _BAND_NA: ("n/a  ", "dim"),
     _BAND_CONSERVE: ("slow ", "yellow"),
     _BAND_MID: ("mid  ", "cyan"),
     _BAND_USE: ("use  ", "green"),
@@ -239,13 +248,13 @@ _BAND_TAG = {
 
 
 def alert_priority_band(alert: UseOrLoseAlert) -> int:
-    """Display tag only — sort order uses ``alert_use_urgency`` instead."""
+    """Display tag; sort uses band lane + ``alert_use_urgency`` within the lane."""
     rem = alert.remaining_percent
     if alert.urgency == Urgency.NONE:
         return _BAND_MID
     # Prepaid API balances never expire — inventory only, never empty/use tags.
     if alert.kind == "prepaid":
-        return _BAND_MID
+        return _BAND_NA
     if alert.kind == "conserve" and rem <= 1.0:
         return _BAND_EMPTY
     if rem <= 0.0 and alert.kind != "burn":
@@ -268,16 +277,16 @@ def alert_use_urgency(alert: UseOrLoseAlert) -> float:
     """Higher = more urgent to use *now* (appears lower on the ladder).
 
     Continuum from “most empty for the longest” (low) to “burn this soon” (high).
-    Display tags stay empty/slow/mid/use; they do not segment the sort.
+    Display tags stay empty/n/a/slow/mid/use; error/empty/n/a sort by lane first.
     """
     rem = max(0.0, float(alert.remaining_percent))
     days = float(alert.days_until_reset) if alert.days_until_reset is not None else 30.0
     score = float(alert.score)
     days_clamped = min(max(days, 0.0), 60.0)
 
-    # Non-expiring prepaid tokens — never compete with subscription burn urgency.
+    # Non-expiring prepaid tokens — lane handles placement; value is secondary.
     if alert.kind == "prepaid":
-        return 20.0
+        return 0.0
 
     if alert.kind == "conserve" or (rem <= 1.0 and alert.kind != "burn"):
         # Emptier + longer until reset → lower (top of list).
@@ -304,7 +313,7 @@ def _account_use_urgency(account: AccountUsage) -> float:
     # CodexBar often encodes prepaid balances as a fake 100%-remaining window
     # with no reset — never treat that as use-or-lose urgency.
     if _account_is_non_expiring_prepaid(account):
-        return 20.0
+        return 0.0
     windows = [w for w in account.windows if w.remaining() is not None]
     if windows:
         windows.sort(
@@ -325,9 +334,22 @@ def _account_use_urgency(account: AccountUsage) -> float:
     return 40.0
 
 
-def _ladder_sort_key(urgency: float, provider: str, account: str | None) -> tuple:
-    """Ascending urgency: empty-longest first, use-now last. Stable by name."""
-    return (urgency, provider.casefold(), (account or "").casefold())
+def _band_sort_lane(band: int) -> int:
+    """Primary ladder order: error → empty → n/a → active (slow/mid/use)."""
+    if band == _BAND_ERROR:
+        return _LANE_ERROR
+    if band == _BAND_EMPTY:
+        return _LANE_EMPTY
+    if band == _BAND_NA:
+        return _LANE_NA
+    return _LANE_ACTIVE
+
+
+def _ladder_sort_key(
+    lane: int, urgency: float, provider: str, account: str | None
+) -> tuple:
+    """Lane first, then urgency within the lane; stable by name."""
+    return (lane, urgency, provider.casefold(), (account or "").casefold())
 
 
 def _account_ladder_key(account: AccountUsage) -> tuple[str, str]:
@@ -357,9 +379,9 @@ def render_priority_ladder(
 ) -> str:
     """Stdout body: every provider, sorted by use-urgency (no blank lines).
 
-    Tags (error/empty/slow/mid/use) label each row; order is a single continuum
-    from most-empty-longest (top) to most-urgent-to-use-now (bottom). Failed
-    fetches stay at the top as ``error``.
+    Tags (error/empty/n/a/slow/mid/use) label each row. error/empty/n/a are
+    fixed lanes near the top; slow/mid/use share a continuum from conserve to
+    use-soon (bottom). Failed fetches stay at the top as ``error``.
     """
     if s is None:
         s = _Style(use_color(force=color))
@@ -372,7 +394,10 @@ def render_priority_ladder(
             continue
         band = alert_priority_band(alert)
         key = _ladder_sort_key(
-            alert_use_urgency(alert), alert.provider, alert.account
+            _band_sort_lane(band),
+            alert_use_urgency(alert),
+            alert.provider,
+            alert.account,
         )
         entries.append((key, _priority_alert_line(alert, s, band)))
         covered.add(_alert_ladder_key(alert))
@@ -385,17 +410,28 @@ def render_priority_ladder(
         if account.error or not _account_has_usage(account):
             entries.append(
                 (
-                    _ladder_sort_key(-1000.0, account.provider, account.account),
+                    _ladder_sort_key(
+                        _LANE_ERROR, -1000.0, account.provider, account.account
+                    ),
                     _priority_error_line(account, s),
                 )
             )
             continue
+        if _account_is_non_expiring_prepaid(account):
+            band = _BAND_NA
+            lane = _LANE_NA
+        else:
+            band = _BAND_MID
+            lane = _LANE_ACTIVE
         entries.append(
             (
                 _ladder_sort_key(
-                    _account_use_urgency(account), account.provider, account.account
+                    lane,
+                    _account_use_urgency(account),
+                    account.provider,
+                    account.account,
                 ),
-                _priority_account_line(account, s, _BAND_MID),
+                _priority_account_line(account, s, band),
             )
         )
 

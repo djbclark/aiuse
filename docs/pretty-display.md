@@ -11,22 +11,24 @@ Default `aiuse` prints **every provider account** on **stdout** as a ranked list
 
 1. **error** (red) — could not fetch usage for that provider/account  
 2. **empty** (red) — totally depleted  
-3. **slow** (yellow) — conserve / pace yourself  
-4. **mid** (cyan) — on pace / advisory / no alert  
-5. **use** (green) — important to burn soon
+3. **n/a** (dim) — non-expiring prepaid / pay-as-you-go (no use-or-lose urgency)  
+4. **slow** (yellow) — conserve / pace yourself  
+5. **mid** (cyan) — on pace / advisory / no alert  
+6. **use** (green) — important to burn soon
 
-Tags label each row; **order is a continuous use-urgency gradient** (not
-alphabetical within a band): most-empty-for-longest at the **top**,
-most-urgent-to-use-now at the **bottom**. Read **bottom → top** to pick what
-to use next. Collection time, capacity blurb, and `Detail: aiuse --full` go to
-**stderr** (suppressed with `-q`).
+Tags label each row. **error / empty / n/a** are fixed lanes near the top;
+**slow / mid / use** share a continuous use-urgency gradient (not alphabetical
+within a band): most-empty-for-longest at the **top**, most-urgent-to-use-now
+at the **bottom**. Read **bottom → top** to pick what to use next. Collection
+time, capacity blurb, and `Detail: aiuse --full` go to **stderr** (suppressed
+with `-q`).
 
 `--full` keeps the long report on stdout. `--brief` aliases the default.
 
 ### Color for readability
 
-- Semantic ANSI roles (red / yellow / cyan / green), not decorative rainbows.
-- Always pair color with a text tag (`empty` / `slow` / `mid` / `use`).
+- Semantic ANSI roles (red / dim / yellow / cyan / green), not decorative rainbows.
+- Always pair color with a text tag (`empty` / `n/a` / `slow` / `mid` / `use`).
 - Bold the tag + provider; keep secondary fields in the default face.
 - Respect `NO_COLOR` / `--no-color`.
 

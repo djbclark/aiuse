@@ -603,7 +603,7 @@ def test_deepseek_prepaid_has_no_use_urgency():
         ],
     )
     # Fake 100% window must not score like a subscription burn candidate.
-    assert _account_use_urgency(deepseek) == 20.0
+    assert _account_use_urgency(deepseek) == 0.0
 
     sub = AccountUsage(
         source="codexbar",
@@ -622,14 +622,43 @@ def test_deepseek_prepaid_has_no_use_urgency():
     )
     assert _account_use_urgency(sub) > _account_use_urgency(deepseek)
 
+    empty = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="copilot",
+        account="default",
+        window_label="premium",
+        remaining_percent=0.0,
+        days_until_reset=7.0,
+        plan=None,
+        message="gone",
+        source="tokscale",
+        score=90.0,
+        kind="conserve",
+    )
+    slow = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="codex",
+        account="a@x.com",
+        window_label="Weekly",
+        remaining_percent=10.0,
+        days_until_reset=3.0,
+        plan=None,
+        message="pace",
+        source="codexbar",
+        score=70.0,
+        kind="conserve",
+    )
     snap = Snapshot(collected_at=utcnow(), accounts=[deepseek, sub])
-    text = render_priority_ladder([], snapshot=snap, color=False)
+    text = render_priority_ladder([empty, slow], snapshot=snap, color=False)
     deep_line = next(line for line in text.splitlines() if "eepseek" in line)
+    assert deep_line.startswith("n/a")
     assert "no expiry" in deep_line
     assert "balance $4.99" in deep_line
     assert "100%" not in deep_line
     assert "use before" not in deep_line.casefold()
-    # Prepaid sorts above (less urgent than) subscription mid rows.
+    # Lane order: empty → n/a → slow → mid
+    assert text.index("empty") < text.index("n/a")
+    assert text.index("n/a") < text.index("slow")
     cursor_line = next(line for line in text.splitlines() if "Cursor" in line)
     assert text.index(deep_line) < text.index(cursor_line)
 
@@ -646,8 +675,9 @@ def test_deepseek_prepaid_has_no_use_urgency():
         score=0.0,
         kind="prepaid",
     )
-    assert alert_use_urgency(large) == 20.0
+    assert alert_use_urgency(large) == 0.0
     prepaid_text = render_priority_ladder([large], color=False)
+    assert prepaid_text.startswith("n/a")
     assert "no expiry" in prepaid_text
     assert "use before" not in prepaid_text.casefold()
     assert "100%" not in prepaid_text

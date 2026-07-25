@@ -143,7 +143,7 @@ aiuse --doctor
 
 | Flag                                             | Effect                                                                           |
 | ------------------------------------------------ | -------------------------------------------------------------------------------- |
-| _(none)_ / `--format pretty`                     | Priority ladder on stdout (empty→slow→mid→use); meta on stderr; plain when piped |
+| _(none)_ / `--format pretty`                     | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
 | `--full`                                         | Long pretty report: per-provider, cross-checks, tips, detailed plan              |
 | `--json` / `--format json`                       | Full snapshot + alerts as JSON                                                   |
 | `--brief`                                        | Alias of default priority-ladder pretty report                                   |
@@ -185,7 +185,7 @@ This tool:
 2. Scores windows with **pace-based** logic (default): compare how far through the cycle you are vs how much you've used, then project waste or early lockout.
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from.
-5. Default pretty output is a **priority ladder** on stdout (depleted → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
+5. Default pretty output is a **priority ladder** on stdout (depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
 6. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last).
 7. Cross-checks overlapping sources; Claude multi-account stays canonical in cswap (with cache hydrate + fallbacks).
 
