@@ -14,7 +14,7 @@ three gets you to the other two immediately.
 **Status (2026-07-25):** Package/CLI renamed to **`aiuse`**. Fix-plan Steps
 **1–32** and **34** are done. Product polish through doctor/brief/exit
 codes/completions/JSON contract is done. Config is **`~/.config/aiuse/`** only
-(legacy `~/.config/ai/` no longer read). Packaging **2.1.8** (PyPI + Homebrew).
+(legacy `~/.config/ai/` no longer read). Packaging **2.1.9** (PyPI + Homebrew).
 Collectors: cswap + CodexBar + **caut** + **OpenUsage** + tokscale with
 multi-source cross-checks. Prepaid/`n/a` ladder band. Hourly LaunchAgent,
 history learning `auto`. There is **no mandatory numbered step**. Open-ended
