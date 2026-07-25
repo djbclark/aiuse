@@ -12,7 +12,12 @@ from aiuse.analysis.history import (
     merge_learned_flexibility,
     should_learn_from_history,
 )
-from aiuse.analysis.pace import classify_pace, compute_pace, governing_partition
+from aiuse.analysis.pace import (
+    classify_pace,
+    compute_pace,
+    governing_partition,
+    partition_independent_pools,
+)
 from aiuse.models import (
     WINDOW_5H_MAX_MINUTES,
     AccountUsage,
@@ -284,17 +289,31 @@ def analyze_use_or_lose(
         value_multipliers = plan_meta.get("value_multiplier")
         provider_key = provider_config_key(account.provider)
 
-        # Shared-allotment (pace mode): score only the longest-duration window;
-        # shorter siblings (e.g. Claude 5h under weekly) are suppressed children.
+        # Shared-allotment (pace mode): score only the longest-duration window per
+        # *independent* pool; shorter siblings (e.g. Claude 5h under weekly) are
+        # suppressed children. Hard-separated families (Antigravity Gemini vs
+        # Claude/GPT) are different pools and each get their own governing window.
         shared_allotment = mode == "pace" and _shared_allotment_enabled(provider_key, analysis_cfg)
-        governing_window: QuotaWindow | None = None
-        child_windows: list[QuotaWindow] = []
+        # Windows that may produce an alert under shared allotment (governings).
+        scorable_ids: set[int] = set()
+        # Governing window id → suppressed children of that same pool.
+        children_by_gov_id: dict[int, list[QuotaWindow]] = {}
         if shared_allotment:
-            governing_window, child_windows = governing_partition(account.windows)
-            if governing_window is None:
-                # No usable remaining() on any window — score independently this run.
+            any_governing = False
+            for pool in partition_independent_pools(account.windows):
+                governing_window, child_windows = governing_partition(pool)
+                if governing_window is None:
+                    # No usable remaining() in this pool — score its windows
+                    # independently if we later fall through (leave them scorable).
+                    for window in pool:
+                        scorable_ids.add(id(window))
+                        children_by_gov_id[id(window)] = []
+                    continue
+                any_governing = True
+                scorable_ids.add(id(governing_window))
+                children_by_gov_id[id(governing_window)] = child_windows
+            if not any_governing and not scorable_ids:
                 shared_allotment = False
-                child_windows = []
 
         for window in account.windows:
             if mode == "legacy" and _is_short_window(window):
@@ -334,7 +353,7 @@ def analyze_use_or_lose(
             )
 
             if mode == "pace":
-                if shared_allotment and governing_window is not None and window is not governing_window:
+                if shared_allotment and id(window) not in scorable_ids:
                     continue  # child of a shared allotment — never its own alert
 
                 pace_cfg = analysis_cfg.get("pace") or {}
@@ -351,15 +370,15 @@ def analyze_use_or_lose(
                     learned_sample_count=learned_n,
                 )
                 if pace is None:
-                    # Governing window unusable: fall back to independent scoring for
-                    # remaining windows of this account (clear shared for this pass).
-                    if shared_allotment and window is governing_window:
-                        shared_allotment = False
-                        governing_window = None
-                        # Re-enter independent path for this window only: do not
-                        # continue; without pace we still skip.
+                    # Governing window unusable: promote this pool's children so
+                    # later iterations can score them independently.
+                    if shared_allotment and id(window) in scorable_ids:
+                        for child in children_by_gov_id.get(id(window), []):
+                            scorable_ids.add(id(child))
+                            children_by_gov_id[id(child)] = []
+                        scorable_ids.discard(id(window))
                     continue
-                if shared_allotment and window is governing_window:
+                if shared_allotment and id(window) in children_by_gov_id:
                     pace.governing = True
                 verdict = classify_pace(
                     pace,
@@ -418,10 +437,12 @@ def analyze_use_or_lose(
                     kind = "conserve"
 
                 suppressed = (
-                    child_windows
-                    if shared_allotment and window is governing_window and child_windows
+                    children_by_gov_id.get(id(window))
+                    if shared_allotment and id(window) in children_by_gov_id
                     else None
                 )
+                if suppressed is not None and not suppressed:
+                    suppressed = None
                 message = _pace_message(
                     account=account,
                     window=window,

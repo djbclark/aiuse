@@ -578,6 +578,79 @@ def test_priority_ladder_includes_on_pace_providers():
     assert "\n\n" not in text
 
 
+def test_priority_ladder_lists_antigravity_pools_separately():
+    """Gemini and Claude/GPT budgets must each get a ladder row."""
+    from datetime import timedelta
+
+    from aiuse.models import BillingKind, QuotaWindow, Urgency, UseOrLoseAlert
+    from aiuse.report import render_priority_ladder
+
+    now = utcnow()
+    acc = AccountUsage(
+        provider="antigravity",
+        source="codexbar",
+        account="user@example.com",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Gemini 5-hour",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                resets_at=now + timedelta(hours=1),
+                window_minutes=300,
+            ),
+            QuotaWindow(
+                label="Gemini weekly",
+                used_percent=34.0,
+                remaining_percent=66.0,
+                resets_at=now + timedelta(days=4),
+                window_minutes=10080,
+            ),
+            QuotaWindow(
+                label="Claude/GPT 5-hour",
+                used_percent=57.0,
+                remaining_percent=43.0,
+                resets_at=now + timedelta(hours=3),
+                window_minutes=300,
+            ),
+            QuotaWindow(
+                label="Claude/GPT weekly",
+                used_percent=19.0,
+                remaining_percent=81.0,
+                resets_at=now + timedelta(days=6),
+                window_minutes=10080,
+            ),
+        ],
+    )
+    snap = Snapshot(collected_at=now, accounts=[acc])
+    text = render_priority_ladder([], snapshot=snap, color=False)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    assert len(lines) == 2
+    joined = "\n".join(lines)
+    assert "Gemini weekly" in joined
+    assert "Claude/GPT weekly" in joined
+    assert "66%" in joined
+    assert "81%" in joined
+
+    # One pool burn must not swallow the other pool's mid row.
+    gemini_burn = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="antigravity",
+        account="user@example.com",
+        window_label="Gemini weekly",
+        remaining_percent=66.0,
+        days_until_reset=4.0,
+        plan="Google AI",
+        message="burn Gemini",
+        source="codexbar",
+        score=80.0,
+        kind="burn",
+    )
+    text2 = render_priority_ladder([gemini_burn], snapshot=snap, color=False)
+    assert "Gemini weekly" in text2
+    assert "Claude/GPT weekly" in text2
+
+
 def test_deepseek_prepaid_has_no_use_urgency():
     """Deepseek CodexBar row is prepaid tokens — not '100% left · use before reset'."""
     from aiuse.models import BillingKind, QuotaWindow

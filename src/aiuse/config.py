@@ -105,7 +105,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "gemini": {
             "name": "Google AI Pro / Ultra",
-            "notes": "Often exposed via Antigravity / Gemini CLI.",
+            "notes": (
+                "Often exposed via Antigravity / Gemini CLI. Gemini and "
+                "Claude/GPT allotments are independent pools (score and list separately)."
+            ),
             "monthly_price": 20,
         },
         "opencode": {

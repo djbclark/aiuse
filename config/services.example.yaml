@@ -99,7 +99,7 @@ plans:
     monthly_price: 30
   gemini:
     name: "Google AI Pro / Ultra"
-    notes: "Often exposed via Antigravity / Gemini CLI."
+    notes: "Often exposed via Antigravity / Gemini CLI. Gemini and Claude/GPT allotments are independent pools."
     monthly_price: 20
   opencode:
     name: "OpenCode Go"

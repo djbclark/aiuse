@@ -111,6 +111,7 @@ install steps, CLI flags, and config. Install helpers:
 | `docs/cswap-reliability.md`                  | Claude/cswap reliability: decision-stale JSON, cache hydration, fallbacks.               | When Claude rows go missing or multi-account looks wrong.        |
 | `docs/opencode-go-quota.md`                  | OpenCode Go: CodexBar local estimate vs web billing; shared allotment.                   | When Go % disagrees with the OpenCode TUI.                       |
 | `docs/cursor-quota.md`                       | Cursor Included/Auto/API + on-demand vs CodexBar slots.                                  | When Cursor % or CONSERVE disagrees with the Cursor usage UI.    |
+| `docs/antigravity-pools.md`                  | Antigravity Gemini vs Claude/GPT independent pools (score + ladder rows).                | When Antigravity is listed only once or pools look merged.      |
 | `docs/pretty-display.md`                     | Rich vs Textual for long scrollback-safe reports.                                        | When changing pretty/TTY display.                                |
 | `docs/packaging.md`                          | pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow.                        | When releasing or changing install UX.                           |
 | `docs/competitive-landscape.md`              | Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; “what pool next?”.           | Positioning, feature gaps, competitive questions.                |

@@ -12,12 +12,18 @@ from aiuse.analysis.history import (
     history_section_lines,
     should_learn_from_history,
 )
-from aiuse.analysis.pace import compute_pace
+from aiuse.analysis.pace import (
+    compute_pace,
+    governing_partition,
+    independent_pool_key,
+    partition_independent_pools,
+)
 from aiuse.analysis.use_or_lose import DAYS_PER_MONTH, _classify_flexibility, _compute_value_at_risk
 from aiuse.models import (
     AccountUsage,
     BillingKind,
     CrossCheck,
+    QuotaWindow,
     Snapshot,
     Urgency,
     UseOrLoseAlert,
@@ -308,27 +314,24 @@ def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
     return account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
 
 
+def _window_use_urgency(window: QuotaWindow) -> float:
+    """Mild mid urgency for an on-pace window (remaining + reset)."""
+    rem = float(window.remaining() or 0.0)
+    days = window.days_until_reset()
+    days_clamped = min(max(float(days) if days is not None else 30.0, 0.0), 60.0)
+    soon = max(0.0, 1.0 - days_clamped / 14.0)
+    return 42.0 + rem * 0.15 + soon * 12.0
+
+
 def _account_use_urgency(account: AccountUsage) -> float:
     """On-pace / no-alert accounts: mild mid urgency from remaining + reset."""
     # CodexBar often encodes prepaid balances as a fake 100%-remaining window
     # with no reset — never treat that as use-or-lose urgency.
     if _account_is_non_expiring_prepaid(account):
         return 0.0
-    windows = [w for w in account.windows if w.remaining() is not None]
-    if windows:
-        windows.sort(
-            key=lambda w: (
-                0 if "included" in (w.label or "").casefold() else 1,
-                -(w.window_minutes or 0),
-                -(w.remaining() or 0),
-            )
-        )
-        window = windows[0]
-        rem = float(window.remaining() or 0.0)
-        days = window.days_until_reset()
-        days_clamped = min(max(float(days) if days is not None else 30.0, 0.0), 60.0)
-        soon = max(0.0, 1.0 - days_clamped / 14.0)
-        return 42.0 + rem * 0.15 + soon * 12.0
+    window = _pick_representative_window(account.windows)
+    if window is not None:
+        return _window_use_urgency(window)
     if account.balance_usd is not None or account.credits_remaining is not None:
         return 36.0
     return 40.0
@@ -352,12 +355,23 @@ def _ladder_sort_key(
     return (lane, urgency, provider.casefold(), (account or "").casefold())
 
 
-def _account_ladder_key(account: AccountUsage) -> tuple[str, str]:
-    return (account.provider.casefold(), (account.account or "").casefold())
+def _ladder_coverage_key(
+    provider: str, account: str | None, pool_id: str = ""
+) -> tuple[str, str, str]:
+    """Provider + account + independent pool (Gemini vs Claude/GPT, etc.)."""
+    return (provider.casefold(), (account or "").casefold(), pool_id)
 
 
-def _alert_ladder_key(alert: UseOrLoseAlert) -> tuple[str, str]:
-    return (alert.provider.casefold(), (alert.account or "").casefold())
+def _pool_id_for_label(label: str | None) -> str:
+    return independent_pool_key(label) or ""
+
+
+def _pool_id_for_windows(windows: list[QuotaWindow]) -> str:
+    for window in windows:
+        key = independent_pool_key(window.label)
+        if key:
+            return key
+    return ""
 
 
 def _account_has_usage(account: AccountUsage) -> bool:
@@ -367,6 +381,24 @@ def _account_has_usage(account: AccountUsage) -> bool:
         or account.credits_remaining is not None
         or account.usage_credits is not None
     )
+
+
+def _pick_representative_window(windows: list[QuotaWindow]) -> QuotaWindow | None:
+    """Governing / included bar for a pool (or whole account)."""
+    usable = [w for w in windows if w.remaining() is not None]
+    if not usable:
+        return None
+    gov, _ = governing_partition(usable)
+    if gov is not None:
+        return gov
+    usable.sort(
+        key=lambda w: (
+            0 if "included" in (w.label or "").casefold() else 1,
+            -(w.window_minutes or 0),
+            -(w.remaining() or 0),
+        )
+    )
+    return usable[0]
 
 
 def render_priority_ladder(
@@ -387,7 +419,9 @@ def render_priority_ladder(
         s = _Style(use_color(force=color))
 
     entries: list[tuple[tuple, str]] = []
-    covered: set[tuple[str, str]] = set()
+    # Coverage includes independent pool id so Antigravity Gemini vs Claude/GPT
+    # each keep a ladder row even when only one pool raised an alert.
+    covered: set[tuple[str, str, str]] = set()
 
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
@@ -400,14 +434,18 @@ def render_priority_ladder(
             alert.account,
         )
         entries.append((key, _priority_alert_line(alert, s, band)))
-        covered.add(_alert_ladder_key(alert))
+        covered.add(
+            _ladder_coverage_key(
+                alert.provider, alert.account, _pool_id_for_label(alert.window_label)
+            )
+        )
 
     accounts = _sorted_accounts(snapshot.accounts) if snapshot is not None else []
     for account in accounts:
-        key = _account_ladder_key(account)
-        if key in covered:
-            continue
         if account.error or not _account_has_usage(account):
+            cov = _ladder_coverage_key(account.provider, account.account, "")
+            if cov in covered:
+                continue
             entries.append(
                 (
                     _ladder_sort_key(
@@ -416,24 +454,55 @@ def render_priority_ladder(
                     _priority_error_line(account, s),
                 )
             )
+            covered.add(cov)
             continue
         if _account_is_non_expiring_prepaid(account):
+            cov = _ladder_coverage_key(account.provider, account.account, "")
+            if cov in covered:
+                continue
             band = _BAND_NA
-            lane = _LANE_NA
-        else:
+            entries.append(
+                (
+                    _ladder_sort_key(
+                        _LANE_NA,
+                        _account_use_urgency(account),
+                        account.provider,
+                        account.account,
+                    ),
+                    _priority_account_line(account, s, band),
+                )
+            )
+            covered.add(cov)
+            continue
+
+        # One ladder row per hard-separated pool (Gemini vs Claude/GPT, …);
+        # single-pool providers still emit exactly one row.
+        pools = partition_independent_pools(account.windows) if account.windows else [[]]
+        for pool in pools:
+            pool_id = _pool_id_for_windows(pool) if pool else ""
+            cov = _ladder_coverage_key(account.provider, account.account, pool_id)
+            if cov in covered:
+                continue
+            window = _pick_representative_window(pool) if pool else None
             band = _BAND_MID
             lane = _LANE_ACTIVE
-        entries.append(
-            (
-                _ladder_sort_key(
-                    lane,
-                    _account_use_urgency(account),
-                    account.provider,
-                    account.account,
-                ),
-                _priority_account_line(account, s, band),
+            urgency = (
+                _window_use_urgency(window)
+                if window is not None
+                else _account_use_urgency(account)
             )
-        )
+            entries.append(
+                (
+                    _ladder_sort_key(
+                        lane,
+                        urgency,
+                        account.provider,
+                        account.account,
+                    ),
+                    _priority_account_line(account, s, band, window=window),
+                )
+            )
+            covered.add(cov)
 
     if not entries:
         return s.green("use   nothing urgent under current thresholds")
@@ -470,8 +539,14 @@ def _priority_error_line(account: AccountUsage, s: _Style) -> str:
     return f"{_priority_tag(s, _BAND_ERROR)} {body}"
 
 
-def _priority_account_line(account: AccountUsage, s: _Style, band: int) -> str:
-    """One mid/ok line for a live account that did not raise a burn/conserve alert."""
+def _priority_account_line(
+    account: AccountUsage,
+    s: _Style,
+    band: int,
+    *,
+    window: QuotaWindow | None = None,
+) -> str:
+    """One mid/ok line for a live account/pool that did not raise a burn/conserve alert."""
     who = account.account or "default"
     name = s.bold(provider_display_name(account.provider))
     # Prepaid / pay-as-you-go: show balance inventory, never fake window % urgency.
@@ -483,17 +558,9 @@ def _priority_account_line(account: AccountUsage, s: _Style, band: int) -> str:
         else:
             body = f"{name} · {who} · prepaid API (no expiry)"
         return f"{_priority_tag(s, band)} {body}"
-    windows = [w for w in account.windows if w.remaining() is not None]
-    if windows:
-        # Prefer Included / longest window (governing), then highest remaining.
-        windows.sort(
-            key=lambda w: (
-                0 if "included" in (w.label or "").casefold() else 1,
-                -(w.window_minutes or 0),
-                -(w.remaining() or 0),
-            )
-        )
-        window = windows[0]
+    if window is None:
+        window = _pick_representative_window(account.windows)
+    if window is not None:
         rem = window.remaining() or 0.0
         when = _human_deadline(window.days_until_reset())
         body = f"{name} · {who} · {window.label}: {rem:.0f}% left · ok {when}"

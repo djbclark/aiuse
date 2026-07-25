@@ -4,7 +4,7 @@
 **Branch:** `main` (clean, synced with `origin/main`)  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **221** passing  
+**Tests:** `.venv/bin/python -m pytest -q` — **226** passing  
 **Version:** **2.1.7** on PyPI + Homebrew + local `pipx` / `brew`
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
@@ -24,6 +24,7 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 
 | Area | Notes |
 | --- | --- |
+| **Antigravity dual pools** | Gemini vs Claude/GPT are independent allotments — score + ladder list both ([`antigravity-pools.md`](antigravity-pools.md)) |
 | Fix plan Steps **1–32** + **34** | Complete (no restart) |
 | **Prepaid / n/a ladder** | Deepseek etc. non-expiring → `n/a` band (empty → n/a → slow → mid → use) |
 | **Multi-source collectors** | **caut** + **OpenUsage** enabled by default; generalized all-pairs cross-check |
@@ -45,7 +46,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
 | Item | Status | Action |
 | --- | --- | --- |
 | Working tree / push | Clean; synced with `origin/main` | None |
-| Tests | **221** green | None |
+| Tests | **226** green | None |
 | Installers | 2.1.7 on PyPI + Homebrew tap | None |
 | GitHub repo metadata | Description + homepage + topics set | None |
 | OpenUsage CLI on PATH | Optional | Settings → Command Line → Install if desired |

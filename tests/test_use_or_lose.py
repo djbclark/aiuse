@@ -1005,6 +1005,66 @@ def test_lone_5h_window_can_still_alert_under_shared_allotment():
     assert all(a.window_label == "Claude Code 5-hour" for a in alerts)
 
 
+def test_antigravity_shared_allotment_scores_gemini_and_claude_pools():
+    """Gemini vs Claude/GPT are independent; each pool's weekly can alert."""
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="antigravity",
+                account="user@example.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Gemini 5-hour",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(hours=4),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Gemini weekly",
+                        used_percent=5.0,
+                        remaining_percent=95.0,
+                        # Late in the week, almost unused → burn
+                        resets_at=now + timedelta(days=1),
+                        window_minutes=10080,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT 5-hour",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(hours=4),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT weekly",
+                        used_percent=5.0,
+                        remaining_percent=95.0,
+                        resets_at=now + timedelta(days=1),
+                        window_minutes=10080,
+                    ),
+                ],
+            )
+        ],
+    )
+    cfg = _pace_cfg()
+    cfg["analysis"]["provider_overrides"] = {"gemini": {"shared_allotment": True}}
+    cfg["analysis"]["min_value_at_risk_usd"] = 0.0
+    cfg["analysis"]["min_value_fraction"] = 0.0
+    cfg["plans"] = {"gemini": {"monthly_price": 20, "name": "Google AI"}}
+    alerts = analyze_use_or_lose(snap, cfg)
+    labels = {a.window_label for a in alerts}
+    # Both independent weeklies should be scorable (not collapsed to one).
+    assert "Gemini weekly" in labels
+    assert "Claude/GPT weekly" in labels
+    # 5h children suppressed within each pool
+    assert not any("5-hour" in (a.window_label or "") for a in alerts)
+    assert all(a.kind == "burn" for a in alerts)
+
+
 def test_legacy_mode_via_use_multi_dim_false():
     snap = Snapshot(
         collected_at=_now(),

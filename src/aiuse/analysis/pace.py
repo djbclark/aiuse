@@ -118,3 +118,57 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
     governing = scored[0][2]
     children = [w for w in windows if w is not governing]
     return governing, children
+
+
+def independent_pool_key(label: str | None) -> str | None:
+    """Hard-separated allotment family from a window label, if any.
+
+    Some providers (notably Google AI / Antigravity) expose **independent**
+    budgets that must not be collapsed by shared-allotment logic — e.g. Gemini
+    usage vs Claude/GPT usage. Returns a stable slug for grouping, or None for
+    the residual “same pool” group (Claude 5h⊂weekly, Cursor Included⊃Auto/API).
+    """
+    text = (label or "").casefold()
+    if not text:
+        return None
+    # More specific markers first so "Claude/GPT" does not also hit a bare gemini rule.
+    if (
+        "claude/gpt" in text
+        or "claude / gpt" in text
+        or "non-gemini" in text
+        or "nongemini" in text
+        or "non gemini" in text
+    ):
+        return "claude_gpt"
+    if "gemini" in text:
+        return "gemini"
+    return None
+
+
+def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWindow]]:
+    """Group windows into hard-separated allotment pools.
+
+    Windows that share a non-None :func:`independent_pool_key` form one pool.
+    Unlabeled / residual windows form a single additional pool. Within each
+    pool, :func:`governing_partition` still applies (5h ⊂ weekly, etc.).
+
+    Order is stable: first named pool in window-list order, then residual.
+    """
+    if not windows:
+        return []
+    named: dict[str, list[QuotaWindow]] = {}
+    named_order: list[str] = []
+    residual: list[QuotaWindow] = []
+    for window in windows:
+        key = independent_pool_key(window.label)
+        if key is None:
+            residual.append(window)
+            continue
+        if key not in named:
+            named[key] = []
+            named_order.append(key)
+        named[key].append(window)
+    pools = [named[key] for key in named_order]
+    if residual:
+        pools.append(residual)
+    return pools if pools else [list(windows)]

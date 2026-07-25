@@ -178,6 +178,47 @@ def test_governing_partition_prefers_weekly_over_5h():
     assert children == [five]
 
 
+def test_independent_pool_key_gemini_vs_claude_gpt():
+    from aiuse.analysis.pace import independent_pool_key
+
+    assert independent_pool_key("Gemini weekly") == "gemini"
+    assert independent_pool_key("Gemini 5-hour") == "gemini"
+    assert independent_pool_key("Claude/GPT weekly") == "claude_gpt"
+    assert independent_pool_key("Claude/GPT 5-hour") == "claude_gpt"
+    assert independent_pool_key("Antigravity nonGeminiWeekly") == "claude_gpt"
+    assert independent_pool_key("Claude Code weekly") is None
+    assert independent_pool_key("Cursor included") is None
+
+
+def test_partition_independent_pools_antigravity_splits_families():
+    from aiuse.analysis.pace import partition_independent_pools
+
+    windows = [
+        QuotaWindow(label="Gemini 5-hour", remaining_percent=0.0, window_minutes=300),
+        QuotaWindow(label="Gemini weekly", remaining_percent=66.0, window_minutes=10080),
+        QuotaWindow(label="Claude/GPT 5-hour", remaining_percent=43.0, window_minutes=300),
+        QuotaWindow(label="Claude/GPT weekly", remaining_percent=81.0, window_minutes=10080),
+    ]
+    pools = partition_independent_pools(windows)
+    assert len(pools) == 2
+    labels = [{w.label for w in pool} for pool in pools]
+    assert {"Gemini 5-hour", "Gemini weekly"} in labels
+    assert {"Claude/GPT 5-hour", "Claude/GPT weekly"} in labels
+
+
+def test_partition_independent_pools_cursor_stays_one_pool():
+    from aiuse.analysis.pace import partition_independent_pools
+
+    windows = [
+        QuotaWindow(label="Cursor included", remaining_percent=39.0, window_minutes=44640),
+        QuotaWindow(label="Cursor Auto", remaining_percent=45.0, window_minutes=44640),
+        QuotaWindow(label="Cursor API", remaining_percent=0.0, window_minutes=44640),
+    ]
+    pools = partition_independent_pools(windows)
+    assert len(pools) == 1
+    assert len(pools[0]) == 3
+
+
 def test_early_window_on_pace_even_if_usage_looks_high():
     now = _now()
     # Just started: 1 day left of a long path... elapsed small.
