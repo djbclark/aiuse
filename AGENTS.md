@@ -14,7 +14,7 @@ three gets you to the other two immediately.
 **Status (2026-07-24):** Package/CLI renamed to **`aiuse`**. Fix-plan Steps
 **1–32** and **34** are done. Product polish through doctor/brief/exit
 codes/completions/JSON contract is done. Config is **`~/.config/aiuse/`** only
-(legacy `~/.config/ai/` no longer read). Packaging **2.1.4** (PyPI + Homebrew),
+(legacy `~/.config/ai/` no longer read). Packaging **2.1.5** (PyPI + Homebrew),
 hourly LaunchAgent, history learning `auto`, and `--full` History UX are done.
 There is **no mandatory numbered step**. Open-ended “what next?” → read
 [`docs/handoff.md`](docs/handoff.md), then offer choices — **do not restart at
