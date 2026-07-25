@@ -34,6 +34,7 @@ Fresh agents: start at [`AGENTS.md`](../AGENTS.md).
 | **Feature backlog (pull ideas in)** | Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8): suggest, forecast, ambient, MCP, history, local note, health_path |
 | **Shared semantics design** | [`shared-quota-semantics.md`](shared-quota-semantics.md) — JSON Schema / YAML enums / pace formulas / golden vectors for multi-language peer reuse |
 | **Shared semantics implement** | [Issue #9](https://github.com/djbclark/aiuse/issues/9) — package + CI dogfood first; open tickets with peer apps only as the last step |
+| **Public announce (operator)** | [Issue #10](https://github.com/djbclark/aiuse/issues/10) — venues (prefer non-vendor-siloed) + draft copy; do not auto-post |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.7  
 PyPI: https://pypi.org/project/aiuse/2.1.7/
@@ -73,7 +74,9 @@ PyPI: https://pypi.org/project/aiuse/2.1.7/
    Codex windows need upstream caut work (see collectors-caut-openusage.md).
 5. **OpenUsage CLI install** (operator) — Settings → Command Line → Install.
 6. **Let it run** — multi-source snapshots densify history.
-7. **Full release** — only if operator asks (PyPI + Homebrew).
+7. **Announce** — [issue #10](https://github.com/djbclark/aiuse/issues/10) when
+   operator wants Show HN / Lobsters / etc. (draft ready; no auto-post).
+8. **Full release** — only if operator asks (PyPI + Homebrew).
 
 ## Quick verification
 
