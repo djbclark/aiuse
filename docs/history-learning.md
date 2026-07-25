@@ -42,8 +42,13 @@ Learning (when active) also implies snapshot persistence for that run.
 ## History
 History: N snapshots in …/snapshots (learning auto/waiting|auto/on|on|off)
   span: YYYY-MM-DD HH:MM → YYYY-MM-DD HH:MM UTC (…, N files)
+  retention: 90d (config snapshot_retention_days)
   Learned burn rates (blended into pace when present):
     · Claude weekly: ~12%/day (5 samples)
+  Usually left late in cycle (≥70% elapsed; proxy for waste at reset):
+    · Codex weekly: ~45% left avg (4 late samples)
+  History suggests burning these (often leftover late in window):
+    · Codex weekly — usually ~45% left late
   Chronic underuse (short windows, multiple reset cycles):
     · Claude 5-hour: 85% left avg over 3 cycles
 ```
@@ -51,6 +56,9 @@ History: N snapshots in …/snapshots (learning auto/waiting|auto/on|on|off)
 When learning is waiting or disabled, the section explains that instead of listing
 rates. Action-plan and per-window detail lines note `blended with history (N samples)`
 when pace used learned rates.
+
+Full ``aiuse --json`` also includes a top-level ``history`` object (learned rates,
+late-cycle leftovers, chronic underuse) — see [`json-contract.md`](json-contract.md).
 
 ## What learning does
 

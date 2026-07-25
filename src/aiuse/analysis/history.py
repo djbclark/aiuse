@@ -430,6 +430,141 @@ def history_status_line(*, analysis_cfg: dict[str, Any] | None = None) -> str:
     return f"History: {n} {noun} in {snapshot_dir()} (learning {mode})"
 
 
+def late_cycle_remaining_summary(
+    *,
+    retention_days: int = _DEFAULT_RETENTION_DAYS,
+    late_elapsed_min: float = 0.70,
+    min_samples: int = 2,
+) -> list[dict[str, Any]]:
+    """Average remaining% when observed late in a cycle (proxy for waste at reset).
+
+    Uses historical windows with known ``resets_at`` + ``window_minutes`` where
+    elapsed fraction ≥ ``late_elapsed_min``. Groups by provider + duration kind.
+    """
+    history = load_recent_snapshots(retention_days=retention_days, max_count=10_000)
+    if len(history) < _DEFAULT_MIN_SNAPSHOTS:
+        return []
+
+    buckets: dict[str, list[float]] = {}
+    meta: dict[str, dict[str, str]] = {}
+
+    for prev_data in history:
+        ts_str = prev_data.get("collected_at", "")
+        try:
+            obs_time = datetime.fromisoformat(str(ts_str))
+            if obs_time.tzinfo is None:
+                obs_time = obs_time.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+        for prev_account in prev_data.get("accounts") or []:
+            provider = provider_config_key(str(prev_account.get("provider", "")))
+            for prev_window in prev_account.get("windows") or []:
+                remaining = prev_window.get("remaining_percent")
+                if remaining is None:
+                    remaining = _remaining_from_used(prev_window.get("used_percent"))
+                if remaining is None:
+                    continue
+                try:
+                    rem_f = float(remaining)
+                except (TypeError, ValueError):
+                    continue
+                duration_key = _duration_key(prev_window.get("window_minutes"))
+                if not duration_key:
+                    continue
+                resets_raw = prev_window.get("resets_at")
+                minutes = prev_window.get("window_minutes")
+                if not resets_raw or not minutes:
+                    continue
+                try:
+                    resets_at = datetime.fromisoformat(str(resets_raw).replace("Z", "+00:00"))
+                    if resets_at.tzinfo is None:
+                        resets_at = resets_at.replace(tzinfo=timezone.utc)
+                    m = int(minutes)
+                except (TypeError, ValueError):
+                    continue
+                if m <= 0:
+                    continue
+                t_left_days = (resets_at - obs_time).total_seconds() / 86400.0
+                d_days = m / 1440.0
+                if d_days <= 0:
+                    continue
+                # Past reset → treat as cycle end sample if remaining was still high.
+                if t_left_days < 0:
+                    elapsed = 1.0
+                else:
+                    elapsed = min(1.0, max(0.0, 1.0 - t_left_days / d_days))
+                if elapsed < late_elapsed_min:
+                    continue
+                pk = f"{provider}:{duration_key}"
+                buckets.setdefault(pk, []).append(rem_f)
+                meta[pk] = {"provider": provider, "duration_kind": duration_key}
+
+    result: list[dict[str, Any]] = []
+    for pk, samples in buckets.items():
+        if len(samples) < min_samples:
+            continue
+        avg = sum(samples) / len(samples)
+        result.append(
+            {
+                "provider": meta[pk]["provider"],
+                "duration_kind": meta[pk]["duration_kind"],
+                "avg_remaining_pct": round(avg, 1),
+                "sample_count": len(samples),
+            }
+        )
+    result.sort(key=lambda x: x["avg_remaining_pct"], reverse=True)
+    return result
+
+
+def history_insights(
+    snapshot: Snapshot,
+    *,
+    analysis_cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Structured history insights for JSON / docs (additive contract).
+
+    Empty-ish when learning is off or history is thin.
+    """
+    cfg = analysis_cfg or {}
+    try:
+        retention = int(cfg.get("snapshot_retention_days") or _DEFAULT_RETENTION_DAYS)
+    except (TypeError, ValueError):
+        retention = _DEFAULT_RETENTION_DAYS
+
+    n = count_snapshots(retention_days=retention)
+    learning = should_learn_from_history(cfg)
+    out: dict[str, Any] = {
+        "snapshot_count": n,
+        "learning_active": learning,
+        "retention_days": retention,
+        "learned_burn_rates": {},
+        "chronic_underuse": [],
+        "usually_left_late_cycle": [],
+        "burn_candidates_from_history": [],
+    }
+    if not learning:
+        return out
+
+    rates = compute_learned_burn_rates(current=snapshot, retention_days=retention)
+    out["learned_burn_rates"] = {
+        key: {"fraction_per_day": round(rate, 4), "sample_count": n_samples}
+        for key, (rate, n_samples) in sorted(rates.items())
+    }
+    out["chronic_underuse"] = chronic_waste_summary(current=snapshot, retention_days=retention)
+    late = late_cycle_remaining_summary(retention_days=retention)
+    out["usually_left_late_cycle"] = late
+    # History-taught "burn soon" candidates: high remaining late in prior cycles.
+    candidates = [
+        item
+        for item in late
+        if float(item.get("avg_remaining_pct") or 0) >= 40.0
+        and int(item.get("sample_count") or 0) >= 2
+    ]
+    out["burn_candidates_from_history"] = candidates[:8]
+    return out
+
+
 def history_section_lines(
     snapshot: Snapshot,
     *,
@@ -470,6 +605,7 @@ def history_section_lines(
                 f"  span: {oldest.strftime('%Y-%m-%d %H:%M')} → "
                 f"{newest.strftime('%Y-%m-%d %H:%M')} UTC ({span_s}, {len(times)} files)"
             )
+            lines.append(f"  retention: {retention}d (config snapshot_retention_days)")
 
     if not should_learn_from_history(cfg):
         raw = cfg.get("learn_from_history", "auto")
@@ -502,6 +638,24 @@ def history_section_lines(
             "  No learned burn rates yet (need enough same-window samples across time)."
         )
 
+    late = late_cycle_remaining_summary(retention_days=retention)
+    if late:
+        lines.append("  Usually left late in cycle (≥70% elapsed; proxy for waste at reset):")
+        for item in late[:8]:
+            name = provider_display_name(str(item["provider"]))
+            lines.append(
+                f"    · {name} {item['duration_kind']}: ~{item['avg_remaining_pct']:.0f}% left "
+                f"avg ({item['sample_count']} late sample{'s' if item['sample_count'] != 1 else ''})"
+            )
+        burnish = [i for i in late if float(i["avg_remaining_pct"]) >= 40.0][:5]
+        if burnish:
+            lines.append("  History suggests burning these (often leftover late in window):")
+            for item in burnish:
+                name = provider_display_name(str(item["provider"]))
+                lines.append(
+                    f"    · {name} {item['duration_kind']} — usually ~{item['avg_remaining_pct']:.0f}% left late"
+                )
+
     chronic = chronic_waste_summary(current=snapshot, retention_days=retention)
     if chronic:
         lines.append("  Chronic underuse (short windows, multiple reset cycles):")
@@ -511,4 +665,6 @@ def history_section_lines(
                 f"    · {name} {item['label']}: {item['avg_remaining_pct']:.0f}% left avg "
                 f"over {item['sample_count']} cycles"
             )
+    elif rates or late:
+        lines.append("  No chronic short-window underuse detected yet.")
     return lines

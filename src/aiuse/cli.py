@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from aiuse.__init__ import __version__
-from aiuse.analysis.history import save_snapshot, should_persist_snapshots
+from aiuse.analysis.history import history_insights, save_snapshot, should_persist_snapshots
 from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.suggest import format_suggestion_line, pick_suggestion, suggestion_to_dict
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
@@ -310,10 +310,12 @@ def main(argv: list[str] | None = None) -> int:
 
     suggestion_alert = pick_suggestion(alerts)
     suggestion = suggestion_to_dict(suggestion_alert)
+    insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     payload = {
         "snapshot": snapshot.to_dict(),
         "alerts": [a.to_dict() for a in alerts],
         "suggestion": suggestion,
+        "history": insights,
     }
     cross_check_warnings = [check.to_dict() for check in snapshot.cross_checks if check.status == "warning"]
 

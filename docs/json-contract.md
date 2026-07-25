@@ -15,7 +15,8 @@ Default `aiuse --json` stdout:
 {
   "snapshot": { ... },
   "alerts": [ ... ],
-  "suggestion": { ... } | null
+  "suggestion": { ... } | null,
+  "history": { ... }
 }
 ```
 
@@ -28,6 +29,8 @@ Default `aiuse --json` stdout:
   "suggestion": { ... } | null
 }
 ```
+
+(``history`` is omitted from ``--alerts-only`` to keep that payload small.)
 
 (`cross_check_warnings` is only the subset of `snapshot.cross_checks` with
 `status == "warning"`.)
@@ -51,6 +54,20 @@ urgent. Prefer this over re-ranking `alerts[]` in scripts. Also available via
 | `reason`             | string         | human message                              |
 | `source`             | string         |                                            |
 | `plan`               | string \| null |                                            |
+
+### `history` (top-level on full `--json`)
+
+Snapshot learning insights (additive). Empty-ish when learning is off or thin.
+
+| Field                         | Type    | Notes                                                          |
+| ----------------------------- | ------- | -------------------------------------------------------------- |
+| `snapshot_count`              | int     | Retained files under cache                                     |
+| `learning_active`             | bool    | Whether history influences scoring this run                    |
+| `retention_days`              | int     | From config                                                    |
+| `learned_burn_rates`          | object  | Map `provider:duration` → `{fraction_per_day, sample_count}`   |
+| `chronic_underuse`            | array   | Short windows with high avg remaining across ≥2 cycles         |
+| `usually_left_late_cycle`     | array   | Avg remaining when observed ≥70% into a window                 |
+| `burn_candidates_from_history`| array   | Subset of late-cycle leftovers (≥40% left avg) as burn hints   |
 
 ## Exit codes (collect runs)
 

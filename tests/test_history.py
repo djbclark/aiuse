@@ -17,8 +17,10 @@ from aiuse.analysis.history import (
     chronic_waste_summary,
     compute_learned_burn_rates,
     compute_learned_flexibility,
+    history_insights,
     history_section_lines,
     history_status_line,
+    late_cycle_remaining_summary,
     load_recent_snapshots,
     merge_learned_flexibility,
     save_snapshot,
@@ -181,6 +183,74 @@ def test_history_section_lines_waiting_and_disabled(tmp_path: Path):
         off = history_section_lines(snap, analysis_cfg={"learn_from_history": False})
         assert any("Learning disabled" in line for line in off)
         assert not any("Learning waits" in line for line in off)
+
+
+def test_late_cycle_and_history_insights(tmp_path: Path):
+    now = _now()
+    # Two late-in-week samples for codex weekly (~90% elapsed).
+    resets = now + timedelta(days=0.5)
+    for i, rem in enumerate((70.0, 65.0)):
+        ts = now - timedelta(hours=2 + i)
+        payload = {
+            "collected_at": ts.isoformat(),
+            "accounts": [
+                {
+                    "provider": "codex",
+                    "account": "u@x.com",
+                    "windows": [
+                        {
+                            "label": "Codex weekly",
+                            "remaining_percent": rem,
+                            "window_minutes": 10080,
+                            "resets_at": resets.isoformat(),
+                        }
+                    ],
+                }
+            ],
+        }
+        (tmp_path / f"s{i}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                account="u@x.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Codex weekly",
+                        remaining_percent=60.0,
+                        resets_at=resets,
+                        window_minutes=10080,
+                    )
+                ],
+            )
+        ],
+    )
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        late = late_cycle_remaining_summary(retention_days=90)
+        assert late
+        assert late[0]["provider"] == "codex"
+        assert late[0]["duration_kind"] == "weekly"
+        assert late[0]["avg_remaining_pct"] == pytest.approx(67.5, abs=0.1)
+
+        insights = history_insights(
+            snap, analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90}
+        )
+        assert insights["learning_active"] is True
+        assert insights["snapshot_count"] >= 2
+        assert insights["usually_left_late_cycle"]
+        assert insights["burn_candidates_from_history"]
+
+        lines = history_section_lines(
+            snap, analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90}
+        )
+        joined = "\n".join(lines)
+        assert "Usually left late" in joined
+        assert "History suggests burning" in joined
+        assert "retention:" in joined
 
 
 def test_should_learn_from_history_auto(tmp_path: Path):
