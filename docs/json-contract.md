@@ -14,7 +14,8 @@ Default `aiuse --json` stdout:
 ```json
 {
   "snapshot": { ... },
-  "alerts": [ ... ]
+  "alerts": [ ... ],
+  "suggestion": { ... } | null
 }
 ```
 
@@ -23,12 +24,33 @@ Default `aiuse --json` stdout:
 ```json
 {
   "alerts": [ ... ],
-  "cross_check_warnings": [ ... ]
+  "cross_check_warnings": [ ... ],
+  "suggestion": { ... } | null
 }
 ```
 
 (`cross_check_warnings` is only the subset of `snapshot.cross_checks` with
 `status == "warning"`.)
+
+### `suggestion` (optional top-level)
+
+Single best **burn** window to use next, or `null` when there is nothing
+urgent. Prefer this over re-ranking `alerts[]` in scripts. Also available via
+`aiuse suggest` (human one-liner) / `aiuse suggest --json`.
+
+| Field                | Type           | Notes                                      |
+| -------------------- | -------------- | ------------------------------------------ |
+| `provider`           | string         |                                            |
+| `account`            | string \| null |                                            |
+| `window_label`       | string         |                                            |
+| `kind`               | string         | always `burn` when non-null                |
+| `urgency`            | string         |                                            |
+| `remaining_percent`  | number         |                                            |
+| `days_until_reset`   | number \| null |                                            |
+| `score`              | number         | analysis score                             |
+| `reason`             | string         | human message                              |
+| `source`             | string         |                                            |
+| `plan`               | string \| null |                                            |
 
 ## Exit codes (collect runs)
 

@@ -16,6 +16,7 @@ from typing import Any, Callable
 from aiuse.__init__ import __version__
 from aiuse.analysis.history import save_snapshot, should_persist_snapshots
 from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
+from aiuse.analysis.suggest import format_suggestion_line, pick_suggestion, suggestion_to_dict
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.base import which
 from aiuse.collectors.runner import run_collectors
@@ -57,6 +58,7 @@ config & setup:
   aiuse --show-config-path    print services.yaml and config.toml paths
   aiuse doctor                PATH tools, version probe, config validation, timeouts
   aiuse status / prompt       one-line status for shell prompts / status bars
+  aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
   aiuse -q / --quiet          no progress on stderr (JSON stdout stays clean either way)
@@ -119,6 +121,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Print one-line status for prompts/status bars and exit "
             "(also: aiuse status / aiuse prompt)"
+        ),
+    )
+    p.add_argument(
+        "--suggest",
+        action="store_true",
+        help=(
+            "Print the single best burn recommendation (or nothing urgent); "
+            "with --json includes top-level suggestion (also: aiuse suggest)"
         ),
     )
     p.add_argument(
@@ -254,6 +264,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--doctor", *raw[1:]]
     if head in ("status", "prompt"):
         return ["--status", *raw[1:]]
+    if head == "suggest":
+        return ["--suggest", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -274,7 +286,8 @@ def main(argv: list[str] | None = None) -> int:
 
     as_json = bool(args.json) or args.format == "json"
     status_mode = bool(getattr(args, "status", False))
-    quiet = bool(args.quiet) or status_mode
+    suggest_mode = bool(getattr(args, "suggest", False))
+    quiet = bool(args.quiet) or status_mode or suggest_mode
 
     def _progress(msg: str) -> None:
         if not quiet:
@@ -295,9 +308,12 @@ def main(argv: list[str] | None = None) -> int:
             # Errors still surface even in quiet mode
             print(f"Warning: could not save snapshot: {exc}", file=sys.stderr)
 
+    suggestion_alert = pick_suggestion(alerts)
+    suggestion = suggestion_to_dict(suggestion_alert)
     payload = {
         "snapshot": snapshot.to_dict(),
         "alerts": [a.to_dict() for a in alerts],
+        "suggestion": suggestion,
     }
     cross_check_warnings = [check.to_dict() for check in snapshot.cross_checks if check.status == "warning"]
 
@@ -316,6 +332,10 @@ def main(argv: list[str] | None = None) -> int:
         print(render_status_line(snapshot, alerts))
         return exit_code
 
+    if suggest_mode and not as_json:
+        print(format_suggestion_line(suggestion_alert))
+        return exit_code
+
     if as_json:
         if args.alerts_only:
             print(
@@ -323,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "alerts": payload["alerts"],
                         "cross_check_warnings": cross_check_warnings,
+                        "suggestion": suggestion,
                     },
                     indent=2,
                     default=str,

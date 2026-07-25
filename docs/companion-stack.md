@@ -8,7 +8,7 @@ quota monitor. Pair it with tools that already own **ambient** % bars.
 | Role | Tool | What you use it for |
 | --- | --- | --- |
 | **Ambient** (always-on %) | [CodexBar](https://github.com/steipete/CodexBar), [OpenUsage](https://www.openusage.ai/) | Live bars in the menu bar; spot lockouts at a glance |
-| **Rank / burn** | **`aiuse`** | Ordered ladder of expiring allotments; `aiuse suggest` (when enabled) for a single winner |
+| **Rank / burn** | **`aiuse`** | Ordered ladder of expiring allotments; `aiuse suggest` for a single winner |
 | **Multi-account Claude** | [cswap](https://github.com/realiti4/claude-swap) | Canonical Claude Code rows for every configured email |
 | **Hourly history** | LaunchAgent (`docs/scheduling.md`) | Persist snapshots + optional `learn_from_history` |
 
@@ -23,6 +23,8 @@ or site `just install-aiuse-deps`.
    ```bash
    aiuse status          # one line for prompts / status bars
    aiuse prompt          # synonym of status
+   aiuse suggest         # single best burn pool (or nothing urgent)
+   aiuse suggest --json  # + top-level suggestion field
    aiuse --no-tui -q     # full ladder, quiet stderr meta
    ```
 

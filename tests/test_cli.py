@@ -75,6 +75,61 @@ def test_status_subcommand_prints_one_line(monkeypatch, capsys):
     assert out2.startswith("ok:")
 
 
+def test_suggest_subcommand_and_json(monkeypatch, capsys):
+    from aiuse.models import (
+        AccountUsage,
+        BillingKind,
+        Snapshot,
+        Urgency,
+        UseOrLoseAlert,
+        utcnow,
+    )
+
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="cswap",
+                provider="claude",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            )
+        ],
+    )
+    alerts = [
+        UseOrLoseAlert(
+            urgency=Urgency.HIGH,
+            provider="claude",
+            account="a@x.com",
+            window_label="Claude Code weekly",
+            remaining_percent=91.0,
+            days_until_reset=2.0,
+            plan=None,
+            message="burn it",
+            source="cswap",
+            score=88.0,
+            kind="burn",
+        )
+    ]
+    monkeypatch.setattr(cli, "run_collectors", lambda _c: snap)
+    monkeypatch.setattr(cli, "analyze_use_or_lose", lambda _s, _c: list(alerts))
+    monkeypatch.setattr(cli, "should_persist_snapshots", lambda _c: False)
+    monkeypatch.setattr(cli, "maybe_local_runtime_alerts", lambda *_a, **_k: [])
+
+    assert cli.main(["suggest", "-q"]) == 2
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("suggest:")
+    assert "Claude Code weekly" in out
+    assert "91%" in out
+
+    assert cli.main(["suggest", "--json", "-q"]) == 2
+    import json
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["suggestion"]["provider"] == "claude"
+    assert payload["suggestion"]["kind"] == "burn"
+    assert payload["suggestion"]["score"] == 88.0
+
+
 def test_doctor_missing_enabled_tool_exits_1(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 

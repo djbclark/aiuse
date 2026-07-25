@@ -13,6 +13,7 @@ _aiuse() {
     '--generate-config[write default config files]'
     '--doctor[environment check (also: aiuse doctor)]'
     '--status[one-line status for prompts (also: aiuse status / prompt)]'
+    '--suggest[single best burn pool (also: aiuse suggest)]'
     '--print-completion[print shell completion]:shell:(bash zsh)'
     '(-t --timeout)'{-t,--timeout}'[force tool timeout seconds]:seconds'
     '--format[output format]:format:(pretty json)'
@@ -34,6 +35,7 @@ _aiuse() {
     'doctor:environment check'
     'status:one-line status for prompts/status bars'
     'prompt:synonym of status'
+    'suggest:single best burn pool next'
   )
   _arguments -s -S $opts
 }
