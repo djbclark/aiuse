@@ -3,8 +3,8 @@ class Aiuse < Formula
 
   desc "Aggregate AI subscription quotas and flag use-it-or-lose-it allotments"
   homepage "https://github.com/djbclark/aiuse"
-  url "https://github.com/djbclark/aiuse/archive/refs/tags/v2.1.5.tar.gz"
-  sha256 "214a9868207875c3d74fb864547e2190245934fdcec2d418515fde5f84853462"
+  url "https://github.com/djbclark/aiuse/archive/refs/tags/v2.1.6.tar.gz"
+  sha256 "cc433f68be6096bb3e64ae5647bb3a966d42e4477fe0f4e7f2e9fd5af7b4cb52"
   license "MIT"
   head "https://github.com/djbclark/aiuse.git", branch: "main"
 
@@ -19,8 +19,8 @@ class Aiuse < Formula
 
   def caveats
     <<~EOS
-      External tools must already be on PATH: cswap, codexbar, tokscale.
-      Config lives under ~/.config/aiuse/.
+      Preferred PATH tools: cswap, codexbar, tokscale; optional caut + OpenUsage
+      for multi-source cross-checks. Config lives under ~/.config/aiuse/.
     EOS
   end
 
