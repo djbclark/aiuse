@@ -46,7 +46,7 @@ curl -sS 'http://127.0.0.1:8787/v1/ladder?refresh=1' | jq '.alerts[0]'
 
 ## Non-goals (this MVP)
 
-- Full MCP stdio server (follow-up if agents need native MCP)
+- Full MCP stdio server (optional follow-up: [#11](https://github.com/djbclark/aiuse/issues/11))
 - Binding non-loopback interfaces
 - Auth / multi-user serving
 
@@ -54,3 +54,4 @@ curl -sS 'http://127.0.0.1:8787/v1/ladder?refresh=1' | jq '.alerts[0]'
 
 - [`json-contract.md`](json-contract.md) — field shapes for alerts/suggestion/history
 - [`companion-stack.md`](companion-stack.md) — ambient vs rank
+- [`next-options.md`](next-options.md) — whether MCP stdio is worth starting

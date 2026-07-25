@@ -385,11 +385,13 @@ others as cross-checks ([`runner.py`](../src/aiuse/collectors/runner.py)).
 
 ### Better investment than more collectors
 
+Full effort map and trackers: [`next-options.md`](next-options.md).
+
 1. **Collector reliability** — cswap last-good (Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1)), CodexBar web-preferred providers.
-2. **Decision layer polish** — ladder edge cases, shared allotment, prepaid `n/a`, denser history.
-3. **Optional MCP stdio** on top of `aiuse serve` — only if agents need native MCP ([handoff](handoff.md)).
-4. **Companion stack** — keep documenting CodexBar/OpenUsage ambient + `aiuse` rank (do not rebuild menubar).
-5. **Peer outreach** for shared-quota-semantics fixtures (optional; last after dogfood).
+2. **Decision layer polish** — ladder edge cases, shared allotment, prepaid `n/a`, denser history ([#13](https://github.com/djbclark/aiuse/issues/13)).
+3. **Optional MCP stdio** on top of `aiuse serve` — only if agents need native MCP ([#11](https://github.com/djbclark/aiuse/issues/11)).
+4. **Companion stack** — keep documenting CodexBar/OpenUsage ambient + `aiuse` rank (do not rebuild menubar); optional pull `watch` ([#14](https://github.com/djbclark/aiuse/issues/14)).
+5. **Peer outreach** for shared-quota-semantics ([#12](https://github.com/djbclark/aiuse/issues/12)); more fixtures ([#15](https://github.com/djbclark/aiuse/issues/15)).
 
 ---
 
@@ -419,12 +421,14 @@ routing / LiteLLM leases, ccusage-as-plan-%.
 
 **Still open / operator-owned (not competitive feature gaps):**
 
+See also [`next-options.md`](next-options.md).
+
 | Item | Notes |
 | ---- | ----- |
 | Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1) | Blocked on cswap `lastGoodUsage` upstream |
 | [#10](https://github.com/djbclark/aiuse/issues/10) | Public announce (operator posts) |
-| MCP stdio | Optional on top of `serve` if agents need it |
-| Peer tickets for shared semantics | Optional last step after dogfood |
+| [#11](https://github.com/djbclark/aiuse/issues/11) | Optional MCP stdio on top of `serve` |
+| [#12](https://github.com/djbclark/aiuse/issues/12)–[#15](https://github.com/djbclark/aiuse/issues/15) | Optional polish (peer outreach, History, watch, fixtures) |
 
 **Move ideas into competitors (semantics, not code merge):** **Yes,
 selectively** — prepaid = no use-or-lose urgency, shared-allotment / governing

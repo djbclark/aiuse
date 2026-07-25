@@ -321,6 +321,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all five data-source tools (cswap, CodexBar, caut, OpenUsage, tokscale).
 - [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md) — caut + OpenUsage setup and cross-check priority.
 - [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?” after product issues **#2–#9** (shipped).
+- [`docs/next-options.md`](docs/next-options.md) — recommended next actions and effort map for remaining competitive gaps (issues #10–#15).
 - [`docs/shared-quota-semantics.md`](docs/shared-quota-semantics.md) — design note for shared ranking semantics.
 - [`docs/shared-quota-semantics/`](docs/shared-quota-semantics/) — **v0.1 package** (schemas, formulas, golden fixtures; dogfooded in pytest).
 - [`docs/companion-stack.md`](docs/companion-stack.md) — CodexBar/OpenUsage ambient + `aiuse status` one-liner + LaunchAgent.

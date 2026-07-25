@@ -16,18 +16,26 @@ three gets you to the other two immediately.
 health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.10**
 (PyPI + Homebrew). Five collectors; prepaid/`n/a` band; hourly LaunchAgent;
 history learning `auto`. **No mandatory numbered step.** Open-ended “what
-next?” → [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
+next?” → [`docs/next-options.md`](docs/next-options.md) +
+[`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 
 1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
-2. **Blocked (Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1)):** wait
+2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
+   (announce → densify history → Step 33; optional #11–#15 only if pain).
+3. **Blocked (Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1)):** wait
    for [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170), then
    consume official `lastGoodUsage` in `collectors/cswap.py`
    ([`docs/cswap-reliability.md`](docs/cswap-reliability.md)).
-3. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
+4. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
    when ready; leave hourly agent collecting; optional OpenUsage CLI install.
-4. **Parked:** Step **35** (ccusage ≠ plan %) —
+5. **Optional polish (not default):** [#11](https://github.com/djbclark/aiuse/issues/11)
+   MCP · [#13](https://github.com/djbclark/aiuse/issues/13) History ·
+   [#14](https://github.com/djbclark/aiuse/issues/14) watch ·
+   [#15](https://github.com/djbclark/aiuse/issues/15) fixtures ·
+   [#12](https://github.com/djbclark/aiuse/issues/12) peer outreach (last).
+6. **Parked:** Step **35** (ccusage ≠ plan %) —
    [`docs/claude-local-usage.md`](docs/claude-local-usage.md).
-5. **Historical:** [`docs/fix-implementation-plan.md`](docs/fix-implementation-plan.md),
+7. **Historical:** [`docs/fix-implementation-plan.md`](docs/fix-implementation-plan.md),
    [`docs/code-review-2026-07-23.html`](docs/code-review-2026-07-23.html).
 
 ## Persistence policy: durable project knowledge goes in this git repo
@@ -111,10 +119,13 @@ install steps, CLI flags, and config. Install helpers:
 | `docs/pretty-display.md`                     | Rich vs Textual for long scrollback-safe reports.                                        | When changing pretty/TTY display.                                |
 | `docs/packaging.md`                          | pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow.                        | When releasing or changing install UX.                           |
 | `docs/competitive-landscape.md`              | Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; post-#2–#9 positioning.     | Positioning / “what pool next?” / remaining gaps.                |
+| `docs/next-options.md`                       | Recommended next actions + effort map for remaining gaps; open issue index.              | Open-ended “what next?” / whether to chase a competitive gap.    |
 | `docs/shared-quota-semantics.md`             | Design for language-neutral ranking semantics.                                           | Background for the package.                                      |
 | `docs/shared-quota-semantics/`               | **v0.1 package**: schemas, enums, formulas, golden fixtures (+ pytest dogfood).          | Contract tests / peer interop.                                   |
 | Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8) | **Done** (2.1.9): suggest, forecast, status/prompt, serve, History, local note, health_path. | Historical competitive-strategy pull; see [`competitive-landscape.md`](docs/competitive-landscape.md). |
-| [Issue #9](https://github.com/djbclark/aiuse/issues/9) | **Done** (2.1.10): shared quota-semantics v0.1 + pytest dogfood. Peer tickets optional last. | Contract tests / peer interop. |
+| [Issue #9](https://github.com/djbclark/aiuse/issues/9) | **Done** (2.1.10): shared quota-semantics v0.1 + pytest dogfood. | Contract tests / peer interop. |
+| [Issue #10](https://github.com/djbclark/aiuse/issues/10) | Open · operator: public announce (venues + draft). **Do not auto-post.** | Distribution. |
+| Issues [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | Open · optional polish (MCP, peer outreach, History, watch, fixtures). | Only if concrete pain; see [`next-options.md`](docs/next-options.md). |
 | `docs/collectors-caut-openusage.md`          | caut + OpenUsage install, config, multi-source cross-check priority.                     | New collectors / doctor PATH / site install.                     |
 | `docs/claude-local-usage.md`                 | Local `stats-cache` / JSONL / ccusage vs subscription 5h/7d %.                           | When someone proposes parsing `~/.claude` instead of cswap.      |
 | `docs/code-review-2026-07-23.html`           | Adversarial code review (45 findings) that the plan was derived from. Open in a browser. | For the _why_ behind a plan step.                                |
