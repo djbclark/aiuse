@@ -126,7 +126,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cswap": {"enabled": True},
         "codexbar": {"enabled": True, "providers": "enabled"},
         # caut + OpenUsage enabled by default for multi-source cross-checks.
-        "caut": {"enabled": True, "providers": "all"},
+        # "both" = claude+codex (providers caut can actually fill windows for).
+        "caut": {"enabled": True, "providers": "both"},
         "openusage": {
             "enabled": True,
             "force_refresh": True,

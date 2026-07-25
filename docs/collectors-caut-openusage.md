@@ -24,11 +24,12 @@ others → CodexBar first). **All live sources are pair-wise cross-checked.**
 # From an aiuse checkout:
 ./packaging/install-deps.sh
 ./packaging/install-deps.sh --check
+just install-deps              # same script
 
 # From site-djbclark (preferred on this Mac):
-just install-aiuse-deps
+just install-aiuse-deps        # execs packaging/install-deps.sh when AIUSE_ROOT exists
 just aiuse-deps-status
-just brew-project            # claim openusage cask in Merged-Brewfile
+just brew-project              # claim openusage + codexbar casks in Merged-Brewfile
 ```
 
 **caut + OpenUsage only** (subset):
@@ -47,7 +48,7 @@ cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_u
 ln -sfn ~/.cargo/bin/caut ~/.local/bin/caut
 ```
 
-Requires Rust/`cargo` on PATH. Binary: `caut`.
+Requires Rust/`cargo` on PATH. Binary: `caut` (currently **0.1.0**).
 
 ### OpenUsage
 
@@ -75,7 +76,9 @@ just install-openusage
 collectors:
   caut:
     enabled: true
-    providers: all          # correctness: query every caut-supported provider
+    # both = claude+codex (only pair caut fills windows for reliably)
+    # all  = every name caut knows — most error "unsupported source Auto"
+    providers: both
   openusage:
     enabled: true
     force_refresh: true
@@ -102,3 +105,95 @@ jobs, add to `PROVIDER_SOURCE_PRIORITY` / `DEFAULT_SOURCE_PRIORITY` and
 No new secrets for caut/OpenUsage in normal operation — they reuse local
 cookies/keychain/CLI auth like CodexBar. Do **not** put provider tokens into
 aiuse config. Site `secretspec` is not required for these two tools.
+
+---
+
+## caut issues (observed 2026-07-25) and workarounds
+
+Investigated against **caut 0.1.0** (`d6dc03d`) on this operator Mac.
+
+### 1. Claude: “Auth missing! Run: claude auth login” but windows sometimes appear
+
+**Symptom:** `authWarning` always present. Rate-limit `primary`/`secondary` appear
+on some runs and are **null** on others. `caut doctor` reports no Claude credentials
+file, while `claude auth status` shows **logged in** via claude.ai.
+
+**Cause (upstream):** caut’s credential detection does not fully match the modern
+Claude CLI / claude.ai OAuth layout. The `claude-oauth` strategy can still fill
+windows sometimes; it is flaky.
+
+**Workarounds:**
+
+| Action | Notes |
+| --- | --- |
+| **Do nothing for ranking** | cswap remains Claude authority; OpenUsage also reports Claude. caut is a soft peer. |
+| **Retry (aiuse does this)** | `collect_caut` retries once when no live windows — recovers intermittent oauth hits. |
+| **`claude auth login`** | May create the credential path caut expects; worth trying if you want caut Claude cross-checks. Does **not** replace cswap multi-account. |
+| **Ignore authWarning when % look sane** | aiuse notes when windows were returned despite the warning. |
+| **Disable caut** | `collectors.caut.enabled: false` or `aiuse --no-caut` if noise bothers you. |
+
+### 2. Codex: identity only, no weekly % 
+
+**Symptom:** caut returns email/org but `primary`/`secondary` null. Verbose log:
+`codex-web-dashboard` → “Web dashboard scraping **not yet implemented**”;
+`codex-cli-rpc` → “identity only — no rate-limit data”.
+
+**Cause (upstream):** incomplete Codex strategies in caut 0.1.0.
+
+**Workarounds:** Rely on **CodexBar** / **OpenUsage** / **tokscale** for Codex
+quotas (already preferred for selection). No local config fixes this until caut
+implements web or a richer CLI RPC.
+
+### 3. “unsupported source for provider X: Auto” for most names
+
+**Symptom:** With `--provider all`, gemini, antigravity, cursor, opencode, copilot,
+etc. all error. `caut doctor` only exercises Codex + Claude.
+
+**Cause (upstream):** provider descriptors exist; Auto fetch strategies are stubs.
+
+**Workarounds:**
+
+| Action | Notes |
+| --- | --- |
+| **Default `providers: both`** | aiuse default — only claude+codex (partial). |
+| **Do not use `all` expecting data** | Only increases error notes and runtime. |
+| **Use CodexBar/OpenUsage** | Full multi-provider coverage. |
+
+### 4. Concurrent collect sometimes empty while solo claude works
+
+**Symptom:** First `caut usage --provider claude` gets windows; next `both`/full
+aiuse run gets identity-only.
+
+**Workaround:** aiuse **one automatic retry** when zero live quota windows.
+If still empty, ranking continues without caut (other sources unchanged).
+
+### 5. Optional: `caut serve` for a warm cache
+
+caut can run `caut serve --port 19485` and `caut query` against a background
+cache. **aiuse does not use this yet** — would need a separate collector path.
+Useful if you want a local caut daemon later; not required for OpenUsage/cswap.
+
+### Diagnostic commands
+
+```bash
+caut doctor
+caut usage --provider claude --json -v
+caut usage --provider both --json
+claude auth status          # compare with caut doctor Claude section
+```
+
+### What “good enough” looks like for aiuse
+
+| Source | Need for correct ladder? |
+| ------ | ------------------------ |
+| cswap + CodexBar + tokscale | **Yes** (primary selection) |
+| OpenUsage | Strong cross-check; keep app running or install CLI |
+| caut | Best-effort; valuable when Claude windows land; safe when empty |
+
+---
+
+## Operator policy: full releases
+
+**Do not** cut PyPI + Homebrew releases unless the operator **explicitly** asks
+for a full release (or “ship everywhere” / “publish to PyPI and brew”). Git
+commits and pushes to `main` remain fine per standing policy.

@@ -125,8 +125,9 @@ collectors:
     providers: enabled
   caut:
     enabled: true
-    # "all" queries every caut-supported provider (best for cross-checks).
-    providers: all
+    # "both" = claude+codex (caut 0.1.0 only fills windows for these reliably).
+    # "all" still works but most other providers error "unsupported source Auto".
+    providers: both
   openusage:
     enabled: true
     # Prefer a fresh read when the openusage CLI is on PATH.

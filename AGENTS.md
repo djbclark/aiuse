@@ -154,3 +154,5 @@ install steps, CLI flags, and config. Install helpers:
   unless there is a concrete reason not to (e.g. the operator said not to, or
   the branch is deliberately local-only). Do not wait for separate push
   authorization.
+- **Full releases (PyPI + Homebrew) only when the operator explicitly asks.**
+  Do not cut a “ship everywhere” release for routine doc/collector work.

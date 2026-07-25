@@ -21,15 +21,24 @@ from .base import CollectorError, run_json, which
 from .codexbar import PREPAID_HINTS, _billing_kind, _slot_label, _window
 
 
+# Providers caut can actually fetch rate-limit windows for on a typical Mac
+# (as of caut 0.1.0 / 2026-07). Others return "unsupported source … Auto".
+# See docs/collectors-caut-openusage.md.
+_DEFAULT_CAUT_PROVIDERS = "both"  # claude + codex only
+
+
 def collect_caut(
     *,
-    providers: str = "all",
+    providers: str = _DEFAULT_CAUT_PROVIDERS,
     timeout: float = 90.0,
 ) -> list[AccountUsage]:
     """Shell out to ``caut usage --json``.
 
-    Default ``providers=all`` queries every caut-supported provider for
-    maximum cross-check coverage (correctness over speed).
+    Default ``providers=both`` (claude + codex). Passing ``all`` still works but
+    most providers error with unsupported Auto strategies on caut 0.1.0.
+
+    Claude windows are flaky upstream (oauth succeeds intermittently while
+    doctor still says "Auth missing"). We retry once when no live windows.
     """
     if not which("caut"):
         raise CollectorError(
@@ -38,8 +47,27 @@ def collect_caut(
             "and ensure ~/.cargo/bin is on PATH, or symlink into ~/.local/bin)"
         )
 
+    accounts = _fetch_caut_accounts(providers=providers, timeout=timeout)
+    # Upstream flake: claude-oauth sometimes returns identity-only; one retry
+    # often recovers rate-limit windows without forcing claude auth login.
+    if not any(_row_has_live_quota(a) for a in accounts):
+        accounts = _fetch_caut_accounts(providers=providers, timeout=timeout)
+        if accounts and not any(_row_has_live_quota(a) for a in accounts):
+            for acc in accounts:
+                acc.notes = list(acc.notes) + [
+                    "caut returned no quota windows after retry — see "
+                    "docs/collectors-caut-openusage.md (claude auth / codex "
+                    "identity-only / unsupported providers)."
+                ]
+                break
+
+    return accounts
+
+
+def _fetch_caut_accounts(*, providers: str, timeout: float) -> list[AccountUsage]:
     argv = ["caut", "usage", "--json"]
-    if providers and providers != "both":
+    # caut default is already "both"; only pass --provider when non-default.
+    if providers and providers not in ("", "both"):
         argv.extend(["--provider", providers])
 
     payload = run_json(argv, timeout=timeout)
@@ -47,11 +75,12 @@ def collect_caut(
         raise CollectorError("caut returned non-object JSON")
 
     errors_raw = payload.get("errors") or []
-    global_errors = [str(e) for e in errors_raw if e]
+    global_errors = [_format_caut_error(e) for e in errors_raw if e]
+    # Drop expected "unsupported source … Auto" noise when probing many providers.
+    useful_errors = [e for e in global_errors if "unsupported source" not in e.lower()]
 
     data = payload.get("data")
     if not isinstance(data, list):
-        # Some older shapes may be a bare list
         if isinstance(payload, list):
             data = payload
         else:
@@ -62,16 +91,30 @@ def collect_caut(
         if isinstance(row, dict):
             accounts.append(_from_row(row))
 
+    if not accounts and useful_errors:
+        raise CollectorError("caut: " + "; ".join(useful_errors[:5]))
     if not accounts and global_errors:
         raise CollectorError("caut: " + "; ".join(global_errors[:5]))
 
-    if global_errors and accounts:
-        note = "caut provider errors: " + "; ".join(global_errors[:8])
-        for acc in accounts:
-            acc.notes = list(acc.notes) + [note]
-            break  # once is enough on the snapshot path via first account notes
+    if useful_errors and accounts:
+        note = "caut provider errors: " + "; ".join(useful_errors[:8])
+        accounts[0].notes = list(accounts[0].notes) + [note]
 
     return accounts
+
+
+def _format_caut_error(err: Any) -> str:
+    if isinstance(err, dict):
+        return str(err.get("message") or err)
+    return str(err)
+
+
+def _row_has_live_quota(account: AccountUsage) -> bool:
+    if account.error:
+        return False
+    if account.balance_usd is not None or account.credits_remaining is not None:
+        return True
+    return any(w.remaining() is not None or w.used_percent is not None for w in account.windows)
 
 
 def _from_row(row: dict[str, Any]) -> AccountUsage:
@@ -119,6 +162,17 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     warning = row.get("authWarning")
     if warning:
         notes.append(str(warning))
+        # caut 0.1.0 often prints this even when oauth filled rate-limit windows.
+        if "auth missing" in str(warning).lower() and windows:
+            notes.append(
+                "caut authWarning present but quota windows were returned "
+                "(upstream credential-path quirk; ignore if remaining % looks sane)."
+            )
+        elif "auth missing" in str(warning).lower() and not windows:
+            notes.append(
+                "caut has no Claude credential file it understands — try "
+                "`claude auth login`, or rely on cswap/OpenUsage for Claude."
+            )
 
     plan = None
     identity = usage.get("identity") if isinstance(usage.get("identity"), dict) else {}

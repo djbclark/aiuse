@@ -50,7 +50,9 @@ PyPI: https://pypi.org/project/aiuse/2.1.6/
 
 ## Operator preferences (standing)
 
-- Commit early/often; push after every commit.
+- Commit early/often; push after every commit to git.
+- **Full releases (PyPI + Homebrew) only when explicitly requested** — do not
+  ship “everywhere” on doc/collector polish unless the operator says so.
 - Do not install/configure external collectors *inside* aiuse feature PRs;
   operators use `packaging/install-deps.sh` or site `just install-aiuse-deps`.
 - Do not use ccusage as plan 5h/7d authority.
@@ -60,9 +62,11 @@ PyPI: https://pypi.org/project/aiuse/2.1.6/
 ## Next options (when resuming)
 
 1. **Wait / poll Step 33** — cswap lastGoodUsage when #170 merges.
-2. **OpenUsage CLI install** (operator) — Settings → Command Line → Install.
-3. **Live smoke** — `aiuse --full -q --no-tui` vs real UIs.
+2. **caut** — optional `claude auth login` if you want more Claude cross-checks;
+   Codex windows need upstream caut work (see collectors-caut-openusage.md).
+3. **OpenUsage CLI install** (operator) — Settings → Command Line → Install.
 4. **Let it run** — multi-source snapshots densify history.
+5. **Full release** — only if operator asks (PyPI + Homebrew).
 
 ## Quick verification
 
