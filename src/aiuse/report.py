@@ -446,13 +446,15 @@ def render_status_line(
         head = f"use: {name} {label} {rem:.0f}%"
 
     bits: list[str] = [head]
+    forecast = _forecast_fragment(top, compact=True).lstrip(" ·")
+    if forecast:
+        bits.append(forecast)
     if burns:
         bits.append(f"{len(burns)} burn" + ("s" if len(burns) != 1 else ""))
     if conserves:
         bits.append(f"{len(conserves)} slow")
     line = " · ".join(bits)
     return _clamp_display_width(line, max_width)
-
 
 def render_priority_ladder(
     alerts: list[UseOrLoseAlert],
@@ -569,6 +571,29 @@ def _priority_tag(s: _Style, band: int) -> str:
     return getattr(s, color_name)(s.bold(tag))
 
 
+def _forecast_fragment(alert: UseOrLoseAlert, *, compact: bool = True) -> str:
+    """Compact lockout / waste forecast from PaceProfile (ladder + status).
+
+    Keep short: ladder lines are width-clamped (~80 cols).
+    """
+    pace = alert.pace
+    if pace is None:
+        return ""
+    parts: list[str] = []
+    if alert.kind == "conserve" and pace.projected_exhaust_at is not None:
+        parts.append(f"~lockout {pace.projected_exhaust_at.strftime('%a %H:%M')}")
+    if alert.kind == "burn" and pace.projected_waste_fraction is not None:
+        waste_pct = pace.projected_waste_fraction * 100.0
+        if waste_pct >= 5.0:
+            parts.append(f"~{waste_pct:.0f}%waste")
+    if not compact and pace.learned_sample_count > 0:
+        n = pace.learned_sample_count
+        parts.append(f"hist n={n}")
+    if not parts:
+        return ""
+    return " · " + " · ".join(parts)
+
+
 def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     who = alert.account or "default"
     name = s.bold(provider_display_name(alert.provider))
@@ -578,9 +603,12 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
         return f"{_priority_tag(s, band)} {body}"
     when = _human_deadline(alert.days_until_reset)
     verb = "pace" if alert.kind == "conserve" else "use"
+    # Forecast before the deadline phrase so width-clamp keeps the useful bit.
+    forecast = _forecast_fragment(alert, compact=True)
     body = (
         f"{name} · {who} · "
-        f"{alert.window_label}: {alert.remaining_percent:.0f}% left · {verb} {when}"
+        f"{alert.window_label}: {alert.remaining_percent:.0f}% left"
+        f"{forecast} · {verb} {when}"
     )
     return f"{_priority_tag(s, band)} {body}"
 
@@ -1071,9 +1099,16 @@ def _conserve_line(alert: UseOrLoseAlert, s: _Style) -> str:
     lockout = ""
     if pace and pace.projected_exhaust_at:
         lockout = f", locked out ~{pace.projected_exhaust_at.strftime('%a %H:%M UTC')}"
+    waste = ""
+    if pace and pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= 0.05:
+        waste = f", ~{pace.projected_waste_fraction:.0%} unused if pace holds"
+    learned = ""
+    if pace and pace.learned_sample_count > 0:
+        learned = f" (history n={pace.learned_sample_count})"
     return (
         f"  {s.urgency(alert.urgency, icon)} {s.bold(provider_display_name(alert.provider))} · "
-        f"{who} · {alert.window_label}: {alert.remaining_percent:.0f}% left · resets {when}{lockout}\n"
+        f"{who} · {alert.window_label}: {alert.remaining_percent:.0f}% left · resets {when}"
+        f"{lockout}{waste}{learned}\n"
         f"      {s.dim(alert.message)}"
     )
 
@@ -1103,9 +1138,12 @@ def _action_plan_line(alert: UseOrLoseAlert, s: _Style) -> str:
     if pace is not None and pace.pace_ratio is not None:
         waste = pace.projected_waste_fraction
         if waste is not None:
-            value_part += f" · pace {pace.pace_ratio:.1f}x — projected {waste:.0%} unused"
+            value_part += f" · pace {pace.pace_ratio:.1f}x — projected {waste:.0%} unused@reset"
         else:
             value_part += f" · pace {pace.pace_ratio:.1f}x"
+        if pace.projected_exhaust_at is not None and alert.kind == "burn":
+            # Burn rows: exhaust after reset is less interesting; only if before reset.
+            pass
         if pace.learned_sample_count > 0:
             n = pace.learned_sample_count
             value_part += f" · blended with history ({n} sample{'s' if n != 1 else ''})"

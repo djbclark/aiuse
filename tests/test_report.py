@@ -26,6 +26,69 @@ from aiuse.report import (
 )
 
 
+def test_ladder_includes_waste_forecast_fragment():
+    from datetime import timedelta
+
+    from aiuse.report import render_priority_ladder
+
+    now = utcnow()
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="claude",
+        account="a@x.com",
+        window_label="Claude Code weekly",
+        remaining_percent=80.0,
+        days_until_reset=2.0,
+        plan=None,
+        message="burn",
+        source="cswap",
+        score=70.0,
+        kind="burn",
+        pace=PaceProfile(
+            elapsed_fraction=0.7,
+            used_fraction=0.2,
+            pace_ratio=0.3,
+            projected_used_fraction=0.3,
+            projected_waste_fraction=0.70,
+            projected_waste_usd=None,
+            projected_exhaust_at=None,
+        ),
+    )
+    text = render_priority_ladder([alert], color=False)
+    assert "waste" in text
+    assert "70" in text
+
+
+def test_ladder_includes_lockout_forecast_for_conserve():
+    from aiuse.report import render_priority_ladder
+
+    exhaust = utcnow() + timedelta(hours=6)
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="claude",
+        account="a@x.com",
+        window_label="Claude Code 5-hour",
+        remaining_percent=5.0,
+        days_until_reset=0.2,
+        plan=None,
+        message="conserve",
+        source="cswap",
+        score=70.0,
+        kind="conserve",
+        pace=PaceProfile(
+            elapsed_fraction=0.5,
+            used_fraction=0.95,
+            pace_ratio=1.9,
+            projected_used_fraction=1.0,
+            projected_waste_fraction=0.0,
+            projected_waste_usd=None,
+            projected_exhaust_at=exhaust,
+        ),
+    )
+    text = render_priority_ladder([alert], color=False)
+    assert "~lockout" in text
+
+
 def test_status_line_nothing_urgent():
     snap = Snapshot(collected_at=utcnow(), accounts=[AccountUsage(provider="codex", source="codexbar")])
     line = render_status_line(snap, [])
