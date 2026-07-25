@@ -1,17 +1,55 @@
-"""Orchestrate all collectors into a Snapshot."""
+"""Orchestrate all collectors into a Snapshot with multi-source cross-checks."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from aiuse.config import timeout_for
 from aiuse.models import AccountUsage, CrossCheck, QuotaWindow, Snapshot, provider_display_name, utcnow
 
+from .base import which
+from .caut import collect_caut
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
+from .openusage import collect_openusage
 from .tokscale import collect_tokscale
+
+# Prefer earlier sources for *selection* (what drives the ladder). All live
+# sources still participate in cross-checks. Correctness > minimising comparisons.
+DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
+    "codexbar",
+    "caut",
+    "openusage",
+    "tokscale",
+)
+
+PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
+    # cswap is the multi-account Claude authority when enabled.
+    "claude": ("cswap", "codexbar", "caut", "openusage", "tokscale"),
+    # tokscale keeps distinct Copilot premium vs chat/completions semantics.
+    "copilot": ("tokscale", "codexbar", "caut", "openusage"),
+}
+
+SOURCE_LABELS: dict[str, str] = {
+    "cswap": "cswap",
+    "codexbar": "CodexBar",
+    "caut": "caut",
+    "openusage": "OpenUsage",
+    "tokscale": "tokscale",
+}
+
+_PROVIDER_ALIASES = {
+    "chatgpt": "codex",
+    "openai-codex": "codex",
+    "github-copilot": "copilot",
+    "grok-build": "grok",
+    "supergrok": "grok",
+    "opencodego": "opencode-go",
+    "opencode": "opencode-go",
+}
 
 
 def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
@@ -19,8 +57,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     collectors_cfg = config.get("collectors") or {}
     snapshot = Snapshot(collected_at=utcnow())
 
-    # Each collector shells out to an independent tool, so run them concurrently
-    # rather than paying the sum of their latencies one after another.
+    # Each collector shells out (or hits loopback) independently — run concurrently.
+    # Correctness: long default timeouts; all enabled sources always queried.
     jobs: list[tuple[str, Callable[[], list[AccountUsage]]]] = []
     if _enabled(collectors_cfg, "cswap"):
         cswap_timeout = timeout_for(config, "cswap")
@@ -36,6 +74,33 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     providers=p,
                     timeout=t,
                     discovery_timeout=d,
+                ),
+            )
+        )
+    if _enabled(collectors_cfg, "caut"):
+        caut_cfg = collectors_cfg.get("caut") if isinstance(collectors_cfg.get("caut"), dict) else {}
+        caut_providers = (caut_cfg or {}).get("providers", "all")
+        caut_timeout = timeout_for(config, "caut")
+        jobs.append(
+            (
+                "caut",
+                lambda p=caut_providers, t=caut_timeout: collect_caut(providers=str(p), timeout=t),
+            )
+        )
+    if _enabled(collectors_cfg, "openusage"):
+        ou_cfg = collectors_cfg.get("openusage") if isinstance(collectors_cfg.get("openusage"), dict) else {}
+        ou_timeout = timeout_for(config, "openusage")
+        force = bool((ou_cfg or {}).get("force_refresh", True))
+        launch = bool((ou_cfg or {}).get("try_launch_app", True))
+        base = str((ou_cfg or {}).get("base_url") or "http://127.0.0.1:6736")
+        jobs.append(
+            (
+                "openusage",
+                lambda t=ou_timeout, f=force, l=launch, b=base: collect_openusage(
+                    timeout=t,
+                    force_refresh=f,
+                    try_launch_app=l,
+                    base_url=b,
                 ),
             )
         )
@@ -70,22 +135,16 @@ def _enabled(collectors_cfg: dict[str, Any], name: str) -> bool:
     return True
 
 
-_PROVIDER_ALIASES = {
-    "chatgpt": "codex",
-    "openai-codex": "codex",
-    "github-copilot": "copilot",
-    "grok-build": "grok",
-    "supergrok": "grok",
-    "opencodego": "opencode-go",
-}
-
-
 def _canonical_provider(provider: str) -> str:
     key = provider.lower().replace(" ", "-")
     return _PROVIDER_ALIASES.get(key, key)
 
 
-_CROSS_CHECK_PROVIDERS = {"claude", "codex", "copilot", "grok"}
+def _source_priority(provider: str, *, cswap_authoritative: bool) -> tuple[str, ...]:
+    if provider == "claude" and not cswap_authoritative:
+        # cswap disabled: fall through to multi-source peers only.
+        return tuple(s for s in PROVIDER_SOURCE_PRIORITY["claude"] if s != "cswap")
+    return PROVIDER_SOURCE_PRIORITY.get(provider, DEFAULT_SOURCE_PRIORITY)
 
 
 def _select_and_cross_check(
@@ -93,11 +152,11 @@ def _select_and_cross_check(
     *,
     cswap_authoritative: bool,
 ) -> tuple[list[AccountUsage], list[CrossCheck]]:
-    """Select report rows while retaining overlapping data as cross-checks.
+    """Select report rows while cross-checking all live sources.
 
-    cswap owns Claude because it knows about every configured Claude Code slot.
-    For other providers, CodexBar is selected when live and tokscale is selected
-    otherwise. Overlapping measurements are compared before either copy is hidden.
+    Selection picks one primary source per provider (priority list). Cross-checks
+    compare every pair of live sources so adding caut/OpenUsage later does not
+    require new pairwise branches.
     """
 
     for account in accounts:
@@ -106,81 +165,72 @@ def _select_and_cross_check(
     providers = sorted({account.provider for account in accounts}, key=str.casefold)
     selected: list[AccountUsage] = []
     checks: list[CrossCheck] = []
+
     for provider in providers:
         rows = [account for account in accounts if account.provider == provider]
+        by_source: dict[str, list[AccountUsage]] = defaultdict(list)
+        for account in rows:
+            by_source[account.source].append(account)
 
-        if provider == "claude" and cswap_authoritative:
-            cswap_rows = [account for account in rows if account.source == "cswap"]
-            codexbar_rows = [account for account in rows if account.source == "codexbar"]
-            tokscale_rows = [account for account in rows if account.source == "tokscale"]
-            cswap_live = [account for account in cswap_rows if _has_live_data(account)]
+        priority = _source_priority(provider, cswap_authoritative=cswap_authoritative)
+        primary = _pick_primary_source(provider, by_source, priority, cswap_authoritative=cswap_authoritative)
 
-            if cswap_live:
-                # Prefer all cswap rows (live + any remaining error placeholders)
-                # so multi-account identity stays visible even when one slot fails.
-                selected.extend(cswap_rows)
-                checks.extend(_claude_cross_checks(cswap_rows, codexbar_rows, tokscale_rows))
+        if primary is not None:
+            primary_rows = by_source.get(primary, [])
+            if primary == "cswap":
+                # Keep every cswap slot (live + errored) for multi-account identity.
+                selected.extend(primary_rows)
             else:
-                codexbar_live = [account for account in codexbar_rows if _has_live_data(account)]
-                tokscale_live = [account for account in tokscale_rows if _has_live_data(account)]
-                if codexbar_live:
-                    selected.extend(codexbar_live)
-                elif tokscale_live:
-                    selected.extend(tokscale_live)
-                else:
-                    selected.extend(cswap_rows)
-                checks.append(
-                    CrossCheck(
-                        provider="claude",
-                        account=None,
-                        status="warning",
-                        sources=["cswap", "CodexBar", "tokscale"],
-                        message=(
-                            "cswap (the canonical multi-account Claude source) produced no "
-                            "usable data this run; falling back to a non-canonical source. "
-                            "Multi-account Claude Code data may be incomplete or attributed "
-                            "to the wrong account."
-                        ),
-                    )
-                )
-            continue
-
-        codexbar_rows = [account for account in rows if account.source == "codexbar"]
-        tokscale_rows = [account for account in rows if account.source == "tokscale"]
-        other_rows = [account for account in rows if account.source not in ("codexbar", "tokscale")]
-        codexbar_live = [account for account in codexbar_rows if _has_live_data(account)]
-        tokscale_live = [account for account in tokscale_rows if _has_live_data(account)]
-
-        # Copilot: prefer tokscale. CodexBar only exposes premium+chat slots and may
-        # substitute completions into the premium slot when premium_interactions is a
-        # 0/0 placeholder — tokscale keeps the three GitHub counters distinct.
-        if provider == "copilot":
-            if tokscale_live:
-                selected.extend(tokscale_live)
-            elif codexbar_live:
-                selected.extend(codexbar_live)
-            elif tokscale_rows:
-                selected.extend(tokscale_rows)
-            else:
-                selected.extend(codexbar_rows)
-            selected.extend(other_rows)
-            checks.append(_provider_cross_check(provider, codexbar_rows, tokscale_rows))
-            continue
-
-        if codexbar_live:
-            selected.extend(codexbar_live)
-        elif tokscale_live:
-            selected.extend(tokscale_live)
-        elif codexbar_rows:
-            selected.extend(codexbar_rows)
+                live = [a for a in primary_rows if _has_live_data(a)]
+                selected.extend(live if live else primary_rows)
         else:
-            selected.extend(tokscale_rows)
-        selected.extend(other_rows)
+            # No priority source present — keep whatever we have.
+            selected.extend(rows)
 
-        if provider in _CROSS_CHECK_PROVIDERS:
-            checks.append(_provider_cross_check(provider, codexbar_rows, tokscale_rows))
+        checks.extend(
+            _provider_multi_source_cross_checks(
+                provider,
+                by_source,
+                primary=primary,
+                cswap_authoritative=cswap_authoritative,
+            )
+        )
 
     return selected, checks
+
+
+def _pick_primary_source(
+    provider: str,
+    by_source: dict[str, list[AccountUsage]],
+    priority: Sequence[str],
+    *,
+    cswap_authoritative: bool,
+) -> str | None:
+    """Return the source id to surface for this provider, or None."""
+    if provider == "claude" and cswap_authoritative and "cswap" in by_source:
+        cswap_live = [a for a in by_source["cswap"] if _has_live_data(a)]
+        if cswap_live:
+            return "cswap"
+        # Fall through to next live peer when cswap has no usable quota.
+        for source in priority:
+            if source == "cswap":
+                continue
+            if any(_has_live_data(a) for a in by_source.get(source, [])):
+                return source
+        return "cswap" if by_source.get("cswap") else None
+
+    for source in priority:
+        rows = by_source.get(source) or []
+        if any(_has_live_data(a) for a in rows):
+            return source
+    for source in priority:
+        if by_source.get(source):
+            return source
+    # Unknown source present (future collectors) — prefer first with live data.
+    for source, rows in by_source.items():
+        if any(_has_live_data(a) for a in rows):
+            return source
+    return next(iter(by_source), None)
 
 
 def _consolidate_accounts(
@@ -195,209 +245,298 @@ def _consolidate_accounts(
 
 def _has_live_data(account: AccountUsage) -> bool:
     return not account.error and (
-        bool(account.windows) or account.balance_usd is not None or account.credits_remaining is not None
+        bool(account.windows)
+        or account.balance_usd is not None
+        or account.credits_remaining is not None
+        or account.usage_credits is not None
     )
 
 
-def _claude_cross_checks(
-    cswap_rows: list[AccountUsage],
-    codexbar_rows: list[AccountUsage],
-    tokscale_rows: list[AccountUsage] | None = None,
+def _provider_multi_source_cross_checks(
+    provider: str,
+    by_source: dict[str, list[AccountUsage]],
+    *,
+    primary: str | None,
+    cswap_authoritative: bool,
 ) -> list[CrossCheck]:
-    """Compare cswap Claude rows against CodexBar and tokscale when present."""
+    """Cross-check all live sources for one provider (all pairs)."""
     checks: list[CrossCheck] = []
-    tokscale_rows = tokscale_rows or []
-    live_codexbar = [row for row in codexbar_rows if _has_live_data(row)]
-    live_tokscale = [row for row in tokscale_rows if _has_live_data(row)]
-    codexbar_errors = [row.error for row in codexbar_rows if row.error]
-    cswap_live = [row for row in cswap_rows if _has_live_data(row)]
 
-    if not cswap_rows:
-        return [
-            CrossCheck(
-                provider="claude",
-                account=None,
-                status="warning",
-                sources=["cswap", "CodexBar", "tokscale"],
-                message=(
-                    "cswap returned no Claude Code account rows, so Claude cannot "
-                    "be reported from its canonical multi-account source. "
-                    "Check `cswap list` / `ai doctor` (auth and PATH), not CodexBar alone."
-                ),
-            )
-        ]
+    live_by_source: dict[str, list[AccountUsage]] = {
+        source: [a for a in rows if _has_live_data(a)]
+        for source, rows in by_source.items()
+    }
+    live_by_source = {s: rows for s, rows in live_by_source.items() if rows}
+    source_ids = sorted(live_by_source.keys())
 
-    matched_codexbar_ids: set[int] = set()
-    matched_tokscale_ids: set[int] = set()
-    for cswap_row in cswap_rows:
-        if not _has_live_data(cswap_row):
-            # Errored cswap slot: do not invent a substitute from another tool's
-            # single-account view; still warn when others reported something.
-            if live_codexbar or live_tokscale:
-                other = "CodexBar" if live_codexbar else "tokscale"
-                checks.append(
-                    CrossCheck(
-                        provider="claude",
-                        account=cswap_row.account,
-                        status="warning",
-                        sources=["cswap", "CodexBar", "tokscale"],
-                        message=(
-                            f"cswap could not read canonical usage for Claude Code account "
-                            f"{cswap_row.account}, while {other} reported Claude data. "
-                            f"Often expected when cswap JSON is decision-stale or that slot "
-                            f"is idle — do not replace this account with {other}'s single-session view."
-                        ),
+    if provider == "claude" and cswap_authoritative:
+        checks.extend(_claude_authority_checks(by_source, live_by_source, primary=primary))
+
+    if len(source_ids) < 2:
+        if len(source_ids) == 1:
+            only = source_ids[0]
+            present = sorted(by_source.keys())
+            peers = [s for s in present if s != only]
+            if peers:
+                # Peer present but not live — prefer warning when it errored.
+                peer_errors: list[str] = []
+                for peer in peers:
+                    peer_errors.extend(
+                        a.error for a in by_source.get(peer, []) if a.error
                     )
-                )
+                peer_labels = ", ".join(_source_name(s) for s in peers)
+                if peer_errors:
+                    checks.append(
+                        CrossCheck(
+                            provider=provider,
+                            account=live_by_source[only][0].account,
+                            status="warning",
+                            sources=[_source_name(only)] + [_source_name(s) for s in peers],
+                            message=(
+                                f"{_source_name(only)} returned live data, but "
+                                f"{peer_labels} failed: {peer_errors[0]}"
+                            ),
+                        )
+                    )
+                else:
+                    checks.append(
+                        CrossCheck(
+                            provider=provider,
+                            account=live_by_source[only][0].account,
+                            status="unavailable",
+                            sources=[_source_name(only)] + [_source_name(s) for s in peers],
+                            message=(
+                                f"Only {_source_name(only)} returned live "
+                                f"{provider_display_name(provider)} data this run; "
+                                f"no independent overlap with {peer_labels}."
+                            ),
+                        )
+                    )
             else:
+                # Single source only — one note for the provider (not per account).
                 checks.append(
                     CrossCheck(
-                        provider="claude",
-                        account=cswap_row.account,
+                        provider=provider,
+                        account=live_by_source[only][0].account,
                         status="unavailable",
-                        sources=["cswap", "CodexBar", "tokscale"],
+                        sources=[_source_name(only)],
                         message=(
-                            f"No independent Claude quota cross-check is available for "
-                            f"{cswap_row.account}."
+                            f"A multi-tool cross-check is unavailable; live "
+                            f"{provider_display_name(provider)} data was reported only by "
+                            f"{_source_name(only)}."
                         ),
                     )
                 )
+        elif not source_ids and by_source:
+            # No live data at all (e.g. only errored cswap rows).
+            if provider == "claude" and cswap_authoritative and "cswap" in by_source:
+                # Already covered by _claude_authority_checks when no peers.
+                pass
+        return checks
+
+    # All pairs of live sources — O(n²) sources, small n.
+    for i, left_src in enumerate(source_ids):
+        for right_src in source_ids[i + 1 :]:
+            checks.extend(
+                _cross_check_source_pair(
+                    provider,
+                    left_src,
+                    live_by_source[left_src],
+                    right_src,
+                    live_by_source[right_src],
+                )
+            )
+
+    # Failed peer while another is live
+    for source, rows in by_source.items():
+        if live_by_source.get(source):
             continue
-
-        compared = False
-        codex_match = _match_peer_by_account(cswap_row, live_codexbar, cswap_live_count=len(cswap_live))
-        if codex_match is not None:
-            matched_codexbar_ids.add(id(codex_match))
-            checks.append(_compare_live_rows(cswap_row, codex_match))
-            compared = True
-
-        tok_match = _match_peer_by_account(cswap_row, live_tokscale, cswap_live_count=len(cswap_live))
-        if tok_match is not None:
-            matched_tokscale_ids.add(id(tok_match))
-            checks.append(_compare_live_rows(cswap_row, tok_match))
-            compared = True
-
-        if not compared:
-            if codexbar_errors:
-                reason = f"CodexBar also failed: {codexbar_errors[0]}"
-            elif live_codexbar or live_tokscale:
-                reason = "No peer row matched this Claude Code account by email."
-            else:
-                reason = "CodexBar and tokscale did not report this Claude Code account."
+        errors = [a.error for a in rows if a.error]
+        if not errors:
+            continue
+        for other, other_live in live_by_source.items():
             checks.append(
                 CrossCheck(
-                    provider="claude",
-                    account=cswap_row.account,
-                    status="unavailable",
-                    sources=["cswap", "CodexBar", "tokscale"],
-                    message=(
-                        f"No independent Claude quota cross-check is available for "
-                        f"{cswap_row.account}. {reason}"
-                    ),
-                )
-            )
-
-    for row in live_codexbar:
-        if id(row) not in matched_codexbar_ids:
-            checks.append(
-                CrossCheck(
-                    provider="claude",
-                    account=row.account,
+                    provider=provider,
+                    account=other_live[0].account if other_live else None,
                     status="warning",
-                    sources=["cswap", "CodexBar"],
+                    sources=[_source_name(other), _source_name(source)],
                     message=(
-                        f"CodexBar reported Claude account {row.account or 'unknown'}, "
-                        "but it did not match a cswap account. Often expected: CodexBar "
-                        "usually sees only the active session, not every cswap email."
-                    ),
-                )
-            )
-    for row in live_tokscale:
-        if id(row) not in matched_tokscale_ids:
-            checks.append(
-                CrossCheck(
-                    provider="claude",
-                    account=row.account,
-                    status="warning",
-                    sources=["cswap", "tokscale"],
-                    message=(
-                        f"tokscale reported Claude account {row.account or 'unknown'}, "
-                        "but it did not match a cswap account. Often expected for "
-                        "single-session measurements vs multi-account cswap."
+                        f"{_source_name(other)} returned live data, but "
+                        f"{_source_name(source)} failed: {errors[0]}"
                     ),
                 )
             )
     return checks
 
 
-def _match_peer_by_account(
-    cswap_row: AccountUsage,
+def _claude_authority_checks(
+    by_source: dict[str, list[AccountUsage]],
+    live_by_source: dict[str, list[AccountUsage]],
+    *,
+    primary: str | None,
+) -> list[CrossCheck]:
+    """Claude-specific warnings around cswap multi-account authority."""
+    checks: list[CrossCheck] = []
+    cswap_rows = by_source.get("cswap") or []
+    if not cswap_rows:
+        peer_labels = [_source_name(s) for s in sorted(live_by_source) if s != "cswap"]
+        checks.append(
+            CrossCheck(
+                provider="claude",
+                account=None,
+                status="warning",
+                sources=["cswap"] + peer_labels,
+                message=(
+                    "cswap returned no Claude Code account rows, so Claude cannot "
+                    "be reported from its canonical multi-account source. "
+                    "Check `cswap list` / `aiuse doctor` (auth and PATH)."
+                ),
+            )
+        )
+        return checks
+
+    cswap_live = live_by_source.get("cswap") or []
+    peer_live = {s: rows for s, rows in live_by_source.items() if s != "cswap"}
+    if not cswap_live:
+        if primary and primary != "cswap":
+            checks.append(
+                CrossCheck(
+                    provider="claude",
+                    account=None,
+                    status="warning",
+                    sources=["cswap", _source_name(primary)],
+                    message=(
+                        "cswap (the canonical multi-account Claude source) produced no "
+                        "usable data this run; falling back to a non-canonical source. "
+                        "Multi-account Claude Code data may be incomplete or attributed "
+                        "to the wrong account."
+                    ),
+                )
+            )
+        elif (primary == "cswap" or primary is None) and any(a.error for a in cswap_rows) and not peer_live:
+            # Errored-only cswap, nothing to fall back to — still signal the failure mode.
+            checks.append(
+                CrossCheck(
+                    provider="claude",
+                    account=cswap_rows[0].account if cswap_rows else None,
+                    status="warning",
+                    sources=["cswap"],
+                    message=(
+                        "cswap (the canonical multi-account Claude source) produced no "
+                        "usable data this run; falling back to a non-canonical source. "
+                        "Multi-account Claude Code data may be incomplete or attributed "
+                        "to the wrong account."
+                    ),
+                )
+            )
+
+    # Errored cswap slots vs peers
+    for cswap_row in cswap_rows:
+        if _has_live_data(cswap_row):
+            continue
+        if peer_live:
+            other = next(iter(peer_live))
+            checks.append(
+                CrossCheck(
+                    provider="claude",
+                    account=cswap_row.account,
+                    status="warning",
+                    sources=["cswap", _source_name(other)],
+                    message=(
+                        f"cswap could not read canonical usage for Claude Code account "
+                        f"{cswap_row.account}, while {_source_name(other)} reported Claude data. "
+                        f"Often expected when cswap JSON is decision-stale or that slot "
+                        f"is idle — do not replace this account with {_source_name(other)}'s "
+                        f"single-session view."
+                    ),
+                )
+            )
+        else:
+            checks.append(
+                CrossCheck(
+                    provider="claude",
+                    account=cswap_row.account,
+                    status="unavailable",
+                    sources=["cswap"] + [_source_name(s) for s in sorted(by_source) if s != "cswap"],
+                    message=(
+                        f"No independent Claude quota cross-check is available for "
+                        f"{cswap_row.account}."
+                    ),
+                )
+            )
+    return checks
+
+
+def _cross_check_source_pair(
+    provider: str,
+    left_src: str,
+    left_rows: list[AccountUsage],
+    right_src: str,
+    right_rows: list[AccountUsage],
+) -> list[CrossCheck]:
+    """Match accounts between two sources and compare overlapping windows."""
+    checks: list[CrossCheck] = []
+    matched_right: set[int] = set()
+
+    for left in left_rows:
+        peer = _match_peer_account(left, right_rows, left_live_count=len(left_rows))
+        if peer is None:
+            # Single-sided live row — note when the other source has data under another identity
+            if len(right_rows) == 1 and not right_rows[0].account and len(left_rows) == 1:
+                peer = right_rows[0]
+            else:
+                continue
+        matched_right.add(id(peer))
+        checks.append(_compare_live_rows(left, peer))
+
+    for right in right_rows:
+        if id(right) in matched_right:
+            continue
+        # Orphan peer row (e.g. CodexBar single session vs multi-account cswap)
+        if left_src == "cswap" or right_src == "cswap":
+            checks.append(
+                CrossCheck(
+                    provider=provider,
+                    account=right.account,
+                    status="warning",
+                    sources=[_source_name(left_src), _source_name(right_src)],
+                    message=(
+                        f"{_source_name(right_src)} reported Claude account "
+                        f"{right.account or 'unknown'}, but it did not match a "
+                        f"{_source_name(left_src)} account. Often expected for "
+                        f"single-session measurements vs multi-account cswap."
+                    ),
+                )
+            )
+        elif len(left_rows) == 1 and len(right_rows) == 1:
+            # Already compared above if match worked; if not, force compare
+            checks.append(_compare_live_rows(left_rows[0], right))
+    return checks
+
+
+def _match_peer_account(
+    anchor: AccountUsage,
     peers: list[AccountUsage],
     *,
-    cswap_live_count: int,
+    left_live_count: int,
 ) -> AccountUsage | None:
-    """Match a peer Claude row to a cswap account.
-
-    Prefer case-insensitive email equality. Allow a single anonymous peer only
-    when there is exactly one live cswap account (avoids binding one CodexBar
-    row to every multi-account cswap slot).
-    """
-    if cswap_row.account:
+    """Match a peer row by case-insensitive account email when possible."""
+    if anchor.account:
         email_match = next(
             (
                 row
                 for row in peers
-                if row.account and row.account.lower() == cswap_row.account.lower()
+                if row.account and row.account.lower() == anchor.account.lower()
             ),
             None,
         )
         if email_match is not None:
             return email_match
-    if cswap_live_count == 1 and len(peers) == 1 and not peers[0].account:
+    if left_live_count == 1 and len(peers) == 1:
+        # Allow anonymous single-peer binding (CodexBar often omits email).
         return peers[0]
     return None
-
-
-def _provider_cross_check(
-    provider: str,
-    codexbar_rows: list[AccountUsage],
-    tokscale_rows: list[AccountUsage],
-) -> CrossCheck:
-    codexbar_live = next((row for row in codexbar_rows if _has_live_data(row)), None)
-    tokscale_live = next((row for row in tokscale_rows if _has_live_data(row)), None)
-    selected_live = codexbar_live or tokscale_live
-    account = selected_live.account if selected_live is not None else None
-
-    if codexbar_live and tokscale_live:
-        return _compare_live_rows(codexbar_live, tokscale_live)
-    if codexbar_live and any(row.error for row in tokscale_rows):
-        error = next(row.error for row in tokscale_rows if row.error)
-        return CrossCheck(
-            provider=provider,
-            account=account,
-            status="warning",
-            sources=["CodexBar", "tokscale"],
-            message=f"CodexBar returned live data, but tokscale failed: {error}",
-        )
-    if tokscale_live and any(row.error for row in codexbar_rows):
-        error = next(row.error for row in codexbar_rows if row.error)
-        return CrossCheck(
-            provider=provider,
-            account=account,
-            status="warning",
-            sources=["CodexBar", "tokscale"],
-            message=f"tokscale returned live data, but CodexBar failed: {error}",
-        )
-
-    available = "CodexBar" if codexbar_live else "tokscale" if tokscale_live else "neither tool"
-    provider_name = provider_display_name(provider)
-    return CrossCheck(
-        provider=provider,
-        account=account,
-        status="unavailable",
-        sources=["CodexBar", "tokscale"],
-        message=(f"A two-tool cross-check is unavailable; live {provider_name} data was reported by {available}."),
-    )
 
 
 def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
@@ -431,6 +570,16 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
         if id(right_window) not in matched_right and _has_usable_capacity(right_window):
             issues.append(f"{right.source} alone reported {right_window.label}")
 
+    # Balance cross-check when both report prepaid balances
+    if left.balance_usd is not None and right.balance_usd is not None:
+        if abs(left.balance_usd - right.balance_usd) > 0.5:
+            issues.append(
+                f"balance differs by ${abs(left.balance_usd - right.balance_usd):.2f} "
+                f"({left.source} ${left.balance_usd:.2f} vs {right.source} ${right.balance_usd:.2f})"
+            )
+        else:
+            matched_count += 1
+
     sources = [_source_name(left.source), _source_name(right.source)]
     account = left.account or right.account
     if issues:
@@ -443,8 +592,8 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
                 "Tools disagree on some live quota figures: "
                 + "; ".join(issues)
                 + ". Small gaps are often expected (poll timing, last-good hydrate, "
-                "or single-session vs multi-account views) and do not mean both "
-                "sources are wrong — cswap stays authoritative for Claude."
+                "label vocabulary, or single-session vs multi-account views) and do not "
+                "mean both sources are wrong — cswap stays authoritative for Claude."
             ),
         )
     return CrossCheck(
@@ -453,7 +602,8 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
         status="consistent",
         sources=sources,
         message=(
-            f"Agree on {matched_count} overlapping live quota "
+            f"{_source_name(left.source)} and {_source_name(right.source)} agree on "
+            f"{matched_count} overlapping live quota "
             f"measurement{'s' if matched_count != 1 else ''} within tolerance."
         ),
     )
@@ -471,16 +621,47 @@ def _matching_window(
     )
     if exact_label is not None:
         return exact_label
+
+    # Fuzzy: same duration bucket keywords
+    target_kind = _window_kind_hint(target)
+    if target_kind:
+        kind_match = next(
+            (c for c in unmatched if _window_kind_hint(c) == target_kind),
+            None,
+        )
+        if kind_match is not None:
+            return kind_match
+
     if target.resets_at is None:
         return None
     return next(
         (
             candidate
             for candidate in unmatched
-            if candidate.resets_at is not None and abs((candidate.resets_at - target.resets_at).total_seconds()) <= 900
+            if candidate.resets_at is not None
+            and abs((candidate.resets_at - target.resets_at).total_seconds()) <= 900
         ),
         None,
     )
+
+
+def _window_kind_hint(window: QuotaWindow) -> str | None:
+    label = (window.label or "").lower()
+    minutes = window.window_minutes
+    if minutes is not None:
+        if minutes <= 360:
+            return "5h"
+        if minutes <= 12000:
+            return "weekly"
+        if minutes >= 20000:
+            return "monthly"
+    if "5-hour" in label or "5h" in label or "session" in label:
+        return "5h"
+    if "week" in label:
+        return "weekly"
+    if "month" in label or "included" in label:
+        return "monthly"
+    return None
 
 
 def _has_usable_capacity(window: QuotaWindow) -> bool:
@@ -489,4 +670,15 @@ def _has_usable_capacity(window: QuotaWindow) -> bool:
 
 
 def _source_name(source: str) -> str:
-    return {"codexbar": "CodexBar", "tokscale": "tokscale", "cswap": "cswap"}.get(source, source)
+    return SOURCE_LABELS.get(source, source)
+
+
+def collector_tools_present() -> dict[str, bool]:
+    """PATH presence for doctor / diagnostics."""
+    return {
+        "cswap": which("cswap") is not None,
+        "codexbar": which("codexbar") is not None,
+        "caut": which("caut") is not None,
+        "openusage": which("openusage") is not None,
+        "tokscale": which("tokscale") is not None,
+    }

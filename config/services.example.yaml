@@ -123,5 +123,16 @@ collectors:
     # "enabled" honors CodexBar's configured provider list. "all" queries every
     # supported provider. A CSV queries each named provider separately.
     providers: enabled
+  caut:
+    enabled: true
+    # "all" queries every caut-supported provider (best for cross-checks).
+    providers: all
+  openusage:
+    enabled: true
+    # Prefer a fresh read when the openusage CLI is on PATH.
+    force_refresh: true
+    # If CLI missing, try launching OpenUsage.app then hit loopback HTTP.
+    try_launch_app: true
+    base_url: "http://127.0.0.1:6736"
   tokscale:
     enabled: true

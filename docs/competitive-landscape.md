@@ -353,16 +353,17 @@ Add a collector only if **all** of the following hold:
 5. **Does not confuse ranking** — prepaid stays non-urgent; local burn never becomes
    plan %.
 
-Under those rules, the **only** near-term candidates worth prototyping are:
+**Update (2026-07-25):** **caut** and **OpenUsage** are now **default collectors**
+for multi-source cross-checks (operator preference: correctness over runtime).
+See [`collectors-caut-openusage.md`](collectors-caut-openusage.md) and site
+`just install-ai-quota-tools`. Selection still prefers cswap/CodexBar/tokscale as
+before; peers contribute independent measurements.
 
 | Priority | Candidate | Role |
 | -------- | --------- | ---- |
-| P2 (optional) | **caut** | CodexBar substitute on non-Mac / CodexBar-free hosts |
-| P3 (optional) | **OpenUsage** HTTP | Opportunistic fill-in if already running; never required |
-| Parked | Everything else | No collector work |
-
-**Do not** add quotabot, onWatch, ccusage, or menubar-only apps as default data
-sources. They compete with or confuse the decision layer more than they feed it.
+| **Done** | **caut** | Default collector + cross-check peer |
+| **Done** | **OpenUsage** | Default collector (CLI and/or HTTP :6736) |
+| Parked | quotabot / onWatch / ccusage as *inputs* | Decision peers or burn tools — not ranking drivers |
 
 ### Better investment than more collectors
 

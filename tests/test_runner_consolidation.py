@@ -68,7 +68,7 @@ def test_cross_check_reports_consistent_duplicate_measurements():
     tokscale.windows[0].label = "Codex weekly quota"
     accounts, checks = _select_and_cross_check([codexbar, tokscale], cswap_authoritative=True)
     assert [account.source for account in accounts] == ["codexbar"]
-    assert checks[0].status == "consistent"
+    assert any(c.status == "consistent" for c in checks)
 
 
 def test_cross_check_warns_when_percentages_disagree():
@@ -79,8 +79,36 @@ def test_cross_check_warns_when_percentages_disagree():
     tokscale.windows[0].used_percent = 30
     accounts, checks = _select_and_cross_check([codexbar, tokscale], cswap_authoritative=True)
     assert [account.source for account in accounts] == ["codexbar"]
-    assert checks[0].status == "warning"
-    assert "percentage points" in checks[0].message
+    warn = next(c for c in checks if c.status == "warning")
+    assert "percentage points" in warn.message
+
+
+def test_multi_source_prefers_codexbar_and_cross_checks_all_peers():
+    """caut + openusage + tokscale peers cross-check; only codexbar is selected."""
+    codexbar = _account("codexbar", "codex")
+    caut = _account("caut", "codex")
+    openusage = _account("openusage", "codex")
+    tokscale = _account("tokscale", "codex")
+    for row in (codexbar, caut, openusage, tokscale):
+        row.windows[0].label = "weekly"
+        row.windows[0].used_percent = 10
+    accounts, checks = _select_and_cross_check(
+        [codexbar, caut, openusage, tokscale],
+        cswap_authoritative=True,
+    )
+    assert [a.source for a in accounts] == ["codexbar"]
+    # All pairs among 4 sources → C(4,2) = 6 pair comparisons
+    assert len([c for c in checks if c.status == "consistent"]) >= 3
+    sources_seen = {tuple(c.sources) for c in checks if c.status == "consistent"}
+    assert any("CodexBar" in s and "caut" in s for s in sources_seen)
+    assert any("OpenUsage" in s for s in sources_seen)
+
+
+def test_caut_selected_when_codexbar_missing():
+    caut = _account("caut", "codex")
+    tokscale = _account("tokscale", "codex")
+    accounts, _ = _select_and_cross_check([caut, tokscale], cswap_authoritative=True)
+    assert [a.source for a in accounts] == ["caut"]
 
 
 def test_claude_cross_check_matches_accounts_case_insensitively():
@@ -128,6 +156,8 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_cswap", slow_cswap)
     monkeypatch.setattr("aiuse.collectors.runner.collect_codexbar", slow_codexbar)
     monkeypatch.setattr("aiuse.collectors.runner.collect_tokscale", slow_tokscale)
+    monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage", lambda **_k: [])
 
     start = time.monotonic()
     snapshot = run_collectors({})
@@ -152,6 +182,8 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
         "aiuse.collectors.runner.collect_tokscale",
         lambda **_kwargs: [_account("tokscale", "grok")],
     )
+    monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage", lambda **_k: [])
     snapshot = run_collectors({})
 
     assert {account.provider for account in snapshot.accounts} == {"codex", "grok"}
@@ -166,8 +198,9 @@ def test_more_than_two_cswap_claude_accounts_all_survive_selection():
     selected, checks = _select_and_cross_check(accounts, cswap_authoritative=True)
 
     assert {account.account for account in selected} == {f"user{i}@example.com" for i in range(4)}
-    # Each account gets its own cross-check note (no CodexBar row to match against).
-    assert len(checks) == 4
+    # Single-source provider gets one multi-tool unavailability note (not per account).
+    assert any(check.status == "unavailable" for check in checks)
+    assert any("only by cswap" in check.message for check in checks)
 
 
 def test_claude_falls_back_to_codexbar_when_cswap_has_no_live_data():

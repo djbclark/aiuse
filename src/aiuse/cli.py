@@ -36,6 +36,8 @@ from aiuse.report import render_report, render_stderr_meta
 _EXTERNAL_TOOLS: tuple[tuple[str, str, list[str]], ...] = (
     ("cswap", "cswap", ["--version"]),
     ("codexbar", "codexbar", ["-V"]),
+    ("caut", "caut", ["--version"]),
+    ("openusage", "openusage", ["--help"]),
     ("tokscale", "tokscale", ["--version"]),
 )
 _PROBE_TIMEOUT_S = 5.0
@@ -65,7 +67,7 @@ exit codes (collect runs):
   1  hard failure (collectors failed and no accounts)
   2  success, but at least one burn/conserve alert
 
-Credentials stay with cswap / CodexBar / tokscale — this CLI never stores tokens.
+Credentials stay with cswap / CodexBar / caut / OpenUsage / tokscale — this CLI never stores tokens.
 See docs/json-contract.md for machine-readable JSON field stability.
 """
 
@@ -75,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="aiuse",
         description=(
             "Aggregate live AI subscription and API usage from cswap, "
-            "codexbar, and tokscale; flag allotments that will reset unused. "
+            "codexbar, caut, OpenUsage, and tokscale; flag allotments that will reset unused. "
             "Default output is a pretty human-readable report; pass --json "
             "for machine-readable JSON."
         ),
@@ -185,6 +187,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-codexbar",
         action="store_true",
         help="Skip codexbar collector",
+    )
+    p.add_argument(
+        "--no-caut",
+        action="store_true",
+        help="Skip caut collector",
+    )
+    p.add_argument(
+        "--no-openusage",
+        action="store_true",
+        help="Skip OpenUsage collector (CLI and/or loopback HTTP)",
     )
     p.add_argument(
         "--providers",
@@ -433,6 +445,21 @@ def _path_status(path: Path) -> str:
     return "missing (built-in defaults apply)"
 
 
+def _openusage_http_ok(*, timeout: float = 2.0) -> bool:
+    """True when OpenUsage loopback limits API answers."""
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            "http://127.0.0.1:6736/v1/limits",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= getattr(resp, "status", 200) < 300
+    except Exception:  # noqa: BLE001 — doctor probe only
+        return False
+
+
 def probe_tool_version(
     cmd: str,
     version_argv: list[str],
@@ -521,7 +548,8 @@ def diagnose(
         if path:
             status = "ok"
             detail = path
-            if probe:
+            # openusage CLI --help can be heavy; skip version probe for it.
+            if probe and collector_key != "openusage":
                 ok, summary = probe_tool_version(
                     cmd, version_argv, timeout=_PROBE_TIMEOUT_S, run_fn=run_fn
                 )
@@ -533,7 +561,18 @@ def diagnose(
         else:
             status = "MISSING"
             detail = "not found on PATH"
-            if enabled:
+            # OpenUsage can serve http://127.0.0.1:6736 without a PATH CLI.
+            if collector_key == "openusage" and enabled:
+                if _openusage_http_ok():
+                    status = "ok"
+                    detail = "CLI missing; loopback HTTP :6736/v1/limits responding"
+                else:
+                    detail = (
+                        "CLI not on PATH and HTTP :6736 not responding "
+                        "(install OpenUsage.app + Settings→Command Line, or leave app running)"
+                    )
+                    problems += 1
+            elif enabled:
                 problems += 1
         flag = "enabled" if enabled else "disabled in config"
         lines.append(f"  {cmd:<10} {status:<8} {detail}  [{flag}]")
@@ -595,6 +634,10 @@ def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> No
         collectors["cswap"] = {"enabled": False}
     if args.no_codexbar:
         collectors["codexbar"] = {"enabled": False}
+    if getattr(args, "no_caut", False):
+        collectors["caut"] = {"enabled": False}
+    if getattr(args, "no_openusage", False):
+        collectors["openusage"] = {"enabled": False}
     if args.providers:
         collectors.setdefault("codexbar", {})["providers"] = args.providers
     analysis = config.setdefault("analysis", {})

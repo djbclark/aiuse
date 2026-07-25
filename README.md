@@ -17,9 +17,15 @@ CLI command: **`aiuse`** (stub **`ai`** → same entrypoint)
 | ------------------------------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json` | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source; may hydrate from cswap’s local usage cache when JSON is decision-stale |
 | [**CodexBar**](https://github.com/) `codexbar usage --format json`       | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; Claude fallback if cswap has no live rows                                 |
-| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`           | Independent live subscription quota measurement           | Cross-checked against CodexBar (and Claude/cswap); selected when preferred source has no live row             |
+| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes) | Cross-check peer; fill-in when CodexBar missing                                                               |
+| [**OpenUsage**](https://www.openusage.ai/) CLI / `127.0.0.1:6736/v1/limits` | Menu-bar companion + loopback limits API                | Cross-check peer; optional CLI install from app Settings                                                      |
+| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`           | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                       |
 
-This project shells out to tools already on your `PATH`; it does not scrape billing dashboards itself. For Claude multi-account reliability (stale JSON vs cache), see [`docs/cswap-reliability.md`](docs/cswap-reliability.md).
+This project shells out to tools already on your `PATH` (and optionally hits
+OpenUsage’s loopback API); it does not scrape billing dashboards itself. For
+Claude multi-account reliability (stale JSON vs cache), see
+[`docs/cswap-reliability.md`](docs/cswap-reliability.md). caut + OpenUsage
+setup: [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md).
 
 ## Install
 

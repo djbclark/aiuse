@@ -125,6 +125,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "collectors": {
         "cswap": {"enabled": True},
         "codexbar": {"enabled": True, "providers": "enabled"},
+        # caut + OpenUsage enabled by default for multi-source cross-checks.
+        "caut": {"enabled": True, "providers": "all"},
+        "openusage": {
+            "enabled": True,
+            "force_refresh": True,
+            "try_launch_app": True,
+            "base_url": "http://127.0.0.1:6736",
+        },
         "tokscale": {"enabled": True},
     },
 }
@@ -133,10 +141,21 @@ DEFAULT_CONFIG: dict[str, Any] = {
 # Top-level and nested keys recognized by the loader / doctor (unknown → warning).
 KNOWN_TOP_LEVEL_KEYS = frozenset({"timeouts", "analysis", "plans", "collectors"})
 KNOWN_TIMEOUT_KEYS = frozenset(
-    {"default", "force", "cswap", "codexbar", "codexbar_discovery", "tokscale"}
+    {
+        "default",
+        "force",
+        "cswap",
+        "codexbar",
+        "codexbar_discovery",
+        "caut",
+        "openusage",
+        "tokscale",
+    }
 )
-KNOWN_COLLECTOR_KEYS = frozenset({"cswap", "codexbar", "tokscale"})
-KNOWN_COLLECTOR_ENTRY_KEYS = frozenset({"enabled", "providers"})
+KNOWN_COLLECTOR_KEYS = frozenset({"cswap", "codexbar", "caut", "openusage", "tokscale"})
+KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
+    {"enabled", "providers", "force_refresh", "try_launch_app", "base_url"}
+)
 KNOWN_ANALYSIS_KEYS = frozenset(DEFAULT_CONFIG["analysis"].keys())
 KNOWN_PACE_KEYS = frozenset(DEFAULT_CONFIG["analysis"]["pace"].keys())
 KNOWN_SCORING_MODES = frozenset({"pace", "multi_dim", "legacy"})
