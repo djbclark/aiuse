@@ -151,6 +151,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "force_refresh": True,
             "try_launch_app": True,
             "base_url": "http://127.0.0.1:6736",
+            # Doctor / preflight probe (payload collect still uses /v1/limits via base_url).
+            "health_path": "/v1/limits",
         },
         "tokscale": {"enabled": True},
     },
@@ -173,8 +175,51 @@ KNOWN_TIMEOUT_KEYS = frozenset(
 )
 KNOWN_COLLECTOR_KEYS = frozenset({"cswap", "codexbar", "caut", "openusage", "tokscale"})
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
-    {"enabled", "providers", "force_refresh", "try_launch_app", "base_url"}
+    {
+        "enabled",
+        "providers",
+        "force_refresh",
+        "try_launch_app",
+        "base_url",
+        "health_path",
+        "probe_url",
+    }
 )
+
+
+def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None:
+    """Optional HTTP health/probe URL for a collector (doctor / preflight).
+
+    Precedence:
+
+    1. ``collectors.<name>.probe_url`` — full URL
+    2. ``base_url`` + ``health_path`` (path may be absolute path on the host)
+    3. For ``openusage`` only: ``base_url`` + ``/v1/limits`` when path omitted
+    """
+    collectors = (config or {}).get("collectors")
+    if not isinstance(collectors, dict):
+        return None
+    entry = collectors.get(name)
+    if not isinstance(entry, dict):
+        return None
+    probe = entry.get("probe_url")
+    if probe:
+        return str(probe).strip() or None
+    base = entry.get("base_url")
+    if not base:
+        return None
+    base_s = str(base).rstrip("/")
+    path = entry.get("health_path")
+    if path is None and name == "openusage":
+        path = "/v1/limits"
+    if path is None:
+        return None
+    path_s = str(path).strip()
+    if path_s.startswith("http://") or path_s.startswith("https://"):
+        return path_s
+    if not path_s.startswith("/"):
+        path_s = "/" + path_s
+    return base_s + path_s
 KNOWN_ANALYSIS_KEYS = frozenset(DEFAULT_CONFIG["analysis"].keys())
 KNOWN_PACE_KEYS = frozenset(DEFAULT_CONFIG["analysis"]["pace"].keys())
 KNOWN_SCORING_MODES = frozenset({"pace", "multi_dim", "legacy"})

@@ -21,6 +21,7 @@ from aiuse.collectors.base import which
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import (
     DEFAULT_SUBPROCESS_TIMEOUT,
+    collector_health_url,
     default_config_dir,
     default_config_path,
     default_toml_config_path,
@@ -466,19 +467,26 @@ def _path_status(path: Path) -> str:
     return "missing (built-in defaults apply)"
 
 
-def _openusage_http_ok(*, timeout: float = 2.0) -> bool:
-    """True when OpenUsage loopback limits API answers."""
+def _http_probe_ok(url: str, *, timeout: float = 2.0) -> bool:
+    """True when GET url returns 2xx (doctor / health_path preflight)."""
     try:
         import urllib.request
 
-        req = urllib.request.Request(
-            "http://127.0.0.1:6736/v1/limits",
-            headers={"Accept": "application/json"},
-        )
+        req = urllib.request.Request(url, headers={"Accept": "application/json, */*"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return 200 <= getattr(resp, "status", 200) < 300
     except Exception:  # noqa: BLE001 — doctor probe only
         return False
+
+
+def _openusage_http_ok(
+    *,
+    timeout: float = 2.0,
+    config: dict[str, Any] | None = None,
+) -> bool:
+    """True when OpenUsage health probe (or default /v1/limits) answers."""
+    url = collector_health_url(config, "openusage") or "http://127.0.0.1:6736/v1/limits"
+    return _http_probe_ok(url, timeout=timeout)
 
 
 def probe_tool_version(
@@ -579,17 +587,25 @@ def diagnose(
                 else:
                     detail = f"{path} · probe failed: {summary}"
                     # Probe failure is a warning, not a hard PATH problem
+            # Optional health_path / probe_url when CLI is present too.
+            health = collector_health_url(config, collector_key)
+            if health and probe:
+                if _http_probe_ok(health, timeout=_PROBE_TIMEOUT_S):
+                    detail = f"{detail} · health ok ({health})"
+                else:
+                    detail = f"{detail} · health failed ({health})"
         else:
             status = "MISSING"
             detail = "not found on PATH"
-            # OpenUsage can serve http://127.0.0.1:6736 without a PATH CLI.
+            # OpenUsage can serve loopback HTTP without a PATH CLI.
             if collector_key == "openusage" and enabled:
-                if _openusage_http_ok():
+                health = collector_health_url(config, "openusage") or "http://127.0.0.1:6736/v1/limits"
+                if _openusage_http_ok(config=config):
                     status = "ok"
-                    detail = "CLI missing; loopback HTTP :6736/v1/limits responding"
+                    detail = f"CLI missing; HTTP probe ok ({health})"
                 else:
                     detail = (
-                        "CLI not on PATH and HTTP :6736 not responding "
+                        f"CLI not on PATH and HTTP probe failed ({health}) "
                         "(install OpenUsage.app + Settings→Command Line, or leave app running)"
                     )
                     problems += 1

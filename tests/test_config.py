@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from aiuse.config import (
+    DEFAULT_CONFIG,
     DEFAULT_SUBPROCESS_TIMEOUT,
+    collector_health_url,
     default_config_dir,
     default_config_path,
     default_toml_config_path,
@@ -13,6 +15,32 @@ from aiuse.config import (
     timeout_for,
     validate_config,
 )
+
+
+def test_collector_health_url_openusage_defaults_and_overrides():
+    assert collector_health_url(DEFAULT_CONFIG, "openusage") == "http://127.0.0.1:6736/v1/limits"
+    assert (
+        collector_health_url(
+            {
+                "collectors": {
+                    "openusage": {
+                        "base_url": "http://127.0.0.1:9",
+                        "health_path": "/healthz",
+                    }
+                }
+            },
+            "openusage",
+        )
+        == "http://127.0.0.1:9/healthz"
+    )
+    assert (
+        collector_health_url(
+            {"collectors": {"openusage": {"probe_url": "http://example/probe"}}},
+            "openusage",
+        )
+        == "http://example/probe"
+    )
+    assert collector_health_url(DEFAULT_CONFIG, "cswap") is None
 
 
 def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path):

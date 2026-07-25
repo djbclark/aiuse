@@ -135,5 +135,8 @@ collectors:
     # If CLI missing, try launching OpenUsage.app then hit loopback HTTP.
     try_launch_app: true
     base_url: "http://127.0.0.1:6736"
+    # Doctor probe path (payload collect still uses base_url + /v1/limits by default).
+    health_path: "/v1/limits"
+    # Or full URL: probe_url: "http://127.0.0.1:6736/v1/limits"
   tokscale:
     enabled: true
