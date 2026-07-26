@@ -13,8 +13,8 @@ three gets you to the other two immediately.
 
 **Status (2026-07-25):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
 **34** done. Product issues **#2–#9** done (suggest, status/serve, History,
-health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.11**
-(PyPI/GitHub; Homebrew formula 2.1.11). Five collectors;
+health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.12**
+(PyPI/GitHub; Homebrew formula 2.1.12). Five collectors;
 prepaid/`n/a` band; hourly LaunchAgent;
 history learning `auto`. **No mandatory numbered step.** Open-ended “what
 next?” → [`docs/next-options.md`](docs/next-options.md) +
