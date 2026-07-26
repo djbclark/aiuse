@@ -549,6 +549,11 @@ def analyze_use_or_lose(
 
     if should_learn_from_history(analysis_cfg):
         retention = int(analysis_cfg.get("snapshot_retention_days", 90))
+        # History summaries are computed independently from the live pace pass.
+        # Apply the same shared-allotment child suppression here so an old
+        # "5-hour 100% left" average cannot contradict an exhausted governing
+        # weekly/monthly window in the current snapshot.
+        shared_child_keys = _shared_allotment_child_keys(snapshot, analysis_cfg)
         # Chronic-waste stats are averaged across past cycles and carry no reset
         # time of their own — but the matching *live* window in this snapshot
         # usually has one, so borrow it instead of reporting "time unknown".
@@ -562,6 +567,8 @@ def analyze_use_or_lose(
         for wasted in chronic_waste_summary(current=snapshot, retention_days=retention):
             provider = wasted["provider"]
             label = wasted["label"]
+            if (provider_config_key(str(provider)), str(label).casefold()) in shared_child_keys:
+                continue
             avg_remaining = wasted["avg_remaining_pct"]
             samples = wasted["sample_count"]
             live_resets_at = live_resets_by_key.get(f"{provider}:{label}")
@@ -585,6 +592,24 @@ def analyze_use_or_lose(
             )
 
     return alerts
+
+
+def _shared_allotment_child_keys(
+    snapshot: Snapshot,
+    analysis_cfg: dict[str, Any],
+) -> set[tuple[str, str]]:
+    """Return current shared-pool children as ``(config provider, label)`` keys."""
+    keys: set[tuple[str, str]] = set()
+    for account in snapshot.accounts:
+        provider_key = provider_config_key(account.provider)
+        if not _shared_allotment_enabled(provider_key, analysis_cfg):
+            continue
+        for pool in partition_independent_pools(account.windows):
+            governing, children = governing_partition(pool)
+            if governing is None:
+                continue
+            keys.update((provider_key, child.label.casefold()) for child in children)
+    return keys
 
 
 def _is_short_window(window: QuotaWindow) -> bool:

@@ -25,6 +25,8 @@ reached). It can also expose **Zen balance** (overage prepaid) via
 3. Default `analysis.provider_overrides.opencode.shared_allotment: true` so the
    longest window (monthly) governs pace scoring — a fresh 5h/weekly bar does
    not get a separate “burn this” alert when it draws the same Go budget.
+   History-derived short-window alerts obey the same gate, so an older
+   “5-hour 100% left” average cannot contradict an exhausted monthly pool.
 
 ## Verify
 

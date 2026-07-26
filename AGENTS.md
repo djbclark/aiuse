@@ -16,7 +16,8 @@ three gets you to the other two immediately.
 health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.12**
 (PyPI/GitHub; Homebrew formula 2.1.12). Five collectors;
 prepaid/`n/a` band; hourly LaunchAgent;
-history learning `auto`. **No mandatory numbered step.** Open-ended “what
+history learning `auto`; shared-allotment history children suppressed when a
+live governing window is present. **No mandatory numbered step.** Open-ended “what
 next?” → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 

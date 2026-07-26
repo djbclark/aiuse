@@ -67,7 +67,10 @@ When active ([`src/aiuse/analysis/history.py`](../src/aiuse/analysis/history.py)
 - **Learned burn rates** — blend into pace so early-window classification is less noisy
 - **Learned flexibility** — light adjustment of flexibility scores
 - **Chronic waste** — short windows that stay high-remaining across **multiple**
-  reset cycles can surface as history-sourced alerts
+  reset cycles can surface as history-sourced alerts. When a short window is a
+  child of a shared allotment, its history alert is suppressed in favor of the
+  current governing weekly/monthly window, so stale short-window averages
+  cannot contradict an exhausted pool.
 
 ## Scheduling
 

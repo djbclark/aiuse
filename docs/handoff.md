@@ -4,7 +4,7 @@
 **Branch:** `main` (synced with `origin/main` after this handoff)  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **266** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **267** passing
 
 **Package version:** **2.1.12** on PyPI + GitHub + Homebrew
 
@@ -27,6 +27,8 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 | Area                                | Notes                                                                                                                                     |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **OpenCode Go history gate**        | Suppress stale 5h history alerts when the current shared monthly window governs; live exhausted state remains authoritative              |
+| **Concurrency test stability**      | Replaced a flaky wall-clock threshold with a synchronization-barrier proof that provider queries overlap                                 |
 | **2.1.12 full release**             | Honest no-reset history wording + clean quality/security gates; GitHub/PyPI OIDC/Homebrew all verified; local pipx + brew upgraded        |
 | **Reset deadline + quality repair** | History-only 5-hour rows without a live reset now say `use more each cycle`; complete `just lint` is green (typing, formatting, security) |
 | **2.1.11 release**                  | First reset-time repair borrows a matching live reset when available; PyPI/GitHub release + Homebrew formula                              |

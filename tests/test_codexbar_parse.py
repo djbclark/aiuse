@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+import threading
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.codexbar import _from_row, _normalize_providers, _parse_enabled_providers, _query_providers
@@ -267,21 +267,21 @@ def test_collect_codexbar_discovers_and_queries_enabled_providers_individually(m
 
 
 def test_one_slow_or_hanging_provider_does_not_delay_the_others(monkeypatch):
+    all_queries_started = threading.Barrier(4)
+
     def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
         provider = argv[argv.index("--provider") + 1]
-        if provider == "claude":
-            time.sleep(0.15)  # stands in for a slow/hanging provider
+        # A sequential implementation cannot get all four calls to this point;
+        # the barrier tests actual overlap without relying on scheduler timing.
+        all_queries_started.wait(timeout=1.0)
         return [{"provider": provider, "usage": {}}]
 
     monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
 
-    start = time.monotonic()
     results = _query_providers(["codex", "claude", "grok", "cursor"])
-    elapsed = time.monotonic() - start
 
-    # Sequential would take >=0.15s regardless, but with 4 fast lookups plus one slow
-    # one it would compound; concurrently it should track just the slow one.
-    assert elapsed < 0.2
+    assert all_queries_started.n_waiting == 0
+    assert all_queries_started.broken is False
     outcomes = dict(results)
     assert outcomes["codex"][0]["provider"] == "codex"
     assert outcomes["claude"][0]["provider"] == "claude"

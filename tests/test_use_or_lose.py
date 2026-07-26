@@ -858,6 +858,73 @@ def test_shared_allotment_suppresses_fresh_5h_when_weekly_on_pace():
     assert alerts == []
 
 
+def test_shared_allotment_suppresses_history_child_when_governing_window_is_exhausted(
+    monkeypatch,
+):
+    """History must not advertise a fresh child while the shared pool is empty."""
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="opencode-go",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="OpenCode Go 5-hour quota (1)",
+                        remaining_percent=100.0,
+                        resets_at=now + timedelta(hours=5),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="OpenCode Go monthly quota (3)",
+                        remaining_percent=0.0,
+                        resets_at=now + timedelta(days=10),
+                        window_minutes=43200,
+                    ),
+                ],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "aiuse.analysis.use_or_lose.should_learn_from_history",
+        lambda _cfg: True,
+    )
+    monkeypatch.setattr(
+        "aiuse.analysis.use_or_lose.compute_learned_burn_rates",
+        lambda **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        "aiuse.analysis.use_or_lose.compute_learned_flexibility",
+        lambda **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        "aiuse.analysis.use_or_lose.chronic_waste_summary",
+        lambda **_kwargs: [
+            {
+                "provider": "opencode",
+                "label": "OpenCode Go 5-hour quota (1)",
+                "avg_remaining_pct": 100.0,
+                "sample_count": 6,
+            }
+        ],
+    )
+    cfg = _pace_cfg(learn_from_history=True)
+    cfg["analysis"]["provider_overrides"] = {"opencode": {"shared_allotment": True}}
+    cfg["plans"] = {"opencode": {"monthly_price": 10, "name": "OpenCode Go"}}
+
+    alerts = analyze_use_or_lose(snap, cfg)
+
+    assert any(
+        alert.source == "codexbar"
+        and alert.kind == "conserve"
+        and alert.window_label == "OpenCode Go monthly quota (3)"
+        for alert in alerts
+    )
+    assert not any(alert.source == "history" for alert in alerts)
+
+
 def test_shared_allotment_one_conserve_alert_names_5h_child():
     now = _now()
     snap = Snapshot(
