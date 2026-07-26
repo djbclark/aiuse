@@ -5,13 +5,13 @@ policy). No code change required from this write-up unless noted.
 
 ## Data sources (all five)
 
-| Collector | Interface | Role |
-| --- | --- | --- |
-| **cswap** | `cswap list --json` | Multi-account Claude (canonical) |
-| **CodexBar** | `codexbar usage --format json` | Broad live quotas (preferred non-Claude) |
-| **caut** | `caut usage --json` | Independent multi-provider peer / fill-in |
-| **OpenUsage** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in |
-| **tokscale** | `tokscale usage --json` | Independent peer; preferred for Copilot |
+| Collector     | Interface                                                | Role                                      |
+| ------------- | -------------------------------------------------------- | ----------------------------------------- |
+| **cswap**     | `cswap list --json`                                      | Multi-account Claude (canonical)          |
+| **CodexBar**  | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)  |
+| **caut**      | `caut usage --json`                                      | Independent multi-provider peer / fill-in |
+| **OpenUsage** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in                |
+| **tokscale**  | `tokscale usage --json`                                  | Independent peer; preferred for Copilot   |
 
 Install all of them: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
 or site `just install-aiuse-deps`.
@@ -33,12 +33,12 @@ collectors are healthy.
 
 ## Defaults
 
-| Knob | Default | Where |
-| --- | --- | --- |
-| `timeouts.default` | **45s** | `config.toml` / built-in |
-| Per-tool keys | inherit default | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage`, `tokscale` |
-| CLI `-t` / `--timeout` | sets `timeouts.force` | wins over every tool for that run |
-| Doctor version probe | **5s** hard cap | does not use usage endpoints |
+| Knob                   | Default               | Where                                                                      |
+| ---------------------- | --------------------- | -------------------------------------------------------------------------- |
+| `timeouts.default`     | **45s**               | `config.toml` / built-in                                                   |
+| Per-tool keys          | inherit default       | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage`, `tokscale` |
+| CLI `-t` / `--timeout` | sets `timeouts.force` | wins over every tool for that run                                          |
+| Doctor version probe   | **5s** hard cap       | does not use usage endpoints                                               |
 
 Tools either return in tens of seconds or hang; long budgets only delay failure
 (see fix-plan history: 180s → 45s).
@@ -108,12 +108,12 @@ result collection inside the `with` block.
 
 ## What looks healthy
 
-| Scenario | Expected |
-| --- | --- |
-| All tools warm / cached | Often **under ~5–20s** wall-clock |
+| Scenario                     | Expected                                                         |
+| ---------------------------- | ---------------------------------------------------------------- |
+| All tools warm / cached      | Often **under ~5–20s** wall-clock                                |
 | Cold CodexBar multi-provider | Dominated by slowest provider; still **≤ 45s** per provider slot |
-| One tool hang | Fails that collector at 45s; others still usable |
-| `aiuse -t 10` | Every tool forced to 10s (faster fail for scripts) |
+| One tool hang                | Fails that collector at 45s; others still usable                 |
+| `aiuse -t 10`                | Every tool forced to 10s (faster fail for scripts)               |
 
 ## Recommendations (standing)
 
@@ -124,10 +124,10 @@ result collection inside the `with` block.
 
 ## Code map
 
-| Piece | Path |
-| --- | --- |
-| Concurrent top-level collect | `src/aiuse/collectors/runner.py` → `run_collectors` |
-| CodexBar provider fan-out | `src/aiuse/collectors/codexbar.py` → `_query_providers` |
-| Timeout resolution | `src/aiuse/config.py` → `timeout_for` |
-| Doctor probe | `src/aiuse/cli.py` → `probe_tool_version` |
-| Dep installer | `packaging/install-deps.sh` |
+| Piece                        | Path                                                    |
+| ---------------------------- | ------------------------------------------------------- |
+| Concurrent top-level collect | `src/aiuse/collectors/runner.py` → `run_collectors`     |
+| CodexBar provider fan-out    | `src/aiuse/collectors/codexbar.py` → `_query_providers` |
+| Timeout resolution           | `src/aiuse/config.py` → `timeout_for`                   |
+| Doctor probe                 | `src/aiuse/cli.py` → `probe_tool_version`               |
+| Dep installer                | `packaging/install-deps.sh`                             |

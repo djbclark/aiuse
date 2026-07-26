@@ -556,9 +556,9 @@ def analyze_use_or_lose(
         for live_account in snapshot.accounts:
             live_provider = provider_config_key(live_account.provider)
             for live_window in live_account.windows:
-                key = f"{live_provider}:{live_window.label}"
-                if live_window.resets_at is not None or key not in live_resets_by_key:
-                    live_resets_by_key[key] = live_window.resets_at
+                live_key = f"{live_provider}:{live_window.label}"
+                if live_window.resets_at is not None or live_key not in live_resets_by_key:
+                    live_resets_by_key[live_key] = live_window.resets_at
         for wasted in chronic_waste_summary(current=snapshot, retention_days=retention):
             provider = wasted["provider"]
             label = wasted["label"]

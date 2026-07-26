@@ -14,6 +14,10 @@ def test_help_epilog_mentions_setup_flags(capsys):
     assert "config.toml" in out
 
 
+def test_http_probe_rejects_non_http_url():
+    assert cli._http_probe_ok("file:///etc/passwd") is False
+
+
 def _stub_probe(monkeypatch):
     monkeypatch.setattr(
         cli,

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -171,9 +172,13 @@ def _fetch_limits(
 
 def _http_limits(*, base_url: str, timeout: float) -> dict[str, Any]:
     url = base_url.rstrip("/") + "/v1/limits"
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise CollectorError(f"OpenUsage HTTP URL must use http(s): {url}")
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # The scheme and host are validated immediately above.
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310  # nosemgrep
             body = resp.read().decode("utf-8")
     except urllib.error.URLError as exc:
         raise CollectorError(f"OpenUsage HTTP {url}: {exc}") from exc
@@ -219,7 +224,8 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         provider = "opencode"
     display = str(body.get("displayName") or provider)
     plan = body.get("plan")
-    resources = body.get("resources") if isinstance(body.get("resources"), dict) else {}
+    resources_value = body.get("resources")
+    resources = resources_value if isinstance(resources_value, dict) else {}
 
     windows: list[QuotaWindow] = []
     balance_usd: float | None = None

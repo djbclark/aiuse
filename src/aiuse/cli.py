@@ -515,10 +515,15 @@ def _path_status(path: Path) -> str:
 def _http_probe_ok(url: str, *, timeout: float = 2.0) -> bool:
     """True when GET url returns 2xx (doctor / health_path preflight)."""
     try:
+        import urllib.parse
         import urllib.request
 
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return False
         req = urllib.request.Request(url, headers={"Accept": "application/json, */*"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # The scheme and host are validated immediately above.
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310  # nosemgrep
             return 200 <= getattr(resp, "status", 200) < 300
     except Exception:  # noqa: BLE001 — doctor probe only
         return False
@@ -607,7 +612,8 @@ def diagnose(
     lines.append("")
 
     lines.append("Timeouts (seconds)")
-    timeouts = config.get("timeouts") if isinstance(config.get("timeouts"), dict) else {}
+    timeouts_value = config.get("timeouts")
+    timeouts = timeouts_value if isinstance(timeouts_value, dict) else {}
     force = timeouts.get("force")
     lines.append(f"  default: {timeout_for(config, 'default'):g}")
     lines.append(f"  force:   {force if force is not None else '(none)'}")

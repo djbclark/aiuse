@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 from aiuse.config import timeout_for
@@ -62,7 +63,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     jobs: list[tuple[str, Callable[[], list[AccountUsage]]]] = []
     if _enabled(collectors_cfg, "cswap"):
         cswap_timeout = timeout_for(config, "cswap")
-        jobs.append(("cswap", lambda t=cswap_timeout: collect_cswap(timeout=t)))
+        jobs.append(("cswap", partial(collect_cswap, timeout=cswap_timeout)))
     if _enabled(collectors_cfg, "codexbar"):
         providers = (collectors_cfg.get("codexbar") or {}).get("providers", "enabled")
         codexbar_timeout = timeout_for(config, "codexbar")
@@ -70,10 +71,11 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(
             (
                 "codexbar",
-                lambda p=providers, t=codexbar_timeout, d=discovery_timeout: collect_codexbar(
-                    providers=p,
-                    timeout=t,
-                    discovery_timeout=d,
+                partial(
+                    collect_codexbar,
+                    providers=providers,
+                    timeout=codexbar_timeout,
+                    discovery_timeout=discovery_timeout,
                 ),
             )
         )
@@ -84,7 +86,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(
             (
                 "caut",
-                lambda p=caut_providers, t=caut_timeout: collect_caut(providers=str(p), timeout=t),
+                partial(collect_caut, providers=str(caut_providers), timeout=caut_timeout),
             )
         )
     if _enabled(collectors_cfg, "openusage"):
@@ -96,17 +98,18 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(
             (
                 "openusage",
-                lambda t=ou_timeout, f=force, tl=launch, b=base: collect_openusage(
-                    timeout=t,
-                    force_refresh=f,
-                    try_launch_app=tl,
-                    base_url=b,
+                partial(
+                    collect_openusage,
+                    timeout=ou_timeout,
+                    force_refresh=force,
+                    try_launch_app=launch,
+                    base_url=base,
                 ),
             )
         )
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
-        jobs.append(("tokscale", lambda t=tokscale_timeout: collect_tokscale(timeout=t)))
+        jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
 
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:

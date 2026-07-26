@@ -250,7 +250,8 @@ def timeout_for(config: dict[str, Any] | None, name: str) -> float:
     3. ``timeouts.default``
     4. :data:`DEFAULT_SUBPROCESS_TIMEOUT`
     """
-    timeouts = (config or {}).get("timeouts") if isinstance((config or {}).get("timeouts"), dict) else {}
+    timeouts_value = (config or {}).get("timeouts")
+    timeouts = timeouts_value if isinstance(timeouts_value, dict) else {}
     if timeouts.get("force") is not None:
         return float(timeouts["force"])
     default = float(timeouts.get("default", DEFAULT_SUBPROCESS_TIMEOUT))

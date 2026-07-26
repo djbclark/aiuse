@@ -11,13 +11,13 @@ aggregator CLI). Install all five with:
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
 ```
 
-| Tool | Typical install |
-| --- | --- |
-| **cswap** | `uv tool install claude-swap` |
-| **codexbar** | `brew install --cask codexbar` |
-| **caut** | `cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker` |
+| Tool          | Typical install                                                                                      |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| **cswap**     | `uv tool install claude-swap`                                                                        |
+| **codexbar**  | `brew install --cask codexbar`                                                                       |
+| **caut**      | `cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker`       |
 | **openusage** | `brew install --cask openusage` (+ optional CLI from app Settings; or leave app running for `:6736`) |
-| **tokscale** | PATH shim via `npx tokscale@latest` (created by `install-deps.sh`) |
+| **tokscale**  | PATH shim via `npx tokscale@latest` (created by `install-deps.sh`)                                   |
 
 ## Status
 

@@ -574,7 +574,15 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
         # Inventory only — no "use before reset" language for non-expiring tokens.
         body = f"{name} · {who} · {alert.window_label} (no expiry)"
         return f"{_priority_tag(s, band)} {body}"
-    when = _human_deadline(alert.days_until_reset)
+    # Chronic-underuse alerts summarize earlier cycles rather than one live
+    # account/window.  A fresh Claude 5-hour window can legitimately have no
+    # reset timestamp until it is first used, so do not describe that normal
+    # state as an unknown deadline.
+    when = (
+        "more each cycle"
+        if alert.source == "history" and alert.days_until_reset is None
+        else _human_deadline(alert.days_until_reset)
+    )
     verb = "pace" if alert.kind == "conserve" else "use"
     # Forecast before the deadline phrase so width-clamp keeps the useful bit.
     forecast = _forecast_fragment(alert, compact=True)

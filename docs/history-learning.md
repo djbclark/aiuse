@@ -34,7 +34,7 @@ persist-only forever.
 
 Learning (when active) also implies snapshot persistence for that run.
 
-## Status on ``--full``
+## Status on `--full`
 
 `aiuse --full` includes a **History** section with:
 
@@ -57,7 +57,7 @@ When learning is waiting or disabled, the section explains that instead of listi
 rates. Action-plan and per-window detail lines note `blended with history (N samples)`
 when pace used learned rates.
 
-Full ``aiuse --json`` also includes a top-level ``history`` object (learned rates,
+Full `aiuse --json` also includes a top-level `history` object (learned rates,
 late-cycle leftovers, chronic underuse) — see [`json-contract.md`](json-contract.md).
 
 ## What learning does

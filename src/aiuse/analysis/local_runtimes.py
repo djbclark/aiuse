@@ -23,8 +23,10 @@ def maybe_local_runtime_alerts(
 
     Never ranks local models as burn/conserve. Default config has probing **off**.
     """
-    analysis = (config or {}).get("analysis") if isinstance((config or {}).get("analysis"), dict) else {}
-    cfg = analysis.get("local_runtimes") if isinstance(analysis.get("local_runtimes"), dict) else {}
+    analysis_value = (config or {}).get("analysis")
+    analysis = analysis_value if isinstance(analysis_value, dict) else {}
+    local_runtimes_value = analysis.get("local_runtimes")
+    cfg = local_runtimes_value if isinstance(local_runtimes_value, dict) else {}
     if not cfg.get("enabled"):
         return []
 
@@ -48,8 +50,11 @@ def maybe_local_runtime_alerts(
         # Refuse non-loopback unless explicitly allowed (safety).
         if host not in ("127.0.0.1", "localhost", "::1") and not cfg.get("allow_non_loopback"):
             continue
+        raw_port = entry.get("port")
+        if raw_port is None:
+            continue
         try:
-            port = int(entry.get("port"))
+            port = int(raw_port)
         except (TypeError, ValueError):
             continue
         if not (1 <= port <= 65535):

@@ -81,10 +81,7 @@ def _fetch_caut_accounts(*, providers: str, timeout: float) -> list[AccountUsage
 
     data = payload.get("data")
     if not isinstance(data, list):
-        if isinstance(payload, list):
-            data = payload
-        else:
-            raise CollectorError("caut JSON missing data[] array")
+        raise CollectorError("caut JSON missing data[] array")
 
     accounts: list[AccountUsage] = []
     for row in data:
@@ -175,7 +172,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             )
 
     plan = None
-    identity = usage.get("identity") if isinstance(usage.get("identity"), dict) else {}
+    identity_value = usage.get("identity")
+    identity = identity_value if isinstance(identity_value, dict) else {}
     plan = usage.get("loginMethod") or identity.get("loginMethod") or row.get("plan")
 
     billing = _billing_kind(provider, usage, windows)

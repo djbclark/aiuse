@@ -26,14 +26,14 @@ any tool can embed.
 ## Why share at all?
 
 Layer 1 monitors (CodexBar, OpenUsage, caut, …) and Layer 2 decision tools
-(`aiuse`, quotabot, onWatch) repeatedly reinvent the same *semantic* mistakes:
+(`aiuse`, quotabot, onWatch) repeatedly reinvent the same _semantic_ mistakes:
 
-| Failure mode | Harm |
-| ------------ | ---- |
-| Prepaid / pay-as-you-go shown as “100% left, burn before reset” | False urgency; users waste attention or burn the wrong pool |
-| Nested 5h + weekly bars treated as independent quotas | Short window greeds while weekly is already on pace |
-| Remaining % without elapsed fraction | No burn vs conserve distinction |
-| No stable vocabulary for “use next” vs “pace yourself” vs “inventory” | Agents and scripts cannot interoperate |
+| Failure mode                                                          | Harm                                                        |
+| --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Prepaid / pay-as-you-go shown as “100% left, burn before reset”       | False urgency; users waste attention or burn the wrong pool |
+| Nested 5h + weekly bars treated as independent quotas                 | Short window greeds while weekly is already on pace         |
+| Remaining % without elapsed fraction                                  | No burn vs conserve distinction                             |
+| No stable vocabulary for “use next” vs “pace yourself” vs “inventory” | Agents and scripts cannot interoperate                      |
 
 If several products agree on **billing kind**, **window kind**, **shared
 allotment**, and **pace verdicts**, humans and agents get consistent advice even
@@ -49,31 +49,31 @@ PATH-aggregator selection priority, or credential stores. Share **meaning**, not
 
 ### Share (portable semantics)
 
-| Concept | Why competitors benefit | `aiuse` home today |
-| ------- | ----------------------- | ------------------ |
-| **Billing kind enum** | Prepaid ≠ subscription | `BillingKind` |
-| **Normalized account + window JSON** | Interop / test fixtures | `AccountUsage`, `QuotaWindow` |
-| **Window duration buckets** | 5h / weekly / monthly | `classify_window_minutes` |
-| **Shared-allotment rule** | Governing window only | `governing_partition` + config |
-| **Pace formulas** | Burn / conserve / on_pace | `compute_pace`, `classify_pace` |
-| **Decision band labels** | Ladder vocabulary | report bands: error→empty→n/a→slow→mid→use |
-| **Alert kind enum** | `burn` \| `conserve` \| `prepaid` | `UseOrLoseAlert.kind` |
-| **Cross-check status words** | Multi-source honesty | `consistent` \| `warning` \| `unavailable` |
-| **Health / payload path split** | Loopback honesty | shipped [#8](https://github.com/djbclark/aiuse/issues/8) (`health_path` / `probe_url`) |
-| **Golden test vectors** | Prevent semantic drift | [`shared-quota-semantics/fixtures/`](shared-quota-semantics/fixtures/) + pytest dogfood |
+| Concept                              | Why competitors benefit           | `aiuse` home today                                                                      |
+| ------------------------------------ | --------------------------------- | --------------------------------------------------------------------------------------- |
+| **Billing kind enum**                | Prepaid ≠ subscription            | `BillingKind`                                                                           |
+| **Normalized account + window JSON** | Interop / test fixtures           | `AccountUsage`, `QuotaWindow`                                                           |
+| **Window duration buckets**          | 5h / weekly / monthly             | `classify_window_minutes`                                                               |
+| **Shared-allotment rule**            | Governing window only             | `governing_partition` + config                                                          |
+| **Pace formulas**                    | Burn / conserve / on_pace         | `compute_pace`, `classify_pace`                                                         |
+| **Decision band labels**             | Ladder vocabulary                 | report bands: error→empty→n/a→slow→mid→use                                              |
+| **Alert kind enum**                  | `burn` \| `conserve` \| `prepaid` | `UseOrLoseAlert.kind`                                                                   |
+| **Cross-check status words**         | Multi-source honesty              | `consistent` \| `warning` \| `unavailable`                                              |
+| **Health / payload path split**      | Loopback honesty                  | shipped [#8](https://github.com/djbclark/aiuse/issues/8) (`health_path` / `probe_url`)  |
+| **Golden test vectors**              | Prevent semantic drift            | [`shared-quota-semantics/fixtures/`](shared-quota-semantics/fixtures/) + pytest dogfood |
 
 ### Keep private (product / architecture)
 
-| Concept | Why not a shared project |
-| ------- | ------------------------ |
-| Five-source collector orchestration | `aiuse`-specific trust model |
-| cswap authority / source priority | Policy choice, not universal truth |
-| LaunchAgent + snapshot learning | Operator workflow |
-| Priority-ladder **pretty** UX | Presentation |
-| MCP / `suggest` CLI / agent API | Product surface (shipped: suggest + `serve`; MCP stdio optional) |
-| Local runtime probes (Ollama, …) | Host-specific; optional INFO note only ([#7](https://github.com/djbclark/aiuse/issues/7) done) |
-| Ambient menubar companion stack | Compose with CodexBar/OpenUsage ([#4](https://github.com/djbclark/aiuse/issues/4) done) |
-| Deep history BI dashboard | onWatch-class product (aiuse History is operational, not full BI) |
+| Concept                             | Why not a shared project                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Five-source collector orchestration | `aiuse`-specific trust model                                                                   |
+| cswap authority / source priority   | Policy choice, not universal truth                                                             |
+| LaunchAgent + snapshot learning     | Operator workflow                                                                              |
+| Priority-ladder **pretty** UX       | Presentation                                                                                   |
+| MCP / `suggest` CLI / agent API     | Product surface (shipped: suggest + `serve`; MCP stdio optional)                               |
+| Local runtime probes (Ollama, …)    | Host-specific; optional INFO note only ([#7](https://github.com/djbclark/aiuse/issues/7) done) |
+| Ambient menubar companion stack     | Compose with CodexBar/OpenUsage ([#4](https://github.com/djbclark/aiuse/issues/4) done)        |
+| Deep history BI dashboard           | onWatch-class product (aiuse History is operational, not full BI)                              |
 
 ### Ideas to **push outward** to Layer 1 tools (issues/docs, not code merge)
 
@@ -113,23 +113,23 @@ in their language; they need unambiguous inputs/outputs, not a Python package.
 
 ### Layer 1 deliverables (language-neutral)
 
-| Artifact | Format | Consumed how |
-| -------- | ------ | ------------ |
-| **JSON Schema** for accounts, windows, pace, verdicts | Draft 2020-12 JSON Schema | codegen, validators (ajv, jsonschema, …) |
-| **Enum + constant tables** | YAML or JSON | load at startup |
-| **Pace & classify formulas** | Markdown with numbered equations + pseudocode | human reimplementation; optional formal tests |
-| **Provider policy snippets** | YAML (shared_allotment, prepaid providers) | optional defaults; projects may override |
-| **Golden vectors** | JSON files: `input` → `expected` | any language’s test harness |
-| **JSON Schema for decision output** | optional `verdict` / `band` / `suggestion` | agent interop |
+| Artifact                                              | Format                                        | Consumed how                                  |
+| ----------------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
+| **JSON Schema** for accounts, windows, pace, verdicts | Draft 2020-12 JSON Schema                     | codegen, validators (ajv, jsonschema, …)      |
+| **Enum + constant tables**                            | YAML or JSON                                  | load at startup                               |
+| **Pace & classify formulas**                          | Markdown with numbered equations + pseudocode | human reimplementation; optional formal tests |
+| **Provider policy snippets**                          | YAML (shared_allotment, prepaid providers)    | optional defaults; projects may override      |
+| **Golden vectors**                                    | JSON files: `input` → `expected`              | any language’s test harness                   |
+| **JSON Schema for decision output**                   | optional `verdict` / `band` / `suggestion`    | agent interop                                 |
 
-Avoid as the *primary* shared form:
+Avoid as the _primary_ shared form:
 
 - **Python wheel** as the only source of truth (Dart/Go peers will ignore it).
 - **OPA/Rego or CEL** as required runtime (powerful, but raises adoption cost).
-- **Protobuf** alone (fine as an *optional* encoding later; start with JSON).
+- **Protobuf** alone (fine as an _optional_ encoding later; start with JSON).
 
 Optional later: a **tiny** reference implementation in one systems language
-(e.g. Rust `cdylib` + WASM) *if* golden vectors prove insufficient. Ship the
+(e.g. Rust `cdylib` + WASM) _if_ golden vectors prove insufficient. Ship the
 spec first; code second.
 
 ---
@@ -188,11 +188,11 @@ band is **inventory** (`n/a`), never `use` / `slow` from remaining%.
 
 Constants (minutes) — match current `aiuse` buckets:
 
-| Class | Max minutes | Nominal minutes (when duration missing) |
-| ----- | ----------- | --------------------------------------- |
-| `5h` | 360 | 300 |
-| `weekly` | 10080 | 10080 |
-| `monthly` | 44640 | 43800 |
+| Class     | Max minutes | Nominal minutes (when duration missing) |
+| --------- | ----------- | --------------------------------------- |
+| `5h`      | 360         | 300                                     |
+| `weekly`  | 10080       | 10080                                   |
+| `monthly` | 44640       | 43800                                   |
 
 **Rule W1:** Classify by `window_minutes` against the max bounds above; if
 `window_minutes` is null, class is unknown and pace confidence is `low` unless
@@ -204,13 +204,13 @@ a nominal is inferred from label conventions (project-local, not shared).
 # policy snippet — defaults, not hard law
 shared_allotment_defaults:
   claude: true
-  gemini: true      # antigravity / Google AI
+  gemini: true # antigravity / Google AI
   opencode: true
   cursor: true
 ```
 
 **Rule S1 (governing window):** Among windows with a known remaining%, the
-**longest** `window_minutes` (or nominal) is the *governing* window. Children
+**longest** `window_minutes` (or nominal) is the _governing_ window. Children
 are display-only for ranking when shared allotment is enabled for that provider.
 
 **Rule S2:** When durations tie, prefer a label containing `included` (Cursor-
@@ -240,15 +240,15 @@ Let:
 - `pace_ratio = used_fraction / max(elapsed, e_min)`
 - `projected_exhaust_at = now + (1 - used_fraction) / r_hat` days if `r_hat > ε`
 
-**Classify** (thresholds are *parameters*, not hard-coded product chrome):
+**Classify** (thresholds are _parameters_, not hard-coded product chrome):
 
-| Verdict | Condition (priority order) |
-| ------- | -------------------------- |
-| `unknown` | Missing waste and exhaust projections |
-| `on_pace` | `elapsed < min_elapsed_fraction` and no learned rate |
+| Verdict    | Condition (priority order)                             |
+| ---------- | ------------------------------------------------------ |
+| `unknown`  | Missing waste and exhaust projections                  |
+| `on_pace`  | `elapsed < min_elapsed_fraction` and no learned rate   |
 | `conserve` | `projected_exhaust_at < resets_at - conserve_min_lead` |
-| `burn` | `projected_waste >= waste_alert_fraction` |
-| `on_pace` | otherwise |
+| `burn`     | `projected_waste >= waste_alert_fraction`              |
+| `on_pace`  | otherwise                                              |
 
 Default parameters used by `aiuse` today (overridable):
 
@@ -266,14 +266,14 @@ Projects may differ on thresholds; **formulas** should not.
 
 Ordered for human “read bottom → top, burn soon”:
 
-| Band id | Tag (aiuse) | Meaning |
-| ------- | ----------- | ------- |
-| `error` | error | Collect failed / unusable row |
-| `empty` | empty | No remaining capacity |
-| `n_a` | n/a | Non-expiring inventory (prepaid / payg) |
-| `slow` | slow | Conserve — pace yourself |
-| `mid` | mid | On pace / advisory |
-| `use` | use | Burn — waste projected before reset |
+| Band id | Tag (aiuse) | Meaning                                 |
+| ------- | ----------- | --------------------------------------- |
+| `error` | error       | Collect failed / unusable row           |
+| `empty` | empty       | No remaining capacity                   |
+| `n_a`   | n/a         | Non-expiring inventory (prepaid / payg) |
+| `slow`  | slow        | Conserve — pace yourself                |
+| `mid`   | mid         | On pace / advisory                      |
+| `use`   | use         | Burn — waste projected before reset     |
 
 **Rule B1:** Sort key is band lane first, then score/urgency within lane.  
 **Rule B2:** Never promote prepaid into `use`/`slow` solely from remaining%.
@@ -306,7 +306,7 @@ Null suggestion = nothing urgent. Shipped in `aiuse` via [#2](https://github.com
 collector:
   base_url: "http://127.0.0.1:6736"
   payload_path: "/v1/limits"
-  health_path: "/v1/limits"   # may differ from product root
+  health_path: "/v1/limits" # may differ from product root
 ```
 
 **Rule H1:** “Up” checks use `health_path` (or full `probe_url`); quota parse
@@ -373,16 +373,16 @@ if UI strings differ.
 
 ## Mapping to product issues (all shipped in-tree)
 
-| Issue | Product work in `aiuse` | Shared-spec angle | Status |
-| ----- | ----------------------- | ----------------- | ------ |
-| [#2 suggest](https://github.com/djbclark/aiuse/issues/2) | CLI/JSON single winner | `suggestion` schema + eligibility rules | **Done** |
-| [#3 forecast](https://github.com/djbclark/aiuse/issues/3) | Louder exhaust/waste UX | Pace fields already shareable; copy is private | **Done** |
-| [#4 ambient companion](https://github.com/djbclark/aiuse/issues/4) | Docs / one-line status | **Not shared** — compose Layer 1 | **Done** |
-| [#5 MCP/loopback](https://github.com/djbclark/aiuse/issues/5) | `aiuse serve` MVP (MCP stdio optional later) | Optional transport; payload = shared JSON | **Done (MVP)** |
-| [#6 deeper History](https://github.com/djbclark/aiuse/issues/6) | Teach from snapshots | Learned rate field only; storage private | **Done** |
-| [#7 local runtime](https://github.com/djbclark/aiuse/issues/7) | INFO note when empty | Optional enum value; probes private | **Done** |
-| [#8 health_path](https://github.com/djbclark/aiuse/issues/8) | Doctor/config | Collector descriptor schema (shareable) | **Done** |
-| [#9 shared semantics](https://github.com/djbclark/aiuse/issues/9) | v0.1 package + pytest dogfood | This directory | **Done** |
+| Issue                                                              | Product work in `aiuse`                      | Shared-spec angle                              | Status         |
+| ------------------------------------------------------------------ | -------------------------------------------- | ---------------------------------------------- | -------------- |
+| [#2 suggest](https://github.com/djbclark/aiuse/issues/2)           | CLI/JSON single winner                       | `suggestion` schema + eligibility rules        | **Done**       |
+| [#3 forecast](https://github.com/djbclark/aiuse/issues/3)          | Louder exhaust/waste UX                      | Pace fields already shareable; copy is private | **Done**       |
+| [#4 ambient companion](https://github.com/djbclark/aiuse/issues/4) | Docs / one-line status                       | **Not shared** — compose Layer 1               | **Done**       |
+| [#5 MCP/loopback](https://github.com/djbclark/aiuse/issues/5)      | `aiuse serve` MVP (MCP stdio optional later) | Optional transport; payload = shared JSON      | **Done (MVP)** |
+| [#6 deeper History](https://github.com/djbclark/aiuse/issues/6)    | Teach from snapshots                         | Learned rate field only; storage private       | **Done**       |
+| [#7 local runtime](https://github.com/djbclark/aiuse/issues/7)     | INFO note when empty                         | Optional enum value; probes private            | **Done**       |
+| [#8 health_path](https://github.com/djbclark/aiuse/issues/8)       | Doctor/config                                | Collector descriptor schema (shareable)        | **Done**       |
+| [#9 shared semantics](https://github.com/djbclark/aiuse/issues/9)  | v0.1 package + pytest dogfood                | This directory                                 | **Done**       |
 
 ---
 
@@ -421,14 +421,14 @@ formula defaults bump major. Adding optional fields is minor.
 
 ## How each language would ingest
 
-| Language / project class | Ingestion path |
-| ------------------------ | -------------- |
-| **Python (`aiuse`)** | Validate with `jsonschema`; optionally generate TypedDicts; keep current pure functions but assert against fixtures in CI |
-| **Go (onWatch-class)** | `go generate` from JSON Schema or hand structs + fixture tests |
-| **Dart (quotabot-class)** | Freezed/json_serializable models from schema; fixture unit tests |
-| **Rust (caut-class)** | `schemars` / serde structs; fixtures as `include_str!` |
-| **Swift (menubar apps)** | Codable structs; XCTest over JSON fixtures |
-| **Shell / jq only** | Consume decision JSON only; no need for formulas |
+| Language / project class  | Ingestion path                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Python (`aiuse`)**      | Validate with `jsonschema`; optionally generate TypedDicts; keep current pure functions but assert against fixtures in CI |
+| **Go (onWatch-class)**    | `go generate` from JSON Schema or hand structs + fixture tests                                                            |
+| **Dart (quotabot-class)** | Freezed/json_serializable models from schema; fixture unit tests                                                          |
+| **Rust (caut-class)**     | `schemars` / serde structs; fixtures as `include_str!`                                                                    |
+| **Swift (menubar apps)**  | Codable structs; XCTest over JSON fixtures                                                                                |
+| **Shell / jq only**       | Consume decision JSON only; no need for formulas                                                                          |
 
 No project must call a shared binary. **CI green on fixtures** is the
 compatibility proof.
@@ -452,14 +452,14 @@ Product issues **#2–#9** are **shipped** (2.1.9 / 2.1.10). Remaining low-risk 
 
 ## Summary
 
-| Question | Answer |
-| -------- | ------ |
-| Share product code with competitors? | **No** |
-| Share ranking/prepaid/shared-allotment **meaning**? | **Yes** |
-| Best medium? | **JSON Schema + YAML enums + formula doc + golden vectors** |
-| DSL? | Light **policy YAML** (shared_allotment, thresholds), not a new language |
-| Heavy runtime (Rego/WASM)? | Optional later; fixtures first |
-| Where to start? | In-repo `docs/shared-quota-semantics/` + CI vectors; promote to a shared repo when a second implementer appears |
+| Question                                            | Answer                                                                                                          |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Share product code with competitors?                | **No**                                                                                                          |
+| Share ranking/prepaid/shared-allotment **meaning**? | **Yes**                                                                                                         |
+| Best medium?                                        | **JSON Schema + YAML enums + formula doc + golden vectors**                                                     |
+| DSL?                                                | Light **policy YAML** (shared_allotment, thresholds), not a new language                                        |
+| Heavy runtime (Rego/WASM)?                          | Optional later; fixtures first                                                                                  |
+| Where to start?                                     | In-repo `docs/shared-quota-semantics/` + CI vectors; promote to a shared repo when a second implementer appears |
 
 Composition over absorption remains the product strategy
 ([`competitive-landscape.md`](competitive-landscape.md)). Shared semantics make

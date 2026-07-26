@@ -25,15 +25,15 @@ docs/shared-quota-semantics/
 
 ## How `aiuse` maps fields
 
-| Shared field | `aiuse` source |
-| --- | --- |
-| `billing_kind` | `AccountUsage.billing_kind` |
-| `windows[]` | `QuotaWindow` (`to_dict`) |
-| `remaining_percent` | `QuotaWindow.remaining()` / field |
-| duration class `5h`/`weekly`/`monthly` | `classify_window_minutes` |
-| pace | `PaceProfile` / `compute_pace` / `classify_pace` |
-| bands | `report.alert_priority_band` / ladder tags |
-| suggestion | `analysis.suggest` → top-level JSON `suggestion` |
+| Shared field                           | `aiuse` source                                   |
+| -------------------------------------- | ------------------------------------------------ |
+| `billing_kind`                         | `AccountUsage.billing_kind`                      |
+| `windows[]`                            | `QuotaWindow` (`to_dict`)                        |
+| `remaining_percent`                    | `QuotaWindow.remaining()` / field                |
+| duration class `5h`/`weekly`/`monthly` | `classify_window_minutes`                        |
+| pace                                   | `PaceProfile` / `compute_pace` / `classify_pace` |
+| bands                                  | `report.alert_priority_band` / ladder tags       |
+| suggestion                             | `analysis.suggest` → top-level JSON `suggestion` |
 
 Most names are already 1:1 with `docs/json-contract.md`.
 

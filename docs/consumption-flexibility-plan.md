@@ -18,23 +18,23 @@ distinguish between:
 - **Burstable** quotas (Codex monthly, OpenCode Go monthly): can consume 100% in one
   session. Deadline proximity is the only real constraint.
 - **Throttled** quotas (Claude 5h, Gemini 5h): rate-limited per refill cycle. A user
-  literally *cannot* burn through allotment faster than the refill rate. Missing
+  literally _cannot_ burn through allotment faster than the refill rate. Missing
   one cycle wastes little; habitually missing them wastes significant plan value
   over time.
 
-A throttled window with 80% remaining and 2h left is *more urgent in calendar
-terms* than a burstable monthly window with 80% remaining and 10 days left —
+A throttled window with 80% remaining and 2h left is _more urgent in calendar
+terms_ than a burstable monthly window with 80% remaining and 10 days left —
 because you only have one shot at the throttled window before it resets, while
 the burstable window can wait.
 
-When describing what a user should do *now* versus *later*, and how to allocate
+When describing what a user should do _now_ versus _later_, and how to allocate
 coding time across providers, all three dimensions matter.
 
 ## Three Dimensions
 
 ### 1. Value at Risk (stake size)
 
-> *How much money is at stake if this window resets fully unused?*
+> _How much money is at stake if this window resets fully unused?_
 
 Computed automatically from config — no manual math in YAML:
 
@@ -54,6 +54,7 @@ duration on a weaker model (e.g., Claude 5h at 1.4× vs Gemini 5h at 1.0×). Def
 to 1.0 everywhere.
 
 **Data needed:**
+
 - `window_duration_minutes` (already captured as `window_minutes` on `QuotaWindow`)
 - plan `monthly_price` (from config)
 - `waking_hours_per_day` (config, default 16)
@@ -63,15 +64,16 @@ to 1.0 everywhere.
 
 ### 2. Consumption Flexibility (burstability)
 
-> *How fast can you physically consume the remaining allocation?*
+> _How fast can you physically consume the remaining allocation?_
 
-| Flexibility | Description | Example |
-|---|---|---|
-| 1.0 (fully burstable) | Use entire window in one session | Codex monthly, OpenCode Go monthly |
-| 0.5 (semi-throttled) | Burst possible but some daily gating | Grok weekly, Cursor monthly |
-| 0.0 (fully throttled) | Max consumption = refill rate × time | Claude 5h, Gemini 5h |
+| Flexibility           | Description                          | Example                            |
+| --------------------- | ------------------------------------ | ---------------------------------- |
+| 1.0 (fully burstable) | Use entire window in one session     | Codex monthly, OpenCode Go monthly |
+| 0.5 (semi-throttled)  | Burst possible but some daily gating | Grok weekly, Cursor monthly        |
+| 0.0 (fully throttled) | Max consumption = refill rate × time | Claude 5h, Gemini 5h               |
 
 **Data needed:**
+
 - `window_duration_minutes` (shorter window → lower flexibility)
 - `refill_capacity` + `refill_capacity_unit` (tokens vs. requests — see below)
 - Provider-specific overrides from config
@@ -80,10 +82,11 @@ to 1.0 everywhere.
 **Tokens vs. requests distinction:**
 
 For API quotas (cswap, scripts, automated runs), the bottleneck is token throughput.
-For web UI quotas (Claude 5h, Gemini 5h, Grok web), the bottleneck is *messages* or
-*requests* — a human hits the 40-message limit long before hitting the token ceiling.
+For web UI quotas (Claude 5h, Gemini 5h, Grok web), the bottleneck is _messages_ or
+_requests_ — a human hits the 40-message limit long before hitting the token ceiling.
 
 The burn-rate math must respect `refill_capacity_unit`:
+
 - `"tokens"` → divide by `max_tokens_per_minute` (config, default 200k for API)
 - `"requests"` → divide by an assumed human interaction rate (config, default 0.5
   requests/minute — one prompt every 2 minutes)
@@ -114,7 +117,7 @@ start by that calendar time.
 
 ### 3. Deadline Pressure (calendar proximity)
 
-> *How soon does it reset?* (Already modeled.)
+> _How soon does it reset?_ (Already modeled.)
 
 This dimension remains important but interacts with flexibility:
 
@@ -134,7 +137,7 @@ This dimension remains important but interacts with flexibility:
   user needs to track the tightest constraint (earliest start).
 - **Partial cycle in progress:** If `now > resets_at - window_duration`, the user
   is already partway through the current cycle. `cycles_needed` counts the
-  *current* cycle as well — adjust by `ceil((resets_at - now) / window_duration)`.
+  _current_ cycle as well — adjust by `ceil((resets_at - now) / window_duration)`.
 - **Awkward reset times:** A 3am local reset is less actionable than a 10am reset.
   Consider displaying reset time in local TZ in the action plan, but don't adjust
   scoring — user configures waking hours for cycle-count math already.
@@ -236,6 +239,7 @@ urgency_score = w_value * value_urgency + w_flex * flexibility_urgency + w_deadl
 ### Per-dimension urgency functions (0–100)
 
 **value_urgency:**
+
 ```
 # Value-at-risk as fraction of user's most expensive plan, normalized to 0–100
 max_plan_price = max(plan.monthly_price for plan in configured plans, default=20)
@@ -243,6 +247,7 @@ value_urgency = clamp(value_at_risk_usd / max_plan_price * 100, 0, 100)
 ```
 
 **flexibility_urgency:**
+
 ```
 if flex >= 0.9:
     urgency = 0
@@ -257,6 +262,7 @@ else:
 ```
 
 **deadline_urgency:**
+
 ```
 # Days-until-reset urgency curve, dampened for throttled windows
 raw_deadline = 100 if days <= 0.5 else 80 if days <= 1 else 60 if days <= 3 else 40 if days <= 7 else 20 if days <= 14 else 5
@@ -267,13 +273,13 @@ deadline_urgency = raw_deadline * (1 - flex * 0.4)  # throttled: deadline panic 
 
 Map composite score to `Urgency` enum:
 
-| Score range | Urgency |
-|---|---|
-| ≥ 80 | CRITICAL |
-| ≥ 60 | HIGH |
-| ≥ 40 | MEDIUM |
-| ≥ 20 | LOW |
-| < 20 | INFO (suppressed unless `value_at_risk_usd > min_value_at_risk_usd`) |
+| Score range | Urgency                                                              |
+| ----------- | -------------------------------------------------------------------- |
+| ≥ 80        | CRITICAL                                                             |
+| ≥ 60        | HIGH                                                                 |
+| ≥ 40        | MEDIUM                                                               |
+| ≥ 20        | LOW                                                                  |
+| < 20        | INFO (suppressed unless `value_at_risk_usd > min_value_at_risk_usd`) |
 
 ### Alert fatigue controls
 
@@ -284,7 +290,7 @@ Two thresholds prevent noisy output from tiny windows:
   the plan's monthly price (per-provider noise floor). A 5h window at $20/month is
   ~1% — below the floor. A weekly window at $20/month is ~23% — above it.
 
-Together: a window must pass *both* thresholds to generate an alert. A 5h window
+Together: a window must pass _both_ thresholds to generate an alert. A 5h window
 with 100% remaining on a $20 plan has $0.22 at risk — below both thresholds,
 effectively silent. The same window on a $200 plan has $2.20 at risk — above the
 dollar threshold, and might show up.
@@ -292,18 +298,24 @@ dollar threshold, and might show up.
 ## Collector Changes
 
 ### cswap
+
 Already provides `windowMinutes` in the `usage` schema. Add parsing for:
+
 - `refillCapacity` if cswap adds it in the future.
 - Infer per-refill amount from plan type + price config.
 
 ### CodexBar
+
 Already provides `windowMinutes` in quota blocks. Add:
+
 - Detect `internal_throttle` from provider-specific behavior patterns.
 - Use `extraRateWindows` capacity info for refill_amount.
 - Derive `refill_capacity_unit` from provider type (web UI → "requests", API → "tokens").
 
 ### tokscale
+
 Already provides usage percent + label. Add:
+
 - Parse `window_minutes` if available from metrics.
 - Cross-reference with config for plan details.
 
@@ -320,18 +332,18 @@ analysis:
   provider_overrides:
     claude:
       5h:
-        flexibility: 0.0         # fully throttled
+        flexibility: 0.0 # fully throttled
         refill_capacity_unit: "requests"
       weekly:
-        flexibility: 0.8         # somewhat burstable within week
+        flexibility: 0.8 # somewhat burstable within week
     grok:
       weekly:
-        flexibility: 0.5         # rate-limited internally
+        flexibility: 0.5 # rate-limited internally
       monthly:
         flexibility: 0.8
     opencode-go:
       weekly:
-        flexibility: 1.0         # fully burstable
+        flexibility: 1.0 # fully burstable
       monthly:
         flexibility: 1.0
 ```
@@ -492,7 +504,7 @@ Available capacity this cycle: $42.18 across 8 windows (3 providers).
 **Goal:** Replace configured flexibility estimates with observed burn rates.
 
 1. Persist snapshots to `~/.cache/aiuse/snapshots/` (started in Phase 2 for waste tracking).
-2. Diff consecutive snapshots to compute *actual* per-window burn rate.
+2. Diff consecutive snapshots to compute _actual_ per-window burn rate.
 3. Feed learned rates back into flexibility scoring.
 4. Detect chronic waste patterns and suggest config tuning or subscription changes.
 5. Suggest `provider_overrides` entries based on observed data.
@@ -503,6 +515,7 @@ Treated as experimental — gated behind `analysis.learn_from_history: true`.
 ## Testing Strategy
 
 ### Unit tests
+
 - `_compute_value_at_risk(monthly_price, window_minutes, remaining_pct, waking_hours)` — correct dollar amounts with waking-hour adjustment.
 - `_compute_value_at_risk()` with `value_multiplier: 1.4` → correct scaling.
 - `_classify_flexibility(window_minutes, config)` — maps duration → class using defaults + overrides.
@@ -515,6 +528,7 @@ Treated as experimental — gated behind `analysis.learn_from_history: true`.
 - Alert fatigue: window below both thresholds → suppressed. Above one → passes.
 
 ### Integration tests
+
 - Full snapshot with mixed burstable + throttled + semi windows → correct sort order.
 - Config `plans.claude.monthly_price: 20` + 5h window → `value_at_risk_usd ≈ $0.22` (waking-hours corrected).
 - Missing plan config → `value_at_risk_usd = None` (graceful degradation, score without value dimension).
@@ -522,6 +536,7 @@ Treated as experimental — gated behind `analysis.learn_from_history: true`.
 - Burstable window with 90% remaining and 20 days → INFO or suppressed.
 
 ### Golden-file tests
+
 - Captured snapshots from real cswap/CodexBar/tokscale runs → compare alert ordering and action plan output.
 
 ## Configuration Reference
@@ -531,9 +546,9 @@ Treated as experimental — gated behind `analysis.learn_from_history: true`.
 
 plans:
   claude:
-    monthly_price: 20          # USD — used to auto-compute per-window value
-    value_multiplier:          # optional quality adjustment (default 1.0)
-      5h: 1.4                  # Claude 5h blocks are higher-value per dollar
+    monthly_price: 20 # USD — used to auto-compute per-window value
+    value_multiplier: # optional quality adjustment (default 1.0)
+      5h: 1.4 # Claude 5h blocks are higher-value per dollar
       weekly: 1.0
       monthly: 1.0
   codex:
@@ -542,7 +557,7 @@ plans:
     monthly_price: 30
   cursor:
     monthly_price: 20
-  gemini:                      # alias for antigravity
+  gemini: # alias for antigravity
     monthly_price: 20
   opencode:
     monthly_price: 10
@@ -564,8 +579,8 @@ analysis:
   weight_deadline: 0.35
 
   # Alert fatigue: both thresholds must be met for an alert to appear.
-  min_value_at_risk_usd: 0.50       # absolute dollar floor
-  min_value_fraction: 0.05           # per-provider fraction of monthly plan price
+  min_value_at_risk_usd: 0.50 # absolute dollar floor
+  min_value_fraction: 0.05 # per-provider fraction of monthly plan price
 
   # Default flexibility per window duration. Overridden by provider_overrides.
   consumption_flexibility_defaults:
@@ -590,8 +605,8 @@ analysis:
 
   # Burn-rate assumptions. "tokens" unit uses max_sustained_tokens_per_minute;
   # "requests" unit uses max_requests_per_minute.
-  max_sustained_tokens_per_minute: 200000   # API throughput
-  max_requests_per_minute: 0.5              # human prompt rate (~1 per 2 min)
+  max_sustained_tokens_per_minute: 200000 # API throughput
+  max_requests_per_minute: 0.5 # human prompt rate (~1 per 2 min)
 
   # Phase 4: learn actual consumption rates from persisted snapshots.
   learn_from_history: false

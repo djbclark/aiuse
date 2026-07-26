@@ -16,20 +16,20 @@ Stop with Ctrl-C.
 
 ## Endpoints
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| GET | `/v1/health` | Liveness |
-| GET | `/v1/snapshot` | Latest snapshot object |
-| GET | `/v1/ladder` | Ranked `alerts[]` |
-| GET | `/v1/suggest` | Single burn winner or null |
-| GET | `/v1/status` | One-line status string |
+| Method | Path           | Notes                      |
+| ------ | -------------- | -------------------------- |
+| GET    | `/v1/health`   | Liveness                   |
+| GET    | `/v1/snapshot` | Latest snapshot object     |
+| GET    | `/v1/ladder`   | Ranked `alerts[]`          |
+| GET    | `/v1/suggest`  | Single burn winner or null |
+| GET    | `/v1/status`   | One-line status string     |
 
 Query:
 
-| Param | Default | Effect |
-| --- | --- | --- |
-| `refresh=1` | off | Force live collect (same as CLI collect) |
-| `refresh=0` | on | Prefer cache if younger than `--max-age` |
+| Param       | Default | Effect                                   |
+| ----------- | ------- | ---------------------------------------- |
+| `refresh=1` | off     | Force live collect (same as CLI collect) |
+| `refresh=0` | on      | Prefer cache if younger than `--max-age` |
 
 ## Caching
 

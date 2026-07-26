@@ -5,14 +5,14 @@
 
 ## What we checked
 
-| Path | Result |
-| --- | --- |
-| `tokscale usage --help` | Only `--json`, `--light`, `--home` — **no `--provider`** |
-| `tokscale codex` | Account switcher + `status` for Codex OAuth, not a drop-in `usage --json` slice |
-| `tokscale cursor` | Auth/cache/sync for Cursor CSV usage — not subscription quota JSON |
-| `tokscale antigravity` | Sync from language servers / local cache |
-| `tokscale trae` / `warp` | Login/sync for those products |
-| `tokscale claude` | **Does not exist** |
+| Path                     | Result                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `tokscale usage --help`  | Only `--json`, `--light`, `--home` — **no `--provider`**                        |
+| `tokscale codex`         | Account switcher + `status` for Codex OAuth, not a drop-in `usage --json` slice |
+| `tokscale cursor`        | Auth/cache/sync for Cursor CSV usage — not subscription quota JSON              |
+| `tokscale antigravity`   | Sync from language servers / local cache                                        |
+| `tokscale trae` / `warp` | Login/sync for those products                                                   |
+| `tokscale claude`        | **Does not exist**                                                              |
 
 ## Implications for `ai`
 

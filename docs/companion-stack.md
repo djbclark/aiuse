@@ -5,12 +5,12 @@ quota monitor. Pair it with tools that already own **ambient** % bars.
 
 ## Recommended split
 
-| Role | Tool | What you use it for |
-| --- | --- | --- |
-| **Ambient** (always-on %) | [CodexBar](https://github.com/steipete/CodexBar), [OpenUsage](https://www.openusage.ai/) | Live bars in the menu bar; spot lockouts at a glance |
-| **Rank / burn** | **`aiuse`** | Ordered ladder of expiring allotments; `aiuse suggest` for a single winner |
-| **Multi-account Claude** | [cswap](https://github.com/realiti4/claude-swap) | Canonical Claude Code rows for every configured email |
-| **Hourly history** | LaunchAgent (`docs/scheduling.md`) | Persist snapshots + optional `learn_from_history` |
+| Role                      | Tool                                                                                     | What you use it for                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **Ambient** (always-on %) | [CodexBar](https://github.com/steipete/CodexBar), [OpenUsage](https://www.openusage.ai/) | Live bars in the menu bar; spot lockouts at a glance                       |
+| **Rank / burn**           | **`aiuse`**                                                                              | Ordered ladder of expiring allotments; `aiuse suggest` for a single winner |
+| **Multi-account Claude**  | [cswap](https://github.com/realiti4/claude-swap)                                         | Canonical Claude Code rows for every configured email                      |
+| **Hourly history**        | LaunchAgent (`docs/scheduling.md`)                                                       | Persist snapshots + optional `learn_from_history`                          |
 
 Install data sources: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
 or site `just install-aiuse-deps`.
@@ -55,11 +55,11 @@ normal collect run (0 / 1 / 2).
 
 ## Related product surfaces (shipped)
 
-| Command | Doc |
-| --- | --- |
-| `aiuse suggest` | Single burn winner; JSON field in [`json-contract.md`](json-contract.md) |
-| `aiuse serve` | Loopback HTTP [`agent-api.md`](agent-api.md) |
-| `aiuse --full` History | [`history-learning.md`](history-learning.md) |
+| Command                | Doc                                                                      |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `aiuse suggest`        | Single burn winner; JSON field in [`json-contract.md`](json-contract.md) |
+| `aiuse serve`          | Loopback HTTP [`agent-api.md`](agent-api.md)                             |
+| `aiuse --full` History | [`history-learning.md`](history-learning.md)                             |
 
 ## Related
 

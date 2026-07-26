@@ -8,22 +8,22 @@
 Local Claude Code files and tools like **ccusage** are real and useful, but they
 measure a **different quantity** than the website / `ai` report bars:
 
-| Quantity | Website “Current session / All models” | Local JSONL / `stats-cache` / ccusage |
-| --- | --- | --- |
-| What it is | Subscription **utilization %** of Pro/Max windows (5h + weekly) | **Token counts** (and API-priced $ estimates) from turns on this machine |
-| Source of truth | Anthropic OAuth usage API (`/api/oauth/usage`) | Files under `~/.claude/` |
-| Multi-account | One browser login | One **active** Claude Code home (`~/.claude`); no per-email split |
-| Cross-device | Includes other devices / claude.ai | **This machine only** |
+| Quantity        | Website “Current session / All models”                          | Local JSONL / `stats-cache` / ccusage                                    |
+| --------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| What it is      | Subscription **utilization %** of Pro/Max windows (5h + weekly) | **Token counts** (and API-priced $ estimates) from turns on this machine |
+| Source of truth | Anthropic OAuth usage API (`/api/oauth/usage`)                  | Files under `~/.claude/`                                                 |
+| Multi-account   | One browser login                                               | One **active** Claude Code home (`~/.claude`); no per-email split        |
+| Cross-device    | Includes other devices / claude.ai                              | **This machine only**                                                    |
 
 For use-it-or-lose-it **quota %**, keep **cswap (+ cache hydrate) / CodexBar /
 tokscale**. For “what burned tokens today / estimated API cost / 5h session
-blocks of *local* activity,” use local files or ccusage (bun/npm/homebrew all fine).
+blocks of _local_ activity,” use local files or ccusage (bun/npm/homebrew all fine).
 
 The claim “there is no native REST API for Pro/Max subscription usage” is **not
 accurate for OAuth users**: cswap and CodexBar call
 `https://api.anthropic.com/api/oauth/usage` with the Claude Code access token.
 That is the same class of data the website Settings → Usage bars show (validated
-against the site for both of our accounts). What *is* true: there is no
+against the site for both of our accounts). What _is_ true: there is no
 documented public Console REST API that returns those bars for arbitrary API-key
 billing without that OAuth session.
 
@@ -57,7 +57,7 @@ reconstructing burn. No subscription %.
 ### `~/.claude.json` → `oauthAccount`
 
 Identity for the **currently active** login (email, org UUID, billing type).
-Matches cswap’s active slot when you last switched. Rate-limit *tier labels*
+Matches cswap’s active slot when you last switched. Rate-limit _tier labels_
 may appear; not live utilization bars.
 
 ### cswap’s cache (separate)
@@ -96,12 +96,12 @@ is rate-limited) — same split we see between OAuth % and JSONL tokens.
 
 ## How this fits `ai`
 
-| Goal | Prefer |
-| --- | --- |
-| Multi-account Claude Code 5h/7d % (use-or-lose) | **cswap** (+ local usage-cache hydrate, CodexBar/tokscale fallback) |
-| Cross-check active account vs website | CodexBar / tokscale / OAuth usage |
-| “How hard did I burn tokens today?” / model mix / fake API $ | **ccusage** or parse `stats-cache` / JSONL |
-| Prepaid extra-usage $ on website | Separate (site credits; cswap `spend` when present) — not ccusage |
+| Goal                                                         | Prefer                                                              |
+| ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Multi-account Claude Code 5h/7d % (use-or-lose)              | **cswap** (+ local usage-cache hydrate, CodexBar/tokscale fallback) |
+| Cross-check active account vs website                        | CodexBar / tokscale / OAuth usage                                   |
+| “How hard did I burn tokens today?” / model mix / fake API $ | **ccusage** or parse `stats-cache` / JSONL                          |
+| Prepaid extra-usage $ on website                             | Separate (site credits; cswap `spend` when present) — not ccusage   |
 
 Optional future work (only if product wants **activity** metrics alongside quota):
 

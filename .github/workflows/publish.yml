@@ -4,6 +4,7 @@
 #   Owner: djbclark | Repository: aiuse | Workflow: publish.yml | Environment: pypi
 # GitHub Environment "pypi" must exist on this repo.
 # Docs: docs/packaging.md — verified with release v2.1.1.
+---
 name: publish
 
 "on":

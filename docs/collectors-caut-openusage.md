@@ -8,10 +8,10 @@
 `aiuse` prefers ranking quality over a single data path. In addition to
 **cswap**, **CodexBar**, and **tokscale**, it can also collect:
 
-| Source | Role |
-| ------ | ---- |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Cross-platform CLI usage probe (`caut.v1` JSON) |
-| **[OpenUsage](https://www.openusage.ai/)** | Menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits` |
+| Source                                                                      | Role                                                        |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Cross-platform CLI usage probe (`caut.v1` JSON)             |
+| **[OpenUsage](https://www.openusage.ai/)**                                  | Menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits` |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**
@@ -99,11 +99,11 @@ CLI skips: `--no-caut`, `--no-openusage`.
 
 ## Selection priority (generalized)
 
-| Provider | Order (first live wins for the ladder) |
-| -------- | -------------------------------------- |
-| Claude | cswap → CodexBar → caut → OpenUsage → tokscale |
-| Copilot | tokscale → CodexBar → caut → OpenUsage |
-| Default | CodexBar → caut → OpenUsage → tokscale |
+| Provider | Order (first live wins for the ladder)         |
+| -------- | ---------------------------------------------- |
+| Claude   | cswap → CodexBar → caut → OpenUsage → tokscale |
+| Copilot  | tokscale → CodexBar → caut → OpenUsage         |
+| Default  | CodexBar → caut → OpenUsage → tokscale         |
 
 Adding another source later: implement `collect_*`, append to `run_collectors`
 jobs, add to `PROVIDER_SOURCE_PRIORITY` / `DEFAULT_SOURCE_PRIORITY` and
@@ -133,15 +133,15 @@ windows sometimes; it is flaky.
 
 **Workarounds:**
 
-| Action | Notes |
-| --- | --- |
-| **Do nothing for ranking** | cswap remains Claude authority; OpenUsage also reports Claude. caut is a soft peer. |
-| **Retry (aiuse does this)** | `collect_caut` retries once when no live windows — recovers intermittent oauth hits. |
-| **`claude auth login`** | May create the credential path caut expects; worth trying if you want caut Claude cross-checks. Does **not** replace cswap multi-account. |
-| **Ignore authWarning when % look sane** | aiuse notes when windows were returned despite the warning. |
-| **Disable caut** | `collectors.caut.enabled: false` or `aiuse --no-caut` if noise bothers you. |
+| Action                                  | Notes                                                                                                                                     |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Do nothing for ranking**              | cswap remains Claude authority; OpenUsage also reports Claude. caut is a soft peer.                                                       |
+| **Retry (aiuse does this)**             | `collect_caut` retries once when no live windows — recovers intermittent oauth hits.                                                      |
+| **`claude auth login`**                 | May create the credential path caut expects; worth trying if you want caut Claude cross-checks. Does **not** replace cswap multi-account. |
+| **Ignore authWarning when % look sane** | aiuse notes when windows were returned despite the warning.                                                                               |
+| **Disable caut**                        | `collectors.caut.enabled: false` or `aiuse --no-caut` if noise bothers you.                                                               |
 
-### 2. Codex: identity only, no weekly % 
+### 2. Codex: identity only, no weekly %
 
 **Symptom:** caut returns email/org but `primary`/`secondary` null. Verbose log:
 `codex-web-dashboard` → “Web dashboard scraping **not yet implemented**”;
@@ -162,11 +162,11 @@ etc. all error. `caut doctor` only exercises Codex + Claude.
 
 **Workarounds:**
 
-| Action | Notes |
-| --- | --- |
-| **Default `providers: both`** | aiuse default — only claude+codex (partial). |
-| **Do not use `all` expecting data** | Only increases error notes and runtime. |
-| **Use CodexBar/OpenUsage** | Full multi-provider coverage. |
+| Action                              | Notes                                        |
+| ----------------------------------- | -------------------------------------------- |
+| **Default `providers: both`**       | aiuse default — only claude+codex (partial). |
+| **Do not use `all` expecting data** | Only increases error notes and runtime.      |
+| **Use CodexBar/OpenUsage**          | Full multi-provider coverage.                |
 
 ### 4. Concurrent collect sometimes empty while solo claude works
 
@@ -193,11 +193,11 @@ claude auth status          # compare with caut doctor Claude section
 
 ### What “good enough” looks like for aiuse
 
-| Source | Need for correct ladder? |
-| ------ | ------------------------ |
-| cswap + CodexBar + tokscale | **Yes** (primary selection) |
-| OpenUsage | Strong cross-check; keep app running or install CLI |
-| caut | Best-effort; valuable when Claude windows land; safe when empty |
+| Source                      | Need for correct ladder?                                        |
+| --------------------------- | --------------------------------------------------------------- |
+| cswap + CodexBar + tokscale | **Yes** (primary selection)                                     |
+| OpenUsage                   | Strong cross-check; keep app running or install CLI             |
+| caut                        | Best-effort; valuable when Claude windows land; safe when empty |
 
 ---
 

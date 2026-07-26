@@ -9,11 +9,11 @@ for the default report.
 Default `aiuse` prints **every provider account** on **stdout** as a ranked list
 (top → bottom), with **no blank lines**:
 
-1. **error** (red) — could not fetch usage for that provider/account  
-2. **empty** (red) — totally depleted  
-3. **n/a** (dim) — non-expiring prepaid / pay-as-you-go (no use-or-lose urgency)  
-4. **slow** (yellow) — conserve / pace yourself  
-5. **mid** (cyan) — on pace / advisory / no alert  
+1. **error** (red) — could not fetch usage for that provider/account
+2. **empty** (red) — totally depleted
+3. **n/a** (dim) — non-expiring prepaid / pay-as-you-go (no use-or-lose urgency)
+4. **slow** (yellow) — conserve / pace yourself
+5. **mid** (cyan) — on pace / advisory / no alert
 6. **use** (green) — important to burn soon
 
 Tags label each row. **error / empty / n/a** are fixed lanes near the top;
@@ -41,12 +41,12 @@ when projections exist.
 Textual and Rich `Layout` are **viewport-oriented**: they claim a rectangular
 region and redraw inside it — at odds with “dump every line into scrollback.”
 
-| Approach | Layout help | Scrollback? |
-| --- | --- | --- |
-| Rich without `Layout` (Panel, Table, Rule, Group, Columns, …) | Strong | **Yes** |
-| Rich `Layout` | Strong (grids) | No — clipped to terminal height |
-| Textual (inline or full-screen) | Strongest | No — viewport + redraw |
-| Plain `print` | None | Yes |
+| Approach                                                      | Layout help    | Scrollback?                     |
+| ------------------------------------------------------------- | -------------- | ------------------------------- |
+| Rich without `Layout` (Panel, Table, Rule, Group, Columns, …) | Strong         | **Yes**                         |
+| Rich `Layout`                                                 | Strong (grids) | No — clipped to terminal height |
+| Textual (inline or full-screen)                               | Strongest      | No — viewport + redraw          |
+| Plain `print`                                                 | None           | Yes                             |
 
 ## Implementation
 

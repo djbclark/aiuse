@@ -13,13 +13,13 @@ CLI command: **`aiuse`** (stub **`ai`** → same entrypoint)
 
 ## Data sources
 
-| Tool                                                                     | Purpose                                                   | Authority                                                                                                     |
-| ------------------------------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json` | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source; may hydrate from cswap’s local usage cache when JSON is decision-stale |
-| [**CodexBar**](https://github.com/) `codexbar usage --format json`       | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; Claude fallback if cswap has no live rows                                 |
-| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes) | Cross-check peer; fill-in when CodexBar missing                                                               |
-| [**OpenUsage**](https://www.openusage.ai/) CLI / `127.0.0.1:6736/v1/limits` | Menu-bar companion + loopback limits API                | Cross-check peer; optional CLI install from app Settings                                                      |
-| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`           | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                       |
+| Tool                                                                                            | Purpose                                                   | Authority                                                                                                     |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                        | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source; may hydrate from cswap’s local usage cache when JSON is decision-stale |
+| [**CodexBar**](https://github.com/) `codexbar usage --format json`                              | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; Claude fallback if cswap has no live rows                                 |
+| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes)  | Cross-check peer; fill-in when CodexBar missing                                                               |
+| [**OpenUsage**](https://www.openusage.ai/) CLI / `127.0.0.1:6736/v1/limits`                     | Menu-bar companion + loopback limits API                  | Cross-check peer; optional CLI install from app Settings                                                      |
+| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                  | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                       |
 
 This project shells out to tools already on your `PATH` (and optionally hits
 OpenUsage’s loopback API); it does not scrape billing dashboards itself. For
@@ -163,30 +163,30 @@ aiuse doctor
 aiuse --doctor
 ```
 
-| Flag                                             | Effect                                                                           |
-| ------------------------------------------------ | -------------------------------------------------------------------------------- |
-| _(none)_ / `--format pretty`                     | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
-| `--full`                                         | Long pretty report: per-provider, cross-checks, tips, History, detailed plan     |
-| `--json` / `--format json`                       | Full snapshot + alerts + `suggestion` + `history` as JSON                        |
-| `--brief`                                        | Alias of default priority-ladder pretty report                                   |
-| `--no-tui`                                       | Force classic plain-text pretty report                                           |
-| `--no-color`                                     | Disable ANSI colors in plain-text pretty mode                                    |
-| `-q` / `--quiet`                                 | Suppress progress messages on stderr                                             |
-| `--alerts-only`                                  | Recommendations only (respects pretty vs json)                                   |
-| `suggest` / `--suggest`                          | Single best burn pool (or nothing urgent); pair with `--json` for structured     |
-| `status` / `prompt` / `--status`                 | One-line status for shell prompts / status bars                                  |
-| `serve` / `--serve`                              | Loopback HTTP API for agents (`127.0.0.1`; see [`docs/agent-api.md`](docs/agent-api.md)) |
-| `--port` / `--max-age`                           | Serve bind port (default 8787) and snapshot cache max age                        |
-| `--traditional-summary`                          | Legacy flat summary format instead of unified action plan                        |
-| `--print-completion bash\|zsh`                   | Print shell completion script to stdout                                          |
-| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage` | Skip specific collectors                                          |
-| `--providers copilot,grok`                       | Query specific CodexBar providers (CSV, one per subprocess)                      |
-| `-t` / `--timeout SECONDS`                       | Force subprocess timeout for all external tools (default **45**)                 |
-| `--generate-config`                              | Write default `~/.config/aiuse/*` files; never overwrites existing               |
-| `--show-config-path`                             | Print services.yaml and config.toml paths                                        |
-| `doctor` / `--doctor`                            | Check tools on PATH, config presence, effective timeouts; no collect             |
-| `--min-remaining 50 --max-days 10`               | Override alert thresholds                                                        |
-| `--save PATH`                                    | Also write full JSON snapshot to PATH                                            |
+| Flag                                                                              | Effect                                                                                   |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| _(none)_ / `--format pretty`                                                      | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped     |
+| `--full`                                                                          | Long pretty report: per-provider, cross-checks, tips, History, detailed plan             |
+| `--json` / `--format json`                                                        | Full snapshot + alerts + `suggestion` + `history` as JSON                                |
+| `--brief`                                                                         | Alias of default priority-ladder pretty report                                           |
+| `--no-tui`                                                                        | Force classic plain-text pretty report                                                   |
+| `--no-color`                                                                      | Disable ANSI colors in plain-text pretty mode                                            |
+| `-q` / `--quiet`                                                                  | Suppress progress messages on stderr                                                     |
+| `--alerts-only`                                                                   | Recommendations only (respects pretty vs json)                                           |
+| `suggest` / `--suggest`                                                           | Single best burn pool (or nothing urgent); pair with `--json` for structured             |
+| `status` / `prompt` / `--status`                                                  | One-line status for shell prompts / status bars                                          |
+| `serve` / `--serve`                                                               | Loopback HTTP API for agents (`127.0.0.1`; see [`docs/agent-api.md`](docs/agent-api.md)) |
+| `--port` / `--max-age`                                                            | Serve bind port (default 8787) and snapshot cache max age                                |
+| `--traditional-summary`                                                           | Legacy flat summary format instead of unified action plan                                |
+| `--print-completion bash\|zsh`                                                    | Print shell completion script to stdout                                                  |
+| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage` | Skip specific collectors                                                                 |
+| `--providers copilot,grok`                                                        | Query specific CodexBar providers (CSV, one per subprocess)                              |
+| `-t` / `--timeout SECONDS`                                                        | Force subprocess timeout for all external tools (default **45**)                         |
+| `--generate-config`                                                               | Write default `~/.config/aiuse/*` files; never overwrites existing                       |
+| `--show-config-path`                                                              | Print services.yaml and config.toml paths                                                |
+| `doctor` / `--doctor`                                                             | Check tools on PATH, config presence, effective timeouts; no collect                     |
+| `--min-remaining 50 --max-days 10`                                                | Override alert thresholds                                                                |
+| `--save PATH`                                                                     | Also write full JSON snapshot to PATH                                                    |
 
 ### Exit codes
 

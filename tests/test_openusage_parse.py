@@ -1,7 +1,15 @@
 """Unit tests for OpenUsage limits.v1 parsing (no live app required)."""
 
-from aiuse.collectors.openusage import _from_provider
+import pytest
+
+from aiuse.collectors.base import CollectorError
+from aiuse.collectors.openusage import _from_provider, _http_limits
 from aiuse.models import BillingKind
+
+
+def test_openusage_http_rejects_non_http_base_url():
+    with pytest.raises(CollectorError, match=r"must use http\(s\)"):
+        _http_limits(base_url="file:///etc", timeout=1.0)
 
 
 def test_openusage_claude_session_weekly():

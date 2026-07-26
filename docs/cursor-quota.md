@@ -10,12 +10,12 @@ at 0% left while the Cursor dashboard still showed **Included ~61% used**
 CodexBar maps Cursor’s dashboard rows to `primary` / `secondary` / `tertiary`
 plus `providerCost`:
 
-| CodexBar | Cursor UI |
-| --- | --- |
-| `primary` | **Included** (overall included usage) |
-| `secondary` | **Auto** (category breakdown of Included) |
-| `tertiary` | **API** (category breakdown of Included) |
-| `providerCost` (`period: Monthly`, `limit > 0`) | **On-Demand** `$used / $limit` |
+| CodexBar                                        | Cursor UI                                 |
+| ----------------------------------------------- | ----------------------------------------- |
+| `primary`                                       | **Included** (overall included usage)     |
+| `secondary`                                     | **Auto** (category breakdown of Included) |
+| `tertiary`                                      | **API** (category breakdown of Included)  |
+| `providerCost` (`period: Monthly`, `limit > 0`) | **On-Demand** `$used / $limit`            |
 
 Without fixed slot labels, `_slot_label` fell back to “monthly quota (N)”.
 Without `shared_allotment`, Auto/API were scored as independent burn windows,

@@ -30,7 +30,7 @@ Default `aiuse --json` stdout:
 }
 ```
 
-(``history`` is omitted from ``--alerts-only`` to keep that payload small.)
+(`history` is omitted from `--alerts-only` to keep that payload small.)
 
 (`cross_check_warnings` is only the subset of `snapshot.cross_checks` with
 `status == "warning"`.)
@@ -41,33 +41,33 @@ Single best **burn** window to use next, or `null` when there is nothing
 urgent. Prefer this over re-ranking `alerts[]` in scripts. Also available via
 `aiuse suggest` (human one-liner) / `aiuse suggest --json`.
 
-| Field                | Type           | Notes                                      |
-| -------------------- | -------------- | ------------------------------------------ |
-| `provider`           | string         |                                            |
-| `account`            | string \| null |                                            |
-| `window_label`       | string         |                                            |
-| `kind`               | string         | always `burn` when non-null                |
-| `urgency`            | string         |                                            |
-| `remaining_percent`  | number         |                                            |
-| `days_until_reset`   | number \| null |                                            |
-| `score`              | number         | analysis score                             |
-| `reason`             | string         | human message                              |
-| `source`             | string         |                                            |
-| `plan`               | string \| null |                                            |
+| Field               | Type           | Notes                       |
+| ------------------- | -------------- | --------------------------- |
+| `provider`          | string         |                             |
+| `account`           | string \| null |                             |
+| `window_label`      | string         |                             |
+| `kind`              | string         | always `burn` when non-null |
+| `urgency`           | string         |                             |
+| `remaining_percent` | number         |                             |
+| `days_until_reset`  | number \| null |                             |
+| `score`             | number         | analysis score              |
+| `reason`            | string         | human message               |
+| `source`            | string         |                             |
+| `plan`              | string \| null |                             |
 
 ### `history` (top-level on full `--json`)
 
 Snapshot learning insights (additive). Empty-ish when learning is off or thin.
 
-| Field                         | Type    | Notes                                                          |
-| ----------------------------- | ------- | -------------------------------------------------------------- |
-| `snapshot_count`              | int     | Retained files under cache                                     |
-| `learning_active`             | bool    | Whether history influences scoring this run                    |
-| `retention_days`              | int     | From config                                                    |
-| `learned_burn_rates`          | object  | Map `provider:duration` → `{fraction_per_day, sample_count}`   |
-| `chronic_underuse`            | array   | Short windows with high avg remaining across ≥2 cycles         |
-| `usually_left_late_cycle`     | array   | Avg remaining when observed ≥70% into a window                 |
-| `burn_candidates_from_history`| array   | Subset of late-cycle leftovers (≥40% left avg) as burn hints   |
+| Field                          | Type   | Notes                                                        |
+| ------------------------------ | ------ | ------------------------------------------------------------ |
+| `snapshot_count`               | int    | Retained files under cache                                   |
+| `learning_active`              | bool   | Whether history influences scoring this run                  |
+| `retention_days`               | int    | From config                                                  |
+| `learned_burn_rates`           | object | Map `provider:duration` → `{fraction_per_day, sample_count}` |
+| `chronic_underuse`             | array  | Short windows with high avg remaining across ≥2 cycles       |
+| `usually_left_late_cycle`      | array  | Avg remaining when observed ≥70% into a window               |
+| `burn_candidates_from_history` | array  | Subset of late-cycle leftovers (≥40% left avg) as burn hints |
 
 ## Exit codes (collect runs)
 
@@ -92,7 +92,7 @@ Cross-check notes alone never set exit code 2.
 
 | Field               | Type              | Stable?                                                               |
 | ------------------- | ----------------- | --------------------------------------------------------------------- |
-| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage` \| `tokscale`   |
+| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage` \| `tokscale`    |
 | `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)            |
 | `account`           | string \| null    | email or label when known                                             |
 | `plan`              | string \| null    | plan name if reported                                                 |
@@ -174,18 +174,18 @@ Cross-check notes alone never set exit code 2.
 
 ### `pace` (optional)
 
-| Field                      | Type           |
-| -------------------------- | -------------- |
-| `elapsed_fraction`         | number \| null |
-| `used_fraction`            | number         |
-| `pace_ratio`               | number \| null |
-| `projected_used_fraction`  | number \| null |
-| `projected_waste_fraction` | number \| null |
-| `projected_waste_usd`      | number \| null |
-| `projected_exhaust_at`     | string \| null |
-| `governing`                | bool           |
-| `gated_by`                 | string \| null |
-| `confidence`               | string         |
+| Field                      | Type                        |
+| -------------------------- | --------------------------- |
+| `elapsed_fraction`         | number \| null              |
+| `used_fraction`            | number                      |
+| `pace_ratio`               | number \| null              |
+| `projected_used_fraction`  | number \| null              |
+| `projected_waste_fraction` | number \| null              |
+| `projected_waste_usd`      | number \| null              |
+| `projected_exhaust_at`     | string \| null              |
+| `governing`                | bool                        |
+| `gated_by`                 | string \| null              |
+| `confidence`               | string                      |
 | `learned_sample_count`     | int (0 if no history blend) |
 
 ## Stability policy

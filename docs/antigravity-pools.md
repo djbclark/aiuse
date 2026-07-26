@@ -5,10 +5,10 @@ governing window) even though the product has **two hard-separated budgets**.
 
 ## Two different “Claude” products (do not merge)
 
-| What you see | Who sells it | How `aiuse` gets it | Provider id |
-| --- | --- | --- | --- |
-| **Claude Code** (5h + weekly) | **Anthropic** (Claude Pro/Max, etc.) | **cswap** (canonical multi-account), plus caut / OpenUsage / CodexBar cross-checks | `claude` |
-| **Gemini** + **Claude/GPT** bars under Antigravity | **Google** (Google AI Pro/Ultra via Antigravity / Gemini CLI) | CodexBar / OpenUsage `antigravity` | `antigravity` (config plans key `gemini`) |
+| What you see                                       | Who sells it                                                  | How `aiuse` gets it                                                                | Provider id                               |
+| -------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------- |
+| **Claude Code** (5h + weekly)                      | **Anthropic** (Claude Pro/Max, etc.)                          | **cswap** (canonical multi-account), plus caut / OpenUsage / CodexBar cross-checks | `claude`                                  |
+| **Gemini** + **Claude/GPT** bars under Antigravity | **Google** (Google AI Pro/Ultra via Antigravity / Gemini CLI) | CodexBar / OpenUsage `antigravity`                                                 | `antigravity` (config plans key `gemini`) |
 
 Google’s Antigravity subscription can include allotments for **Gemini models** and a
 separate allotment for **third-party models** (labeled Claude/GPT in CodexBar and
@@ -28,12 +28,12 @@ or cswap multi-account logic.
 
 CodexBar (and OpenUsage) expose four windows for Antigravity:
 
-| Window | Family |
-| --- | --- |
-| Gemini 5-hour | Gemini (Google) |
-| Gemini weekly | Gemini (Google) |
+| Window            | Family                                                       |
+| ----------------- | ------------------------------------------------------------ |
+| Gemini 5-hour     | Gemini (Google)                                              |
+| Gemini weekly     | Gemini (Google)                                              |
 | Claude/GPT 5-hour | Google non-Gemini (Claude/GPT via Google AI — **not** cswap) |
-| Claude/GPT weekly | Google non-Gemini |
+| Claude/GPT weekly | Google non-Gemini                                            |
 
 Within each family, 5h ⊂ weekly (shared allotment). **Across** families the
 budgets do not draw from each other — burning Gemini does not free Claude/GPT

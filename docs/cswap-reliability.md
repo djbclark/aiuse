@@ -26,10 +26,10 @@ That is exactly when a use-it-or-lose-it report most needs the number.
 
 claude-swap separates **display-grade** vs **decision-grade** usage:
 
-| Surface | Source | Trust |
-| --- | --- | --- |
-| Human `cswap list` / TUI | `lastGood` + age annotation | Show old data |
-| `cswap list --json` | `entry.decision_value()` | Only if age ≤ `STALE_OK_S` (5m) or `trust_extended` (failures / poll cadence), and never past `TRUST_MAX_AGE_S` (1h; 2h after a usage-endpoint 429) |
+| Surface                  | Source                      | Trust                                                                                                                                               |
+| ------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Human `cswap list` / TUI | `lastGood` + age annotation | Show old data                                                                                                                                       |
+| `cswap list --json`      | `entry.decision_value()`    | Only if age ≤ `STALE_OK_S` (5m) or `trust_extended` (failures / poll cadence), and never past `TRUST_MAX_AGE_S` (1h; 2h after a usage-endpoint 429) |
 
 Comment in cswap `switcher._build_list_payload`: scripts must not act on
 arbitrarily old data when `usageStatus == "ok"`. That is correct for
@@ -48,15 +48,15 @@ Authorization: Bearer <oauth access token>
 
 ## Alternatives considered
 
-| Option | Multi-account? | Verdict |
-| --- | --- | --- |
-| CodexBar `usage --provider claude` | Typically **one** session account | Good cross-check / total-failure fallback only |
-| tokscale Claude row | Usually single / no email | Same as CodexBar; include in cross-check |
-| `ccusage` | N/A | Historical local token burn, **not** subscription 5h/7d windows |
-| Direct Anthropic OAuth usage API | Yes, if we hold every token | Duplicates cswap credential/rate-limit machinery; out of scope |
-| Import `claude_swap` as a library | Yes | Private API, wrong venv, version-coupled |
-| **Read cswap’s usage cache when JSON is unavailable** | Yes | **Chosen** — same data human list already trusts for display |
-| Upstream `cswap list --json` additive `usageLastGood` | Yes | Nice long-term; optional follow-up to claude-swap |
+| Option                                                | Multi-account?                    | Verdict                                                         |
+| ----------------------------------------------------- | --------------------------------- | --------------------------------------------------------------- |
+| CodexBar `usage --provider claude`                    | Typically **one** session account | Good cross-check / total-failure fallback only                  |
+| tokscale Claude row                                   | Usually single / no email         | Same as CodexBar; include in cross-check                        |
+| `ccusage`                                             | N/A                               | Historical local token burn, **not** subscription 5h/7d windows |
+| Direct Anthropic OAuth usage API                      | Yes, if we hold every token       | Duplicates cswap credential/rate-limit machinery; out of scope  |
+| Import `claude_swap` as a library                     | Yes                               | Private API, wrong venv, version-coupled                        |
+| **Read cswap’s usage cache when JSON is unavailable** | Yes                               | **Chosen** — same data human list already trusts for display    |
+| Upstream `cswap list --json` additive `usageLastGood` | Yes                               | Nice long-term; optional follow-up to claude-swap               |
 
 ## Decision
 

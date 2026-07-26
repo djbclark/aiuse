@@ -9,6 +9,7 @@ it does not need to be re-derived, and ends with a concrete test gate.
 [`../README.md`](../README.md) for what the `ai` CLI does and how to run it.
 
 **Background reading** (do not re-derive what's already investigated):
+
 - `docs/code-review-2026-07-23.html` — the full review report this plan is derived from
   (open the file directly in a browser for the styled version; GitHub's file viewer
   renders it as source, not HTML). Every step below traces back to a finding or design
@@ -39,12 +40,12 @@ it does not need to be re-derived, and ends with a concrete test gate.
 
 ---
 
-# Phase 1 — Showstopper bugs (silent data loss / silently wrong numbers)
+## Phase 1 — Showstopper bugs (silent data loss / silently wrong numbers)
 
 These are independent of each other and of the rating-algorithm redesign. Each closes
 a way the tool currently reports something confidently wrong with no error printed.
 
-## Step 1 — JSON-recovery fallback can silently return the wrong fragment
+### Step 1 — JSON-recovery fallback can silently return the wrong fragment
 
 **File:** `src/ai/collectors/base.py`, function `run_json` (lines ~48–68).
 
@@ -80,6 +81,7 @@ raise CollectorError(f"invalid JSON from {' '.join(argv)}: {last_err or 'parse f
 
 **Test** (`tests/test_cli.py` or wherever `run_json` is already tested — check first;
 if untested today, add `tests/test_base_run_json.py`):
+
 - stdout `'Fetched [1] provider\n[{"a": 1}]'` → returns `[{"a": 1}]`, not `[1]`.
 - stdout `'{"warning": "x"}\n[{"a": 1}]'` → returns `[{"a": 1}]`.
 - stdout with only banner noise and no valid trailing JSON → still raises `CollectorError`.
@@ -90,7 +92,7 @@ if untested today, add `tests/test_base_run_json.py`):
 
 ---
 
-## Step 2 — tokscale's single 120s call has no partial-result path
+### Step 2 — tokscale's single 120s call has no partial-result path
 
 **File:** `src/ai/collectors/tokscale.py`, `collect_tokscale` (line ~25).
 
@@ -105,15 +107,15 @@ fan-out is deferred to Phase 6. This step is the safe, immediate mitigation.
 **Fix (superseded):** the 2026-07-23 review suggested 180s to match an old CodexBar
 bundled budget. That number was **not** empirically justified (warm tokscale ~1s).
 Current code uses a shared **45s** default for all tools, overridable via CLI
-``--timeout`` / ``-t`` and optional ``config.toml`` ``[timeouts]`` (see
-``ai.config.timeout_for``). Step 2's "raise timeout" intent is closed by that
+`--timeout` / `-t` and optional `config.toml` `[timeouts]` (see
+`ai.config.timeout_for`). Step 2's "raise timeout" intent is closed by that
 unified budget rather than by matching 180s.
 
 **Done when:** full suite green (timeouts unified at 45s + configurable).
 
 ---
 
-## Step 3 — All live Claude data disappears when cswap is enabled but returns nothing
+### Step 3 — All live Claude data disappears when cswap is enabled but returns nothing
 
 **Status:** done as part of the 2026-07-23 cswap reliability work (cache hydrate +
 selection fallback + tokscale in Claude cross-checks). See
@@ -125,7 +127,7 @@ treat this step as already green.
 `claude`/`cswap_authoritative` branch, ~line 98) and `_claude_cross_checks` (~line 143).
 
 **Bug:** when `cswap_authoritative` is true (cswap enabled in config — the default),
-selection for the `claude` provider takes *only* `source == "cswap"` rows, with no
+selection for the `claude` provider takes _only_ `source == "cswap"` rows, with no
 fallback. If cswap raises (binary missing, keychain locked, unsupported schema version)
 or returns only its no-accounts error placeholder, CodexBar's and tokscale's live Claude
 rows — which may well exist and be healthy — are discarded from the report entirely.
@@ -175,6 +177,7 @@ the same function rather than fully generalizing it — correctness matters more
 than elegance.
 
 **Test** (`tests/test_runner_consolidation.py`):
+
 - cswap raises / returns only its error placeholder; codexbar has live Claude rows →
   `selected` contains the codexbar rows for `claude`, and a `warning`-status cross-check
   exists explaining the fallback. (This is the exact scenario the finding verified.)
@@ -189,7 +192,7 @@ than elegance.
 
 ---
 
-## Step 4 — Monthly windows can report more dollar value than the plan costs
+### Step 4 — Monthly windows can report more dollar value than the plan costs
 
 **File:** `src/ai/analysis/use_or_lose.py`, `_compute_value_at_risk` (~line 41).
 
@@ -219,6 +222,7 @@ This is the only line that changes. It's a no-op for any window shorter than a m
 `monthly_price * remaining_fraction * value_multiplier`.
 
 **Test** (`tests/test_use_or_lose.py`):
+
 - `window_minutes=44640` (monthly), `monthly_price=10`, `remaining=90` →
   `value_at_risk_usd <= 10.0 * 0.9` (was previously ~13.75).
 - existing 5h/weekly test cases (where `active_cycles > 1`) produce identical numbers
@@ -229,7 +233,7 @@ the same function directly, so this fix applies there too with no separate chang
 
 ---
 
-## Step 5 — "Monthly waste" figure is off by up to 10x in either direction
+### Step 5 — "Monthly waste" figure is off by up to 10x in either direction
 
 **File:** `src/ai/report.py`, `_throttled_waste_line` (~line 373); `src/ai/models.py`,
 `UseOrLoseAlert`; `src/ai/analysis/use_or_lose.py`, `analyze_use_or_lose`.
@@ -282,6 +286,7 @@ Update the one call site in `_render_action_plan` to pass
 **Test** (`tests/test_report.py` — this file is currently only 30 lines, meaning the
 whole action-plan renderer is essentially untested; this is also where Step 30/31 adds
 more coverage, but write at least these two cases now):
+
 - 5h window (`window_minutes=300`), `value_usd=$0.18`, 16 waking hours → monthly waste
   ≈ `$0.18 * 97.4 ≈ $17.53`, not `$5.55` (previously understated).
 - monthly window (`window_minutes=43800`), same `value_usd` → monthly waste ≈
@@ -293,7 +298,7 @@ more coverage, but write at least these two cases now):
 
 ---
 
-## Step 6 — Claude's cswap-sourced windows never get a real window duration
+### Step 6 — Claude's cswap-sourced windows never get a real window duration
 
 **File:** `src/ai/collectors/cswap.py`, `_named_window` (~line 131) and
 `_window_from_block` (~line 142).
@@ -304,7 +309,7 @@ field — schema v1 doesn't guarantee it. Without `window_minutes`, multi-dimens
 scoring can't classify the window's duration bucket at all for the one provider
 (Claude) where this data is most load-bearing.
 
-**Fix:** since `_named_window` already knows *semantically* which duration each call
+**Fix:** since `_named_window` already knows _semantically_ which duration each call
 site represents (it's called three times with fixed label strings for 5-hour, weekly,
 monthly), backfill `window_minutes` with the known nominal duration when the block
 didn't supply one:
@@ -330,6 +335,7 @@ already infer duration bucket from `window_minutes` when present, and have no re
 nominal label to fall back to.
 
 **Test** (`tests/test_cswap_parse.py`):
+
 - cswap block for `fiveHour` with no `windowMinutes` key → resulting `QuotaWindow.window_minutes == 300`.
 - cswap block for `sevenDay` with an explicit `windowMinutes: 10079` → the explicit
   value is kept (backfill only applies when `window_minutes is None`).
@@ -338,7 +344,7 @@ nominal label to fall back to.
 
 ---
 
-## Step 7 — `cycles_needed` formula cancels itself out, pinning Claude 5h urgency at 100
+### Step 7 — `cycles_needed` formula cancels itself out, pinning Claude 5h urgency at 100
 
 **File:** `src/ai/analysis/use_or_lose.py`, `_compute_flexibility_profile` (~line 92–183).
 
@@ -353,7 +359,7 @@ refilled 5h window at 95% remaining scores MEDIUM/71.8 every single run.
 **This is an interim, minimal fix** — Phase 2 replaces this scoring path more
 thoroughly with pace-based logic and a proper shared-allotment model. This step just
 stops the formula from being nonsense in the meantime, using the already-computed
-`burn_minutes` (time to consume the *full* window's capacity at the configured rate):
+`burn_minutes` (time to consume the _full_ window's capacity at the configured rate):
 
 ```python
 if capacity is not None and capacity > 0 and window.window_minutes:
@@ -373,6 +379,7 @@ Replaces the two lines currently computing `cycles_needed` and `earliest` inside
 `if capacity is not None...` block — nothing else in the function changes.
 
 **Test** (`tests/test_use_or_lose.py`):
+
 - Claude 5h override (`flexibility=0.0`, `capacity=45`, `unit="requests"`), window at
   95% remaining with 295/300 minutes left → `flexibility_urgency` must be well below
   100 (not pinned), and the resulting alert urgency must not be MEDIUM-or-above purely
@@ -386,7 +393,7 @@ Replaces the two lines currently computing `cycles_needed` and `earliest` inside
 
 ---
 
-## Step 8 — Uncommitted diff's new gates silently kill real multi-dim alerts
+### Step 8 — Uncommitted diff's new gates silently kill real multi-dim alerts
 
 **File:** `src/ai/analysis/use_or_lose.py`, `analyze_use_or_lose`, the `if multi_dim:`
 branch (~line 299–303, part of the pre-existing uncommitted diff).
@@ -403,7 +410,7 @@ if remaining < min_remaining:
 apply `min_remaining_percent` (default 40) as a hard gate to the multi-dimensional
 scoring path. A weekly window at 64% used / 36% remaining — exactly the "weekly nearly
 exhausted, several days left" case this whole review started from — is filtered out
-*before it is ever scored*, rather than being scored low or (per Phase 2) surfaced as a
+_before it is ever scored_, rather than being scored low or (per Phase 2) surfaced as a
 conserve advisory.
 
 **Fix (interim — Phase 2 replaces this gate with real conserve logic):** drop the
@@ -425,6 +432,7 @@ Do not touch the legacy (`else:`) branch a few lines below — it keeps its own
 `remaining < min_remaining` check exactly as today.
 
 **Test** (`tests/test_use_or_lose.py`):
+
 - weekly window, 64% used / 36% remaining, 2 days until reset, multi-dim scoring
   enabled → an alert IS produced (previously: none). Assert its urgency/score are
   reasonable given the existing (not-yet-pace-based) scoring math — don't assert a
@@ -438,7 +446,7 @@ Do not touch the legacy (`else:`) branch a few lines below — it keeps its own
 
 ---
 
-# Phase 2 — Rating algorithm redesign (pace-based scoring)
+## Phase 2 — Rating algorithm redesign (pace-based scoring)
 
 Phase 1 stopped the scoring model from being actively broken. This phase replaces the
 model itself so window ranking reflects real pacing instead of "how soon does this
@@ -447,7 +455,7 @@ other — do not reorder.** Each step still ends in a fully passing suite; later
 build new behavior on top without removing the legacy/multi-dim paths (both are kept as
 explicit escape hatches, selectable by config).
 
-## Step 9 — Data model additions (no behavior change yet)
+### Step 9 — Data model additions (no behavior change yet)
 
 **File:** `src/ai/models.py`.
 
@@ -501,7 +509,7 @@ these are unused fields until Step 11).
 
 ---
 
-## Step 10 — Pure pace-math functions, tested in isolation
+### Step 10 — Pure pace-math functions, tested in isolation
 
 **File:** `src/ai/analysis/pace.py` (new file — no wiring into `analyze_use_or_lose`
 yet, so nothing about today's report output changes in this step).
@@ -598,6 +606,7 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
 ```
 
 **Test** (`tests/test_pace.py`, new file):
+
 - Live-shaped case: weekly window 64% used, elapsed ≈ 71% (2 days left of a 7-day
   window) → `classify_pace(...) == "on_pace"`.
 - Weekly 90% used, elapsed ≈ 57% (3 days left of 7) → `projected_exhaust_at` is before
@@ -619,11 +628,12 @@ anyway.
 
 ---
 
-## Step 11 — Wire a new `"pace"` scoring mode into `analyze_use_or_lose`
+### Step 11 — Wire a new `"pace"` scoring mode into `analyze_use_or_lose`
 
 **Files:** `src/ai/config.py`, `src/ai/analysis/use_or_lose.py`.
 
 **Config** — add to `DEFAULT_CONFIG["analysis"]`:
+
 ```python
 "scoring_mode": "pace",
 "pace": {
@@ -635,6 +645,7 @@ anyway.
 
 **Mode resolution** in `analyze_use_or_lose`, replacing the current
 `multi_dim = bool(analysis_cfg.get("use_multi_dim_scoring", False))` line:
+
 ```python
 mode = analysis_cfg.get("scoring_mode")
 if mode is None:
@@ -642,6 +653,7 @@ if mode is None:
 # mode is one of: "legacy" (today's `_score`), "multi_dim" (today's `_score_multi_dimension`,
 # kept verbatim as a frozen escape hatch), "pace" (new, default).
 ```
+
 This preserves back-compat: anyone with `use_multi_dim_scoring: false` in their config
 keeps getting the legacy path unchanged; everyone else moves to `"pace"` unless they
 explicitly set `scoring_mode: "multi_dim"` to keep today's (Phase-1-patched) behavior.
@@ -714,6 +726,7 @@ of the canonical Claude scenario. Land this step first so pace math and mode dis
 are proven independently of the gating logic.
 
 **Test** (`tests/test_use_or_lose.py`, add a `pace mode` test section):
+
 - Reproduce the three canonical Step-10 scenarios end-to-end through
   `analyze_use_or_lose` with `scoring_mode: "pace"` (weekly 64%/71%-elapsed → no alert;
   weekly 90%/57%-elapsed → one `kind=="conserve"` alert; weekly 10%/50%-elapsed → one
@@ -728,7 +741,7 @@ are proven independently of the gating logic.
 
 ---
 
-## Step 12 — Shared-allotment gating (this is what actually fixes "Claude 5h always wins")
+### Step 12 — Shared-allotment gating (this is what actually fixes "Claude 5h always wins")
 
 **File:** `src/ai/analysis/use_or_lose.py`, `analyze_use_or_lose`'s pace branch;
 `src/ai/config.py`.
@@ -754,12 +767,12 @@ per-account instead of per-window when `shared_allotment` is set for that provid
    characteristics if it has any, not the child's) to phrase burn logistics. Simpler
    and sufficient for this step: append to the burn message a note naming the
    suppressed child window(s), e.g. `"(this also covers your 5-hour window — no need
-   to burn it separately)"`. Do not attempt to recompute the child's own
+to burn it separately)"`. Do not attempt to recompute the child's own
    `cycles_needed` against the governing window's duration in this step — that
    refinement is optional polish, not required to fix the core complaint.
 5. When the governing window's verdict is `"conserve"`, the message must explicitly
    name the child: `"Avoid burning 5-hour sessions — they draw the same weekly budget
-   you're already close to exhausting."`
+you're already close to exhausting."`
 6. If the governing window itself has no computable pace (`compute_pace` returns
    `None`, e.g. missing `remaining()`), fall back to scoring each window
    independently as if `shared_allotment` were off for this account this run, and add
@@ -769,6 +782,7 @@ per-account instead of per-window when `shared_allotment` is set for that provid
    simply its own governing window with no children.
 
 **Test** (`tests/test_use_or_lose.py`):
+
 - **The core regression test**: an account with a 5h window at 97% remaining (fresh)
   and a weekly window at 64% used/36% remaining (elapsed ≈71%, "on pace") →
   `analyze_use_or_lose` with `scoring_mode: "pace"` produces **zero** alerts for this
@@ -791,7 +805,7 @@ one the user explicitly asked for), full suite green.
 
 ---
 
-## Step 13 — Blend in learned burn rates from snapshot history (optional signal, not required for correctness)
+### Step 13 — Blend in learned burn rates from snapshot history (optional signal, not required for correctness)
 
 **File:** `src/ai/analysis/history.py`, `src/ai/analysis/use_or_lose.py`.
 
@@ -823,6 +837,7 @@ learned_sample_count=sample_count)` and into `classify_pace(...,
 has_learned_rate=True)`.
 
 **Test** (`tests/test_history.py` and `tests/test_use_or_lose.py`):
+
 - `compute_learned_burn_rates` on the same fixture data already used to test
   `compute_learned_flexibility` returns rates whose sign/magnitude ordering matches
   (a window `compute_learned_flexibility` scored as more burstable should have a higher
@@ -845,7 +860,7 @@ tests already do.
 
 ---
 
-## Step 14 — Report rendering: Conserve section, burn-only buckets, pace detail
+### Step 14 — Report rendering: Conserve section, burn-only buckets, pace detail
 
 **File:** `src/ai/report.py`.
 
@@ -855,7 +870,7 @@ tests already do.
    conserve = [a for a in action if a.kind == "conserve"]
    action = [a for a in action if a.kind == "burn"]  # existing bucket logic below only ever sees burn alerts now
    ```
-2. Render a new **Conserve** section — in `_render_action_plan`, place it *before* the
+2. Render a new **Conserve** section — in `_render_action_plan`, place it _before_ the
    THIS WEEK / THIS WEEKEND / LATER THIS MONTH buckets (it's the anti-footgun case,
    it should be the first thing a user reads):
    ```python
@@ -885,7 +900,7 @@ tests already do.
    beyond receiving the filtered list.
 4. `_action_plan_line`: when `alert.pace` is set, append a pace fragment after the
    existing value-at-risk fragment: `f" · pace {alert.pace.pace_ratio:.1f}x — projected
-   {alert.pace.projected_waste_fraction:.0%} unused"`.
+{alert.pace.projected_waste_fraction:.0%} unused"`.
 5. `_consumption_line` (per-window detail, shown for every window regardless of
    whether it alerted): if `compute_pace(...)` (imported from `ai.analysis.pace`)
    returns a profile, append `f"pace {profile.pace_ratio:.1f}x"` so on-pace windows
@@ -898,6 +913,7 @@ tests already do.
 
 **Test** (`tests/test_report.py` — expand this file significantly; it's currently only
 30 lines and none of this rendering logic has coverage today):
+
 - `render_report` with one burn alert and one conserve alert (construct both directly
   as `UseOrLoseAlert` objects, don't run the full pipeline) → output contains a
   `"CONSERVE"` section before `"THIS WEEK"`/etc., and the conserve alert does NOT
@@ -911,7 +927,7 @@ tests already do.
 
 ---
 
-## Step 15 — Flip the default, update docs, full regression
+### Step 15 — Flip the default, update docs, full regression
 
 **Files:** `src/ai/config.py` (confirm `"scoring_mode": "pace"` is the shipped default
 from Step 11 — this step is mostly verification, not new code), `README.md`,
@@ -941,12 +957,12 @@ real `ai` invocation visually confirms the new report sections.
 
 ---
 
-# Phase 3 — Remaining correctness bugs (major severity)
+## Phase 3 — Remaining correctness bugs (major severity)
 
 Each of these is independent; order here is roughly by how much they affect the numbers
 a user actually sees.
 
-## Step 16 — `gemini` provider override key is dead config
+### Step 16 — `gemini` provider override key is dead config
 
 **File:** `src/ai/config.py` (the `provider_overrides` dict is keyed `"gemini"`);
 `src/ai/analysis/use_or_lose.py`, `_classify_flexibility` and
@@ -970,12 +986,12 @@ instead of maintaining three copies that can drift.
 
 **Done when:** test passes, full suite green.
 
-## Step 17 — Learned flexibility can leak from one provider into an unrelated one
+### Step 17 — Learned flexibility can leak from one provider into an unrelated one
 
 **File:** `src/ai/analysis/history.py`, `merge_learned_flexibility` (~line 150).
 
 **Bug:** when no exact `f"{provider}:{duration_kind}"` key exists, it falls back to
-*any* key ending in `f":{duration_kind}"`, in nondeterministic dict-iteration order.
+_any_ key ending in `f":{duration_kind}"`, in nondeterministic dict-iteration order.
 
 **Fix:** remove the cross-provider fallback entirely — return `base_flex` unchanged
 when there's no exact match for this provider. Cross-provider learning isn't a coherent
@@ -999,7 +1015,7 @@ would incorrectly blend in Grok's rate).
 
 **Done when:** test passes, full suite green.
 
-## Step 18 — Burn-rate learning over-trusts short intervals and goes blind across resets
+### Step 18 — Burn-rate learning over-trusts short intervals and goes blind across resets
 
 **File:** `src/ai/analysis/history.py`, `compute_learned_burn_rates` (the function from
 Step 13 — if Phase 2 wasn't done first in this environment, target
@@ -1021,7 +1037,7 @@ full-cycle case is systematically excluded.
 
 **Fix 2:** when `current_remaining > prev_remaining` (a reset clearly happened between
 snapshots) and both timestamps and window durations are known, don't skip — instead
-treat the *previous* cycle's implied consumption as `prev_remaining` (100% minus what
+treat the _previous_ cycle's implied consumption as `prev_remaining` (100% minus what
 was left) consumed over the portion of that cycle between the previous snapshot and its
 own `resets_at`, and include that as a data point. If this reconstruction feels too
 speculative to implement confidently, the minimally-safe version of Fix 2 is: at least
@@ -1038,7 +1054,7 @@ visibility-only fallback, the discard is now counted/reported somewhere testable
 
 **Done when:** tests pass, full suite green.
 
-## Step 19 — Chronic-waste summary double-counts the same billing cycle
+### Step 19 — Chronic-waste summary double-counts the same billing cycle
 
 **File:** `src/ai/analysis/history.py`, `chronic_waste_summary` (~line 170).
 
@@ -1061,7 +1077,7 @@ high remaining → the window DOES appear (genuine chronic pattern, correctly de
 
 **Done when:** tests pass, full suite green.
 
-## Step 20 — The most expensive configured plan dilutes every cheaper plan's urgency
+### Step 20 — The most expensive configured plan dilutes every cheaper plan's urgency
 
 **File:** `src/ai/analysis/use_or_lose.py`, `_score_multi_dimension` (~line 506).
 
@@ -1069,7 +1085,7 @@ high remaining → the window DOES appear (genuine chronic pattern, correctly de
 entire config, used to normalize `value_urgency` for all of them — adding one
 expensive plan silently suppresses every cheaper plan's score.
 
-**Fix:** normalize each window's `value_urgency` against *that window's own plan's*
+**Fix:** normalize each window's `value_urgency` against _that window's own plan's_
 `monthly_price` (already available as `plan_price` a few lines below in the same
 function), not a global maximum. Keep a sane floor (e.g. `max(plan_price, 20.0)`) for
 windows with no configured price at all, rather than a global cross-plan maximum:
@@ -1080,6 +1096,7 @@ value_urgency = 0.0
 if profile.value_at_risk_usd is not None and plan_price_for_norm > 0:
     value_urgency = max(0.0, min(100.0, (profile.value_at_risk_usd / plan_price_for_norm) * 100))
 ```
+
 (Remove the `max_plan_price` computation loop over `plans_cfg.values()` entirely — it's
 no longer needed.) Note this function currently doesn't receive `monthly_price`
 directly as a parameter — check its call site in `analyze_use_or_lose` and thread it
@@ -1092,7 +1109,7 @@ because the $30 plan exists in config).
 
 **Done when:** test passes, full suite green.
 
-## Step 21 — Colliding fallback slot labels silently drop real quota windows
+### Step 21 — Colliding fallback slot labels silently drop real quota windows
 
 **File:** `src/ai/collectors/codexbar.py`, `_slot_label` (~line 334) and the
 primary/secondary/tertiary loop in `_from_row` (~line 222).
@@ -1116,7 +1133,7 @@ blocks with different `usedPercent` values → both windows survive into the fin
 
 **Done when:** test passes, full suite green.
 
-## Step 22 — A bare dollar sign in a reset description can misclassify billing kind
+### Step 22 — A bare dollar sign in a reset description can misclassify billing kind
 
 **File:** `src/ai/collectors/codexbar.py`, the balance-detection loop in `_from_row`
 (~line 279) and `_billing_kind` (~line 355).
@@ -1141,7 +1158,7 @@ in its `resetDescription` → `billing_kind` stays whatever it was (not flipped 
 
 **Done when:** test passes, full suite green.
 
-## Step 23 — A matched-but-errored cswap row can never produce its intended specific warning
+### Step 23 — A matched-but-errored cswap row can never produce its intended specific warning
 
 **File:** `src/ai/collectors/runner.py`, `_claude_cross_checks` (~line 164).
 
@@ -1152,7 +1169,7 @@ an email match against CodexBar takes precedence first and always produces the g
 
 **Fix:** reorder the checks so the specific case is checked first: if `cswap_row.error`
 is set, check the email-match branch's condition (`cswap_row.error and live_codexbar`)
-*before* attempting `_compare_live_rows` — i.e. don't call `_compare_live_rows` on a
+_before_ attempting `_compare_live_rows` — i.e. don't call `_compare_live_rows` on a
 `cswap_row` that has `.error` set at all; route errored cswap rows straight to the
 existing `if cswap_row.error and live_codexbar:` message, matched rows or not.
 
@@ -1165,18 +1182,18 @@ instead).
 
 ---
 
-# Phase 4 — Minor fixes, grouped by file
+## Phase 4 — Minor fixes, grouped by file
 
 Each of these is small; group them by file so one agent session can knock out a whole
 file's minor issues together and still end in a clean, testable state.
 
-## Step 24 — `config.py`: two independent small fixes
+### Step 24 — `config.py`: two independent small fixes
 
 1. **Silent bad `--config` path**: `load_config` currently only checks
    `candidate.is_file()` and falls through to defaults with no warning if an explicitly
    passed `path` doesn't exist. Fix: when `path` is explicitly provided (not the default
    XDG lookup) and it does not resolve to a file, raise `SystemExit(f"Config file not
-   found: {candidate}")` rather than silently using defaults — being explicit about a
+found: {candidate}")` rather than silently using defaults — being explicit about a
    config path and having it ignored is worse than a hard failure here.
 2. **Dead `'daily'` flexibility default**: `consumption_flexibility_defaults` has a
    `"daily"` key that `classify_window_minutes` can never produce (only `"5h"`,
@@ -1195,7 +1212,7 @@ classifies as `"daily"` and picks up the `0.1` flexibility default.
 
 **Done when:** tests pass, full suite green.
 
-## Step 25 — `history.py`: snapshot save collisions and permission ordering
+### Step 25 — `history.py`: snapshot save collisions and permission ordering
 
 **File:** `src/ai/analysis/history.py`, `save_snapshot` (~line 23).
 
@@ -1220,7 +1237,7 @@ likely already exists; leave it, just confirm it still passes.)
 
 **Done when:** tests pass, full suite green.
 
-## Step 26 — `base.py`: remaining `run_json` hardening
+### Step 26 — `base.py`: remaining `run_json` hardening
 
 (Step 1 already fixed the "wrong fragment" bug in this function — this step covers two
 smaller, separate issues in the same function.)
@@ -1249,7 +1266,7 @@ existing downstream error handling already covers the non-zero-exit-code case.
 **Done when:** full suite green; either a fix + test landed, or a documented
 no-change-needed conclusion.
 
-## Step 27 — `tokscale.py`: window-inference cleanups
+### Step 27 — `tokscale.py`: window-inference cleanups
 
 **File:** `src/ai/collectors/tokscale.py`, `_infer_window_minutes` (~line 101),
 `_from_row` (~line 34).
@@ -1274,11 +1291,11 @@ does NOT get classified as weekly purely from containing "7". A `"5h"` label now
 
 **Done when:** tests pass, full suite green.
 
-## Step 28 — `use_or_lose.py` + `models.py`: two independent small math fixes
+### Step 28 — `use_or_lose.py` + `models.py`: two independent small math fixes
 
 1. **`burn_minutes` ignores remaining fraction** (`_burn_estimate_text` /
    `_compute_flexibility_profile`, ~line 162): `burn_minutes = capacity /
-   max(rate, 0.001)` always assumes the *full* capacity, regardless of how much
+max(rate, 0.001)` always assumes the _full_ capacity, regardless of how much
    `remaining` actually is — the printed "~1.5h at typical pace" text is identical
    whether 10% or 90% remains. Note: if Phase 2's Step 7 already introduced
    `burn_minutes_for_remaining` for the `cycles_needed`/`earliest_start_calendar`
@@ -1298,7 +1315,7 @@ is None` and matching `window_minutes`/`resets_at`).
 
 **Done when:** tests pass, full suite green.
 
-## Step 29 — `codexbar.py` + `cli.py`: remaining minors
+### Step 29 — `codexbar.py` + `cli.py`: remaining minors
 
 1. **`codexbar.py`**, `_query_provider` (~line 177): the per-provider timeout (90s) is
    tighter than the old bundled-call budget (180s) for a provider that genuinely needs
@@ -1327,7 +1344,7 @@ is None` and matching `window_minutes`/`resets_at`).
    `snapshot.accounts` is empty (total failure) at the end of `main()`, and `return 1`
    in that case instead of `0`.
 5. **`cli.py`**, `_apply_cli_overrides` (~line 194): `collectors.setdefault(name,
-   {})["enabled"] = False` will raise `TypeError` if a user's config has that
+{})["enabled"] = False` will raise `TypeError` if a user's config has that
    collector's value as a plain boolean (`collectors: {tokscale: true}` — a form
    `runner.py::_enabled` explicitly supports) rather than a dict, because
    `setdefault` returns the existing boolean, not a dict, and subscripting a `bool`
@@ -1343,12 +1360,12 @@ path (or call `main()` directly) with all three collectors forced to fail → ex
 
 ---
 
-# Phase 5 — Nits + test-coverage gaps
+## Phase 5 — Nits + test-coverage gaps
 
-## Step 30 — Two nits
+### Step 30 — Two nits
 
 1. **`cswap.py`**, `_account_from_item` (~line 51): `active = bool(item.get("active"))
-   or number == active_number` — when both `number` and `active_number` are `None`,
+or number == active_number` — when both `number` and `active_number` are `None`,
    `None == None` is `True`, marking every slot with a missing number as "active." Fix:
    also require `number is not None` in that comparison.
 2. **`tokscale.py`**, `_infer_window_minutes` (~line 105, or wherever Step 27 left it):
@@ -1365,7 +1382,7 @@ classify as the 5h bucket.
 
 **Done when:** tests pass, full suite green.
 
-## Step 31 — Close the test-coverage gaps the review found
+### Step 31 — Close the test-coverage gaps the review found
 
 1. **`tests/test_tokscale_parse.py`** (new file — this collector currently has zero
    test coverage, despite the uncommitted diff adding nontrivial `window_minutes`
@@ -1387,15 +1404,15 @@ via `pytest --collect-only` or coverage tooling if available that `tokscale.py` 
 
 ---
 
-# Phase 6 — tokscale true per-provider containment (exploratory)
+## Phase 6 — tokscale true per-provider containment (exploratory)
 
-## Step 32 — Investigate whether tokscale can be queried per-provider today
+### Step 32 — Investigate whether tokscale can be queried per-provider today
 
 This is exploratory, not a guaranteed code change — the outcome determines what (if
 anything) gets implemented.
 
 1. Run `tokscale codex --help`, `tokscale cursor --help`, `tokscale antigravity
-   --help`, `tokscale trae --help`, `tokscale warp --help` (these subcommands exist per
+--help`, `tokscale trae --help`, `tokscale warp --help` (these subcommands exist per
    `tokscale --help`'s top-level command list) and check whether any of them expose the
    same subscription-usage data that `tokscale usage --json` aggregates, scoped to just
    that one integration.
@@ -1423,7 +1440,7 @@ explaining why it isn't currently possible.
 
 ---
 
-# Phase 7 — Deferred / optional (after Steps 1–32)
+## Phase 7 — Deferred / optional (after Steps 1–32)
 
 Park items that are useful but **not** required for the review-derived correctness
 pass. Do these only after Phase 6, or when the operator explicitly prioritizes them.
@@ -1432,12 +1449,12 @@ Background for Steps 33–34: [`cswap-reliability.md`](cswap-reliability.md) and
 [`claude-local-usage.md`](claude-local-usage.md) (cswap multi-account reliability
 already landed: cache hydrate, countdown recompute, CodexBar/tokscale fallback).
 
-## Step 33 — Upstream: richer cswap JSON for display-grade usage (optional)
+### Step 33 — Upstream: richer cswap JSON for display-grade usage (optional)
 
 **Upstream status (2026-07-23):** this feature request **already exists** —
 
 - Issue/PR: [realiti4/claude-swap#170](https://github.com/realiti4/claude-swap/issues/170)
-  — *feat(json): expose display-grade last-good usage* (open)
+  — _feat(json): expose display-grade last-good usage_ (open)
 - Branch: `possibilities:feat/display-last-good-usage`
 - Contract proposed: when decision-grade data is too old, keep
   `usageStatus: unavailable` + `usage: null`, and add additive
@@ -1455,7 +1472,7 @@ lands; keep cache hydration as fallback for older cswap.
 
 **Do not** open a duplicate issue — track #170.
 
-## Step 34 — Surface Claude usage-credits / pay-as-you-go more fully (optional)
+### Step 34 — Surface Claude usage-credits / pay-as-you-go more fully (optional)
 
 **Status:** done. cswap `usage.spend` → `UsageCredits` on `AccountUsage`
 (`usage_credits` in JSON); pretty report shows a dedicated **usage credits**
@@ -1464,7 +1481,8 @@ drive use-or-lose). Step 35 (ccusage local burn) remains deferred.
 
 **Why:** Website Settings → Usage shows spend, balance, and monthly credit
 limits. cswap sometimes carries a `spend` block (notes-only previously).
-## Step 35 — Optional local burn section via ccusage / stats-cache (optional)
+
+### Step 35 — Optional local burn section via ccusage / stats-cache (optional)
 
 **Why:** Token burn on this machine is interesting for activity, but it is **not**
 subscription 5h/7d %. Do not use it for use-or-lose alert authority.

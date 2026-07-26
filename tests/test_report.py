@@ -87,6 +87,29 @@ def test_ladder_includes_lockout_forecast_for_conserve():
     assert "~lockout" in text
 
 
+def test_ladder_history_alert_without_live_reset_uses_cycle_guidance():
+    from aiuse.report import render_priority_ladder
+
+    alert = UseOrLoseAlert(
+        urgency=Urgency.INFO,
+        provider="claude",
+        account=None,
+        window_label="Claude Code 5-hour",
+        remaining_percent=90.0,
+        days_until_reset=None,
+        plan=None,
+        message="consistently underused",
+        source="history",
+        score=4.0,
+        kind="burn",
+    )
+
+    text = render_priority_ladder([alert], color=False)
+
+    assert "use more each cycle" in text
+    assert "time unknown" not in text
+
+
 def test_status_line_nothing_urgent():
     snap = Snapshot(collected_at=utcnow(), accounts=[AccountUsage(provider="codex", source="codexbar")])
     line = render_status_line(snap, [])
