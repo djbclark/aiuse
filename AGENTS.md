@@ -11,10 +11,10 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-07-25):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
+**Status (2026-07-26):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
 **34** done. Product issues **#2–#9** done (suggest, status/serve, History,
-health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.12**
-(PyPI/GitHub; Homebrew formula 2.1.12). Five collectors;
+health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.13**
+(PyPI/GitHub; Homebrew formula 2.1.13). Five collectors;
 prepaid/`n/a` band; hourly LaunchAgent;
 history learning `auto`; shared-allotment history children suppressed when a
 live governing window is present. **No mandatory numbered step.** Open-ended “what

@@ -1,12 +1,12 @@
 # Session handoff (current)
 
-**Date:** 2026-07-25  
+**Date:** 2026-07-26
 **Branch:** `main` (synced with `origin/main` after this handoff)  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `.venv/bin/python -m pytest -q` — **267** passing
 
-**Package version:** **2.1.12** on PyPI + GitHub + Homebrew
+**Package version:** **2.1.13** on PyPI + GitHub + Homebrew
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
@@ -15,7 +15,7 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **2.1.12**.
+   `/opt/homebrew/bin/aiuse --version` → **2.1.13**.
 3. `aiuse doctor` → five collectors green (OpenUsage often “CLI missing; HTTP
    :6736 responding” — OK).
 4. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status`
@@ -23,17 +23,17 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 5. Data sources: `./packaging/install-deps.sh --check` or site
    `just aiuse-deps-status` (cswap, codexbar, caut, OpenUsage, tokscale).
 
-## Done this stretch (2026-07-25)
+## Done this stretch (2026-07-26)
 
 | Area                                | Notes                                                                                                                                     |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | **OpenCode Go history gate**        | Suppress stale 5h history alerts when the current shared monthly window governs; live exhausted state remains authoritative              |
 | **Concurrency test stability**      | Replaced a flaky wall-clock threshold with a synchronization-barrier proof that provider queries overlap                                 |
-| **2.1.12 full release**             | Honest no-reset history wording + clean quality/security gates; GitHub/PyPI OIDC/Homebrew all verified; local pipx + brew upgraded        |
+| **2.1.13 full release**             | Suppressed gated history children under the governing live window; GitHub/PyPI OIDC/Homebrew verified; local pipx + brew upgraded       |
 | **Reset deadline + quality repair** | History-only 5-hour rows without a live reset now say `use more each cycle`; complete `just lint` is green (typing, formatting, security) |
 | **2.1.11 release**                  | First reset-time repair borrows a matching live reset when available; PyPI/GitHub release + Homebrew formula                              |
 | **Next-options + issues**           | [`next-options.md`](next-options.md); optional polish **#11–#15**; #10 should announce the latest release                                 |
-| **Homebrew loose end**              | Public tap lagged at 2.1.11 during release; rebased safely and published **2.1.12** at tap commit `5329aeb`                               |
+| **Homebrew loose end**              | Public tap lagged at 2.1.12 during release; rebased safely and published **2.1.13** at tap commit `80ef355`                               |
 | **Docs pass**                       | Competitive landscape post-#2–#9; README/AGENTS/shared-semantics/companion/agent-api aligned                                              |
 | **2.1.10 release**                  | Shared quota-semantics v0.1 package + dogfood tests                                                                                       |
 | **2.1.9 release**                   | Product issues #2–#8 (suggest, status/prompt, serve, forecast, History, health_path, local runtimes)                                      |
@@ -57,9 +57,9 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 | [#14](https://github.com/djbclark/aiuse/issues/14)                                                | 4–12h                | ~0.3–2M   | ~$3–40   | Optional: `aiuse watch` pull-refresh (not menubar)       |
 | [#15](https://github.com/djbclark/aiuse/issues/15)                                                | 1–4h                 | ~50k–0.5M | ~$0.5–10 | Optional: more golden fixtures                           |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.12
+Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.13
 
-PyPI: https://pypi.org/project/aiuse/2.1.12/
+PyPI: https://pypi.org/project/aiuse/2.1.13/
 
 ## Loose-ends scan (this handoff)
 
@@ -67,8 +67,8 @@ PyPI: https://pypi.org/project/aiuse/2.1.12/
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | Working tree / push                                            | Clean after this commit; push to `origin/main`                                            | Done with handoff                                            |
 | Tests / full lint                                              | **266** green; `just lint` clean                                                          | None                                                         |
-| Installers (remote)                                            | **2.1.12** GitHub + PyPI (OIDC run `30181813167`) + Homebrew tap                          | None                                                         |
-| PATH `aiuse --version`                                         | Global pipx, Homebrew, and project venv all **2.1.12**                                    | None                                                         |
+| Installers (remote)                                            | **2.1.13** GitHub + PyPI (OIDC run `30204840500`) + Homebrew tap                          | None                                                         |
+| PATH `aiuse --version`                                         | Global pipx, Homebrew, and project venv all **2.1.13**                                    | None                                                         |
 | Doctor                                                         | Five collectors green (OpenUsage HTTP OK)                                                 | Optional OpenUsage CLI install                               |
 | LaunchAgent `com.djbclark.aiuse`                               | **Loaded**                                                                                | Let it densify History                                       |
 | **Step 33** / [#1](https://github.com/djbclark/aiuse/issues/1) | Blocked on [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170)          | Wait for upstream                                            |
@@ -77,7 +77,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.12/
 | Optional polish #11–#15                                        | Open, **not default**                                                                     | Only if concrete pain — [`next-options.md`](next-options.md) |
 | Shared semantics v0.1                                          | In-tree + pytest dogfood                                                                  | Peer outreach = #12 (last)                                   |
 | Public announce                                                | [#10](https://github.com/djbclark/aiuse/issues/10) draft should target the latest release | **Operator posts** when ready                                |
-| Full release                                                   | **2.1.12 complete**; source tag `v2.1.12`, tap commit `5329aeb`                           | Release only when explicitly requested                       |
+| Full release                                                   | **2.1.13 complete**; source tag `v2.1.13`, tap commit `80ef355`                           | Release only when explicitly requested                       |
 
 ## Operator preferences (standing)
 
@@ -105,9 +105,9 @@ Preferred order (detail in [`next-options.md`](next-options.md)):
 ## Quick verification
 
 ```bash
-.venv/bin/aiuse --version       # 2.1.12
-aiuse --version                 # pipx: 2.1.12
-/opt/homebrew/bin/aiuse --version  # Homebrew: 2.1.12
+.venv/bin/aiuse --version       # 2.1.13
+aiuse --version                 # pipx: 2.1.13
+/opt/homebrew/bin/aiuse --version  # Homebrew: 2.1.13
 aiuse doctor
 aiuse suggest
 aiuse status
