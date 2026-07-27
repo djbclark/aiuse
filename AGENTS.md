@@ -11,14 +11,13 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-07-26):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
-**34** done. Product issues **#2–#9** done (suggest, status/serve, History,
-health_path, local runtimes, shared-semantics v0.1, …). Packaging **2.1.15**
-(PyPI/GitHub; Homebrew formula 2.1.15). Five collectors;
-prepaid/`n/a` band; hourly LaunchAgent;
-history learning `auto`; shared-allotment history children suppressed when a
-live governing window is present. **No mandatory numbered step.** Open-ended “what
-next?” → [`docs/next-options.md`](docs/next-options.md) +
+**Status (2026-07-27):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
+**34** done. Product issues **#2–#9** done. Packaging **2.1.15**
+(PyPI/GitHub/Homebrew) includes **`aiuse trust`** (caut stable codesign +
+CodexBar#679 cache ACL repair). Five collectors; prepaid/`n/a` band; hourly
+LaunchAgent; history learning `auto`. Normal CLI **always live-collects**
+(hourly snapshots densify History only). **No mandatory numbered step.**
+Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 
 1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
