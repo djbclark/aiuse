@@ -57,6 +57,7 @@ config & setup:
   aiuse --generate-config     write defaults under ~/.config/aiuse/ (never overwrites)
   aiuse --show-config-path    print services.yaml and config.toml paths
   aiuse doctor                PATH tools, version probe, config validation, timeouts
+  aiuse trust …               macOS codesign / Keychain trust for caut (docs/macos-keychain-trust.md)
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
@@ -287,6 +288,11 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # ``aiuse trust …`` has its own subcommands; handle before argparse.
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    if raw and raw[0] == "trust":
+        return _run_trust(raw[1:], config_path=None)
+
     args = build_parser().parse_args(_normalize_argv(argv))
     if args.show_config_path:
         print(f"services: {default_config_path()}")
@@ -664,6 +670,26 @@ def diagnose(
         lines.append(f"  {cmd:<10} {status:<8} {detail}  [{flag}]")
     lines.append("")
 
+    # macOS codesign: warn when enabled caut is adhoc (Keychain Always Allow).
+    # Soft warning only — does not increment problems / exit 1.
+    if sys.platform == "darwin":
+        try:
+            from aiuse.macos_trust import doctor_caut_codesign_lines
+
+            trust_lines = doctor_caut_codesign_lines(
+                config,
+                which_fn=lookup,
+                run_fn=run_fn,
+                collector_enabled=_collector_enabled(config, "caut"),
+            )
+            if trust_lines:
+                lines.append("")
+                lines.extend(trust_lines)
+        except Exception:  # noqa: BLE001 — doctor must not crash on trust helpers
+            lines.append("")
+            lines.append("macOS codesign (caut)")
+            lines.append("  note     could not inspect codesign status")
+
     if problems:
         lines.append(f"Problems: {problems} issue(s) (missing tools and/or config errors).")
         lines.append("Install/authenticate tools, fix timeouts, or disable collectors in services.yaml.")
@@ -676,6 +702,7 @@ def diagnose(
     lines.append("Hints")
     lines.append("  aiuse --generate-config   # create ~/.config/aiuse defaults (no overwrite)")
     lines.append("  aiuse --show-config-path  # print config file paths")
+    lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
@@ -683,6 +710,17 @@ def diagnose(
     lines.append("  aiuse --help              # full flag list + setup epilog")
     lines.append("  docs/json-contract.md  # stable JSON fields for scripts")
     return exit_code, lines
+
+
+def _run_trust(trust_argv: list[str], *, config_path: str | None) -> int:
+    """Dispatch ``aiuse trust`` subcommands (macOS collector codesign helpers)."""
+    from aiuse.macos_trust import run_trust_command
+
+    try:
+        config = load_config(config_path)
+    except SystemExit:
+        config = {}
+    return run_trust_command(trust_argv, config=config)
 
 
 def _print_completion(shell: str) -> int:

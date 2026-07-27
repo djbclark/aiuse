@@ -96,6 +96,9 @@ aiuse doctor                 # PATH tools + config presence + timeouts
 # Once per machine: install data-source tools (cswap, codexbar, caut, OpenUsage, tokscale)
 ./packaging/install-deps.sh
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
+# macOS: stable codesign for caut so Keychain Always Allow sticks (see docs/macos-keychain-trust.md)
+aiuse trust setup
+aiuse trust sign-caut        # re-run after every cargo install
 
 # Morning / before a long coding block
 aiuse                        # priority ladder on stdout (use-soon at bottom); meta on stderr
@@ -185,6 +188,7 @@ aiuse --doctor
 | `--generate-config`                                                               | Write default `~/.config/aiuse/*` files; never overwrites existing                       |
 | `--show-config-path`                                                              | Print services.yaml and config.toml paths                                                |
 | `doctor` / `--doctor`                                                             | Check tools on PATH, config presence, effective timeouts; no collect                     |
+| `trust` …                                                                         | macOS: codesign status / sign caut / Keychain grant guide ([docs/macos-keychain-trust.md](docs/macos-keychain-trust.md)) |
 | `--min-remaining 50 --max-days 10`                                                | Override alert thresholds                                                                |
 | `--save PATH`                                                                     | Also write full JSON snapshot to PATH                                                    |
 
@@ -320,6 +324,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/packaging.md`](docs/packaging.md) — pipx / PyPI / Homebrew; Trusted Publishing (OIDC) release flow.
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all five data-source tools (cswap, CodexBar, caut, OpenUsage, tokscale).
 - [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md) — caut + OpenUsage setup and cross-check priority.
+- [`docs/macos-keychain-trust.md`](docs/macos-keychain-trust.md) — `aiuse trust`: stable codesign for caut, Keychain Always Allow.
 - [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?” after product issues **#2–#9** (shipped).
 - [`docs/next-options.md`](docs/next-options.md) — recommended next actions and effort map for remaining competitive gaps (issues #10–#15).
 - [`docs/shared-quota-semantics.md`](docs/shared-quota-semantics.md) — design note for shared ranking semantics.

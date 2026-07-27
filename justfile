@@ -10,6 +10,19 @@ install-deps:
 install-deps-check:
     ./packaging/install-deps.sh --check
 
+# macOS: guided codesign + Keychain Always Allow setup for caut (see docs/macos-keychain-trust.md).
+macos-trust:
+    aiuse trust setup
+
+macos-trust-status:
+    aiuse trust status
+
+macos-sign-caut:
+    aiuse trust sign-caut
+
+macos-trust-guide:
+    aiuse trust grant-guide
+
 # Run the Python test suite.
 test:
     uv run --extra dev pytest

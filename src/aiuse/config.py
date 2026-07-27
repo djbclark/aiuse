@@ -160,7 +160,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 
 # Top-level and nested keys recognized by the loader / doctor (unknown → warning).
-KNOWN_TOP_LEVEL_KEYS = frozenset({"timeouts", "analysis", "plans", "collectors"})
+KNOWN_TOP_LEVEL_KEYS = frozenset({"timeouts", "analysis", "plans", "collectors", "macos"})
 KNOWN_TIMEOUT_KEYS = frozenset(
     {
         "default",
@@ -185,6 +185,7 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "probe_url",
     }
 )
+KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
 
 
 def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None:
@@ -348,6 +349,17 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     f"warning: plans key {name!r} is dead — use {canon!r} (collector id aliases to that config key)"
                 )
 
+    macos = cfg.get("macos")
+    if macos is not None and not isinstance(macos, dict):
+        issues.append("error: macos must be a mapping")
+    elif isinstance(macos, dict):
+        for key in macos:
+            if key not in KNOWN_MACOS_KEYS:
+                issues.append(f"warning: unknown macos key {key!r}")
+        identity = macos.get("codesign_identity")
+        if identity is not None and not str(identity).strip():
+            issues.append("error: macos.codesign_identity must be a non-empty string when set")
+
     return issues
 
 
@@ -483,6 +495,12 @@ def _default_toml_text() -> str:
         "\n"
         "# CLI `--timeout` / `-t` overrides every tool for that run.\n"
         "# Install tools: packaging/install-deps.sh\n"
+        "\n"
+        "# Optional macOS codesign identity for `aiuse trust sign-caut`\n"
+        "# (Keychain Always Allow for cargo-installed caut). See\n"
+        "# docs/macos-keychain-trust.md\n"
+        "# [macos]\n"
+        '# codesign_identity = "aiuse-local-codesign"\n'
     )
 
 

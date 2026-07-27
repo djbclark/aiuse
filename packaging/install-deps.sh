@@ -75,9 +75,28 @@ install_codexbar() {
   }
 }
 
+caut_macos_trust_hint() {
+  # Cargo caut is adhoc-signed; Keychain Always Allow needs a stable identity.
+  # Default: print a one-line hint. Opt-in autosign: AIUSE_AUTOSIGN_CAUT=1.
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return 0
+  fi
+  if [[ "${AIUSE_AUTOSIGN_CAUT:-}" == "1" ]] && have aiuse; then
+    if aiuse trust sign-caut 2>/dev/null; then
+      ok "caut codesign via aiuse trust sign-caut (AIUSE_AUTOSIGN_CAUT=1)"
+    else
+      note "aiuse trust sign-caut failed or identity missing — run: aiuse trust setup"
+    fi
+    return 0
+  fi
+  note "macOS Keychain: after a stable Code Signing cert exists, run: aiuse trust sign-caut"
+  note "  first time: aiuse trust setup  (docs/macos-keychain-trust.md)"
+}
+
 install_caut() {
   if have caut; then
     ok "caut → $(command -v caut)"
+    caut_macos_trust_hint
     return 0
   fi
   if (( CHECK_ONLY )); then
@@ -90,7 +109,13 @@ install_caut() {
   fi
   cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker
   ln -sfn "${HOME}/.cargo/bin/caut" "${HOME}/.local/bin/caut"
-  have caut && ok "caut → $(command -v caut)" || { miss "caut after install"; return 1; }
+  if have caut; then
+    ok "caut → $(command -v caut)"
+    caut_macos_trust_hint
+    return 0
+  fi
+  miss "caut after install"
+  return 1
 }
 
 install_openusage() {

@@ -115,6 +115,23 @@ No new secrets for caut/OpenUsage in normal operation — they reuse local
 cookies/keychain/CLI auth like CodexBar. Do **not** put provider tokens into
 aiuse config. Site `secretspec` is not required for these two tools.
 
+## macOS Keychain / “Always Allow” (caut)
+
+Cargo-installed **caut** is adhoc-signed, so Keychain **Always Allow** often
+does not survive reinstalls (hourly LaunchAgent → repeated dialogs).
+
+```bash
+aiuse trust setup          # cert steps + sign if identity exists + grant guide
+aiuse trust sign-caut      # after every cargo install
+aiuse doctor               # WARN when caut enabled + still adhoc
+```
+
+Full guide: [`macos-keychain-trust.md`](macos-keychain-trust.md).  
+If you do not want caut at all: `collectors.caut.enabled: false` in
+`services.yaml`. CodexBar is Team-signed (different failure mode — use its
+Settings / “Avoid Keychain prompts” class of options; `aiuse trust status`
+reports related prefs read-only).
+
 ---
 
 ## caut issues (observed 2026-07-25) and workarounds
