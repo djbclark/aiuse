@@ -35,6 +35,12 @@ cloning menubars, BI dashboards, or request routers.
 | **4b**               | **macOS collector trust (`aiuse trust`)** when keychain spam hurts | Stable codesign for caut so Always Allow sticks; doctor warn; CodexBar status/docs only   | Low–medium (operator QoL)            | Plan: [`macos-keychain-trust-plan.md`](macos-keychain-trust-plan.md)                                                     |
 | **Avoid by default** | Menubar app, own scrapers, LiteLLM router, ccusage-as-plan-% | Wrong product identity / trust model                                                            | High                                 | Do not open as default backlog                                                                                           |
 
+### Queue (end) — product constraints to keep honest
+
+| Item | Notes |
+| ---- | ----- |
+| **Do not make normal interactive `aiuse` depend on the hourly snapshot cache** | Operator note (2026-07-27): treating the LaunchAgent’s hourly snapshots as the source of truth for a normal CLI run would be a mistake (stale quotas / wrong burn advice). **Current behavior is correct:** default CLI always live-collects via `run_collectors`; hourly only densifies History under `~/.cache/aiuse/snapshots`. **Exception:** `aiuse serve` may serve ≤`max_age` (default 3600s) disk/memory cache unless `?refresh=1` — keep that opt-in for agents, never silently make the main CLI path cache-first. |
+
 **Zero-code coherent path:** post [#10](https://github.com/djbclark/aiuse/issues/10)
 when ready, leave the agent collecting, poll cswap#170 occasionally.
 
