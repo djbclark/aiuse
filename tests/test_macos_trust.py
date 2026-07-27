@@ -152,6 +152,35 @@ def test_collect_status_non_darwin(monkeypatch):
     assert any("not macOS" in line for line in st.lines)
 
 
+def test_caut_next_steps_footer_adhoc():
+    from aiuse.macos_trust import caut_next_steps_footer
+
+    lines = caut_next_steps_footer(
+        identity="aiuse-local-codesign",
+        identity_present=True,
+        caut_path=Path("/tmp/caut"),
+        caut_adhoc=True,
+    )
+    text = "\n".join(lines)
+    assert "sign-caut" in text
+    assert "probe" in text
+
+
+def test_ensure_identity_opens_keychain_when_missing(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    monkeypatch.setattr("aiuse.macos_trust.identity_available", lambda *_a, **_k: False)
+    opened: list[str] = []
+
+    def fake_open(**_k):
+        opened.append("yes")
+        return 'Opened "Keychain Access"'
+
+    monkeypatch.setattr("aiuse.macos_trust.try_open_keychain_access", fake_open)
+    assert run_trust_command(["ensure-identity"], config={}) == 0
+    assert opened
+    assert "Create a stable Code Signing" in capsys.readouterr().out
+
+
 def test_run_trust_status_and_help(capsys, monkeypatch):
     monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: False)
     assert run_trust_command(["status"], config={}) == 0

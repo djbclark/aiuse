@@ -22,8 +22,16 @@ is signed with a **stable** identity and you click Always Allow once per item.
 ## Quick start
 
 ```bash
-# 1) Guided setup (prints cert steps, signs if identity exists, grant guide)
-aiuse trust setup
+# From a source checkout (recommended while developing):
+cd ~/src/aiuse
+AIUSE=.venv/bin/aiuse
+
+# 0) Status (same as bare: aiuse trust)
+$AIUSE trust
+# or: $AIUSE trust status
+
+# 1) Guided setup (opens Keychain Access if cert missing; signs if identity exists)
+$AIUSE trust setup
 
 # 2) Create the cert once in Keychain Access when prompted by setup:
 #    Certificate Assistant → Create a Certificate…
@@ -33,16 +41,15 @@ aiuse trust setup
 #    Optional: Trust → Code Signing → Always Trust
 
 # 3) Sign caut (also after every cargo install)
-aiuse trust sign-caut
-# or: just macos-sign-caut
+$AIUSE trust sign-caut
+# or: PATH="$PWD/.venv/bin:$PATH" just macos-sign-caut
 
-# 4) Optional interactive probe — click Always Allow on each dialog
-aiuse trust probe
+# 4) Interactive probe — click Always Allow on each dialog
+$AIUSE trust probe
 
 # Status / docs helpers
-aiuse trust status
-aiuse trust grant-guide
-aiuse doctor   # warns if caut is enabled and still adhoc
+$AIUSE trust grant-guide
+$AIUSE doctor   # warns if caut is enabled and still adhoc
 ```
 
 ### After every `cargo install` / `install-deps`

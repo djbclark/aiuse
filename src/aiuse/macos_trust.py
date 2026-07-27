@@ -364,6 +364,29 @@ def codexbar_keychain_prefs(
     return out or None
 
 
+def try_open_keychain_access(
+    *,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> str | None:
+    """Best-effort: open Keychain Access.app. Returns a short status line or None."""
+    if not is_darwin():
+        return None
+    runner = run_fn if run_fn is not None else subprocess.run
+    try:
+        proc = runner(
+            ["open", "-a", "Keychain Access"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode == 0:
+        return 'Opened "Keychain Access" (Certificate Assistant → Create a Certificate…)'
+    return None
+
+
 def ensure_identity_guide(identity: str) -> list[str]:
     """Printable steps to create a self-signed Code Signing certificate."""
     return [
@@ -391,6 +414,33 @@ def ensure_identity_guide(identity: str) -> list[str]:
         "  # [macos]",
         f'  # codesign_identity = "{identity}"',
     ]
+
+
+def caut_next_steps_footer(
+    *,
+    identity: str,
+    identity_present: bool,
+    caut_path: Path | None,
+    caut_adhoc: bool,
+) -> list[str]:
+    """Short next-action lines after status (caut-focused)."""
+    lines = ["", "Next (caut):"]
+    if caut_path is None:
+        lines.append("  • Install caut: packaging/install-deps.sh  (or just install-deps)")
+        return lines
+    if not identity_present:
+        lines.append(f"  1. Create Code Signing cert {identity!r}:  aiuse trust ensure-identity")
+        lines.append("  2. Sign:  aiuse trust sign-caut")
+        lines.append("  3. Always Allow:  aiuse trust probe")
+        return lines
+    if caut_adhoc:
+        lines.append("  1. Sign:  aiuse trust sign-caut")
+        lines.append("  2. Always Allow:  aiuse trust probe")
+        lines.append("  3. Confirm:  aiuse doctor")
+        return lines
+    lines.append("  • caut looks stable-signed — optional: aiuse trust probe")
+    lines.append("  • After every cargo install: aiuse trust sign-caut")
+    return lines
 
 
 def grant_guide_lines() -> list[str]:
@@ -527,6 +577,14 @@ def collect_status(
 
     st.lines.append("")
     st.lines.append("Hints: aiuse trust setup · aiuse trust sign-caut · docs/macos-keychain-trust.md")
+    st.lines.extend(
+        caut_next_steps_footer(
+            identity=st.identity,
+            identity_present=st.identity_present,
+            caut_path=st.caut_path,
+            caut_adhoc=st.caut_adhoc,
+        )
+    )
     return st
 
 
@@ -583,10 +641,16 @@ def run_trust_command(
 
     if cmd == "ensure-identity":
         identity = configured_identity(config)
+        if is_darwin() and not identity_available(identity, run_fn=run_fn):
+            opened = try_open_keychain_access(run_fn=run_fn)
+            if opened:
+                out(opened)
+                out("")
         out("\n".join(ensure_identity_guide(identity)))
         if is_darwin() and identity_available(identity, run_fn=run_fn):
             out("")
             out(f"Identity {identity!r} is already available in the login keychain.")
+            out("Next: aiuse trust sign-caut")
         return 0
 
     if cmd == "grant-guide":
@@ -600,6 +664,10 @@ def run_trust_command(
         identity = configured_identity(config)
         if not identity_available(identity, run_fn=run_fn):
             out(f"error: codesigning identity {identity!r} not found.")
+            opened = try_open_keychain_access(run_fn=run_fn)
+            if opened:
+                out(opened)
+                out("")
             out("\n".join(ensure_identity_guide(identity)))
             return 1
         path = resolve_caut_binary(which_fn=which_fn)
@@ -620,7 +688,7 @@ def run_trust_command(
         if after.adhoc or not after.stable:
             out("warning: binary still looks adhoc/unstable — check identity trust settings")
             return 1
-        out("Next: aiuse trust grant-guide  (or: aiuse trust probe)")
+        out("Next: aiuse trust probe  (click Always Allow), then: aiuse doctor")
         return 0
 
     if cmd == "setup":
@@ -634,6 +702,10 @@ def run_trust_command(
             out("Nothing else to do on non-macOS.")
             return 0
         if not identity_available(identity, run_fn=run_fn):
+            opened = try_open_keychain_access(run_fn=run_fn)
+            if opened:
+                out(opened)
+                out("")
             out("\n".join(ensure_identity_guide(identity)))
             out("")
             out("After creating the certificate, re-run: aiuse trust setup")
@@ -658,6 +730,7 @@ def run_trust_command(
                     out(msg)
                     after = codesign_display(path, run_fn=run_fn)
                     out("\n".join(format_codesign_summary(after, label="caut")))
+                    out("Next: aiuse trust probe  (click Always Allow on each dialog)")
                 else:
                     out(f"sign-caut skipped/failed: {msg}")
                     out("Create/trust the identity, then: aiuse trust sign-caut")
@@ -680,11 +753,12 @@ def run_trust_command(
             if info.adhoc or not info.stable:
                 out("warning: caut is still adhoc/unsigned — Always Allow may not stick.")
                 out("         Run aiuse trust sign-caut first.")
-            out(f"Running: {caut} usage --provider claude --json")
+            # "both" matches aiuse default collectors.caut.providers
+            out(f"Running: {caut} usage --provider both --json")
             runner = run_fn if run_fn is not None else subprocess.run
             try:
                 proc = runner(
-                    [str(caut), "usage", "--provider", "claude", "--json"],
+                    [str(caut), "usage", "--provider", "both", "--json"],
                     capture_output=True,
                     text=True,
                     check=False,
@@ -700,17 +774,21 @@ def run_trust_command(
         out("")
         codex = (which_fn or shutil.which)("codexbar")
         if codex:
-            out(f"Running: {codex} -V")
+            out(f"Running: {codex} usage --provider codex --json-only  (may prompt for CodexBar Cache)")
             runner = run_fn if run_fn is not None else subprocess.run
             try:
                 proc = runner(
-                    [codex, "-V"],
+                    [codex, "usage", "--provider", "codex", "--json-only"],
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=15,
+                    timeout=60,
                 )
-                out((proc.stdout or proc.stderr or "").strip() or f"exit {proc.returncode}")
+                if proc.stdout:
+                    out(proc.stdout.rstrip()[:2000])
+                if proc.returncode != 0 and proc.stderr:
+                    out(proc.stderr.rstrip()[:1500])
+                out(f"codexbar exit: {proc.returncode}")
             except (OSError, subprocess.TimeoutExpired) as exc:
                 out(f"codexbar probe failed: {exc}")
         else:
@@ -733,13 +811,16 @@ macOS remembers Keychain "Always Allow" by code identity. Cargo-installed
 tools (caut) are adhoc-signed and lose grants on every reinstall. This
 signs caut with a stable local Code Signing identity.
 
+With no COMMAND, runs: status
+
 Commands:
   status          Codesign status of caut + CodexBar (exit 0 always)
   setup           Guided flow: identity steps → sign-caut if possible → grant-guide
   ensure-identity Print steps to create a stable self-signed Code Signing cert
+                  (opens Keychain Access when identity is missing)
   sign-caut       Force-sign the real caut binary with the configured identity
   grant-guide     Keychain Access steps + known item names
-  probe           Optional interactive caut/CodexBar run to surface Always Allow
+  probe           Optional interactive caut (both) + light codexbar run
                   (never from install-deps or LaunchAgent)
 
 Environment / config:
@@ -750,7 +831,9 @@ Environment / config:
 
 Typical first-time flow:
   aiuse trust setup
-  # follow Keychain Access steps, then Always Allow on next caut run
+  # create cert in Keychain Access if prompted, re-run setup / sign-caut
+  aiuse trust probe
+  # click Always Allow on each dialog
 
 After every cargo install / install-deps:
   aiuse trust sign-caut
