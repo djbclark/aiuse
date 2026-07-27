@@ -23,6 +23,13 @@ macos-sign-caut:
 macos-trust-guide:
     aiuse trust grant-guide
 
+# CodexBar#679: trust CodexBarCLI on com.steipete.codexbar.cache items.
+macos-fix-codexbar-cache:
+    aiuse trust fix-codexbar-cache
+
+macos-fix-codexbar-cache-dry:
+    aiuse trust fix-codexbar-cache --dry-run
+
 # Run the Python test suite.
 test:
     uv run --extra dev pytest

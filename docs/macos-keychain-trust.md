@@ -110,12 +110,53 @@ local process reading that secret.
 
 CodexBar.app is Team-signed — **do not re-sign** it with a local cert.
 
-If CodexBar re-prompts:
+### Two different CodexBar prompt classes
 
-- Use CodexBar **Settings** (Avoid Keychain prompts / equivalent).
-- `aiuse trust status` reports keychain-related prefs when readable
-  (`claudeOAuthKeychainPromptMode`, `claudeOAuthKeychainReadStrategy`, …)
-  from `~/Library/Preferences/com.steipete.codexbar.plist` (**read-only**).
+| Dialog mentions | Cause | Fix |
+| --------------- | ----- | --- |
+| **CodexBar Cache** / `com.steipete.codexbar.cache` | ACL trusts only the .app, not **CodexBarCLI** ([#679](https://github.com/steipete/CodexBar/issues/679)) | `aiuse trust fix-codexbar-cache` |
+| **Claude Code-credentials** | Foreign item / XARA / OAuth prefs | CodexBar Settings (Avoid Keychain prompts); prefs already often `promptMode=never` |
+
+### Fix CodexBar Cache ACLs (#679)
+
+aiuse (and hourly LaunchAgent) invoke `codexbar` →  
+`/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI`. Cache items must
+list **both** the app and the CLI as trusted apps.
+
+```bash
+# Plan only (no writes)
+aiuse trust fix-codexbar-cache --dry-run
+
+# Rewrite all found accounts (prompts for login keychain password for partition-list;
+# press Enter to skip partition-list — ACL -T alone is often enough)
+aiuse trust fix-codexbar-cache
+
+# One account only
+aiuse trust fix-codexbar-cache --account cookie.codex
+```
+
+Optional non-interactive partition-list password (sensitive — avoid in shell history):
+
+```bash
+# prefer: type at getpass prompt instead
+AIUSE_KEYCHAIN_PASSWORD='…' aiuse trust fix-codexbar-cache
+```
+
+Secrets are **never** printed. After a successful fix, verify:
+
+```bash
+codexbar usage --provider codex --json-only
+```
+
+**Caveat:** older CodexBar builds may rewrite cache items and drop CLI from the
+ACL again. Upstream fixed new writes on main (`c66ea426`); upgrade when
+available, re-run `fix-codexbar-cache` if prompts return.
+
+### Claude OAuth prefs (read-only status)
+
+`aiuse trust status` reports keychain-related prefs when readable
+(`claudeOAuthKeychainPromptMode`, `claudeOAuthKeychainReadStrategy`, …)
+from `~/Library/Preferences/com.steipete.codexbar.plist` (**read-only**).
 
 ## Doctor
 
@@ -138,12 +179,13 @@ by itself). When caut is disabled in config, doctor stays quiet about codesign.
 
 | Command | Role |
 | ------- | ---- |
-| `aiuse trust status` | Codesign status for caut + CodexBar |
+| `aiuse trust` / `status` | Codesign status for caut + CodexBar Cache accounts |
 | `aiuse trust setup` | Identity guide → sign if possible → grant-guide |
-| `aiuse trust ensure-identity` | Cert creation steps only |
+| `aiuse trust ensure-identity` | Cert creation steps (opens Keychain Access if needed) |
 | `aiuse trust sign-caut` | `codesign --force --sign …` on realpath of caut |
-| `aiuse trust grant-guide` | Keychain Access steps + item names |
-| `aiuse trust probe` | Interactive light run (optional) |
+| `aiuse trust grant-guide` | Keychain Access steps + CodexBar Cache notes |
+| `aiuse trust probe` | Interactive caut (`both`) + light codexbar |
+| `aiuse trust fix-codexbar-cache` | #679: trust CodexBarCLI on cache items (`--dry-run`, `--account`) |
 
 just recipes: `macos-trust`, `macos-trust-status`, `macos-sign-caut`,
-`macos-trust-guide`.
+`macos-trust-guide`, `macos-fix-codexbar-cache`, `macos-fix-codexbar-cache-dry`.

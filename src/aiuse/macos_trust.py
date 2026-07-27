@@ -1,14 +1,19 @@
-"""macOS codesign / Keychain trust helpers for collectors (caut + CodexBar status).
+"""macOS codesign / Keychain trust helpers for collectors (caut + CodexBar).
 
 Keychain "Always Allow" binds to a binary's code identity. Cargo-installed caut is
 often adhoc/linker-signed, so grants do not survive reinstalls. These helpers
 inspect codesign status, guide a stable self-signed identity, and re-sign caut.
+
+CodexBar CLI prompts for "CodexBar Cache" are a separate bug: cache items trust
+only the .app, not CodexBarCLI (steipete/CodexBar#679). ``fix-codexbar-cache``
+rewrites those ACLs (app + CLI + /usr/bin/security).
 
 See docs/macos-keychain-trust.md and docs/macos-keychain-trust-plan.md.
 """
 
 from __future__ import annotations
 
+import getpass
 import os
 import plistlib
 import re
@@ -22,6 +27,12 @@ from typing import Any, Callable, Mapping
 DEFAULT_CODESIGN_IDENTITY = "aiuse-local-codesign"
 ENV_CODESIGN_IDENTITY = "AIUSE_CODESIGN_IDENTITY"
 ENV_AUTOSIGN_CAUT = "AIUSE_AUTOSIGN_CAUT"
+ENV_KEYCHAIN_PASSWORD = "AIUSE_KEYCHAIN_PASSWORD"  # optional; prefer interactive getpass
+
+CODEXBAR_CACHE_SERVICE = "com.steipete.codexbar.cache"
+CODEXBAR_CACHE_LABEL = "CodexBar Cache"
+# Public Developer ID team for CodexBar (Peter Steinberger); overridden from codesign when possible.
+CODEXBAR_DEFAULT_TEAM_ID = "Y5PE65HELJ"
 
 # Common keychain item labels caut / CodexBar touch (not exhaustive).
 KNOWN_KEYCHAIN_ITEMS: tuple[str, ...] = (
@@ -137,10 +148,298 @@ def resolve_codexbar_app() -> Path | None:
     if which:
         # Homebrew often links CLI; app may still live under /Applications.
         candidates.insert(0, Path("/Applications/CodexBar.app"))
+        # If which points into a .app bundle, prefer that bundle.
+        try:
+            p = Path(which).resolve()
+            for parent in p.parents:
+                if parent.name.endswith(".app") and (parent / "Contents" / "MacOS").is_dir():
+                    candidates.insert(0, parent)
+                    break
+        except OSError:
+            pass
     for cand in candidates:
         if cand.is_dir() and (cand / "Contents" / "MacOS").is_dir():
             return cand.resolve()
     return None
+
+
+def resolve_codexbar_cli(*, which_fn: Callable[[str], str | None] | None = None) -> Path | None:
+    """Locate CodexBarCLI helper (the binary aiuse/hourly runs as ``codexbar``)."""
+    app = resolve_codexbar_app()
+    if app is not None:
+        helper = app / "Contents" / "Helpers" / "CodexBarCLI"
+        if helper.is_file() and os.access(helper, os.X_OK):
+            return helper.resolve()
+    lookup = which_fn if which_fn is not None else shutil.which
+    found = lookup("codexbar")
+    if found:
+        try:
+            real = Path(found).resolve()
+            if real.is_file() and os.access(real, os.X_OK):
+                return real
+        except OSError:
+            pass
+    return None
+
+
+def login_keychain_path() -> Path:
+    return Path.home() / "Library" / "Keychains" / "login.keychain-db"
+
+
+def codexbar_team_id(
+    *,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> str:
+    """Team ID from CodexBar.app codesign, else default public team."""
+    app = resolve_codexbar_app()
+    if app is not None:
+        info = codesign_display(app, run_fn=run_fn)
+        if info.team_identifier:
+            return info.team_identifier
+    return CODEXBAR_DEFAULT_TEAM_ID
+
+
+def list_codexbar_cache_accounts(
+    *,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    keychain: Path | None = None,
+) -> list[str]:
+    """List account names for service ``com.steipete.codexbar.cache`` (no secrets)."""
+    if not is_darwin():
+        return []
+    kc = keychain or login_keychain_path()
+    runner = run_fn if run_fn is not None else subprocess.run
+    try:
+        proc = runner(
+            ["security", "dump-keychain", str(kc)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return []
+    text = (proc.stdout or "") + (proc.stderr or "")
+    accounts: list[str] = []
+    # dump-keychain emits acct then svce within each genp block — track last acct.
+    last_acct: str | None = None
+    for line in text.splitlines():
+        acct_m = re.search(r'"acct"<blob>="([^"]*)"', line)
+        if acct_m:
+            last_acct = acct_m.group(1)
+            continue
+        if 'com.steipete.codexbar.cache' in line and last_acct is not None:
+            accounts.append(last_acct)
+            last_acct = None
+    return sorted(set(accounts))
+
+
+def fix_codexbar_cache_account(
+    account: str,
+    *,
+    dry_run: bool = False,
+    keychain_password: str | None = None,
+    app_path: Path | None = None,
+    cli_path: Path | None = None,
+    team_id: str | None = None,
+    keychain: Path | None = None,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[bool, str]:
+    """Rewrite one CodexBar Cache item so app + CLI are trusted (#679).
+
+    Never includes the secret in the returned message.
+    """
+    if not is_darwin():
+        return False, "macOS only"
+    app = app_path or resolve_codexbar_app()
+    cli = cli_path or resolve_codexbar_cli()
+    if app is None:
+        return False, "CodexBar.app not found under /Applications"
+    if cli is None:
+        return False, "CodexBarCLI helper not found"
+    kc = keychain or login_keychain_path()
+    if not kc.is_file():
+        return False, f"login keychain not found: {kc}"
+    tid = team_id or codexbar_team_id(run_fn=run_fn)
+    runner = run_fn if run_fn is not None else subprocess.run
+
+    if dry_run:
+        return True, (
+            f"dry-run: would rewrite {CODEXBAR_CACHE_SERVICE} acct={account!r} "
+            f"with -T {app} -T {cli} -T /usr/bin/security "
+            f"+ partition teamid:{tid}"
+        )
+
+    secret: str | None = None
+    try:
+        read = runner(
+            [
+                "security",
+                "find-generic-password",
+                "-w",
+                "-s",
+                CODEXBAR_CACHE_SERVICE,
+                "-a",
+                account,
+                str(kc),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        if read.returncode != 0:
+            err = (read.stderr or read.stdout or "").strip() or f"exit {read.returncode}"
+            return False, f"read failed for acct={account!r}: {err[:200]}"
+        secret = (read.stdout or "").rstrip("\n")
+        if not secret:
+            return False, f"empty secret for acct={account!r} — skip"
+
+        delete = runner(
+            [
+                "security",
+                "delete-generic-password",
+                "-s",
+                CODEXBAR_CACHE_SERVICE,
+                "-a",
+                account,
+                str(kc),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        if delete.returncode != 0:
+            err = (delete.stderr or delete.stdout or "").strip() or f"exit {delete.returncode}"
+            return False, f"delete failed for acct={account!r}: {err[:200]}"
+
+        add = runner(
+            [
+                "security",
+                "add-generic-password",
+                "-s",
+                CODEXBAR_CACHE_SERVICE,
+                "-a",
+                account,
+                "-l",
+                CODEXBAR_CACHE_LABEL,
+                "-T",
+                str(app),
+                "-T",
+                str(cli),
+                "-T",
+                "/usr/bin/security",
+                "-w",
+                secret,
+                str(kc),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        if add.returncode != 0:
+            err = (add.stderr or add.stdout or "").strip() or f"exit {add.returncode}"
+            return False, f"add failed for acct={account!r}: {err[:200]}"
+
+        if keychain_password is not None and keychain_password != "":
+            part = runner(
+                [
+                    "security",
+                    "set-generic-password-partition-list",
+                    "-S",
+                    f"apple-tool:,apple:,teamid:{tid}",
+                    "-s",
+                    CODEXBAR_CACHE_SERVICE,
+                    "-a",
+                    account,
+                    "-k",
+                    keychain_password,
+                    str(kc),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            if part.returncode != 0:
+                err = (part.stderr or part.stdout or "").strip() or f"exit {part.returncode}"
+                return True, (
+                    f"rewrote ACL for acct={account!r} (app+CLI trusted); "
+                    f"partition-list failed: {err[:160]} — may still work; re-run with password"
+                )
+            return True, f"rewrote ACL + partition list for acct={account!r}"
+        return True, (
+            f"rewrote ACL for acct={account!r} (app+CLI trusted); "
+            "skipped partition-list (no keychain password) — usually enough for CLI"
+        )
+    finally:
+        secret = None  # noqa: F841 — drop reference to secret material
+
+
+def fix_codexbar_cache_all(
+    *,
+    accounts: list[str] | None = None,
+    dry_run: bool = False,
+    keychain_password: str | None = None,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    which_fn: Callable[[str], str | None] | None = None,
+) -> tuple[int, list[str]]:
+    """Fix all (or selected) CodexBar Cache accounts. Returns (failures, lines)."""
+    lines: list[str] = []
+    if not is_darwin():
+        return 0, ["macOS only: aiuse trust fix-codexbar-cache"]
+
+    app = resolve_codexbar_app()
+    cli = resolve_codexbar_cli(which_fn=which_fn)
+    tid = codexbar_team_id(run_fn=run_fn)
+    lines.append("CodexBar Cache ACL repair (steipete/CodexBar#679)")
+    lines.append(f"  service: {CODEXBAR_CACHE_SERVICE}")
+    lines.append(f"  app: {app or '(missing)'}")
+    lines.append(f"  cli: {cli or '(missing)'}")
+    lines.append(f"  teamid: {tid}")
+    if dry_run:
+        lines.append("  mode: dry-run (no keychain writes)")
+
+    if app is None or cli is None:
+        lines.append("error: need both CodexBar.app and CodexBarCLI")
+        return 1, lines
+
+    found = list_codexbar_cache_accounts(run_fn=run_fn)
+    if accounts:
+        targets = list(accounts)
+    else:
+        targets = found
+
+    if not targets:
+        lines.append("No CodexBar Cache accounts found (nothing to fix).")
+        return 0, lines
+
+    lines.append(f"  accounts ({len(targets)}): {', '.join(targets)}")
+    if found and accounts:
+        unknown = [a for a in accounts if a not in found]
+        if unknown:
+            lines.append(f"  note: not currently in keychain dump: {', '.join(unknown)}")
+
+    failures = 0
+    for acct in targets:
+        ok, msg = fix_codexbar_cache_account(
+            acct,
+            dry_run=dry_run,
+            keychain_password=keychain_password,
+            app_path=app,
+            cli_path=cli,
+            team_id=tid,
+            run_fn=run_fn,
+        )
+        lines.append(f"  {'ok' if ok else 'FAIL'}  {msg}")
+        if not ok:
+            failures += 1
+    if not dry_run and failures == 0:
+        lines.append("Done. Verify: codexbar usage --provider codex --json-only")
+        lines.append("Note: older CodexBar builds may rewrite ACLs on refresh; upgrade when possible.")
+    return failures, lines
 
 
 def parse_codesign_output(text: str) -> dict[str, Any]:
@@ -450,9 +749,10 @@ def grant_guide_lines() -> list[str]:
         "",
         "There is no global “allow this app all keychain items.” ACLs are per item.",
         "",
+        "=== caut (adhoc cargo binary) ===",
         "Option A — click Always Allow when prompted (preferred after stable sign):",
         "  1. Sign caut: aiuse trust sign-caut",
-        "  2. Run: aiuse trust probe   (or: caut usage --provider claude --json)",
+        "  2. Run: aiuse trust probe",
         "  3. For each dialog, click Always Allow (not Allow Once)",
         "",
         "Option B — edit ACL in Keychain Access:",
@@ -467,10 +767,13 @@ def grant_guide_lines() -> list[str]:
         "Do NOT default to “Allow all applications to access this item” — that",
         "lets any local process read the secret. Use only as a nuclear option.",
         "",
-        "CodexBar is Team-signed (different problem). If it re-prompts:",
-        "  • CodexBar Settings → look for Avoid Keychain prompts / similar",
-        "  • aiuse trust status shows keychain-related prefs when readable",
-        "  • See docs/macos-keychain-trust.md",
+        "=== CodexBar Cache (CodexBar#679) ===",
+        "If prompts say CodexBarCLI + 'CodexBar Cache' (not Claude Code-credentials):",
+        "  aiuse trust fix-codexbar-cache --dry-run   # list plan",
+        "  aiuse trust fix-codexbar-cache             # rewrite ACLs (may ask login password)",
+        "This trusts both CodexBar.app and CodexBarCLI on com.steipete.codexbar.cache.",
+        "Claude OAuth prefs (Avoid Keychain prompts) are separate — see trust status.",
+        "Docs: docs/macos-keychain-trust.md",
     ]
 
 
@@ -575,8 +878,19 @@ def collect_status(
         for k, v in prefs.items():
             st.lines.append(f"    {k} = {v!r}")
 
+    cli = resolve_codexbar_cli(which_fn=which_fn)
+    if cli is not None:
+        st.lines.append(f"  CodexBarCLI: {cli}")
+    cache_accts = list_codexbar_cache_accounts(run_fn=run_fn)
+    if cache_accts:
+        st.lines.append(f"  CodexBar Cache accounts ({len(cache_accts)}): {', '.join(cache_accts)}")
+        st.lines.append("  if CLI prompts for 'CodexBar Cache': aiuse trust fix-codexbar-cache")
+        st.lines.append("  (CodexBar#679 — trust CodexBarCLI on cache items)")
+    elif app is not None or cli is not None:
+        st.lines.append("  CodexBar Cache accounts: (none found)")
+
     st.lines.append("")
-    st.lines.append("Hints: aiuse trust setup · aiuse trust sign-caut · docs/macos-keychain-trust.md")
+    st.lines.append("Hints: aiuse trust setup · sign-caut · fix-codexbar-cache · docs/macos-keychain-trust.md")
     st.lines.extend(
         caut_next_steps_footer(
             identity=st.identity,
@@ -774,7 +1088,10 @@ def run_trust_command(
         out("")
         codex = (which_fn or shutil.which)("codexbar")
         if codex:
-            out(f"Running: {codex} usage --provider codex --json-only  (may prompt for CodexBar Cache)")
+            out(
+                f"Running: {codex} usage --provider codex --json-only  "
+                "(may prompt for CodexBar Cache — if so: aiuse trust fix-codexbar-cache)"
+            )
             runner = run_fn if run_fn is not None else subprocess.run
             try:
                 proc = runner(
@@ -797,6 +1114,60 @@ def run_trust_command(
         out("If dialogs appeared, prefer Always Allow. See: aiuse trust grant-guide")
         return 0
 
+    if cmd == "fix-codexbar-cache":
+        rest = args[1:]
+        dry_run = False
+        selected: list[str] = []
+        i = 0
+        while i < len(rest):
+            tok = rest[i]
+            if tok in ("--dry-run", "-n"):
+                dry_run = True
+                i += 1
+            elif tok == "--account" and i + 1 < len(rest):
+                selected.append(rest[i + 1])
+                i += 2
+            elif tok in ("-h", "--help"):
+                out(
+                    "Usage: aiuse trust fix-codexbar-cache [--dry-run] [--account NAME]...\n"
+                    "\n"
+                    "Rewrite com.steipete.codexbar.cache items so CodexBar.app and\n"
+                    "CodexBarCLI are both trusted (steipete/CodexBar#679).\n"
+                    "\n"
+                    "  --dry-run           Show plan without writing\n"
+                    "  --account NAME      Only this account (repeatable); default: all found\n"
+                    "\n"
+                    "Optional: AIUSE_KEYCHAIN_PASSWORD for partition-list step, or you will\n"
+                    "be prompted (TTY). Secrets are never printed.\n"
+                )
+                return 0
+            else:
+                out(f"error: unknown argument {tok!r}")
+                out("Try: aiuse trust fix-codexbar-cache --help")
+                return 2
+
+        password: str | None = None
+        if not dry_run:
+            password = (os.environ.get(ENV_KEYCHAIN_PASSWORD) or "").strip() or None
+            if password is None and sys.stdin.isatty():
+                try:
+                    password = getpass.getpass("Login keychain password (for partition-list; empty to skip): ")
+                    if password == "":
+                        password = None
+                except (EOFError, KeyboardInterrupt):
+                    out("aborted")
+                    return 1
+
+        failures, lines = fix_codexbar_cache_all(
+            accounts=selected or None,
+            dry_run=dry_run,
+            keychain_password=password,
+            run_fn=run_fn,
+            which_fn=which_fn,
+        )
+        out("\n".join(lines))
+        return 1 if failures else 0
+
     out(f"error: unknown trust command {cmd!r}")
     out(_TRUST_HELP)
     return 2
@@ -814,30 +1185,29 @@ signs caut with a stable local Code Signing identity.
 With no COMMAND, runs: status
 
 Commands:
-  status          Codesign status of caut + CodexBar (exit 0 always)
-  setup           Guided flow: identity steps → sign-caut if possible → grant-guide
-  ensure-identity Print steps to create a stable self-signed Code Signing cert
-                  (opens Keychain Access when identity is missing)
-  sign-caut       Force-sign the real caut binary with the configured identity
-  grant-guide     Keychain Access steps + known item names
-  probe           Optional interactive caut (both) + light codexbar run
-                  (never from install-deps or LaunchAgent)
+  status               Codesign status of caut + CodexBar Cache accounts
+  setup                Guided caut flow: identity → sign → grant-guide
+  ensure-identity      Create self-signed Code Signing cert steps
+  sign-caut            Force-sign real caut binary
+  grant-guide          Keychain steps (caut + CodexBar Cache)
+  probe                Interactive caut + light codexbar (Always Allow)
+  fix-codexbar-cache   Rewrite CodexBar Cache ACLs for CodexBarCLI (#679)
+                       Options: --dry-run  --account NAME
 
 Environment / config:
   AIUSE_CODESIGN_IDENTITY     Preferred identity name (default: aiuse-local-codesign)
   config.toml [macos]
     codesign_identity = "aiuse-local-codesign"
   AIUSE_AUTOSIGN_CAUT=1       Opt-in: install-deps may call sign-caut after cargo install
+  AIUSE_KEYCHAIN_PASSWORD     Optional login keychain password for partition-list
 
 Typical first-time flow:
-  aiuse trust setup
-  # create cert in Keychain Access if prompted, re-run setup / sign-caut
-  aiuse trust probe
-  # click Always Allow on each dialog
+  aiuse trust setup && aiuse trust probe
+  aiuse trust fix-codexbar-cache --dry-run
+  aiuse trust fix-codexbar-cache
 
 After every cargo install / install-deps:
   aiuse trust sign-caut
-  # or: just macos-sign-caut
 
 See docs/macos-keychain-trust.md
 """

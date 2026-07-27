@@ -128,9 +128,12 @@ aiuse doctor               # WARN when caut enabled + still adhoc
 
 Full guide: [`macos-keychain-trust.md`](macos-keychain-trust.md).  
 If you do not want caut at all: `collectors.caut.enabled: false` in
-`services.yaml`. CodexBar is Team-signed (different failure mode — use its
-Settings / “Avoid Keychain prompts” class of options; `aiuse trust status`
-reports related prefs read-only).
+`services.yaml`.
+
+**CodexBar:** Team-signed app; if **CodexBarCLI** prompts for **CodexBar Cache**,
+run `aiuse trust fix-codexbar-cache` ([#679](https://github.com/steipete/CodexBar/issues/679)).
+Claude OAuth “Avoid Keychain prompts” prefs are separate (`aiuse trust status`
+reports them read-only).
 
 ---
 

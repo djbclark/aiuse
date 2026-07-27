@@ -13,7 +13,10 @@ from aiuse.macos_trust import (
     collect_status,
     configured_identity,
     doctor_caut_codesign_lines,
+    fix_codexbar_cache_account,
+    fix_codexbar_cache_all,
     format_codesign_summary,
+    list_codexbar_cache_accounts,
     parse_codesign_output,
     resolve_caut_binary,
     run_trust_command,
@@ -235,6 +238,123 @@ def test_sign_caut_invokes_codesign(monkeypatch, tmp_path):
     assert calls[0][0] == "codesign"
     assert "--force" in calls[0]
     assert str(binary.resolve()) in calls[0]
+
+
+def test_list_codexbar_cache_accounts_parses_dump(monkeypatch):
+    dump = """
+keychain: "/Users/me/Library/Keychains/login.keychain-db"
+class: "genp"
+attributes:
+    "acct"<blob>="cookie.codex"
+    "svce"<blob>="com.steipete.codexbar.cache"
+keychain: "/Users/me/Library/Keychains/login.keychain-db"
+class: "genp"
+attributes:
+    "acct"<blob>="oauth.claude"
+    "svce"<blob>="com.steipete.codexbar.cache"
+"""
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+
+    def run(argv, **_k):
+        return subprocess.CompletedProcess(argv, 0, stdout=dump, stderr="")
+
+    accts = list_codexbar_cache_accounts(run_fn=run)
+    assert accts == ["cookie.codex", "oauth.claude"]
+
+
+def test_fix_codexbar_cache_account_dry_run(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app = tmp_path / "CodexBar.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    (app / "Contents" / "MacOS" / "CodexBar").write_text("x", encoding="utf-8")
+    cli = tmp_path / "CodexBarCLI"
+    cli.write_text("x", encoding="utf-8")
+    cli.chmod(0o755)
+    kc = tmp_path / "login.keychain-db"
+    kc.write_text("fake", encoding="utf-8")
+    ok, msg = fix_codexbar_cache_account(
+        "cookie.codex",
+        dry_run=True,
+        app_path=app,
+        cli_path=cli,
+        keychain=kc,
+    )
+    assert ok
+    assert "dry-run" in msg
+    assert "cookie.codex" in msg
+
+
+def test_fix_codexbar_cache_account_rewrites(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app = tmp_path / "CodexBar.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    cli = tmp_path / "CodexBarCLI"
+    cli.write_text("x", encoding="utf-8")
+    cli.chmod(0o755)
+    kc = tmp_path / "login.keychain-db"
+    kc.write_text("fake", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def run(argv, **_k):
+        calls.append(list(argv))
+        if argv[:2] == ["security", "find-generic-password"] and "-w" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout="sekrit-cookie\n", stderr="")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    ok, msg = fix_codexbar_cache_account(
+        "cookie.codex",
+        dry_run=False,
+        keychain_password="pw",
+        app_path=app,
+        cli_path=cli,
+        team_id="Y5PE65HELJ",
+        keychain=kc,
+        run_fn=run,
+    )
+    assert ok
+    assert "rewrote" in msg
+    # Secret must not appear in user-facing message
+    assert "sekrit" not in msg
+    # security calls: find -w, delete, add, partition-list
+    assert any("find-generic-password" in c for c in calls)
+    assert any("delete-generic-password" in c for c in calls)
+    assert any("add-generic-password" in c for c in calls)
+    add = next(c for c in calls if "add-generic-password" in c)
+    assert str(app) in add
+    assert str(cli) in add
+    assert "/usr/bin/security" in add
+    assert any("set-generic-password-partition-list" in c for c in calls)
+
+
+def test_fix_codexbar_cache_all_dry_run(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    monkeypatch.setattr(
+        "aiuse.macos_trust.resolve_codexbar_app",
+        lambda: tmp_path / "CodexBar.app",
+    )
+    app = tmp_path / "CodexBar.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    cli = tmp_path / "cli"
+    cli.write_text("x", encoding="utf-8")
+    cli.chmod(0o755)
+    monkeypatch.setattr("aiuse.macos_trust.resolve_codexbar_cli", lambda **_k: cli)
+    monkeypatch.setattr("aiuse.macos_trust.list_codexbar_cache_accounts", lambda **_k: ["cookie.codex"])
+    monkeypatch.setattr("aiuse.macos_trust.codexbar_team_id", lambda **_k: "Y5PE65HELJ")
+    fails, lines = fix_codexbar_cache_all(dry_run=True)
+    assert fails == 0
+    text = "\n".join(lines)
+    assert "dry-run" in text
+    assert "cookie.codex" in text
+
+
+def test_cli_fix_codexbar_cache_dry(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    monkeypatch.setattr(
+        "aiuse.macos_trust.fix_codexbar_cache_all",
+        lambda **_k: (0, ["dry-run ok"]),
+    )
+    assert run_trust_command(["fix-codexbar-cache", "--dry-run"], config={}) == 0
+    assert "dry-run ok" in capsys.readouterr().out
 
 
 def test_diagnose_includes_trust_hint_on_darwin(monkeypatch, tmp_path):

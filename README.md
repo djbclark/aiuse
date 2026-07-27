@@ -96,9 +96,10 @@ aiuse doctor                 # PATH tools + config presence + timeouts
 # Once per machine: install data-source tools (cswap, codexbar, caut, OpenUsage, tokscale)
 ./packaging/install-deps.sh
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
-# macOS: stable codesign for caut so Keychain Always Allow sticks (see docs/macos-keychain-trust.md)
-aiuse trust setup
+# macOS: Keychain trust helpers (see docs/macos-keychain-trust.md)
+aiuse trust setup            # caut: stable codesign + guide
 aiuse trust sign-caut        # re-run after every cargo install
+aiuse trust fix-codexbar-cache --dry-run   # CodexBar#679: trust CLI on cache items
 
 # Morning / before a long coding block
 aiuse                        # priority ladder on stdout (use-soon at bottom); meta on stderr
