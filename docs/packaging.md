@@ -95,6 +95,8 @@ just release-dry 2.1.16
 6. Wait for PyPI / `publish.yml`
 7. Refresh in-repo Homebrew formula sha256, commit, push
 8. Sync `~/src/homebrew-aiuse` tap when that clone exists
+9. Refresh Homebrew, upgrade this Mac to the published formula, confirm its
+   version, and run `brew test djbclark/aiuse/aiuse`
 
 Useful flags: `--notes-file PATH`, `--notes '…'`, `--skip-tests`,
 `--skip-pypi-wait`, `--skip-homebrew`, `--allow-dirty`,

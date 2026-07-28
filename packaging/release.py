@@ -86,9 +86,7 @@ def _validate_version(version: str) -> None:
 def _ensure_clean_tree(*, allow_dirty: bool) -> None:
     status = _git("status", "--porcelain")
     if status and not allow_dirty:
-        raise ReleaseError(
-            "working tree is dirty; commit/stash first, or pass --allow-dirty\n" + status
-        )
+        raise ReleaseError("working tree is dirty; commit/stash first, or pass --allow-dirty\n" + status)
 
 
 def _ensure_on_main() -> None:
@@ -398,6 +396,22 @@ def _sync_tap(version: str, *, tap_path: Path, dry_run: bool) -> None:
     _log(f"updated tap {tap_path}")
 
 
+def _upgrade_and_test_homebrew(version: str, *, dry_run: bool) -> None:
+    """Refresh the published tap, upgrade this Mac, and test the new formula."""
+    formula = "djbclark/aiuse/aiuse"
+    _run(["brew", "update"], dry_run=dry_run)
+    _run(["brew", "upgrade", formula], dry_run=dry_run)
+    prefix = _run(["brew", "--prefix", formula], capture=True, dry_run=dry_run)
+    if not dry_run:
+        installed = (prefix.stdout or "").strip()
+        if not installed:
+            raise ReleaseError(f"brew did not report an install prefix for {formula}")
+        output = _run([str(Path(installed) / "bin" / "aiuse"), "--version"], capture=True)
+        if f"aiuse {version}" not in (output.stdout or ""):
+            raise ReleaseError(f"Homebrew install is not aiuse {version}: {(output.stdout or '').strip()}")
+    _run(["brew", "test", formula], dry_run=dry_run)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("version", help="New version, e.g. 2.1.16 (no leading v)")
@@ -468,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
         sha = _tarball_sha256(version, dry_run=dry)
         _update_homebrew_formula(version, sha, dry_run=dry)
         _sync_tap(version, tap_path=args.tap_path, dry_run=dry)
+        _upgrade_and_test_homebrew(version, dry_run=dry)
 
     _log(f"done: aiuse {version} ({tag})")
     _log(f"  release: https://github.com/djbclark/aiuse/releases/tag/{tag}")

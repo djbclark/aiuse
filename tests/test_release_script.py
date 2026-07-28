@@ -42,9 +42,7 @@ def test_rewrite_project_version(tmp_path: Path, release):
 
     release._rewrite_project_version(tmp_path, "9.9.9")
     assert 'version = "9.9.9"' in (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
-    assert '__version__ = "9.9.9"' in (tmp_path / "src" / "aiuse" / "__init__.py").read_text(
-        encoding="utf-8"
-    )
+    assert '__version__ = "9.9.9"' in (tmp_path / "src" / "aiuse" / "__init__.py").read_text(encoding="utf-8")
     assert 'version = "9.9.9"' in (tmp_path / "uv.lock").read_text(encoding="utf-8")
 
 
@@ -95,3 +93,28 @@ def test_find_publish_run_matches_tag(monkeypatch, release):
     assert run is not None
     assert run["databaseId"] == 2
     assert release._find_publish_run("9.9.9") is None
+
+
+def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release):
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(argv, **kwargs):
+        from subprocess import CompletedProcess
+
+        calls.append((argv, kwargs))
+        stdout = "/opt/homebrew/opt/aiuse\n" if argv[:3] == ["brew", "--prefix", "djbclark/aiuse/aiuse"] else ""
+        if argv[-1:] == ["--version"]:
+            stdout = "aiuse 2.1.18\n"
+        return CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(release, "_run", fake_run)
+
+    release._upgrade_and_test_homebrew("2.1.18", dry_run=False)
+
+    assert [argv for argv, _kwargs in calls] == [
+        ["brew", "update"],
+        ["brew", "upgrade", "djbclark/aiuse/aiuse"],
+        ["brew", "--prefix", "djbclark/aiuse/aiuse"],
+        ["/opt/homebrew/opt/aiuse/bin/aiuse", "--version"],
+        ["brew", "test", "djbclark/aiuse/aiuse"],
+    ]
