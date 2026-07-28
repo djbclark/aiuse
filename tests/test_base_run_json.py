@@ -78,3 +78,18 @@ def test_json_loads_path_still_used_for_clean_output(monkeypatch):
         _fake_run(json.dumps(payload)),
     )
     assert run_json(["tool"]) == payload
+
+
+def test_run_json_passes_stdin_devnull(monkeypatch):
+    """Collectors must not inherit the TTY (caut raw-mode / echo-off bug)."""
+    import subprocess
+
+    seen: dict[str, object] = {}
+
+    def _run(argv, **kwargs):  # noqa: ARG001
+        seen.update(kwargs)
+        return SimpleNamespace(stdout='{"ok": true}', stderr="", returncode=0)
+
+    monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _run)
+    assert run_json(["tool"]) == {"ok": True}
+    assert seen.get("stdin") is subprocess.DEVNULL

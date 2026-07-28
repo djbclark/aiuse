@@ -29,8 +29,12 @@ def run_json(
 ) -> Any:
     """Run a command and parse JSON from stdout."""
     try:
+        # Never inherit the caller's TTY on stdin. Tools like ``caut usage``
+        # put stdin into raw mode; on timeout/kill that leaves the shell with
+        # echo off until the user runs ``reset``.
         proc = subprocess.run(
             argv,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=timeout,

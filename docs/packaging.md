@@ -75,6 +75,33 @@ with the table above (must match exactly). Keep the PyPI project name **`aiuse`*
 
 ### Maintainer release flow (OIDC)
 
+**Preferred:** one command (Python under the hood):
+
+```bash
+just release 2.1.16
+# preview only:
+just release 2.1.16 --dry-run
+# or:
+just release-dry 2.1.16
+```
+
+[`packaging/release.py`](../packaging/release.py) performs the full cut:
+
+1. Bump `version` in `pyproject.toml` / `__version__` / `uv.lock`
+2. Run pytest
+3. Commit + push `main`
+4. Annotated tag `vX.Y.Z` + push
+5. `python -m build` and `gh release create` (triggers OIDC publish)
+6. Wait for PyPI / `publish.yml`
+7. Refresh in-repo Homebrew formula sha256, commit, push
+8. Sync `~/src/homebrew-aiuse` tap when that clone exists
+
+Useful flags: `--notes-file PATH`, `--notes '…'`, `--skip-tests`,
+`--skip-pypi-wait`, `--skip-homebrew`, `--allow-dirty`,
+`--tap-path PATH`.
+
+Manual equivalent (historical):
+
 1. Bump `version` in [`pyproject.toml`](../pyproject.toml) and `__version__` in
    [`src/aiuse/__init__.py`](../src/aiuse/__init__.py); `uv lock`.
 2. `.venv/bin/python -m pytest -q` — green.

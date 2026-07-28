@@ -87,3 +87,12 @@ format:
     uv run --extra dev ruff check --fix .
     uv run --extra dev ruff format .
     bunx prettier --plugin=prettier-plugin-toml --write README.md pyproject.toml
+
+# Full release (PyPI via OIDC + Homebrew). Example: `just release 2.1.16`
+# Extra flags pass through: `just release 2.1.16 --dry-run`
+release version *args:
+    uv run python packaging/release.py {{ version }} {{ args }}
+
+# Preview release actions without mutating git / remotes.
+release-dry version *args:
+    uv run python packaging/release.py {{ version }} --dry-run {{ args }}

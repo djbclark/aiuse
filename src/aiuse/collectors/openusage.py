@@ -198,6 +198,7 @@ def _try_open_app() -> None:
     try:
         subprocess.run(
             ["open", "-ga", "OpenUsage"],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=15,

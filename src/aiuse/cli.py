@@ -33,6 +33,7 @@ from aiuse.config import (
 )
 from aiuse.models import Snapshot, Urgency, UseOrLoseAlert, provider_display_name
 from aiuse.report import render_report, render_status_line, render_stderr_meta
+from aiuse.tty import restore_stdin_tty, save_stdin_tty
 
 # External CLIs this project shells out to (must already be installed/auth'd).
 # Version argv is a light probe only (no usage/auth API).
@@ -288,6 +289,16 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Collectors may leave stdin without echo if a child TTY-mutates and dies;
+    # always restore attrs we observed at entry (see aiuse.tty / run_json).
+    saved_tty = save_stdin_tty()
+    try:
+        return _main_inner(argv)
+    finally:
+        restore_stdin_tty(saved_tty)
+
+
+def _main_inner(argv: list[str] | None = None) -> int:
     # ``aiuse trust …`` has its own subcommands; handle before argparse.
     raw = list(argv) if argv is not None else sys.argv[1:]
     if raw and raw[0] == "trust":
@@ -557,6 +568,7 @@ def probe_tool_version(
     try:
         proc = run(
             [cmd, *version_argv],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=timeout,
