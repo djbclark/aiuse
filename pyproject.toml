@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiuse"
-version = "2.1.18"
+version = "2.1.19"
 description = "Aggregate AI subscription/API usage and flag use-it-or-lose-it allotments"
 readme = "README.md"
 requires-python = ">=3.11"
