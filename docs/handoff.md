@@ -6,29 +6,22 @@
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `.venv/bin/python -m pytest -q` — **297+** passing  
 
-**Package version:** **2.1.16** on GitHub + PyPI + Homebrew tap  
+**Package version:** **2.1.17** on GitHub + PyPI + Homebrew tap  
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
 
 ## Immediate unfinished work (do this first)
 
-1. **Commit + push** the local fix in `packaging/release.py` (and
-   `tests/test_release_script.py` if present): `_wait_for_pypi` must match the
-   **this-version** `publish.yml` run (`headBranch == vX.Y.Z`), not the latest
-   run overall. The first `just release 2.1.16` raced and accepted the old
-   **2.1.15** success briefly; PyPI **did** get 2.1.16 afterward
-   (run `30316994159`). Land the wait-race fix on `main` (no new version bump
-   required unless you prefer a tiny 2.1.17).
-2. Optional: `brew upgrade aiuse` if Homebrew bottle/formula lag; pipx already
-   at 2.1.16 on the operator machine from the release test.
+1. Optional: `brew upgrade aiuse` if Homebrew bottle/formula lag.
+2. Operator: announce issue #10 mentions **2.1.17** (do not auto-post).
 
 ## Reopen checklist (operator)
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **2.1.16** (brew may still show 2.1.15
-   until upgrade).
+   `/opt/homebrew/bin/aiuse --version` → **2.1.17** (brew may still show previous
+   version until `brew upgrade aiuse`).
 3. `aiuse doctor` → five collectors green; caut **ok stable-signed**.
 4. `aiuse trust status` → caut Authority + CodexBar Cache account list.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status`
@@ -43,6 +36,7 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 | **TTY / echo bug** | After `aiuse`, shell typing invisible until `reset`. Cause: `caut usage --json` puts inherited stdin into raw mode; collector timeout leaves `ECHO`/`ICANON` off. Fix: `stdin=DEVNULL` in `run_json` (+ doctor probes / openusage `open`); `aiuse.tty` save/restore around `main`. |
 | **`just release`** | [`packaging/release.py`](../packaging/release.py) + `just release X.Y.Z` / `just release-dry`. Bump → pytest → commit/push → tag → `gh release` (OIDC PyPI) → Homebrew formula + `~/src/homebrew-aiuse` tap. Docs: [`packaging.md`](packaging.md). |
 | **2.1.16 release** | Tag/GitHub/PyPI/Homebrew completed as end-to-end test of `just release`. |
+| **Wait-race fix & 2.1.17** | Fixed `_wait_for_pypi` to match `headBranch == vX.Y.Z` on publish workflow; shipped full release **v2.1.17** via `just release 2.1.17`. |
 | **Wait-race fix** | In-tree (may be uncommitted): match publish run by tag, then confirm PyPI JSON for that version. |
 
 ### Issue estimates (scan)
