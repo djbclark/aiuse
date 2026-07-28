@@ -48,6 +48,19 @@ def test_rewrite_project_version(tmp_path: Path, release):
     assert 'version = "9.9.9"' in (tmp_path / "uv.lock").read_text(encoding="utf-8")
 
 
+def test_rewrite_homebrew_formula(tmp_path: Path, release):
+    formula = tmp_path / "aiuse.rb"
+    formula.write_text(
+        'url "https://github.com/djbclark/aiuse/archive/refs/tags/v1.0.0.tar.gz"\n'
+        'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n',
+        encoding="utf-8",
+    )
+    release._rewrite_homebrew_formula(formula, "2.3.4", "b" * 64)
+    text = formula.read_text(encoding="utf-8")
+    assert "v2.3.4.tar.gz" in text
+    assert ("b" * 64) in text
+
+
 def test_find_publish_run_matches_tag(monkeypatch, release):
     import json
 
