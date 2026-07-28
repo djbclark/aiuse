@@ -12,7 +12,7 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-07-28):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
-**34** done. Product issues **#2–#9** done. Packaging **2.1.18**
+**34** done. Product issues **#2–#9** done. Packaging **2.1.19**
 (PyPI/GitHub/Homebrew) includes **`aiuse trust`** (caut stable codesign +
 CodexBar#679 cache ACL repair) and release wait-race fix. Five collectors; prepaid/`n/a` band; hourly
 LaunchAgent; history learning `auto`. Normal CLI **always live-collects**
