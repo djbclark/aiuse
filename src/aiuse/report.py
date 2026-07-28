@@ -248,14 +248,16 @@ _BAND_TAG = {
 def alert_priority_band(alert: UseOrLoseAlert) -> int:
     """Display tag; sort uses band lane + ``alert_use_urgency`` within the lane."""
     rem = alert.remaining_percent
-    if alert.urgency == Urgency.NONE:
-        return _BAND_MID
     # Prepaid API balances never expire — inventory only, never empty/use tags.
     if alert.kind == "prepaid":
         return _BAND_NA
-    if alert.kind == "conserve" and rem <= 1.0:
+    # No capacity is always empty, regardless of an analysis urgency that may
+    # be absent or stale. Prepaid was handled above because it is inventory.
+    if rem <= 0.0:
         return _BAND_EMPTY
-    if rem <= 0.0 and alert.kind != "burn":
+    if alert.urgency == Urgency.NONE:
+        return _BAND_MID
+    if alert.kind == "conserve" and rem <= 1.0:
         return _BAND_EMPTY
     if alert.kind == "conserve":
         return _BAND_CONSERVE
@@ -313,6 +315,19 @@ def _window_use_urgency(window: QuotaWindow) -> float:
     days_clamped = min(max(float(days) if days is not None else 30.0, 0.0), 60.0)
     soon = max(0.0, 1.0 - days_clamped / 14.0)
     return 42.0 + rem * 0.15 + soon * 12.0
+
+
+def _unalerted_window_band(window: QuotaWindow | None) -> tuple[int, int]:
+    """Band/lane for a live window that analysis did not turn into an alert.
+
+    The full remaining-capacity range is deliberately simple here: only zero
+    (or a malformed negative value) is empty; positive capacity remains an
+    on-pace ``mid`` row unless pace analysis emitted a conserve/burn alert.
+    """
+    remaining = window.remaining() if window is not None else None
+    if remaining is not None and remaining <= 0.0:
+        return _BAND_EMPTY, _LANE_EMPTY
+    return _BAND_MID, _LANE_ACTIVE
 
 
 def _account_use_urgency(account: AccountUsage) -> float:
@@ -516,8 +531,7 @@ def render_priority_ladder(
             if cov in covered:
                 continue
             window = _pick_representative_window(pool) if pool else None
-            band = _BAND_MID
-            lane = _LANE_ACTIVE
+            band, lane = _unalerted_window_band(window)
             urgency = _window_use_urgency(window) if window is not None else _account_use_urgency(account)
             entries.append(
                 (
@@ -542,6 +556,11 @@ def render_priority_ladder(
 def _priority_tag(s: _Style, band: int) -> str:
     tag, color_name = _BAND_TAG[band]
     return getattr(s, color_name)(s.bold(tag))
+
+
+def _format_remaining_percent(remaining: float) -> str:
+    """Keep a positive fractional remainder distinct from an empty 0%."""
+    return "<1%" if 0.0 < remaining < 1.0 else f"{remaining:.0f}%"
 
 
 def _forecast_fragment(alert: UseOrLoseAlert, *, compact: bool = True) -> str:
@@ -586,7 +605,8 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     verb = "pace" if alert.kind == "conserve" else "use"
     # Forecast before the deadline phrase so width-clamp keeps the useful bit.
     forecast = _forecast_fragment(alert, compact=True)
-    body = f"{name} · {who} · {alert.window_label}: {alert.remaining_percent:.0f}% left{forecast} · {verb} {when}"
+    remaining = _format_remaining_percent(alert.remaining_percent)
+    body = f"{name} · {who} · {alert.window_label}: {remaining} left{forecast} · {verb} {when}"
     return f"{_priority_tag(s, band)} {body}"
 
 
@@ -621,7 +641,7 @@ def _priority_account_line(
     if window is not None:
         rem = window.remaining() or 0.0
         when = _human_deadline(window.days_until_reset())
-        body = f"{name} · {who} · {window.label}: {rem:.0f}% left · ok {when}"
+        body = f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · ok {when}"
     elif account.balance_usd is not None:
         body = f"{name} · {who} · balance ${account.balance_usd:.2f}"
     elif account.credits_remaining is not None:

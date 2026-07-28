@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from aiuse.models import (
     AccountUsage,
+    BillingKind,
     CrossCheck,
     FlexibilityClass,
     FlexibilityProfile,
     PaceProfile,
+    QuotaWindow,
     Snapshot,
     Urgency,
     UseOrLoseAlert,
@@ -21,6 +25,7 @@ from aiuse.report import (
     _strip_ansi,
     _Style,
     _throttled_waste_line,
+    render_priority_ladder,
     render_report,
     render_status_line,
 )
@@ -55,6 +60,47 @@ def test_ladder_includes_waste_forecast_fragment():
     text = render_priority_ladder([alert], color=False)
     assert "waste" in text
     assert "70" in text
+
+
+@pytest.mark.parametrize(
+    ("remaining", "expected_band"),
+    [
+        (0.0, "empty"),
+        (0.01, "mid"),
+        (1.0, "mid"),
+        (50.0, "mid"),
+        (100.0, "mid"),
+    ],
+)
+def test_ladder_classifies_every_unalerted_remaining_capacity_band(remaining: float, expected_band: str):
+    """Unalerted subscription windows are empty only when capacity is gone."""
+    snapshot = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="grok",
+                account="djbclark@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Grok usage limit",
+                        used_percent=100.0 - remaining,
+                        remaining_percent=remaining,
+                        resets_at=utcnow() + timedelta(days=1),
+                    )
+                ],
+            )
+        ],
+    )
+
+    text = render_priority_ladder([], snapshot=snapshot, color=False)
+
+    assert text.split()[0] == expected_band
+    assert "Grok · djbclark@gmail.com · Grok usage limit:" in text
+    expected_remaining = "<1%" if 0.0 < remaining < 1.0 else f"{remaining:.0f}%"
+    assert f"{expected_remaining} left" in text
+    assert "· ok within" in text
 
 
 def test_ladder_includes_lockout_forecast_for_conserve():
