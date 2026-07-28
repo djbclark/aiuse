@@ -276,64 +276,78 @@ def _build_and_release(
         os.unlink(notes_path)
 
 
+def _pypi_has_version(version: str) -> bool:
+    url = f"https://pypi.org/pypi/aiuse/{version}/json"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310 — fixed PyPI URL
+            return resp.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _find_publish_run(version: str) -> dict[str, object] | None:
+    """Return the publish.yml run for tag ``v{version}``, if listed yet."""
+    import json
+
+    tag = f"v{version}"
+    runs = _run(
+        [
+            "gh",
+            "run",
+            "list",
+            "--workflow=publish.yml",
+            "-L",
+            "20",
+            "--json",
+            "databaseId,status,conclusion,headBranch,displayTitle,event",
+        ],
+        capture=True,
+        check=False,
+    )
+    if runs.returncode != 0 or not (runs.stdout or "").strip():
+        return None
+    for run in json.loads(runs.stdout):
+        if run.get("headBranch") == tag:
+            return run
+        title = str(run.get("displayTitle") or "")
+        if version in title and tag in title:
+            return run
+    return None
+
+
 def _wait_for_pypi(version: str, *, timeout_s: int, dry_run: bool) -> None:
     if dry_run:
         _log(f"[dry-run] wait for PyPI aiuse=={version}")
         return
-    _log("waiting for publish.yml / PyPI…")
-    # Prefer watching the Actions run; fall back to PyPI JSON.
+    _log(f"waiting for publish.yml / PyPI for {version}…")
+    # Must match this version's tag run — never accept a prior release's success.
     deadline = time.time() + timeout_s
+    watched: str | None = None
     while time.time() < deadline:
-        runs = _run(
-            [
-                "gh",
-                "run",
-                "list",
-                "--workflow=publish.yml",
-                "-L",
-                "1",
-                "--json",
-                "databaseId,status,conclusion,headBranch",
-            ],
-            capture=True,
-            check=False,
-        )
-        if runs.returncode == 0 and runs.stdout.strip():
-            import json
+        if _pypi_has_version(version):
+            _log(f"PyPI has aiuse {version}")
+            return
 
-            items = json.loads(runs.stdout)
-            if items:
-                run = items[0]
-                rid = str(run["databaseId"])
-                status = run.get("status")
-                conclusion = run.get("conclusion")
-                _log(f"publish run {rid}: status={status} conclusion={conclusion}")
-                if status == "completed":
-                    if conclusion != "success":
-                        raise ReleaseError(f"publish.yml failed: {conclusion}")
-                    break
+        run = _find_publish_run(version)
+        if run is not None:
+            rid = str(run["databaseId"])
+            status = run.get("status")
+            conclusion = run.get("conclusion")
+            _log(f"publish run {rid} (v{version}): status={status} conclusion={conclusion}")
+            if status == "completed":
+                if conclusion != "success":
+                    raise ReleaseError(f"publish.yml failed for v{version}: {conclusion}")
+                # Workflow green — keep polling PyPI until the file is visible.
+            elif rid != watched:
+                watched = rid
                 _run(["gh", "run", "watch", rid, "--exit-status"], check=False)
                 continue
-        # Poll PyPI
-        url = f"https://pypi.org/pypi/aiuse/{version}/json"
-        try:
-            with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310 — fixed PyPI URL
-                if resp.status == 200:
-                    _log(f"PyPI has aiuse {version}")
-                    return
-        except Exception:  # noqa: BLE001
-            pass
         time.sleep(5)
-    else:
-        # Final PyPI check
-        url = f"https://pypi.org/pypi/aiuse/{version}/json"
-        try:
-            with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310
-                if resp.status == 200:
-                    _log(f"PyPI has aiuse {version}")
-                    return
-        except Exception as exc:  # noqa: BLE001
-            raise ReleaseError(f"timed out waiting for PyPI {version}: {exc}") from exc
+
+    if _pypi_has_version(version):
+        _log(f"PyPI has aiuse {version}")
+        return
+    raise ReleaseError(f"timed out waiting for PyPI aiuse=={version}")
 
 
 def _tarball_sha256(version: str, *, dry_run: bool) -> str:
