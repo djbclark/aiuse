@@ -102,6 +102,9 @@ def collect_codexbar(
         for row in rows:
             if isinstance(row, dict):
                 accounts.append(_from_row(row))
+                zen = _opencode_zen_from_row(row)
+                if zen is not None:
+                    accounts.append(zen)
 
     if not accounts and errors:
         raise CollectorError("; ".join(errors))
@@ -316,8 +319,9 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         if total is not None and used is not None:
             notes.append(f"OpenRouter prepaid credits: ${total:.2f} funded, ${used:.2f} spent.")
 
-    # CodexBar stores OpenCode Zen (overage) balance in providerCost.used with
-    # period "Zen balance" and limit 0 — not a subscription window.
+    # CodexBar stores OpenCode Zen (a separate prepaid service) in
+    # providerCost.used with period "Zen balance" and limit 0.  It is emitted
+    # as its own AccountUsage by `_opencode_zen_from_row`, not attached to Go.
     # Cursor (and similar) put on-demand $used/$limit in providerCost with a
     # real limit (period e.g. "Monthly").
     usage_credits: UsageCredits | None = None
@@ -326,9 +330,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         period = str(provider_cost.get("period") or "")
         zen = _f(provider_cost.get("used"))
         if zen is not None and "zen" in period.lower():
-            notes.append(f"OpenCode Zen balance: ${zen:.2f}.")
-            if balance_usd is None:
-                balance_usd = zen
+            pass
         else:
             cost_used = _f(provider_cost.get("used"))
             cost_limit = _f(provider_cost.get("limit"))
@@ -381,6 +383,29 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         usage_credits=usage_credits,
         notes=notes,
         raw=row,
+    )
+
+
+def _opencode_zen_from_row(row: dict[str, Any]) -> AccountUsage | None:
+    """Extract OpenCode Zen as its own prepaid service, separate from Go."""
+    if str(row.get("provider") or "").lower() != "opencodego":
+        return None
+    usage_value = row.get("usage")
+    usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
+    cost_value = usage.get("providerCost")
+    cost: dict[str, Any] = cost_value if isinstance(cost_value, dict) else {}
+    period = str(cost.get("period") or "")
+    balance = _f(cost.get("used"))
+    if balance is None or "zen" not in period.lower():
+        return None
+    source_tag = str(row.get("source") or "auto")
+    return AccountUsage(
+        source="codexbar",
+        provider="opencode-zen",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=balance,
+        notes=[f"Live data fetched by CodexBar via {source_tag}.", f"OpenCode Zen balance: ${balance:.2f}."],
+        raw={"provider": "opencode-zen", "source_row": row},
     )
 
 

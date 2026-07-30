@@ -413,7 +413,7 @@ def test_opencodego_prefers_web_source(monkeypatch):
 
     monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
 
-    from aiuse.collectors.codexbar import _from_row, _query_provider
+    from aiuse.collectors.codexbar import _from_row, _opencode_zen_from_row, _query_provider
 
     outcome = _query_provider("opencodego")
     assert isinstance(outcome, list)
@@ -424,8 +424,12 @@ def test_opencodego_prefers_web_source(monkeypatch):
     account = _from_row(outcome[0])
     monthly = next(w for w in account.windows if "monthly" in w.label.lower())
     assert monthly.remaining_percent == 0.0
-    assert any("Zen balance" in note for note in account.notes)
-    assert account.balance_usd == 1.25
+    assert account.balance_usd is None
+    zen = _opencode_zen_from_row(outcome[0])
+    assert zen is not None
+    assert zen.provider == "opencode-zen"
+    assert zen.billing_kind == BillingKind.PREPAID_BALANCE
+    assert zen.balance_usd == 1.25
 
 
 def test_opencodego_falls_back_to_auto_when_web_errors(monkeypatch):

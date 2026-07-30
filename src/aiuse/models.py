@@ -55,6 +55,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "copilot": "GitHub Copilot",
     "grok": "Grok",
     "opencode-go": "OpenCode Go",
+    "opencode-zen": "OpenCode Zen",
 }
 
 # Map canonical collector provider keys to config plan/override keys.

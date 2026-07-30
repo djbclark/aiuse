@@ -122,6 +122,48 @@ def test_ladder_classifies_every_unalerted_remaining_capacity_band(remaining: fl
     assert "· ok within" in text
 
 
+def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
+    snapshot = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="opencode-go",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[QuotaWindow(label="OpenCode Go monthly quota", used_percent=100, remaining_percent=0)],
+            ),
+            AccountUsage(
+                source="codexbar",
+                provider="opencode-zen",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=-0.04,
+            ),
+        ],
+    )
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="opencode-go",
+        account=None,
+        window_label="OpenCode Go monthly quota",
+        remaining_percent=0,
+        days_until_reset=1,
+        plan="OpenCode Go",
+        message="conserve",
+        source="codexbar",
+        score=100,
+        kind="conserve",
+    )
+
+    text = render_priority_ladder([alert], snapshot=snapshot, color=False)
+
+    lines = text.splitlines()
+    assert any(line.startswith("empty") and "OpenCode Go" in line for line in lines)
+    zen_line = next(line for line in lines if "OpenCode Zen" in line)
+    assert zen_line.startswith("n/a")
+    assert "balance $-0.04" in zen_line
+    assert "no expiry" in zen_line
+
+
 def test_ladder_includes_lockout_forecast_for_conserve():
     from aiuse.report import render_priority_ladder
 
