@@ -12,21 +12,22 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-07-30):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **2.1.28**
-(PyPI/GitHub/Homebrew) includes **`aiuse trust`** (caut stable codesign +
-CodexBar#679 cache ACL repair) and release wait-race fix. Five collectors; prepaid/`n/a` band; hourly
-LaunchAgent; history learning `auto`. Normal CLI **always live-collects**
-(hourly snapshots densify History only). README's first-impression section
-rewritten with a colored real-output demo
-([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py)); TUI display
-gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory numbered step.**
-Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
+done. Product issues **#1–#9** done. Packaging **3.0.0**
+(PyPI/GitHub/Homebrew) — the **first advertised release** (PyPI trove
+classifier moved to Production/Stable) — includes **`aiuse trust`** (caut
+stable codesign + CodexBar#679 cache ACL repair) and release wait-race fix.
+Five collectors; prepaid/`n/a` band; hourly LaunchAgent; history learning
+`auto`. Normal CLI **always live-collects** (hourly snapshots densify History
+only). README's first-impression section rewritten with a colored
+real-output demo ([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py));
+TUI display gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory
+numbered step.** Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 
 1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
 2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
    (announce → densify history; optional #11–#15 only if pain).
-3. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
+3. **Operator-only:** announce 3.0.0 via [#10](https://github.com/djbclark/aiuse/issues/10)
    when ready; leave hourly agent collecting; optional OpenUsage CLI install.
 4. **Optional polish (not default):** [#11](https://github.com/djbclark/aiuse/issues/11)
    MCP · [#13](https://github.com/djbclark/aiuse/issues/13) History ·
