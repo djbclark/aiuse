@@ -119,5 +119,41 @@ def test_openusage_sh_uses_only_explicit_quota_metrics(monkeypatch):
     assert len(accounts) == 1
     assert accounts[0].source == "openusage_sh"
     assert accounts[0].provider == "codex"
-    assert [window.label for window in accounts[0].windows] == ["7d"]
+    assert [window.label for window in accounts[0].windows] == ["weekly"]
     assert accounts[0].windows[0].remaining() == 75.0
+
+
+def test_openusage_sh_deduplicates_identical_windows_and_labels_cursor_metrics(monkeypatch):
+    monkeypatch.setattr(
+        "aiuse.collectors.openusage_sh.run_json",
+        lambda *_args, **_kwargs: {
+            "snapshots": [
+                {
+                    "provider_id": "codex",
+                    "account_id": "codex-cli",
+                    "status": "OK",
+                    "resets": {"rate_limit_primary": "2026-08-01T00:00:00Z"},
+                    "metrics": {
+                        "rate_limit_primary": {"unit": "%", "window": "7d", "remaining": 50, "used": 50},
+                        "plan_percent_used": {"unit": "%", "window": "7d", "remaining": 50, "used": 50},
+                    },
+                },
+                {
+                    "provider_id": "cursor",
+                    "account_id": "cursor-ide",
+                    "status": "OK",
+                    "metrics": {
+                        "plan_percent_used": {"unit": "%", "window": "billing-cycle", "remaining": 80},
+                        "plan_auto_percent_used": {"unit": "%", "window": "billing-cycle", "remaining": 70},
+                        "plan_api_percent_used": {"unit": "%", "window": "billing-cycle", "remaining": 60},
+                    },
+                },
+            ]
+        },
+    )
+
+    accounts = collect_openusage_sh()
+
+    codex, cursor = accounts
+    assert [(window.label, window.remaining()) for window in codex.windows] == [("weekly", 50.0)]
+    assert [window.label for window in cursor.windows] == ["Cursor Included", "Cursor Auto", "Cursor API"]

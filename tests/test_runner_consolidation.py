@@ -83,6 +83,17 @@ def test_cross_check_warns_when_percentages_disagree():
     assert "percentage points" in warn.message
 
 
+def test_7d_window_label_matches_weekly_window():
+    codexbar = _account("codexbar", "codex")
+    codexbar.windows[0].label = "Codex weekly quota"
+    openusage = _account("openusage_sh", "codex")
+    openusage.windows[0].label = "weekly"
+
+    _accounts, checks = _select_and_cross_check([codexbar, openusage], cswap_authoritative=True)
+
+    assert any(check.status == "consistent" for check in checks)
+
+
 def test_multi_source_prefers_codexbar_and_cross_checks_all_peers():
     """caut + openusage + tokscale peers cross-check; only codexbar is selected."""
     codexbar = _account("codexbar", "codex")

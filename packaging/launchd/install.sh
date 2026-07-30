@@ -71,6 +71,7 @@ fi
 # Render plist from template.
 sed \
   -e "s|AIUSE_BIN|${AIUSE_BIN}|g" \
+  -e "s|USER_LOCAL_BIN|${HOME}/.local/bin|g" \
   -e "s|LOG_DIR|${LOG_DIR}|g" \
   "${TEMPLATE}" >"${DEST}"
 chmod 644 "${DEST}"

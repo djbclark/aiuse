@@ -7,7 +7,8 @@
 #   cswap      — multi-account Claude (uv tool: claude-swap)
 #   codexbar   — multi-provider quotas (Homebrew cask CodexBar)
 #   caut       — multi-provider CLI peer (cargo install from GitHub)
-#   openusage  — menu bar + loopback :6736 (Homebrew cask OpenUsage)
+#   openusage  — OpenUsage.ai menu bar + loopback :6736 (Homebrew cask)
+#   openusage-sh — OpenUsage.sh terminal dashboard (separate Homebrew formula)
 #   tokscale   — independent quota JSON (npx tokscale wrapper on PATH)
 #
 # Preferred on this operator's Macs (also installs caut + OpenUsage):
@@ -149,6 +150,56 @@ install_openusage() {
   return 1
 }
 
+install_openusage_sh() {
+  local wrapper="${HOME}/.local/bin/openusage-sh"
+  local formula="janekbaraniewski/tap/openusage"
+  local binary=""
+  if have openusage-sh; then
+    ok "openusage-sh → $(command -v openusage-sh)"
+    return 0
+  fi
+  if ! have brew; then
+    if (( CHECK_ONLY )); then
+      miss "openusage-sh (brew install ${formula})"
+      return 1
+    fi
+    echo "error: Homebrew required for OpenUsage.sh" >&2
+    return 1
+  fi
+  binary="$(brew --prefix "${formula}" 2>/dev/null || true)/bin/openusage"
+  if [[ ! -x "${binary}" ]]; then
+    if (( CHECK_ONLY )); then
+      miss "openusage-sh wrapper (brew install ${formula})"
+      return 1
+    fi
+    brew tap janekbaraniewski/tap
+    brew install "${formula}"
+    binary="$(brew --prefix "${formula}")/bin/openusage"
+  fi
+  if (( CHECK_ONLY )); then
+    miss "openusage-sh wrapper (${wrapper})"
+    return 1
+  fi
+  if [[ ! -x "${binary}" ]]; then
+    miss "OpenUsage.sh formula binary"
+    return 1
+  fi
+  # The formula remains unlinked when OpenUsage.ai owns `openusage` on PATH.
+  # Keep both products available through this distinct wrapper.
+  cat >"${wrapper}" <<EOF
+#!/usr/bin/env sh
+# aiuse OpenUsage.sh wrapper; distinct from OpenUsage.ai's `openusage` CLI.
+exec "${binary}" "\$@"
+EOF
+  chmod 0755 "${wrapper}"
+  if have openusage-sh; then
+    ok "openusage-sh → $(command -v openusage-sh)"
+    return 0
+  fi
+  miss "openusage-sh wrapper"
+  return 1
+}
+
 install_tokscale() {
   if have tokscale; then
     ok "tokscale → $(command -v tokscale)"
@@ -176,6 +227,7 @@ main() {
   install_codexbar || failed=1
   install_caut || failed=1
   install_openusage || failed=1
+  install_openusage_sh || failed=1
   install_tokscale || failed=1
   echo
   if (( failed )); then
@@ -186,7 +238,7 @@ main() {
     fi
     exit 1
   fi
-  echo "All data-source tools present (or OpenUsage.app ready)."
+  echo "All data-source tools present (or OpenUsage.ai app ready)."
   echo "Verify: aiuse doctor"
 }
 

@@ -3,15 +3,16 @@
 Audit of how `aiuse` shells out to external data sources (post 45s default timeout
 policy). No code change required from this write-up unless noted.
 
-## Data sources (all five)
+## Data sources (all six)
 
-| Collector     | Interface                                                | Role                                      |
-| ------------- | -------------------------------------------------------- | ----------------------------------------- |
-| **cswap**     | `cswap list --json`                                      | Multi-account Claude (canonical)          |
-| **CodexBar**  | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)  |
-| **caut**      | `caut usage --json`                                      | Independent multi-provider peer / fill-in |
-| **OpenUsage** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in                |
-| **tokscale**  | `tokscale usage --json`                                  | Independent peer; preferred for Copilot   |
+| Collector        | Interface                                                | Role                                       |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------ |
+| **cswap**        | `cswap list --json`                                      | Multi-account Claude (canonical)           |
+| **CodexBar**     | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)   |
+| **caut**         | `caut usage --json`                                      | Independent multi-provider peer / fill-in  |
+| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in                 |
+| **OpenUsage.sh** | `openusage-sh export --output - --format json`           | Independent local telemetry / quota backup |
+| **tokscale**     | `tokscale usage --json`                                  | Independent peer; preferred for Copilot    |
 
 Install all of them: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
 or site `just install-aiuse-deps`.
@@ -20,11 +21,12 @@ or site `just install-aiuse-deps`.
 
 ```
 aiuse main
- └─ run_collectors (ThreadPoolExecutor, max_workers = N enabled collectors ≤ 5)
+ └─ run_collectors (ThreadPoolExecutor, max_workers = N enabled collectors ≤ 6)
      ├─ collect_cswap        → one `cswap list --json` (timeout: cswap)
      ├─ collect_codexbar     → discovery + concurrent per-provider queries
      ├─ collect_caut         → `caut usage --provider all --json` (timeout: caut)
-     ├─ collect_openusage    → CLI and/or loopback HTTP (timeout: openusage)
+     ├─ collect_openusage_ai → CLI and/or loopback HTTP (timeout: openusage_ai)
+     ├─ collect_openusage_sh → versioned CLI export (timeout: openusage_sh)
      └─ collect_tokscale     → one `tokscale usage --json` (timeout: tokscale)
 ```
 
@@ -33,12 +35,12 @@ collectors are healthy.
 
 ## Defaults
 
-| Knob                   | Default               | Where                                                                      |
-| ---------------------- | --------------------- | -------------------------------------------------------------------------- |
-| `timeouts.default`     | **45s**               | `config.toml` / built-in                                                   |
-| Per-tool keys          | inherit default       | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage`, `tokscale` |
-| CLI `-t` / `--timeout` | sets `timeouts.force` | wins over every tool for that run                                          |
-| Doctor version probe   | **5s** hard cap       | does not use usage endpoints                                               |
+| Knob                   | Default               | Where                                                                                         |
+| ---------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
+| `timeouts.default`     | **45s**               | `config.toml` / built-in                                                                      |
+| Per-tool keys          | inherit default       | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage_ai`, `openusage_sh`, `tokscale` |
+| CLI `-t` / `--timeout` | sets `timeouts.force` | wins over every tool for that run                                                             |
+| Doctor version probe   | **5s** hard cap       | does not use usage endpoints                                                                  |
 
 Tools either return in tens of seconds or hang; long budgets only delay failure
 (see fix-plan history: 180s → 45s).

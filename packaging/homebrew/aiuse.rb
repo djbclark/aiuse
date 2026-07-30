@@ -20,7 +20,7 @@ class Aiuse < Formula
   def caveats
     <<~EOS
       Data sources (install via packaging/install-deps.sh): cswap, codexbar,
-      caut, OpenUsage (app and/or CLI), tokscale. Config: ~/.config/aiuse/.
+      caut, OpenUsage.ai (app/CLI), OpenUsage.sh, tokscale. Config: ~/.config/aiuse/.
     EOS
   end
 

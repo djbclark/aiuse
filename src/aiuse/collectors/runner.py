@@ -714,9 +714,9 @@ def _window_kind_hint(window: QuotaWindow) -> str | None:
             return "monthly"
     if "5-hour" in label or "5h" in label or "session" in label:
         return "5h"
-    if "week" in label:
+    if "week" in label or label in {"7d", "7-day", "7 day"}:
         return "weekly"
-    if "month" in label or "included" in label:
+    if "month" in label or "included" in label or "billing-cycle" in label:
         return "monthly"
     return None
 

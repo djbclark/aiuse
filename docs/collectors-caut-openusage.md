@@ -1,7 +1,9 @@
 # caut + OpenUsage.ai / OpenUsage.sh collectors
 
 **Date:** 2026-07-25  
-**Status:** Enabled by default for multi-source cross-checks (correctness over speed).
+**Status:** All collectors are enabled by default for multi-source cross-checks
+(correctness over speed), including tools installed later. Disable an
+inappropriate source explicitly in `config.toml`.
 
 ## Why
 
@@ -19,7 +21,8 @@ others → CodexBar first). **All live sources are pair-wise cross-checked.**
 
 ## Machine install
 
-**All five aiuse data sources** (cswap, CodexBar, caut, OpenUsage, tokscale):
+**All six aiuse data sources** (cswap, CodexBar, caut, OpenUsage.ai,
+OpenUsage.sh, tokscale):
 
 ```bash
 # From an aiuse checkout:
@@ -96,7 +99,9 @@ loopback up?” without treating a 404 on `/` as collector death when the payloa
 path still returns 200. Other collectors accept the same keys when they expose
 HTTP; PATH-only tools ignore them.
 
-OpenUsage.sh is installed separately without shadowing the app CLI:
+OpenUsage.sh is installed separately without shadowing the app CLI. The normal
+`install-deps.sh` helper performs these steps and creates the `openusage-sh`
+wrapper; they are shown here for a manual install:
 
 ```bash
 brew tap janekbaraniewski/tap
@@ -108,16 +113,17 @@ brew unlink openusage
 
 `aiuse` invokes `openusage-sh export --output - --format json`; it accepts only
 explicit rate-limit and plan-percent metrics as quota windows, never local
-token/cost estimates. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
+token/cost estimates. Identical metric aliases are collapsed, while Cursor's
+Included/Auto/API pools remain distinct. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
 `--no-openusage`), and `--no-openusage-sh`.
 
 ## Selection priority (generalized)
 
-| Provider | Order (first live wins for the ladder)         |
-| -------- | ---------------------------------------------- |
-| Claude   | cswap → CodexBar → caut → OpenUsage → tokscale |
-| Copilot  | tokscale → CodexBar → caut → OpenUsage         |
-| Default  | CodexBar → caut → OpenUsage → tokscale         |
+| Provider | Order (first live wins for the ladder)                           |
+| -------- | ---------------------------------------------------------------- |
+| Claude   | cswap → CodexBar → caut → OpenUsage.ai → tokscale → OpenUsage.sh |
+| Copilot  | tokscale → CodexBar → caut → OpenUsage.ai → OpenUsage.sh         |
+| Default  | CodexBar → caut → OpenUsage.ai → OpenUsage.sh → tokscale         |
 
 Adding another source later: implement `collect_*`, append to `run_collectors`
 jobs, add to `PROVIDER_SOURCE_PRIORITY` / `DEFAULT_SOURCE_PRIORITY` and

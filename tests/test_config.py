@@ -50,6 +50,10 @@ def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path):
     assert default_toml_config_path() == tmp_path / "aiuse" / "config.toml"
 
 
+def test_all_collectors_default_to_enabled_for_future_installation():
+    assert all(entry["enabled"] is True for entry in DEFAULT_CONFIG["collectors"].values())
+
+
 def test_load_config_reads_canonical_toml(monkeypatch, tmp_path):
     config_path = tmp_path / "aiuse" / "config.toml"
     config_path.parent.mkdir()

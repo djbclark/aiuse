@@ -33,9 +33,10 @@ setup: [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md).
 Use **cswap** as the Claude source and **CodexBar** for every other provider.
 Keep CodexBar's Claude source disabled, even as a fallback. **tokscale**,
 OpenUsage.ai, OpenUsage.sh, and other available collectors are useful independent backup and
-cross-check sources. Leave **caut** disabled, and do not enable CodexBar's
-Claude integration, until their Keychain-prompting bugs are fixed; repeated
-macOS Keychain prompts make both unsuitable for normal unattended collection.
+cross-check sources. All collectors are enabled by default, whether installed
+now or prepared for later; disable any source in `config.toml` when it is not
+appropriate for your machine. On macOS, consider disabling **caut** and
+CodexBar's Claude integration if their Keychain-prompting bugs affect you.
 
 ## Install
 
@@ -117,7 +118,7 @@ matched safely. Explicit mappings take precedence over automatic normalization.
 aiuse --generate-config
 aiuse doctor                 # PATH tools + config presence + timeouts
 # Once per machine: install the data-source tools you intend to use
-# (normally cswap, codexbar, tokscale, and optionally OpenUsage on macOS)
+# (normally cswap, CodexBar, tokscale, and either or both distinct OpenUsage tools)
 ./packaging/install-deps.sh
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
 # macOS: Keychain trust helpers (see docs/macos-keychain-trust.md)
@@ -226,7 +227,7 @@ aiuse --doctor
 | **2** | Collect succeeded and at least one **burn** or **conserve** alert is present. Cross-check disagreements alone do **not** set 2. Bad `--timeout` values also use 2.                                                                 |
 
 `aiuse doctor` checks config file presence, **config validation** (unknown keys, bad
-timeouts, dead plan aliases), all five data-source tools on `PATH` (and OpenUsage
+timeouts, dead plan aliases), all six data-source tools on `PATH` (and OpenUsage.ai
 loopback HTTP when the CLI is missing), and a light **version probe**
 (`cswap --version`, `codexbar -V`, `caut --version`, `tokscale --version`). It does
 **not** call usage APIs or verify login sessions.
@@ -237,7 +238,7 @@ Most **subscription** coding plans (Claude Pro/Max, ChatGPT Plus/Codex, Cursor, 
 
 This tool:
 
-1. Pulls **remaining %** and **reset times** from **cswap** (Claude multi-account), **CodexBar** (broad live quotas), **caut** and **OpenUsage** (cross-check peers / fill-in), and **tokscale** (independent measurement; preferred for Copilot).
+1. Pulls **remaining %** and **reset times** from **cswap** (Claude multi-account), **CodexBar** (broad live quotas), **caut**, **OpenUsage.ai**, **OpenUsage.sh** (cross-check peers / fill-in), and **tokscale** (independent measurement; preferred for Copilot).
 2. Scores windows with **pace-based** logic (default): compare how far through the cycle you are vs how much you've used, then project waste or early lockout.
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from.
@@ -330,7 +331,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.
-- All enabled collectors (cswap, CodexBar, caut, OpenUsage, tokscale) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s** (`-t` / `config.toml [timeouts]`).
+- All enabled collectors (cswap, CodexBar, caut, OpenUsage.ai, OpenUsage.sh, tokscale) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s** (`-t` / `config.toml [timeouts]`).
 - Per-window detail still shows $ value, flexibility class, and a **pace** ratio when computable.
 - Duplicate live measurements are retained for cross-checking but only one copy drives recommendations.
 - Dollar values use plan `monthly_price` with waking-hours correction (default 16h/day).
@@ -347,7 +348,7 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 - [`docs/antigravity-pools.md`](docs/antigravity-pools.md) — Google AI / Antigravity: Gemini vs Claude/GPT are independent pools.
 - [`docs/pretty-display.md`](docs/pretty-display.md) — why pretty output uses Rich (not Textual / not Rich `Layout`) so the full report stays in scrollback.
 - [`docs/packaging.md`](docs/packaging.md) — pipx / PyPI / Homebrew; Trusted Publishing (OIDC) release flow.
-- [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all five data-source tools (cswap, CodexBar, caut, OpenUsage, tokscale).
+- [`packaging/install-deps.sh`](packaging/install-deps.sh) — install all six data-source tools (cswap, CodexBar, caut, OpenUsage.ai, OpenUsage.sh, tokscale).
 - [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md) — caut + OpenUsage setup and cross-check priority.
 - [`docs/macos-keychain-trust.md`](docs/macos-keychain-trust.md) — `aiuse trust`: stable codesign for caut, Keychain Always Allow.
 - [`docs/competitive-landscape.md`](docs/competitive-landscape.md) — monitors vs decision tools (quotabot, onWatch, CodexBar); where `aiuse` is stronger/weaker at “what pool next?” after product issues **#2–#9** (shipped).
