@@ -4,22 +4,22 @@
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **306** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **307** passing
 
-**Package version:** **2.1.19** on GitHub + PyPI + Homebrew tap
+**Package version:** **2.1.20** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
 
 ## Immediate unfinished work (do this first)
 
-1. Operator: announce issue #10 mentions **2.1.19** (do not auto-post).
+1. Operator: announce issue #10 mentions **2.1.20** (do not auto-post).
 
 ## Reopen checklist (operator)
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **2.1.19**.
+   `/opt/homebrew/bin/aiuse --version` → **2.1.20**.
 3. `aiuse doctor` → five collectors green; caut **ok stable-signed**.
 4. `aiuse trust status` → caut Authority + CodexBar Cache account list.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status`
@@ -45,6 +45,7 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 | **2.1.18 release**       | `just release 2.1.18`: **303 passed**; fix commit `2c4694e`; bump `87f8f63`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30376489913](https://github.com/djbclark/aiuse/actions/runs/30376489913) succeeded. Canonical formula commit `61a27a9`; tap commit `be881f0`. `.venv/bin/aiuse doctor` reported all five collectors healthy.                                                                                                                                       |
 | **2.1.19 release**       | `just release 2.1.19`: **304 passed**; release automation commit `76e37d0`; bump `cd7f573`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30377524485](https://github.com/djbclark/aiuse/actions/runs/30377524485) succeeded. Canonical formula commit `fe4e692`; tap commit `041c191`. The workflow refreshed Homebrew, upgraded the explicit formula, checked `/opt/homebrew/opt/aiuse/bin/aiuse --version`, and ran `brew test`; direct verification confirmed **2.1.19**. |
 | **Step 33 / cswap #170** | cswap 0.24.0's official display-grade `lastGoodUsage` is now preferred when decision-grade `usage` is absent. Older cswap versions, absent fields, and malformed additive fields retain the established local-cache fallback. `cswap upgrade` updated this machine to 0.24.0; **306 tests** passed.                                                                                                                                                                                    |
+| **2.1.20 release**       | `just release 2.1.20`: **307 passed**; Step 33 commit `13a9cb1`; release-doc automation `b12aabd`; bump `75dae95`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30539785430](https://github.com/djbclark/aiuse/actions/runs/30539785430) succeeded. Canonical formula commit `a3d3868`; tap commit `c25ff73`. The release script deterministically updated `docs/packaging.md`; Homebrew 2.1.20 and `brew test` both passed.                                                 |
 
 ### Issue estimates (scan)
 
@@ -52,12 +53,12 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 | ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------- |
 | [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained |
 | [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **2.1.19** (operator; **do not auto-post**) |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **2.1.20** (operator; **do not auto-post**) |
 | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                        |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.19
+Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.20
 
-PyPI: https://pypi.org/project/aiuse/2.1.19/
+PyPI: https://pypi.org/project/aiuse/2.1.20/
 
 ## Operator preferences (standing)
 
@@ -71,7 +72,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.19/
 ```bash
 cd ~/src/aiuse
 .venv/bin/python -m pytest -q
-aiuse --version          # expect 2.1.19
+aiuse --version          # expect 2.1.20
 aiuse -q --timeout 15    # terminal echo must remain usable after exit
-just release-dry 2.1.19  # preview only
+just release-dry 2.1.20  # preview only
 ```
