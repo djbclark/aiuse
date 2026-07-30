@@ -16,8 +16,8 @@ CLI command: **`aiuse`** (stub **`ai`** → same entrypoint)
 | Tool                                                                                            | Purpose                                                   | Authority                                                                                                                  |
 | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                        | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source; prefers cswap 0.24 display-grade JSON, with local-cache recovery for older versions |
-| [**CodexBar**](https://github.com/) `codexbar usage --format json`                              | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; Claude fallback if cswap has no live rows                                              |
-| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes)  | Cross-check peer; fill-in when CodexBar missing                                                                            |
+| [**CodexBar**](https://github.com/) `codexbar usage --format json`                              | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; keep its Claude source disabled on macOS until its Keychain prompting is fixed         |
+| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes)  | Cross-check peer, but leave disabled on macOS until its repeated Keychain prompting is fixed                               |
 | [**OpenUsage**](https://www.openusage.ai/) CLI / `127.0.0.1:6736/v1/limits`                     | Menu-bar companion + loopback limits API                  | Cross-check peer; optional CLI install from app Settings                                                                   |
 | [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                  | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                                    |
 
@@ -26,6 +26,15 @@ OpenUsage’s loopback API); it does not scrape billing dashboards itself. For
 Claude multi-account reliability (official display-grade JSON vs legacy cache), see
 [`docs/cswap-reliability.md`](docs/cswap-reliability.md). caut + OpenUsage
 setup: [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md).
+
+### macOS source policy (current)
+
+Use **cswap** as the Claude source and **CodexBar** for every other provider.
+Keep CodexBar's Claude source disabled, even as a fallback. **tokscale**,
+OpenUsage, and other available collectors are useful independent backup and
+cross-check sources. Leave **caut** disabled, and do not enable CodexBar's
+Claude integration, until their Keychain-prompting bugs are fixed; repeated
+macOS Keychain prompts make both unsuitable for normal unattended collection.
 
 ## Install
 
@@ -93,7 +102,8 @@ CodexBar, caut, OpenUsage, and tokscale — these files do not hold tokens or em
 # Once: create defaults under ~/.config/aiuse/ (never overwrites)
 aiuse --generate-config
 aiuse doctor                 # PATH tools + config presence + timeouts
-# Once per machine: install data-source tools (cswap, codexbar, caut, OpenUsage, tokscale)
+# Once per machine: install the data-source tools you intend to use
+# (normally cswap, codexbar, tokscale, and optionally OpenUsage on macOS)
 ./packaging/install-deps.sh
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
 # macOS: Keychain trust helpers (see docs/macos-keychain-trust.md)
