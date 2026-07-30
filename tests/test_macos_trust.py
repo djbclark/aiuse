@@ -338,6 +338,8 @@ def test_fix_codexbar_cache_all_dry_run(monkeypatch, tmp_path):
     cli.write_text("x", encoding="utf-8")
     cli.chmod(0o755)
     monkeypatch.setattr("aiuse.macos_trust.resolve_codexbar_cli", lambda **_k: cli)
+    # Dry-run describes its prospective change without needing a host keychain.
+    monkeypatch.setattr("aiuse.macos_trust.login_keychain_path", lambda: tmp_path / "missing.keychain-db")
     monkeypatch.setattr("aiuse.macos_trust.list_codexbar_cache_accounts", lambda **_k: ["cookie.codex"])
     monkeypatch.setattr("aiuse.macos_trust.codexbar_team_id", lambda **_k: "Y5PE65HELJ")
     fails, lines = fix_codexbar_cache_all(dry_run=True)

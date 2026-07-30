@@ -228,7 +228,7 @@ def list_codexbar_cache_accounts(
         if acct_m:
             last_acct = acct_m.group(1)
             continue
-        if 'com.steipete.codexbar.cache' in line and last_acct is not None:
+        if "com.steipete.codexbar.cache" in line and last_acct is not None:
             accounts.append(last_acct)
             last_acct = None
     return sorted(set(accounts))
@@ -257,11 +257,7 @@ def fix_codexbar_cache_account(
         return False, "CodexBar.app not found under /Applications"
     if cli is None:
         return False, "CodexBarCLI helper not found"
-    kc = keychain or login_keychain_path()
-    if not kc.is_file():
-        return False, f"login keychain not found: {kc}"
     tid = team_id or codexbar_team_id(run_fn=run_fn)
-    runner = run_fn if run_fn is not None else subprocess.run
 
     if dry_run:
         return True, (
@@ -269,6 +265,11 @@ def fix_codexbar_cache_account(
             f"with -T {app} -T {cli} -T /usr/bin/security "
             f"+ partition teamid:{tid}"
         )
+
+    kc = keychain or login_keychain_path()
+    if not kc.is_file():
+        return False, f"login keychain not found: {kc}"
+    runner = run_fn if run_fn is not None else subprocess.run
 
     secret: str | None = None
     try:
