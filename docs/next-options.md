@@ -1,4 +1,4 @@
-# What next (post-2.1.27) and competitive gap difficulty
+# What next (post-2.1.28) and competitive gap difficulty
 
 **Date:** 2026-07-30
 **Status:** Product issues **#1–#9** shipped; fix-plan Steps **1–34** done.
@@ -17,7 +17,7 @@ chat transcript.
 `aiuse` is past “build the product.” Core ranking, five collectors, prepaid
 `n/a`, shared allotment, suggest / status / serve, forecast fragments, History
 learning, health probes, optional local-runtime notes, shared-semantics v0.1,
-and packaging (**2.1.27**) are done.
+and packaging (**2.1.28**) are done.
 
 High-ROI work is **distribution, data density, and input reliability** — not
 cloning menubars, BI dashboards, or request routers.

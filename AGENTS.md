@@ -12,11 +12,14 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-07-30):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **2.1.27**
+done. Product issues **#1–#9** done. Packaging **2.1.28**
 (PyPI/GitHub/Homebrew) includes **`aiuse trust`** (caut stable codesign +
 CodexBar#679 cache ACL repair) and release wait-race fix. Five collectors; prepaid/`n/a` band; hourly
 LaunchAgent; history learning `auto`. Normal CLI **always live-collects**
-(hourly snapshots densify History only). **No mandatory numbered step.**
+(hourly snapshots densify History only). README's first-impression section
+rewritten with a colored real-output demo
+([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py)); TUI display
+gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory numbered step.**
 Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 
