@@ -97,6 +97,8 @@ just release-dry 2.1.16
 8. Sync `~/src/homebrew-aiuse` tap when that clone exists
 9. Refresh Homebrew, upgrade this Mac to the published formula, confirm its
    version, and run `brew test djbclark/aiuse/aiuse`
+10. Upgrade the pipx install that leads the default PATH, then confirm both
+    `aiuse --version` and `ai --version` report the released version
 
 Useful flags: `--notes-file PATH`, `--notes '…'`, `--skip-tests`,
 `--skip-pypi-wait`, `--skip-homebrew`, `--allow-dirty`,

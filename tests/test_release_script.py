@@ -131,3 +131,24 @@ def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release):
         ["/opt/homebrew/opt/aiuse/bin/aiuse", "--version"],
         ["brew", "test", "djbclark/aiuse/aiuse"],
     ]
+
+
+def test_upgrade_and_verify_default_path_uses_pipx(monkeypatch, release):
+    calls: list[tuple[list[str], dict]] = []
+
+    def fake_run(argv, **kwargs):
+        from subprocess import CompletedProcess
+
+        calls.append((argv, kwargs))
+        stdout = "aiuse 2.1.21\n" if argv[-1:] == ["--version"] else ""
+        return CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(release, "_run", fake_run)
+
+    release._upgrade_and_verify_default_path("2.1.21", dry_run=False)
+
+    assert [argv for argv, _kwargs in calls] == [
+        ["pipx", "upgrade", "aiuse"],
+        ["aiuse", "--version"],
+        ["ai", "--version"],
+    ]

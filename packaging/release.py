@@ -429,6 +429,15 @@ def _upgrade_and_test_homebrew(version: str, *, dry_run: bool) -> None:
     _run(["brew", "test", formula], dry_run=dry_run)
 
 
+def _upgrade_and_verify_default_path(version: str, *, dry_run: bool) -> None:
+    """Upgrade the pipx copy that shadows Homebrew and verify normal commands."""
+    _run(["pipx", "upgrade", "aiuse"], dry_run=dry_run)
+    for command in ("aiuse", "ai"):
+        output = _run([command, "--version"], capture=True, dry_run=dry_run)
+        if not dry_run and f"aiuse {version}" not in (output.stdout or ""):
+            raise ReleaseError(f"default-PATH {command} is not aiuse {version}: {(output.stdout or '').strip()}")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("version", help="New version, e.g. 2.1.16 (no leading v)")
@@ -500,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
         _update_homebrew_formula(version, sha, dry_run=dry)
         _sync_tap(version, tap_path=args.tap_path, dry_run=dry)
         _upgrade_and_test_homebrew(version, dry_run=dry)
+    _upgrade_and_verify_default_path(version, dry_run=dry)
 
     _log(f"done: aiuse {version} ({tag})")
     _log(f"  release: https://github.com/djbclark/aiuse/releases/tag/{tag}")
