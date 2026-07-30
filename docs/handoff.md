@@ -4,16 +4,19 @@
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **313** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **325** passing
 
-**Package version:** **2.1.25** on GitHub + PyPI + Homebrew tap
+**Package version:** **2.1.26** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
 
 ## Immediate unfinished work (do this first)
 
-1. Operator: announce issue #10 mentions **2.1.25** (do not auto-post).
+1. Operator: announce issue #10 mentions **2.1.26** (do not auto-post).
+2. OpenCode Go is currently at 0%; its OpenUsage.sh telemetry integration is
+   installed but has not been completion-tested. Recheck only after quota is
+   available; do not spend a request merely to test telemetry.
 
 ## Reopen checklist (operator)
 
@@ -51,6 +54,7 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 | **TOML config / 2.1.24**   | `config.toml` is now the single default user config; its sparse example focuses on overrides. Legacy `services.yaml` remains readable only on its own; coexistence is a migration error that instructs users to remove the YAML. Local configuration was migrated to a concise TOML and the YAML removed. `just release 2.1.24`: **313 passed**; bump `8f55887`; PyPI OIDC [30544120256](https://github.com/djbclark/aiuse/actions/runs/30544120256) succeeded; canonical formula `dd7146d`; tap `6dfd130`; Homebrew 2.1.24 and `brew test` passed; default-PATH `aiuse` and `ai` both report **2.1.24**.                                           |
 | **Site-agent TOML safety** | [site-djbclark PR #48](https://github.com/djbclark/site-djbclark/pull/48) now seeds TOML only for a fresh install, leaves a YAML-only legacy config untouched, and fails before mutation if both files exist. A dry-run confirmed this machine's TOML-only config and aiuse plist are unchanged. The scheduled command's exit 2 is a normal use-or-lose alert, not a LaunchAgent failure.                                                                                                                                                                                                                                                           |
 | **2.1.25 release**         | `just release 2.1.25`: **313 passed**; bump `c726f85`; PyPI OIDC [30545248675](https://github.com/djbclark/aiuse/actions/runs/30545248675) succeeded; canonical formula `a52b20c`; tap `cf346b5`; Homebrew 2.1.25 and `brew test` passed; default-PATH `aiuse` and `ai` both report **2.1.25**. GitHub's full quality check [30545330121](https://github.com/djbclark/aiuse/actions/runs/30545330121) passed.                                                                                                                                                                                                                                       |
+| **2.1.26 release**         | Split the two unrelated OpenUsage products into distinct collectors: `openusage_ai` (the existing cask/loopback source) and `openusage_sh` (the Janek Baraniewski telemetry CLI). Enabled collectors default on whether installed now or later; users can disable any in TOML. The dependency installer now installs/checks OpenUsage.sh safely even when `openusage` is already occupied, and the LaunchAgent includes the user-local bin directory. Account aliases are automatic only for unambiguous one-account sources, otherwise TOML requires explicit mapping. Exact duplicate OpenUsage.sh metrics collapse without erasing distinct Cursor entitlement pools. `just release 2.1.26`: **325 passed**; PyPI OIDC [30552387004](https://github.com/djbclark/aiuse/actions/runs/30552387004) succeeded; canonical formula `b178a21`; Homebrew update and `brew test` passed; default-PATH `aiuse` and `ai` both report **2.1.26**. GitHub's post-release full check [30552481414](https://github.com/djbclark/aiuse/actions/runs/30552481414) passed. Live verification confirmed Claude and Codex telemetry events; OpenCode remained unverified because its quota was exhausted. |
 
 ### Issue estimates (scan)
 
@@ -58,12 +62,12 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 | ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------- |
 | [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained |
 | [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **2.1.25** (operator; **do not auto-post**) |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **2.1.26** (operator; **do not auto-post**) |
 | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                        |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.25
+Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.26
 
-PyPI: https://pypi.org/project/aiuse/2.1.25/
+PyPI: https://pypi.org/project/aiuse/2.1.26/
 
 ## Operator preferences (standing)
 
@@ -77,7 +81,7 @@ PyPI: https://pypi.org/project/aiuse/2.1.25/
 ```bash
 cd ~/src/aiuse
 .venv/bin/python -m pytest -q
-aiuse --version          # expect 2.1.25
+aiuse --version          # expect 2.1.26
 aiuse -q --timeout 15    # terminal echo must remain usable after exit
-just release-dry 2.1.25  # preview only
+just release-dry 2.1.26  # preview only
 ```
