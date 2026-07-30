@@ -28,12 +28,23 @@ Zen. This is server-side information, unlike the local estimates.
 
 ## Recommended path
 
-Add an optional native `opencode_zen` collector to `aiuse` that independently
-implements OpenCode's authenticated workspace billing request, using the
-user's existing OpenCode session credential. Run it alongside CodexBar and
-record a cross-check when both produce a balance.
+`aiuse` now includes an optional native `opencode_zen` collector that
+independently implements OpenCode's authenticated workspace billing request.
+To enable the second source, export an existing OpenCode console Cookie header
+for the process that runs `aiuse`:
 
-This would give us **two independent client implementations** and make
+```bash
+export AIUSE_OPENCODE_ZEN_COOKIE='session=...; other-cookie=...'
+aiuse -q --json
+```
+
+Optionally set `AIUSE_OPENCODE_ZEN_WORKSPACE_ID` to select a workspace;
+otherwise the collector uses the first workspace in the authenticated response.
+The cookie is never stored in TOML, snapshots, output, or error messages.
+`aiuse` runs this collector alongside CodexBar and records a cross-check when
+both produce a balance.
+
+This gives us **two independent client implementations** and makes
 collection more resilient to a CodexBar regression, cache failure, or release
 delay. It would **not** be two independent upstream providers: both values
 would come from OpenCode's billing service and should be described as a

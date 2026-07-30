@@ -71,6 +71,28 @@ def test_cross_check_reports_consistent_duplicate_measurements():
     assert any(c.status == "consistent" for c in checks)
 
 
+def test_opencode_zen_native_source_cross_checks_codexbar_but_keeps_codexbar_selected():
+    codexbar = AccountUsage(
+        source="codexbar",
+        provider="opencode-zen",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=4.25,
+    )
+    native = AccountUsage(
+        source="opencode_zen",
+        provider="opencode-zen",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=4.25,
+    )
+
+    accounts, checks = _select_and_cross_check([codexbar, native], cswap_authoritative=True)
+
+    assert [(account.source, account.provider) for account in accounts] == [("codexbar", "opencode-zen")]
+    check = next(check for check in checks if check.provider == "opencode-zen")
+    assert check.status == "consistent"
+    assert check.sources == ["CodexBar", "OpenCode Zen (native)"]
+
+
 def test_cross_check_warns_when_percentages_disagree():
     codexbar = _account("codexbar", "codex")
     tokscale = _account("tokscale", "codex")

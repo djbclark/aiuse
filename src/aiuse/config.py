@@ -152,6 +152,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "health_path": "/v1/limits",
         },
         "openusage_sh": {"enabled": True},
+        # Opt-in at runtime via AIUSE_OPENCODE_ZEN_COOKIE; never stores a credential in TOML.
+        "opencode_zen": {"enabled": True},
         "tokscale": {"enabled": True},
     },
     # Source-specific local account ids can be mapped to the account label used
@@ -174,10 +176,13 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "caut",
         "openusage_ai",
         "openusage_sh",
+        "opencode_zen",
         "tokscale",
     }
 )
-KNOWN_COLLECTOR_KEYS = frozenset({"cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"})
+KNOWN_COLLECTOR_KEYS = frozenset(
+    {"cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "opencode_zen", "tokscale"}
+)
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
     {
         "enabled",

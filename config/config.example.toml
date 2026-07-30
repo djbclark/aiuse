@@ -9,6 +9,7 @@
 # codexbar = 45
 # openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
 # openusage_sh = 45  # OpenUsage.sh terminal dashboard
+# opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
 # tokscale = 45
 
 [collectors.caut]
@@ -25,6 +26,12 @@
 
 [collectors.openusage_sh]
 # OpenUsage.sh — terminal dashboard, invoked through `openusage-sh`.
+# enabled = true
+
+[collectors.opencode_zen]
+# Optional direct OpenCode Zen billing source. Enable it by exporting
+# AIUSE_OPENCODE_ZEN_COOKIE with an existing OpenCode console Cookie header.
+# The cookie is never stored in this file.
 # enabled = true
 
 # Usually unnecessary: aiuse automatically unifies a provider when every live

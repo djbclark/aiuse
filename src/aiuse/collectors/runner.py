@@ -15,6 +15,7 @@ from .base import which
 from .caut import collect_caut
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
+from .opencode_zen import collect_opencode_zen
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .tokscale import collect_tokscale
@@ -26,6 +27,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "caut",
     "openusage_ai",
     "openusage_sh",
+    "opencode_zen",
     "tokscale",
 )
 
@@ -42,6 +44,7 @@ SOURCE_LABELS: dict[str, str] = {
     "caut": "caut",
     "openusage_ai": "OpenUsage.ai",
     "openusage_sh": "OpenUsage.sh",
+    "opencode_zen": "OpenCode Zen (native)",
     "tokscale": "tokscale",
 }
 
@@ -112,6 +115,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         )
     if _enabled(collectors_cfg, "openusage_sh"):
         jobs.append(("openusage_sh", partial(collect_openusage_sh, timeout=timeout_for(config, "openusage_sh"))))
+    if _enabled(collectors_cfg, "opencode_zen"):
+        jobs.append(("opencode_zen", partial(collect_opencode_zen, timeout=timeout_for(config, "opencode_zen"))))
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
