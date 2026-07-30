@@ -1,10 +1,10 @@
 # Session handoff (current)
 
-**Date:** 2026-07-28
+**Date:** 2026-07-30
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **304** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **306** passing
 
 **Package version:** **2.1.19** on GitHub + PyPI + Homebrew tap
 
@@ -39,20 +39,21 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 ## Done this release (2026-07-28)
 
-| Area                   | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Grok depleted band** | A zero-capacity live subscription row now renders `empty`, rather than falling through to `mid`. Positive fractional capacity displays as `<1%` rather than a misleading `0%`. Regression coverage spans 0%, fractional, 1%, 50%, and 100%.                                                                                                                                                                                                                                            |
-| **2.1.18 release**     | `just release 2.1.18`: **303 passed**; fix commit `2c4694e`; bump `87f8f63`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30376489913](https://github.com/djbclark/aiuse/actions/runs/30376489913) succeeded. Canonical formula commit `61a27a9`; tap commit `be881f0`. `.venv/bin/aiuse doctor` reported all five collectors healthy.                                                                                                                                       |
-| **2.1.19 release**     | `just release 2.1.19`: **304 passed**; release automation commit `76e37d0`; bump `cd7f573`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30377524485](https://github.com/djbclark/aiuse/actions/runs/30377524485) succeeded. Canonical formula commit `fe4e692`; tap commit `041c191`. The workflow refreshed Homebrew, upgraded the explicit formula, checked `/opt/homebrew/opt/aiuse/bin/aiuse --version`, and ran `brew test`; direct verification confirmed **2.1.19**. |
+| Area                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Grok depleted band**   | A zero-capacity live subscription row now renders `empty`, rather than falling through to `mid`. Positive fractional capacity displays as `<1%` rather than a misleading `0%`. Regression coverage spans 0%, fractional, 1%, 50%, and 100%.                                                                                                                                                                                                                                            |
+| **2.1.18 release**       | `just release 2.1.18`: **303 passed**; fix commit `2c4694e`; bump `87f8f63`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30376489913](https://github.com/djbclark/aiuse/actions/runs/30376489913) succeeded. Canonical formula commit `61a27a9`; tap commit `be881f0`. `.venv/bin/aiuse doctor` reported all five collectors healthy.                                                                                                                                       |
+| **2.1.19 release**       | `just release 2.1.19`: **304 passed**; release automation commit `76e37d0`; bump `cd7f573`; tag/GitHub release/PyPI completed. PyPI OIDC workflow [30377524485](https://github.com/djbclark/aiuse/actions/runs/30377524485) succeeded. Canonical formula commit `fe4e692`; tap commit `041c191`. The workflow refreshed Homebrew, upgraded the explicit formula, checked `/opt/homebrew/opt/aiuse/bin/aiuse --version`, and ran `brew test`; direct verification confirmed **2.1.19**. |
+| **Step 33 / cswap #170** | cswap 0.24.0's official display-grade `lastGoodUsage` is now preferred when decision-grade `usage` is absent. Older cswap versions, absent fields, and malformed additive fields retain the established local-cache fallback. `cswap upgrade` updated this machine to 0.24.0; **306 tests** passed.                                                                                                                                                                                    |
 
 ### Issue estimates (scan)
 
-| #                                                                                                     | Hours                | Norm. tok | Norm. $ | Title                                                |
-| ----------------------------------------------------------------------------------------------------- | -------------------- | --------- | ------- | ---------------------------------------------------- |
-| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | 1–3h after cswap#170 | ~50k–300k | ~$0.5–8 | Track upstream cswap last-good (**blocked**)         |
-| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —                    | —         | —       | **done**                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h               | ~10k–100k | ~$0–2   | Announce **2.1.19** (operator; **do not auto-post**) |
-| [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional             | —         | —       | Polish; only if concrete pain                        |
+| #                                                                                                     | Hours    | Norm. tok | Norm. $ | Title                                                |
+| ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------- |
+| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained |
+| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                             |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **2.1.19** (operator; **do not auto-post**) |
+| [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                        |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v2.1.19
 

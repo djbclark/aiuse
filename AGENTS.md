@@ -11,8 +11,8 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-07-28):** Package/CLI **`aiuse`**. Fix-plan Steps **1–32** and
-**34** done. Product issues **#2–#9** done. Packaging **2.1.19**
+**Status (2026-07-30):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+done. Product issues **#1–#9** done. Packaging **2.1.19**
 (PyPI/GitHub/Homebrew) includes **`aiuse trust`** (caut stable codesign +
 CodexBar#679 cache ACL repair) and release wait-race fix. Five collectors; prepaid/`n/a` band; hourly
 LaunchAgent; history learning `auto`. Normal CLI **always live-collects**
@@ -22,10 +22,10 @@ Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
 
 1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
 2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
-   (announce → densify history → Step 33; optional #11–#15 only if pain).
-3. **Blocked (Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1)):** wait
-   for [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170), then
-   consume official `lastGoodUsage` in `collectors/cswap.py`
+   (announce → densify history; optional #11–#15 only if pain).
+3. **Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1):** done — prefer
+   cswap 0.24's official `lastGoodUsage` in `collectors/cswap.py`, while retaining
+   local-cache recovery for older cswap versions.
    ([`docs/cswap-reliability.md`](docs/cswap-reliability.md)).
 4. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
    when ready; leave hourly agent collecting; optional OpenUsage CLI install.

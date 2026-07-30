@@ -1451,10 +1451,14 @@ already landed: cache hydrate, countdown recompute, CodexBar/tokscale fallback).
 
 ### Step 33 — Upstream: richer cswap JSON for display-grade usage (optional)
 
-**Upstream status (2026-07-23):** this feature request **already exists** —
+**Status (2026-07-30):** **done**. [claude-swap#170](https://github.com/realiti4/claude-swap/pull/170)
+merged and shipped in cswap 0.24.0. aiuse prefers its official fields while
+remaining compatible with older cswap JSON.
+
+**Historical upstream request (2026-07-23):**
 
 - Issue/PR: [realiti4/claude-swap#170](https://github.com/realiti4/claude-swap/issues/170)
-  — _feat(json): expose display-grade last-good usage_ (open)
+  — _feat(json): expose display-grade last-good usage_ (merged)
 - Branch: `possibilities:feat/display-last-good-usage`
 - Contract proposed: when decision-grade data is too old, keep
   `usageStatus: unavailable` + `usage: null`, and add additive
@@ -1464,11 +1468,11 @@ already landed: cache hydrate, countdown recompute, CodexBar/tokscale fallback).
 when JSON marks a slot unavailable. Prefer official last-good fields when #170
 lands; keep cache hydration as fallback for older cswap.
 
-**Work (when #170 merges):**
+**Completed work:**
 
 1. Prefer `lastGoodUsage` (+ age fields) in `collectors/cswap.py`.
-2. Keep cache-file hydration only for older cswap versions.
-3. Document minimum cswap version in README.
+2. Keep cache-file hydration for absent/malformed official fields and older cswap versions.
+3. Document that cswap 0.24.0 enables official display-grade JSON; it is not a minimum requirement.
 
 **Do not** open a duplicate issue — track #170.
 

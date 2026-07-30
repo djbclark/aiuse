@@ -213,6 +213,65 @@ def test_unavailable_json_row_hydrates_from_cswap_usage_cache():
     assert any("decision-stale" in note for note in account.notes)
 
 
+def test_unavailable_json_row_prefers_official_last_good_usage():
+    """cswap >=0.24 avoids local-cache coupling when it supplies the data."""
+    cache = {
+        "accounts": {
+            "2": {
+                "lastGood": {"seven_day": {"pct": 15.0}},
+                "fetchedAt": time.time() - 7200,
+            }
+        }
+    }
+    account = _account_from_item(
+        {
+            "number": 2,
+            "email": "personal-account@example.com",
+            "usageStatus": "unavailable",
+            "usage": None,
+            "lastGoodUsage": {
+                "sevenDay": {"pct": 100.0, "resetsAt": "2099-01-02T00:00:00Z"},
+            },
+            "lastGoodFetchedAt": "2026-07-30T11:00:00Z",
+            "lastGoodAgeSeconds": 1800,
+        },
+        1,
+        cache=cache,
+    )
+
+    assert account.error is None
+    assert account.windows[0].used_percent == 100.0
+    assert any("display-grade JSON" in note for note in account.notes)
+    assert any("1800s old" in note for note in account.notes)
+
+
+def test_malformed_official_last_good_usage_falls_back_to_cache():
+    """An additive field must not break recovery on partial/future schemas."""
+    cache = {
+        "accounts": {
+            "2": {
+                "lastGood": {"five_hour": {"pct": 12.0}},
+                "fetchedAt": time.time() - 600,
+            }
+        }
+    }
+    account = _account_from_item(
+        {
+            "number": 2,
+            "email": "personal-account@example.com",
+            "usageStatus": "unavailable",
+            "usage": None,
+            "lastGoodUsage": {"unknownFutureField": True},
+        },
+        1,
+        cache=cache,
+    )
+
+    assert account.error is None
+    assert account.windows[0].used_percent == 12.0
+    assert any("local cache" in note for note in account.notes)
+
+
 def test_unavailable_without_cache_still_errors():
     account = _account_from_item(
         {

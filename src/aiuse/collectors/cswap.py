@@ -3,7 +3,8 @@
 Primary path: ``cswap list --json`` (schema v1).
 
 Reliability path: when JSON marks a slot ``usageStatus: unavailable`` with no
-``usage`` payload, hydrate from cswap's on-disk usage cache
+``usage`` payload, prefer cswap 0.24's additive display-grade
+``lastGoodUsage`` fields, then hydrate from cswap's on-disk usage cache
 (``cache/usage.json`` under the claude-swap data dir). That cache still holds
 ``lastGood`` measurements the human ``cswap list`` view shows with an age note,
 but which the JSON contract deliberately omits once the measurement ages past
@@ -114,30 +115,33 @@ def _account_from_item(
         usage_credits = _usage_credits_from_spend(usage)
         _append_spend_note(notes, usage_credits)
 
-    # Display-grade recovery: when decision-grade JSON omitted usage, reuse the
-    # same lastGood row the human `cswap list` view would show with an age note.
+    # Display-grade recovery: cswap >=0.24 sends the same lastGood row that its
+    # human view shows. Older cswap versions omit it, so retain the cache path.
     if not windows and usage_status not in ("ok", "api_key"):
-        hydrated = _hydrate_from_cache(cache, number=number, email=email)
+        hydrated = _hydrate_from_item(item)
+        recovery_source = "cswap's display-grade JSON"
+        availability_note = "decision-grade `usage` is unavailable."
+        if hydrated is None or not _has_display_usage(hydrated[0]):
+            hydrated = _hydrate_from_cache(cache, number=number, email=email)
+            recovery_source = "local cache"
+            availability_note = "`cswap list --json` omitted it as decision-stale."
         if hydrated is not None:
-            cache_usage, age_s, fetched_at = hydrated
-            windows.extend(_windows_from_usage(cache_usage))
+            recovered_usage, age_s, fetched_at = hydrated
+            windows.extend(_windows_from_usage(recovered_usage))
             if usage_credits is None:
-                usage_credits = _usage_credits_from_spend(cache_usage)
+                usage_credits = _usage_credits_from_spend(recovered_usage)
                 _append_spend_note(notes, usage_credits)
             if windows or usage_credits is not None:
                 error = None  # usable for reporting; age is called out in notes
                 if age_s is not None:
                     notes.append(
-                        f"Using cswap's last-known quota from local cache "
+                        f"Using cswap's last-known quota from {recovery_source} "
                         f"(≈{age_s:.0f}s old"
                         + (f", fetched {fetched_at}" if fetched_at else "")
-                        + "); `cswap list --json` omitted it as decision-stale."
+                        + f"); {availability_note}"
                     )
                 else:
-                    notes.append(
-                        "Using cswap's last-known quota from local cache; "
-                        "`cswap list --json` omitted it as decision-stale."
-                    )
+                    notes.append(f"Using cswap's last-known quota from {recovery_source}; " + availability_note)
 
     account_name = str(email) if email else f"cswap-slot-{number}"
     # Mirror remaining credit headroom onto balance_usd for generic prepaid UI.
@@ -342,6 +346,34 @@ def _same_window_present(windows: list[QuotaWindow], candidate: QuotaWindow) -> 
 # ---------------------------------------------------------------------------
 # Local usage-cache recovery (display-grade, same data human `cswap list` shows)
 # ---------------------------------------------------------------------------
+
+
+def _hydrate_from_item(item: dict[str, Any]) -> tuple[dict[str, Any], float | None, str | None] | None:
+    """Return official cswap >=0.24 display-grade usage, if well-formed.
+
+    These additive fields are deliberately optional so older cswap JSON keeps
+    using the cache path below unchanged.
+    """
+    last_good = item.get("lastGoodUsage")
+    if not isinstance(last_good, dict) or not last_good:
+        return None
+
+    fetched_at = item.get("lastGoodFetchedAt")
+    fetched_iso = str(fetched_at) if fetched_at is not None else None
+    age_s = _number(item.get("lastGoodAgeSeconds"))
+    if age_s is not None:
+        age_s = max(0.0, age_s)
+    elif fetched_iso:
+        parsed = parse_dt(fetched_iso)
+        if parsed is not None:
+            age_s = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds())
+
+    return last_good, age_s, fetched_iso
+
+
+def _has_display_usage(usage: dict[str, Any]) -> bool:
+    """Whether a display-grade usage object yields quota or credit data."""
+    return bool(_windows_from_usage(usage)) or _usage_credits_from_spend(usage) is not None
 
 
 def _cswap_data_dirs() -> list[Path]:

@@ -1,6 +1,6 @@
 # cswap reliability / Claude quota sources
 
-**Status:** implemented (2026-07-23)  
+**Status:** display-grade JSON support implemented (2026-07-30)
 **Related:** [`AGENTS.md`](../AGENTS.md) priority #1, [`../src/aiuse/collectors/cswap.py`](../src/aiuse/collectors/cswap.py), [`../src/aiuse/collectors/runner.py`](../src/aiuse/collectors/runner.py)
 
 ## Problem
@@ -97,13 +97,11 @@ cadence stay owned by cswap / CodexBar / tokscale.
 Deferred work lives at the **tail** of
 [`fix-implementation-plan.md`](fix-implementation-plan.md) **Phase 7**.
 
-- **Step 33 (upstream display-grade JSON):** open issue/PR
-  [realiti4/claude-swap#170](https://github.com/realiti4/claude-swap/issues/170)
-  (`feat(json): expose display-grade last-good usage`) already proposes additive
-  `lastGoodUsage` / `lastGoodFetchedAt` / `lastGoodAgeSeconds` while keeping
-  decision-grade `usage`/`usageStatus`. Once merged, prefer those fields and
-  keep cache-file hydration only as a fallback for older cswap. Consumer work
-  tracked in this repo: [djbclark/aiuse#1](https://github.com/djbclark/aiuse/issues/1).
+- **Step 33 (upstream display-grade JSON):** [claude-swap#170](https://github.com/realiti4/claude-swap/pull/170)
+  shipped in **cswap 0.24.0**. aiuse prefers its additive `lastGoodUsage` /
+  `lastGoodFetchedAt` / `lastGoodAgeSeconds` fields while retaining cache-file
+  hydration when they are absent or malformed, including with older cswap
+  versions. Consumer work is tracked in [aiuse#1](https://github.com/djbclark/aiuse/issues/1).
 - **Step 34 (usage credits):** landed in this repo — cswap `usage.spend` →
   structured `AccountUsage.usage_credits` + pretty report section.
 - **Step 35 (local ccusage burn):** still deferred; not plan quota.

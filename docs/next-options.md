@@ -1,6 +1,6 @@
 # What next (post-2.1.10) and competitive gap difficulty
 
-**Date:** 2026-07-25  
+**Date:** 2026-07-30
 **Status:** Product issues **#2–#9** shipped; fix-plan Steps **1–32** and **34**
 done. No mandatory numbered step.  
 **Related:** [`handoff.md`](handoff.md), [`competitive-landscape.md`](competitive-landscape.md),
@@ -26,23 +26,22 @@ cloning menubars, BI dashboards, or request routers.
 
 ## Recommended order (default)
 
-| Priority             | Action                                                       | Why                                                                                             | Effort                               | Tracker                                                                                                                  |
-| -------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| **1**                | **Announce**                                                 | Best unpaid feedback channel; product ready enough                                              | Low (0.5–2h, **operator only**)      | [#10](https://github.com/djbclark/aiuse/issues/10)                                                                       |
-| **2**                | **Let hourly LaunchAgent run**                               | History learning needs dense snapshots                                                          | None (already installed)             | Site `com.djbclark.aiuse`                                                                                                |
-| **3**                | **Step 33 when unblocked**                                   | Multi-account Claude is a real differentiator; stale cswap JSON is the main self-inflicted hole | Low–medium (1–3h **after** upstream) | [#1](https://github.com/djbclark/aiuse/issues/1) · [claude-swap#170](https://github.com/realiti4/claude-swap/issues/170) |
-| **4**                | **Optional polish only if pain is real**                     | MCP, History text, fixtures, peer tickets, watch                                                | See issues below                     | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15)                    |
-| **4b**               | **macOS collector trust (`aiuse trust`)** | **Shipped in 2.1.15** — caut codesign + `fix-codexbar-cache` (#679); operator may still run interactive probe/fix | Done                                 | [`macos-keychain-trust.md`](macos-keychain-trust.md) · release `v2.1.15`                                                  |
-| **Avoid by default** | Menubar app, own scrapers, LiteLLM router, ccusage-as-plan-% | Wrong product identity / trust model                                                            | High                                 | Do not open as default backlog                                                                                           |
+| Priority             | Action                                                       | Why                                                                                                               | Effort                          | Tracker                                                                                               |
+| -------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **1**                | **Announce**                                                 | Best unpaid feedback channel; product ready enough                                                                | Low (0.5–2h, **operator only**) | [#10](https://github.com/djbclark/aiuse/issues/10)                                                    |
+| **2**                | **Let hourly LaunchAgent run**                               | History learning needs dense snapshots                                                                            | None (already installed)        | Site `com.djbclark.aiuse`                                                                             |
+| **3**                | **Optional polish only if pain is real**                     | MCP, History text, fixtures, peer tickets, watch                                                                  | See issues below                | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) |
+| **4b**               | **macOS collector trust (`aiuse trust`)**                    | **Shipped in 2.1.15** — caut codesign + `fix-codexbar-cache` (#679); operator may still run interactive probe/fix | Done                            | [`macos-keychain-trust.md`](macos-keychain-trust.md) · release `v2.1.15`                              |
+| **Avoid by default** | Menubar app, own scrapers, LiteLLM router, ccusage-as-plan-% | Wrong product identity / trust model                                                                              | High                            | Do not open as default backlog                                                                        |
 
 ### Queue (end) — product constraints to keep honest
 
-| Item | Notes |
-| ---- | ----- |
+| Item                                                                           | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Do not make normal interactive `aiuse` depend on the hourly snapshot cache** | Operator note (2026-07-27): treating the LaunchAgent’s hourly snapshots as the source of truth for a normal CLI run would be a mistake (stale quotas / wrong burn advice). **Current behavior is correct:** default CLI always live-collects via `run_collectors`; hourly only densifies History under `~/.cache/aiuse/snapshots`. **Exception:** `aiuse serve` may serve ≤`max_age` (default 3600s) disk/memory cache unless `?refresh=1` — keep that opt-in for agents, never silently make the main CLI path cache-first. |
 
 **Zero-code coherent path:** post [#10](https://github.com/djbclark/aiuse/issues/10)
-when ready, leave the agent collecting, poll cswap#170 occasionally.
+when ready and leave the agent collecting.
 
 Open-ended “what next?” → **do not restart** fix plan at Step 1.
 
@@ -50,17 +49,17 @@ Open-ended “what next?” → **do not restart** fix plan at Step 1.
 
 ## Open / parked trackers
 
-| Issue                                                                                             | State              | Notes                                                               |
-| ------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------- |
-| [#1](https://github.com/djbclark/aiuse/issues/1)                                                  | Open · **blocked** | Consume official cswap `lastGoodUsage` after #170                   |
-| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9) | **Closed**         | Competitive-strategy pull shipped in 2.1.9 / 2.1.10                 |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                | Open · operator    | Public announce draft (venues + copy); **do not auto-post**         |
-| [#11](https://github.com/djbclark/aiuse/issues/11)                                                | Open · optional    | Thin MCP stdio over `aiuse serve` payloads                          |
-| [#12](https://github.com/djbclark/aiuse/issues/12)                                                | Open · optional    | Peer outreach for shared-quota-semantics (**last**)                 |
-| [#13](https://github.com/djbclark/aiuse/issues/13)                                                | Open · optional    | Richer History / operational insights (text, not BI)                |
-| [#14](https://github.com/djbclark/aiuse/issues/14)                                                | Open · optional    | Optional `aiuse watch` pull refresh (not a menubar)                 |
-| [#15](https://github.com/djbclark/aiuse/issues/15)                                                | Open · optional    | More shared-semantics golden fixtures                               |
-| Step **35**                                                                                       | Parked             | ccusage ≠ plan % — [`claude-local-usage.md`](claude-local-usage.md) |
+| Issue                                                                                             | State           | Notes                                                                |
+| ------------------------------------------------------------------------------------------------- | --------------- | -------------------------------------------------------------------- |
+| [#1](https://github.com/djbclark/aiuse/issues/1)                                                  | **Done**        | Official cswap `lastGoodUsage` preferred; legacy cache fallback kept |
+| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9) | **Closed**      | Competitive-strategy pull shipped in 2.1.9 / 2.1.10                  |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                | Open · operator | Public announce draft (venues + copy); **do not auto-post**          |
+| [#11](https://github.com/djbclark/aiuse/issues/11)                                                | Open · optional | Thin MCP stdio over `aiuse serve` payloads                           |
+| [#12](https://github.com/djbclark/aiuse/issues/12)                                                | Open · optional | Peer outreach for shared-quota-semantics (**last**)                  |
+| [#13](https://github.com/djbclark/aiuse/issues/13)                                                | Open · optional | Richer History / operational insights (text, not BI)                 |
+| [#14](https://github.com/djbclark/aiuse/issues/14)                                                | Open · optional | Optional `aiuse watch` pull refresh (not a menubar)                  |
+| [#15](https://github.com/djbclark/aiuse/issues/15)                                                | Open · optional | More shared-semantics golden fixtures                                |
+| Step **35**                                                                                       | Parked          | ccusage ≠ plan % — [`claude-local-usage.md`](claude-local-usage.md)  |
 
 ---
 
@@ -121,8 +120,7 @@ the aggregator story.
 ### If we do one code thing
 
 1. **Nothing code-related** until [#10](https://github.com/djbclark/aiuse/issues/10)
-   ships or Step 33 ([#1](https://github.com/djbclark/aiuse/issues/1)) unblocks —
-   highest leverage.
+   ships — highest leverage.
 2. **If agents need it:** thin MCP stdio ([#11](https://github.com/djbclark/aiuse/issues/11)).
 3. **If humans need it:** richer History text ([#13](https://github.com/djbclark/aiuse/issues/13))
    or optional `watch` ([#14](https://github.com/djbclark/aiuse/issues/14)), not a dashboard.
@@ -135,7 +133,7 @@ the aggregator story.
 Reaffirmed from competitive strategy (do **not** add quotabot/onWatch/ccusage
 as ranking inputs):
 
-1. Collector reliability — especially Step 33 / cswap last-good.
+1. Collector reliability — preserve the cswap official-last-good + legacy-cache path.
 2. Decision-layer polish — ladder edge cases, shared allotment, prepaid `n/a`, denser history.
 3. Optional MCP stdio on top of `serve` — only if agents need native MCP.
 4. Companion stack docs — keep composing ambient + rank.
@@ -146,7 +144,7 @@ as ranking inputs):
 ## When this doc should change
 
 - After [#10](https://github.com/djbclark/aiuse/issues/10) is posted (mark announce done).
-- When cswap#170 merges and [#1](https://github.com/djbclark/aiuse/issues/1) is implemented.
+- When a new collector-reliability gap emerges.
 - When an optional issue (#11–#15) is shipped or explicitly wontfix.
 - If product identity shifts (e.g. operator decides router _is_ in scope) — update
   [`competitive-landscape.md`](competitive-landscape.md) first, then this file.
