@@ -416,7 +416,20 @@ def _sync_tap(version: str, *, tap_path: Path, dry_run: bool) -> None:
 def _upgrade_and_test_homebrew(version: str, *, dry_run: bool) -> None:
     """Refresh the published tap, upgrade this Mac, and test the new formula."""
     formula = "djbclark/aiuse/aiuse"
-    _run(["brew", "update"], dry_run=dry_run)
+    # ``brew update`` can decide a tap is current without fetching its remote
+    # (notably when Homebrew auto-updates are disabled).  Refresh the specific
+    # just-pushed tap as well, so an upgrade cannot silently use its old formula.
+    _run(["brew", "update", "--force"], dry_run=dry_run)
+    tap = _run(["brew", "--repository", "djbclark/aiuse"], capture=True, dry_run=dry_run)
+    tap_path = Path((tap.stdout or "").strip())
+    if not dry_run:
+        if not tap_path.is_dir():
+            raise ReleaseError("Homebrew did not report the djbclark/aiuse tap checkout")
+        _run(["git", "fetch", "origin", "main"], cwd=tap_path)
+        _run(["git", "merge", "--ff-only", "origin/main"], cwd=tap_path)
+        formula_path = tap_path / "Formula" / "aiuse.rb"
+        if f"tags/v{version}.tar.gz" not in formula_path.read_text(encoding="utf-8"):
+            raise ReleaseError(f"Homebrew tap formula is not aiuse {version}")
     _run(["brew", "upgrade", formula], dry_run=dry_run)
     prefix = _run(["brew", "--prefix", formula], capture=True, dry_run=dry_run)
     if not dry_run:

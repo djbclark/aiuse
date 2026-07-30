@@ -108,14 +108,24 @@ def test_find_publish_run_matches_tag(monkeypatch, release):
     assert release._find_publish_run("9.9.9") is None
 
 
-def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release):
+def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release, tmp_path: Path):
     calls: list[tuple[list[str], dict]] = []
+    tap = tmp_path / "homebrew-aiuse"
+    (tap / "Formula").mkdir(parents=True)
+    (tap / "Formula" / "aiuse.rb").write_text(
+        'url "https://github.com/djbclark/aiuse/archive/refs/tags/v2.1.18.tar.gz"\n',
+        encoding="utf-8",
+    )
 
     def fake_run(argv, **kwargs):
         from subprocess import CompletedProcess
 
         calls.append((argv, kwargs))
-        stdout = "/opt/homebrew/opt/aiuse\n" if argv[:3] == ["brew", "--prefix", "djbclark/aiuse/aiuse"] else ""
+        stdout = ""
+        if argv[:3] == ["brew", "--prefix", "djbclark/aiuse/aiuse"]:
+            stdout = "/opt/homebrew/opt/aiuse\n"
+        elif argv[:3] == ["brew", "--repository", "djbclark/aiuse"]:
+            stdout = f"{tap}\n"
         if argv[-1:] == ["--version"]:
             stdout = "aiuse 2.1.18\n"
         return CompletedProcess(argv, 0, stdout=stdout, stderr="")
@@ -125,7 +135,10 @@ def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release):
     release._upgrade_and_test_homebrew("2.1.18", dry_run=False)
 
     assert [argv for argv, _kwargs in calls] == [
-        ["brew", "update"],
+        ["brew", "update", "--force"],
+        ["brew", "--repository", "djbclark/aiuse"],
+        ["git", "fetch", "origin", "main"],
+        ["git", "merge", "--ff-only", "origin/main"],
         ["brew", "upgrade", "djbclark/aiuse/aiuse"],
         ["brew", "--prefix", "djbclark/aiuse/aiuse"],
         ["/opt/homebrew/opt/aiuse/bin/aiuse", "--version"],

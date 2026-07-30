@@ -95,8 +95,9 @@ just release-dry 2.1.16
 6. Wait for PyPI / `publish.yml`
 7. Refresh in-repo Homebrew formula sha256, commit, push
 8. Sync `~/src/homebrew-aiuse` tap when that clone exists
-9. Refresh Homebrew, upgrade this Mac to the published formula, confirm its
-   version, and run `brew test djbclark/aiuse/aiuse`
+9. Force-refresh Homebrew and its just-pushed tap, verify the tap formula is
+   the requested version, upgrade this Mac, confirm its version, and run
+   `brew test djbclark/aiuse/aiuse`
 10. Upgrade the pipx install that leads the default PATH, then confirm both
     `aiuse --version` and `ai --version` report the released version
 
