@@ -15,10 +15,10 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 1. **Site-agent TOML migration (separate `~/ops/site-djbclark` change):** do
    **not** run `site-agents-apply` until its `site_agents` role stops creating
-   and editing `~/.config/aiuse/services.yaml`.  That role still manages the
+   and editing `~/.config/aiuse/services.yaml`. That role still manages the
    legacy YAML persistence settings; on a machine with `config.toml`, it would
    recreate a conflicting file and make aiuse fail with its intentional
-   two-config migration error.  Replace the YAML variable/tasks with a
+   two-config migration error. Replace the YAML variable/tasks with a
    TOML-aware, non-destructive equivalent, document it there, and validate it
    in that repository before applying it to this machine.
 2. Operator: announce issue #10 mentions **2.1.24** (do not auto-post).
