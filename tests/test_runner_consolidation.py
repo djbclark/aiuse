@@ -87,7 +87,7 @@ def test_multi_source_prefers_codexbar_and_cross_checks_all_peers():
     """caut + openusage + tokscale peers cross-check; only codexbar is selected."""
     codexbar = _account("codexbar", "codex")
     caut = _account("caut", "codex")
-    openusage = _account("openusage", "codex")
+    openusage = _account("openusage_ai", "codex")
     tokscale = _account("tokscale", "codex")
     for row in (codexbar, caut, openusage, tokscale):
         row.windows[0].label = "weekly"
@@ -101,7 +101,7 @@ def test_multi_source_prefers_codexbar_and_cross_checks_all_peers():
     assert len([c for c in checks if c.status == "consistent"]) >= 3
     sources_seen = {tuple(c.sources) for c in checks if c.status == "consistent"}
     assert any("CodexBar" in s and "caut" in s for s in sources_seen)
-    assert any("OpenUsage" in s for s in sources_seen)
+    assert any("OpenUsage.ai" in s for s in sources_seen)
 
 
 def test_caut_selected_when_codexbar_missing():
@@ -157,7 +157,8 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_codexbar", slow_codexbar)
     monkeypatch.setattr("aiuse.collectors.runner.collect_tokscale", slow_tokscale)
     monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_k: [])
-    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_k: [])
 
     start = time.monotonic()
     snapshot = run_collectors({})
@@ -183,7 +184,8 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
         lambda **_kwargs: [_account("tokscale", "grok")],
     )
     monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_k: [])
-    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_k: [])
     snapshot = run_collectors({})
 
     assert {account.provider for account in snapshot.accounts} == {"codex", "grok"}

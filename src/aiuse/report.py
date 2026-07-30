@@ -1370,7 +1370,8 @@ def _source_description(source: str) -> str:
         "cswap": "canonical source: cswap",
         "codexbar": "selected live source: CodexBar",
         "caut": "selected live source: caut",
-        "openusage": "selected live source: OpenUsage",
+        "openusage_ai": "selected live source: OpenUsage.ai",
+        "openusage_sh": "selected live source: OpenUsage.sh",
         "tokscale": "selected live source: tokscale",
     }.get(source, f"source: {source}")
 

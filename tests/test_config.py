@@ -18,25 +18,25 @@ from aiuse.config import (
 
 
 def test_collector_health_url_openusage_defaults_and_overrides():
-    assert collector_health_url(DEFAULT_CONFIG, "openusage") == "http://127.0.0.1:6736/v1/limits"
+    assert collector_health_url(DEFAULT_CONFIG, "openusage_ai") == "http://127.0.0.1:6736/v1/limits"
     assert (
         collector_health_url(
             {
                 "collectors": {
-                    "openusage": {
+                    "openusage_ai": {
                         "base_url": "http://127.0.0.1:9",
                         "health_path": "/healthz",
                     }
                 }
             },
-            "openusage",
+            "openusage_ai",
         )
         == "http://127.0.0.1:9/healthz"
     )
     assert (
         collector_health_url(
-            {"collectors": {"openusage": {"probe_url": "http://example/probe"}}},
-            "openusage",
+            {"collectors": {"openusage_ai": {"probe_url": "http://example/probe"}}},
+            "openusage_ai",
         )
         == "http://example/probe"
     )
@@ -59,6 +59,18 @@ def test_load_config_reads_canonical_toml(monkeypatch, tmp_path):
     config = load_config()
 
     assert config["analysis"]["min_remaining_percent"] == 55
+
+
+def test_load_config_maps_legacy_openusage_name_to_openusage_ai(monkeypatch, tmp_path):
+    config_path = tmp_path / "aiuse" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text("[collectors.openusage]\nenabled = false\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    config = load_config()
+
+    assert config["collectors"]["openusage_ai"]["enabled"] is False
+    assert "openusage" not in config["collectors"]
 
 
 def test_relative_xdg_config_home_is_ignored(monkeypatch):

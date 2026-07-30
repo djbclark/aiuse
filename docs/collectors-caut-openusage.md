@@ -1,4 +1,4 @@
-# caut + OpenUsage collectors
+# caut + OpenUsage.ai / OpenUsage.sh collectors
 
 **Date:** 2026-07-25  
 **Status:** Enabled by default for multi-source cross-checks (correctness over speed).
@@ -8,10 +8,11 @@
 `aiuse` prefers ranking quality over a single data path. In addition to
 **cswap**, **CodexBar**, and **tokscale**, it can also collect:
 
-| Source                                                                      | Role                                                        |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Cross-platform CLI usage probe (`caut.v1` JSON)             |
-| **[OpenUsage](https://www.openusage.ai/)**                                  | Menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits` |
+| Source                                                                      | Role                                                              |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Cross-platform CLI usage probe (`caut.v1` JSON)                   |
+| **[OpenUsage.ai](https://www.openusage.ai/)**                               | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits` |
+| **[OpenUsage.sh](https://openusage.sh/)**                                   | Terminal dashboard; versioned JSON export through `openusage-sh`  |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**
@@ -50,7 +51,7 @@ ln -sfn ~/.cargo/bin/caut ~/.local/bin/caut
 
 Requires Rust/`cargo` on PATH. Binary: `caut` (currently **0.1.0**).
 
-### OpenUsage
+### OpenUsage.ai
 
 ```bash
 just install-openusage
@@ -64,7 +65,7 @@ just install-openusage
 3. **Settings → Command Line → Install…** so `openusage` is on PATH  
    (optional if you always leave the app running — `aiuse` falls back to HTTP).
 
-`aiuse` collector order for OpenUsage:
+`aiuse` collector order for OpenUsage.ai:
 
 1. `openusage --force` when CLI is on PATH (fresh read).
 2. Else `GET http://127.0.0.1:6736/v1/limits`.
@@ -79,7 +80,7 @@ enabled = true
 # all  = every name caut knows — most error "unsupported source Auto"
 providers = "both"
 
-[collectors.openusage]
+[collectors.openusage_ai]
 enabled = true
 force_refresh = true
 try_launch_app = true
@@ -95,7 +96,20 @@ loopback up?” without treating a 404 on `/` as collector death when the payloa
 path still returns 200. Other collectors accept the same keys when they expose
 HTTP; PATH-only tools ignore them.
 
-CLI skips: `--no-caut`, `--no-openusage`.
+OpenUsage.sh is installed separately without shadowing the app CLI:
+
+```bash
+brew tap janekbaraniewski/tap
+brew install janekbaraniewski/tap/openusage
+# Keep Homebrew's formula unlinked when OpenUsage.ai owns `openusage` on PATH.
+brew unlink openusage
+# Create a local `openusage-sh` wrapper to /opt/homebrew/opt/openusage/bin/openusage.
+```
+
+`aiuse` invokes `openusage-sh export --output - --format json`; it accepts only
+explicit rate-limit and plan-percent metrics as quota windows, never local
+token/cost estimates. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
+`--no-openusage`), and `--no-openusage-sh`.
 
 ## Selection priority (generalized)
 

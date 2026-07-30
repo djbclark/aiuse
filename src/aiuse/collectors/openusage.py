@@ -77,7 +77,7 @@ _RESOURCE_LABELS: dict[str, str] = {
 }
 
 
-def collect_openusage(
+def collect_openusage_ai(
     *,
     timeout: float = 90.0,
     base_url: str = DEFAULT_OPENUSAGE_BASE,
@@ -336,7 +336,7 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         billing = BillingKind.UNKNOWN
 
     return AccountUsage(
-        source="openusage",
+        source="openusage_ai",
         provider=provider,
         account=None,  # OpenUsage limits envelope is provider-card scoped
         plan=str(plan) if plan else None,
@@ -348,3 +348,7 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         notes=notes,
         raw=body,
     )
+
+
+# Import compatibility for callers that used the former ambiguous function.
+collect_openusage = collect_openusage_ai

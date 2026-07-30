@@ -18,7 +18,8 @@ CLI command: **`aiuse`** (stub **`ai`** → same entrypoint)
 | [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                        | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source; prefers cswap 0.24 display-grade JSON, with local-cache recovery for older versions |
 | [**CodexBar**](https://github.com/) `codexbar usage --format json`                              | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; keep its Claude source disabled on macOS until its Keychain prompting is fixed         |
 | [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes)  | Cross-check peer, but leave disabled on macOS until its repeated Keychain prompting is fixed                               |
-| [**OpenUsage**](https://www.openusage.ai/) CLI / `127.0.0.1:6736/v1/limits`                     | Menu-bar companion + loopback limits API                  | Cross-check peer; optional CLI install from app Settings                                                                   |
+| [**OpenUsage.ai**](https://www.openusage.ai/) `openusage` / `127.0.0.1:6736/v1/limits`          | Quiet macOS menu-bar companion + live limits API          | Cross-check peer; distinct collector key: `openusage_ai`                                                                   |
+| [**OpenUsage.sh**](https://openusage.sh/) `openusage-sh export --output - --format json`        | Terminal dashboard, local telemetry, and quota export     | Lowest-priority backup; distinct collector key: `openusage_sh`; only explicit quota metrics affect ranking                 |
 | [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                  | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                                    |
 
 This project shells out to tools already on your `PATH` (and optionally hits
@@ -31,7 +32,7 @@ setup: [`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md).
 
 Use **cswap** as the Claude source and **CodexBar** for every other provider.
 Keep CodexBar's Claude source disabled, even as a fallback. **tokscale**,
-OpenUsage, and other available collectors are useful independent backup and
+OpenUsage.ai, OpenUsage.sh, and other available collectors are useful independent backup and
 cross-check sources. Leave **caut** disabled, and do not enable CodexBar's
 Claude integration, until their Keychain-prompting bugs are fixed; repeated
 macOS Keychain prompts make both unsuitable for normal unattended collection.
@@ -177,31 +178,31 @@ aiuse doctor
 aiuse --doctor
 ```
 
-| Flag                                                                              | Effect                                                                                                                   |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| _(none)_ / `--format pretty`                                                      | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped                                     |
-| `--full`                                                                          | Long pretty report: per-provider, cross-checks, tips, History, detailed plan                                             |
-| `--json` / `--format json`                                                        | Full snapshot + alerts + `suggestion` + `history` as JSON                                                                |
-| `--brief`                                                                         | Alias of default priority-ladder pretty report                                                                           |
-| `--no-tui`                                                                        | Force classic plain-text pretty report                                                                                   |
-| `--no-color`                                                                      | Disable ANSI colors in plain-text pretty mode                                                                            |
-| `-q` / `--quiet`                                                                  | Suppress progress messages on stderr                                                                                     |
-| `--alerts-only`                                                                   | Recommendations only (respects pretty vs json)                                                                           |
-| `suggest` / `--suggest`                                                           | Single best burn pool (or nothing urgent); pair with `--json` for structured                                             |
-| `status` / `prompt` / `--status`                                                  | One-line status for shell prompts / status bars                                                                          |
-| `serve` / `--serve`                                                               | Loopback HTTP API for agents (`127.0.0.1`; see [`docs/agent-api.md`](docs/agent-api.md))                                 |
-| `--port` / `--max-age`                                                            | Serve bind port (default 8787) and snapshot cache max age                                                                |
-| `--traditional-summary`                                                           | Legacy flat summary format instead of unified action plan                                                                |
-| `--print-completion bash\|zsh`                                                    | Print shell completion script to stdout                                                                                  |
-| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage` | Skip specific collectors                                                                                                 |
-| `--providers copilot,grok`                                                        | Query specific CodexBar providers (CSV, one per subprocess)                                                              |
-| `-t` / `--timeout SECONDS`                                                        | Force subprocess timeout for all external tools (default **45**)                                                         |
-| `--generate-config`                                                               | Write default `~/.config/aiuse/config.toml`; never overwrites existing                                                   |
-| `--show-config-path`                                                              | Print canonical config.toml and retired services.yaml paths                                                              |
-| `doctor` / `--doctor`                                                             | Check tools on PATH, config presence, effective timeouts; no collect                                                     |
-| `trust` …                                                                         | macOS: codesign status / sign caut / Keychain grant guide ([docs/macos-keychain-trust.md](docs/macos-keychain-trust.md)) |
-| `--min-remaining 50 --max-days 10`                                                | Override alert thresholds                                                                                                |
-| `--save PATH`                                                                     | Also write full JSON snapshot to PATH                                                                                    |
+| Flag                                                                                                       | Effect                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| _(none)_ / `--format pretty`                                                                               | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped                                     |
+| `--full`                                                                                                   | Long pretty report: per-provider, cross-checks, tips, History, detailed plan                                             |
+| `--json` / `--format json`                                                                                 | Full snapshot + alerts + `suggestion` + `history` as JSON                                                                |
+| `--brief`                                                                                                  | Alias of default priority-ladder pretty report                                                                           |
+| `--no-tui`                                                                                                 | Force classic plain-text pretty report                                                                                   |
+| `--no-color`                                                                                               | Disable ANSI colors in plain-text pretty mode                                                                            |
+| `-q` / `--quiet`                                                                                           | Suppress progress messages on stderr                                                                                     |
+| `--alerts-only`                                                                                            | Recommendations only (respects pretty vs json)                                                                           |
+| `suggest` / `--suggest`                                                                                    | Single best burn pool (or nothing urgent); pair with `--json` for structured                                             |
+| `status` / `prompt` / `--status`                                                                           | One-line status for shell prompts / status bars                                                                          |
+| `serve` / `--serve`                                                                                        | Loopback HTTP API for agents (`127.0.0.1`; see [`docs/agent-api.md`](docs/agent-api.md))                                 |
+| `--port` / `--max-age`                                                                                     | Serve bind port (default 8787) and snapshot cache max age                                                                |
+| `--traditional-summary`                                                                                    | Legacy flat summary format instead of unified action plan                                                                |
+| `--print-completion bash\|zsh`                                                                             | Print shell completion script to stdout                                                                                  |
+| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage-ai` / `--no-openusage-sh` | Skip specific collectors (`--no-openusage` remains an alias for `.ai`)                                                   |
+| `--providers copilot,grok`                                                                                 | Query specific CodexBar providers (CSV, one per subprocess)                                                              |
+| `-t` / `--timeout SECONDS`                                                                                 | Force subprocess timeout for all external tools (default **45**)                                                         |
+| `--generate-config`                                                                                        | Write default `~/.config/aiuse/config.toml`; never overwrites existing                                                   |
+| `--show-config-path`                                                                                       | Print canonical config.toml and retired services.yaml paths                                                              |
+| `doctor` / `--doctor`                                                                                      | Check tools on PATH, config presence, effective timeouts; no collect                                                     |
+| `trust` …                                                                                                  | macOS: codesign status / sign caut / Keychain grant guide ([docs/macos-keychain-trust.md](docs/macos-keychain-trust.md)) |
+| `--min-remaining 50 --max-days 10`                                                                         | Override alert thresholds                                                                                                |
+| `--save PATH`                                                                                              | Also write full JSON snapshot to PATH                                                                                    |
 
 ### Exit codes
 

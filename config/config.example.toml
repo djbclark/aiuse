@@ -7,6 +7,8 @@
 # default = 45
 # cswap = 45
 # codexbar = 45
+# openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
+# openusage_sh = 45  # OpenUsage.sh terminal dashboard
 # tokscale = 45
 
 [collectors.caut]
@@ -16,6 +18,14 @@
 [collectors.codexbar]
 # "enabled" honors CodexBar's own provider list; use "all" or a CSV to override.
 # providers = "enabled"
+
+[collectors.openusage_ai]
+# OpenUsage.ai — the macOS menu-bar app's CLI / loopback API.
+# enabled = true
+
+[collectors.openusage_sh]
+# OpenUsage.sh — terminal dashboard, invoked through `openusage-sh`.
+# enabled = true
 
 [analysis]
 # Persist hourly/manual snapshots for History learning.

@@ -140,10 +140,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "collectors": {
         "cswap": {"enabled": True},
         "codexbar": {"enabled": True, "providers": "enabled"},
-        # caut + OpenUsage enabled by default for multi-source cross-checks.
+        # caut + the two distinct OpenUsage products are cross-check peers.
         # "both" = claude+codex (providers caut can actually fill windows for).
         "caut": {"enabled": True, "providers": "both"},
-        "openusage": {
+        "openusage_ai": {
             "enabled": True,
             "force_refresh": True,
             "try_launch_app": True,
@@ -151,6 +151,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             # Doctor / preflight probe (payload collect still uses /v1/limits via base_url).
             "health_path": "/v1/limits",
         },
+        "openusage_sh": {"enabled": True},
         "tokscale": {"enabled": True},
     },
 }
@@ -166,11 +167,12 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "codexbar",
         "codexbar_discovery",
         "caut",
-        "openusage",
+        "openusage_ai",
+        "openusage_sh",
         "tokscale",
     }
 )
-KNOWN_COLLECTOR_KEYS = frozenset({"cswap", "codexbar", "caut", "openusage", "tokscale"})
+KNOWN_COLLECTOR_KEYS = frozenset({"cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"})
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
     {
         "enabled",
@@ -192,7 +194,7 @@ def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None
 
     1. ``collectors.<name>.probe_url`` — full URL
     2. ``base_url`` + ``health_path`` (path may be absolute path on the host)
-    3. For ``openusage`` only: ``base_url`` + ``/v1/limits`` when path omitted
+    3. For ``openusage_ai`` only: ``base_url`` + ``/v1/limits`` when path omitted
     """
     collectors = (config or {}).get("collectors")
     if not isinstance(collectors, dict):
@@ -208,7 +210,7 @@ def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None
         return None
     base_s = str(base).rstrip("/")
     path = entry.get("health_path")
-    if path is None and name == "openusage":
+    if path is None and name == "openusage_ai":
         path = "/v1/limits"
     if path is None:
         return None
@@ -366,7 +368,7 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
         candidate = Path(path).expanduser()
         if not candidate.is_file():
             raise SystemExit(f"Config file not found: {candidate}")
-        data = _read_file(candidate)
+        data = _canonicalize_collector_names(_read_file(candidate))
         return _deep_merge(cfg, data) if isinstance(data, dict) else cfg
 
     toml_path = default_config_path()
@@ -378,7 +380,7 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
         )
     candidate = toml_path if toml_path.is_file() else legacy_path
     if candidate.is_file():
-        data = _read_file(candidate)
+        data = _canonicalize_collector_names(_read_file(candidate))
         if isinstance(data, dict):
             cfg = _deep_merge(cfg, data)
     return cfg
@@ -487,7 +489,7 @@ def _default_toml_text() -> str:
         "\n"
         "[timeouts]\n"
         "# Wall-clock seconds for every external data source\n"
-        "# (cswap, codexbar, caut, openusage, tokscale).\n"
+        "# (cswap, codexbar, caut, openusage_ai, openusage_sh, tokscale).\n"
         "# Tools either return quickly or hang — long budgets only delay failure.\n"
         f"default = {DEFAULT_SUBPROCESS_TIMEOUT:g}\n"
         "\n"
@@ -496,7 +498,8 @@ def _default_toml_text() -> str:
         "# codexbar = 45\n"
         "# codexbar_discovery = 45   # `codexbar config providers` (local, usually ms)\n"
         "# caut = 45\n"
-        "# openusage = 45\n"
+        "# openusage_ai = 45\n"
+        "# openusage_sh = 45\n"
         "# tokscale = 45\n"
         "\n"
         "# CLI `--timeout` / `-t` overrides every tool for that run.\n"
@@ -536,6 +539,20 @@ def _deep_copy(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_deep_copy(v) for v in obj]
     return obj
+
+
+def _canonicalize_collector_names(data: Any) -> Any:
+    """Map the former ambiguous ``openusage`` configuration to OpenUsage.ai."""
+    if not isinstance(data, dict):
+        return data
+    data = _deep_copy(data)
+    collectors = data.get("collectors")
+    if isinstance(collectors, dict) and "openusage" in collectors:
+        collectors.setdefault("openusage_ai", collectors.pop("openusage"))
+    timeouts = data.get("timeouts")
+    if isinstance(timeouts, dict) and "openusage" in timeouts:
+        timeouts.setdefault("openusage_ai", timeouts.pop("openusage"))
+    return data
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

@@ -90,19 +90,19 @@ Cross-check notes alone never set exit code 2.
 
 ### `accounts[]` (`AccountUsage`)
 
-| Field               | Type              | Stable?                                                               |
-| ------------------- | ----------------- | --------------------------------------------------------------------- |
-| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage` \| `tokscale`    |
-| `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)            |
-| `account`           | string \| null    | email or label when known                                             |
-| `plan`              | string \| null    | plan name if reported                                                 |
-| `billing_kind`      | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown` |
-| `windows`           | array             | quota windows                                                         |
-| `balance_usd`       | number \| null    | prepaid balance                                                       |
-| `credits_remaining` | number \| null    | legacy credits field                                                  |
-| `usage_credits`     | object \| omitted | extra/pay-as-you-go wallet when present                               |
-| `error`             | string \| null    | row-level error                                                       |
-| `notes`             | string[]          | human notes (age, hydrate, etc.)                                      |
+| Field               | Type              | Stable?                                                                                 |
+| ------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage_ai` \| `openusage_sh` \| `tokscale` |
+| `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                              |
+| `account`           | string \| null    | email or label when known                                                               |
+| `plan`              | string \| null    | plan name if reported                                                                   |
+| `billing_kind`      | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                   |
+| `windows`           | array             | quota windows                                                                           |
+| `balance_usd`       | number \| null    | prepaid balance                                                                         |
+| `credits_remaining` | number \| null    | legacy credits field                                                                    |
+| `usage_credits`     | object \| omitted | extra/pay-as-you-go wallet when present                                                 |
+| `error`             | string \| null    | row-level error                                                                         |
+| `notes`             | string[]          | human notes (age, hydrate, etc.)                                                        |
 
 `raw` is **not** included in JSON (internal only).
 

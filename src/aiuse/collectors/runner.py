@@ -15,7 +15,8 @@ from .base import which
 from .caut import collect_caut
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
-from .openusage import collect_openusage
+from .openusage import collect_openusage_ai
+from .openusage_sh import collect_openusage_sh
 from .tokscale import collect_tokscale
 
 # Prefer earlier sources for *selection* (what drives the ladder). All live
@@ -23,22 +24,24 @@ from .tokscale import collect_tokscale
 DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "codexbar",
     "caut",
-    "openusage",
+    "openusage_ai",
+    "openusage_sh",
     "tokscale",
 )
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
-    "claude": ("cswap", "codexbar", "caut", "openusage", "tokscale"),
+    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
-    "copilot": ("tokscale", "codexbar", "caut", "openusage"),
+    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh"),
 }
 
 SOURCE_LABELS: dict[str, str] = {
     "cswap": "cswap",
     "codexbar": "CodexBar",
     "caut": "caut",
-    "openusage": "OpenUsage",
+    "openusage_ai": "OpenUsage.ai",
+    "openusage_sh": "OpenUsage.sh",
     "tokscale": "tokscale",
 }
 
@@ -89,17 +92,17 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 partial(collect_caut, providers=str(caut_providers), timeout=caut_timeout),
             )
         )
-    if _enabled(collectors_cfg, "openusage"):
-        ou_cfg = collectors_cfg.get("openusage") if isinstance(collectors_cfg.get("openusage"), dict) else {}
-        ou_timeout = timeout_for(config, "openusage")
+    if _enabled(collectors_cfg, "openusage_ai"):
+        ou_cfg = collectors_cfg.get("openusage_ai") if isinstance(collectors_cfg.get("openusage_ai"), dict) else {}
+        ou_timeout = timeout_for(config, "openusage_ai")
         force = bool((ou_cfg or {}).get("force_refresh", True))
         launch = bool((ou_cfg or {}).get("try_launch_app", True))
         base = str((ou_cfg or {}).get("base_url") or "http://127.0.0.1:6736")
         jobs.append(
             (
-                "openusage",
+                "openusage_ai",
                 partial(
-                    collect_openusage,
+                    collect_openusage_ai,
                     timeout=ou_timeout,
                     force_refresh=force,
                     try_launch_app=launch,
@@ -107,6 +110,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 ),
             )
         )
+    if _enabled(collectors_cfg, "openusage_sh"):
+        jobs.append(("openusage_sh", partial(collect_openusage_sh, timeout=timeout_for(config, "openusage_sh"))))
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
@@ -664,7 +669,7 @@ def _source_name(source: str) -> str:
 
 
 # Re-export for docs / install scripts that want a single inventory.
-ALL_DATA_SOURCES: tuple[str, ...] = ("cswap", "codexbar", "caut", "openusage", "tokscale")
+ALL_DATA_SOURCES: tuple[str, ...] = ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale")
 
 
 def collector_tools_present() -> dict[str, bool]:
@@ -673,6 +678,7 @@ def collector_tools_present() -> dict[str, bool]:
         "cswap": which("cswap") is not None,
         "codexbar": which("codexbar") is not None,
         "caut": which("caut") is not None,
-        "openusage": which("openusage") is not None,
+        "openusage_ai": which("openusage") is not None,
+        "openusage_sh": which("openusage-sh") is not None,
         "tokscale": which("tokscale") is not None,
     }

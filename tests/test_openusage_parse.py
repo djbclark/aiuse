@@ -4,6 +4,7 @@ import pytest
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.openusage import _from_provider, _http_limits
+from aiuse.collectors.openusage_sh import collect_openusage_sh
 from aiuse.models import BillingKind
 
 
@@ -42,7 +43,7 @@ def test_openusage_claude_session_weekly():
         },
         via="http",
     )
-    assert acc.source == "openusage"
+    assert acc.source == "openusage_ai"
     assert acc.provider == "claude"
     assert acc.plan == "Pro"
     assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
@@ -94,3 +95,29 @@ def test_openusage_balance_resource():
     )
     assert acc.billing_kind == BillingKind.PREPAID_BALANCE
     assert acc.balance_usd == 12.5
+
+
+def test_openusage_sh_uses_only_explicit_quota_metrics(monkeypatch):
+    monkeypatch.setattr(
+        "aiuse.collectors.openusage_sh.run_json",
+        lambda *_args, **_kwargs: {
+            "snapshots": [
+                {
+                    "provider_id": "codex",
+                    "account_id": "codex-cli",
+                    "status": "OK",
+                    "metrics": {
+                        "rate_limit_primary": {"unit": "%", "remaining": 75, "used": 25, "window": "7d"},
+                        "cache_hit_ratio": {"unit": "%", "remaining": 99, "used": 1, "window": "all-time"},
+                    },
+                    "resets": {"rate_limit_primary": "2026-08-01T00:00:00Z"},
+                }
+            ]
+        },
+    )
+    accounts = collect_openusage_sh()
+    assert len(accounts) == 1
+    assert accounts[0].source == "openusage_sh"
+    assert accounts[0].provider == "codex"
+    assert [window.label for window in accounts[0].windows] == ["7d"]
+    assert accounts[0].windows[0].remaining() == 75.0

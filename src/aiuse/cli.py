@@ -41,7 +41,8 @@ _EXTERNAL_TOOLS: tuple[tuple[str, str, list[str]], ...] = (
     ("cswap", "cswap", ["--version"]),
     ("codexbar", "codexbar", ["-V"]),
     ("caut", "caut", ["--version"]),
-    ("openusage", "openusage", ["--help"]),
+    ("openusage_ai", "openusage", ["--help"]),
+    ("openusage_sh", "openusage-sh", ["version"]),
     ("tokscale", "tokscale", ["--version"]),
 )
 _PROBE_TIMEOUT_S = 5.0
@@ -232,9 +233,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip caut collector",
     )
     p.add_argument(
+        "--no-openusage-ai",
         "--no-openusage",
         action="store_true",
-        help="Skip OpenUsage collector (CLI and/or loopback HTTP)",
+        help="Skip OpenUsage.ai collector (legacy --no-openusage alias)",
+    )
+    p.add_argument(
+        "--no-openusage-sh",
+        action="store_true",
+        help="Skip OpenUsage.sh collector",
     )
     p.add_argument(
         "--providers",
@@ -552,7 +559,7 @@ def _openusage_http_ok(
     config: dict[str, Any] | None = None,
 ) -> bool:
     """True when OpenUsage health probe (or default /v1/limits) answers."""
-    url = collector_health_url(config, "openusage") or "http://127.0.0.1:6736/v1/limits"
+    url = collector_health_url(config, "openusage_ai") or "http://127.0.0.1:6736/v1/limits"
     return _http_probe_ok(url, timeout=timeout)
 
 
@@ -647,7 +654,7 @@ def diagnose(
             status = "ok"
             detail = path
             # openusage CLI --help can be heavy; skip version probe for it.
-            if probe and collector_key != "openusage":
+            if probe and collector_key != "openusage_ai":
                 ok, summary = probe_tool_version(cmd, version_argv, timeout=_PROBE_TIMEOUT_S, run_fn=run_fn)
                 if ok:
                     detail = f"{path} · {summary}"
@@ -665,8 +672,8 @@ def diagnose(
             status = "MISSING"
             detail = "not found on PATH"
             # OpenUsage can serve loopback HTTP without a PATH CLI.
-            if collector_key == "openusage" and enabled:
-                health = collector_health_url(config, "openusage") or "http://127.0.0.1:6736/v1/limits"
+            if collector_key == "openusage_ai" and enabled:
+                health = collector_health_url(config, "openusage_ai") or "http://127.0.0.1:6736/v1/limits"
                 if _openusage_http_ok(config=config):
                     status = "ok"
                     detail = f"CLI missing; HTTP probe ok ({health})"
@@ -679,7 +686,7 @@ def diagnose(
             elif enabled:
                 problems += 1
         flag = "enabled" if enabled else "disabled in config"
-        lines.append(f"  {cmd:<10} {status:<8} {detail}  [{flag}]")
+        lines.append(f"  {collector_key:<14} {status:<8} {detail}  [{flag}]")
     lines.append("")
 
     # macOS codesign: warn when enabled caut is adhoc (Keychain Always Allow).
@@ -770,8 +777,10 @@ def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> No
         collectors["codexbar"] = {"enabled": False}
     if getattr(args, "no_caut", False):
         collectors["caut"] = {"enabled": False}
-    if getattr(args, "no_openusage", False):
-        collectors["openusage"] = {"enabled": False}
+    if getattr(args, "no_openusage_ai", False):
+        collectors["openusage_ai"] = {"enabled": False}
+    if getattr(args, "no_openusage_sh", False):
+        collectors["openusage_sh"] = {"enabled": False}
     if args.providers:
         collectors.setdefault("codexbar", {})["providers"] = args.providers
     analysis = config.setdefault("analysis", {})
