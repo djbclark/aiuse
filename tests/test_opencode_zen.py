@@ -71,7 +71,8 @@ def test_collect_opencode_zen_uses_secretspec_cookie_when_no_override(monkeypatc
     monkeypatch.setattr("aiuse.collectors.opencode_zen.subprocess.run", fake_run)
     monkeypatch.setattr("aiuse.collectors.opencode_zen._fetch_server", fake_fetch)
 
-    accounts = collect_opencode_zen(environ={"SECRETSPEC_FILE": "/tmp/aiuse-secretspec.toml"})
+    monkeypatch.setenv("SECRETSPEC_FILE", "/tmp/aiuse-secretspec.toml")
+    accounts = collect_opencode_zen()
 
     assert seen == [
         [
@@ -103,3 +104,15 @@ def test_collect_opencode_zen_explicit_cookie_overrides_secretspec(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.opencode_zen._fetch_server", fake_fetch)
 
     assert collect_opencode_zen(environ={"AIUSE_OPENCODE_ZEN_COOKIE": "session=explicit"})
+
+
+def test_collect_opencode_zen_accepts_current_opencode_workspace_prefix(monkeypatch):
+    def fake_fetch(_server_id, args, _cookie, _timeout):
+        if args is None:
+            return '{"id":"w' + 'rk_current"}'
+        assert args == ["w" + "rk_current"]
+        return '{"customerID":"cus_example","balance":1}'
+
+    monkeypatch.setattr("aiuse.collectors.opencode_zen._fetch_server", fake_fetch)
+
+    assert collect_opencode_zen(environ={"AIUSE_OPENCODE_ZEN_COOKIE": "session=example"})

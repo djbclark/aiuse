@@ -46,7 +46,7 @@ def collect_opencode_zen(
 ) -> list[AccountUsage]:
     """Return the native Zen source, or nothing until a session cookie is supplied."""
     env = os.environ if environ is None else environ
-    cookie = _resolve_cookie(env, timeout)
+    cookie = _resolve_cookie(env, timeout, allow_secretspec=environ is None)
     if not cookie:
         return []
     workspace = _workspace_id(str(env.get(_WORKSPACE_ENV) or ""))
@@ -69,11 +69,13 @@ def collect_opencode_zen(
     ]
 
 
-def _resolve_cookie(env: Mapping[str, str], timeout: float) -> str | None:
+def _resolve_cookie(env: Mapping[str, str], timeout: float, *, allow_secretspec: bool = True) -> str | None:
     """Return an explicit cookie or a SecretSpec value without exposing either."""
     explicit = str(env.get(_COOKIE_ENV) or "").strip()
     if explicit:
         return explicit
+    if not allow_secretspec:
+        return None
     executable = shutil.which("secretspec")
     if executable is None:
         return None
@@ -133,7 +135,9 @@ def _fetch_server(server_id: str, args: list[str] | None, cookie: str, timeout: 
 
 
 def _workspace_id(value: str) -> str | None:
-    match = re.search(r"\bwork_[A-Za-z0-9]+\b", value)
+    # OpenCode uses ``work_``; accept the earlier ``work_`` spelling as a
+    # compatibility fallback for serialized historical responses.
+    match = re.search(r"\bw(?:rk|ork)_[A-Za-z0-9]+\b", value)
     return match.group(0) if match else None
 
 
