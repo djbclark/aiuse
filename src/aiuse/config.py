@@ -154,11 +154,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "openusage_sh": {"enabled": True},
         "tokscale": {"enabled": True},
     },
+    # Source-specific local account ids can be mapped to the account label used
+    # by other collectors.  Normally this stays empty: runner.py automatically
+    # resolves providers where every source has exactly one named account.
+    # Example: {"codex": {"openusage_sh": {"codex-cli": "me@example.com"}}}
+    "account_aliases": {},
 }
 
 
 # Top-level and nested keys recognized by the loader / doctor (unknown → warning).
-KNOWN_TOP_LEVEL_KEYS = frozenset({"timeouts", "analysis", "plans", "collectors", "macos"})
+KNOWN_TOP_LEVEL_KEYS = frozenset({"timeouts", "analysis", "plans", "collectors", "account_aliases", "macos"})
 KNOWN_TIMEOUT_KEYS = frozenset(
     {
         "default",
@@ -305,6 +310,24 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             for ek in entry:
                 if ek not in KNOWN_COLLECTOR_ENTRY_KEYS:
                     issues.append(f"warning: unknown collectors.{name} key {ek!r}")
+
+    aliases = cfg.get("account_aliases")
+    if aliases is not None and not isinstance(aliases, dict):
+        issues.append("error: account_aliases must be a provider -> source -> account mapping")
+    elif isinstance(aliases, dict):
+        for provider, sources in aliases.items():
+            if not isinstance(sources, dict):
+                issues.append(f"error: account_aliases.{provider} must be a mapping")
+                continue
+            for source, accounts in sources.items():
+                if not isinstance(accounts, dict):
+                    issues.append(f"error: account_aliases.{provider}.{source} must be a mapping")
+                    continue
+                for local, canonical in accounts.items():
+                    if not str(local).strip() or not isinstance(canonical, str) or not canonical.strip():
+                        issues.append(
+                            f"error: account_aliases.{provider}.{source} entries need non-empty account names"
+                        )
 
     analysis = cfg.get("analysis")
     if analysis is not None and not isinstance(analysis, dict):

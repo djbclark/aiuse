@@ -128,6 +128,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     snapshot.accounts, snapshot.cross_checks = _select_and_cross_check(
         snapshot.accounts,
         cswap_authoritative=_enabled(collectors_cfg, "cswap"),
+        account_aliases=config.get("account_aliases"),
     )
     return snapshot
 
@@ -159,6 +160,7 @@ def _select_and_cross_check(
     accounts: list[AccountUsage],
     *,
     cswap_authoritative: bool,
+    account_aliases: dict[str, Any] | None = None,
 ) -> tuple[list[AccountUsage], list[CrossCheck]]:
     """Select report rows while cross-checking all live sources.
 
@@ -169,6 +171,7 @@ def _select_and_cross_check(
 
     for account in accounts:
         account.provider = _canonical_provider(account.provider)
+    _normalize_account_names(accounts, account_aliases)
 
     providers = sorted({account.provider for account in accounts}, key=str.casefold)
     selected: list[AccountUsage] = []
@@ -249,6 +252,45 @@ def _consolidate_accounts(
     """Compatibility wrapper for callers that only need selected rows."""
     selected, _ = _select_and_cross_check(accounts, cswap_authoritative=cswap_authoritative)
     return selected
+
+
+def _normalize_account_names(accounts: list[AccountUsage], aliases: dict[str, Any] | None) -> None:
+    """Apply explicit aliases, then only provably one-to-one automatic aliases.
+
+    Local tools often expose stable labels such as ``codex-cli`` rather than an
+    email.  One named account from each identifying source is safely one
+    logical account; anonymous rows are neutral. Multi-account providers are
+    never guessed and need TOML mapping.
+    """
+    aliases = aliases if isinstance(aliases, dict) else {}
+    for account in accounts:
+        provider_aliases = aliases.get(account.provider)
+        source_aliases = provider_aliases.get(account.source) if isinstance(provider_aliases, dict) else None
+        if account.account and isinstance(source_aliases, dict):
+            mapped = source_aliases.get(account.account)
+            if isinstance(mapped, str) and mapped.strip():
+                account.account = mapped.strip()
+
+    for provider in {account.provider for account in accounts}:
+        live = [account for account in accounts if account.provider == provider and _has_live_data(account)]
+        by_source: dict[str, set[str]] = defaultdict(set)
+        for account in live:
+            if account.account and account.account.strip():
+                by_source[account.source].add(account.account.strip())
+        # Anonymous sources contribute no identity evidence, so they neither
+        # authorize nor block a one-to-one mapping.  A source with multiple
+        # *named* accounts does block it: that must be configured explicitly.
+        if len(by_source) < 2 or any(len(names) != 1 for names in by_source.values()):
+            continue
+        # Prefer the selected source's display identity.  It is already the
+        # source that drives the ladder, and every source has exactly one row.
+        priority = _source_priority(provider, cswap_authoritative="cswap" in by_source)
+        canonical = next((next(iter(by_source[source])) for source in priority if source in by_source), None)
+        if canonical is None:
+            canonical = next(iter(next(iter(by_source.values()))))
+        for account in live:
+            if account.account:
+                account.account = canonical
 
 
 def _has_live_data(account: AccountUsage) -> bool:
@@ -512,6 +554,21 @@ def _cross_check_source_pair(
         elif len(left_rows) == 1 and len(right_rows) == 1:
             # Already compared above if match worked; if not, force compare
             checks.append(_compare_live_rows(left_rows[0], right))
+        elif right.account and left_rows:
+            checks.append(
+                CrossCheck(
+                    provider=provider,
+                    account=right.account,
+                    status="warning",
+                    sources=[_source_name(left_src), _source_name(right_src)],
+                    message=(
+                        f"Cannot safely map {_source_name(right_src)} account {right.account} "
+                        f"to one of {_source_name(left_src)}'s multiple accounts. Add "
+                        f"[account_aliases.{provider}.{right_src}] "
+                        f'"{right.account}" = "<canonical account>"'
+                    ),
+                )
+            )
     return checks
 
 
@@ -541,7 +598,12 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
     matched_count = 0
 
     if left.account and right.account and left.account.lower() != right.account.lower():
-        issues.append(f"account identifiers differ ({left.account} versus {right.account})")
+        issues.append(
+            f"account identifiers differ ({left.account} versus {right.account}); "
+            f"if this is a multi-account provider, add "
+            f"[account_aliases.{left.provider}.{left.source}] "
+            f'"{left.account}" = "{right.account}"'
+        )
 
     for left_window in left.windows:
         right_window = _matching_window(left_window, right.windows, matched_right)

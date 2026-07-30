@@ -97,6 +97,19 @@ absent. If both exist, aiuse exits with a migration error: move the YAML setting
 into TOML, then remove `services.yaml`. Provider credentials stay with cswap,
 CodexBar, caut, OpenUsage, and tokscale — these files do not hold tokens or emails.
 
+aiuse normally unifies source-local account names automatically when each
+identifying source reports exactly one account for a provider. For a genuinely
+multi-account provider, map a local name explicitly instead of letting aiuse
+guess:
+
+```toml
+[account_aliases.codex.openusage_sh]
+"codex-cli" = "me@example.com"
+```
+
+`aiuse --full` prints this exact table when a multi-account source cannot be
+matched safely. Explicit mappings take precedence over automatic normalization.
+
 ## Daily workflow
 
 ```bash

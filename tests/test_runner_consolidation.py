@@ -127,6 +127,51 @@ def test_claude_cross_check_matches_accounts_case_insensitively():
     assert "percentage points" in checks[0].message
 
 
+def test_single_account_per_source_is_normalized_automatically():
+    codexbar = _account("codexbar", "codex")
+    codexbar.account = "me@example.com"
+    openusage = _account("openusage_sh", "codex")
+    openusage.account = "codex-cli"
+    anonymous = _account("openusage_ai", "codex")
+
+    selected, checks = _select_and_cross_check([codexbar, openusage, anonymous], cswap_authoritative=True)
+
+    assert selected[0].account == "me@example.com"
+    assert openusage.account == "me@example.com"
+    assert not any("account identifiers differ" in check.message for check in checks)
+
+
+def test_multi_account_alias_is_not_guessed_and_gives_toml_hint():
+    codexbar_one = _account("codexbar", "codex")
+    codexbar_one.account = "one@example.com"
+    codexbar_two = _account("codexbar", "codex")
+    codexbar_two.account = "two@example.com"
+    openusage = _account("openusage_sh", "codex")
+    openusage.account = "codex-cli"
+
+    _selected, checks = _select_and_cross_check([codexbar_one, codexbar_two, openusage], cswap_authoritative=True)
+
+    assert openusage.account == "codex-cli"
+    assert any("[account_aliases.codex.openusage_sh]" in check.message for check in checks)
+
+
+def test_explicit_multi_account_alias_is_applied():
+    codexbar_one = _account("codexbar", "codex")
+    codexbar_one.account = "one@example.com"
+    codexbar_two = _account("codexbar", "codex")
+    codexbar_two.account = "two@example.com"
+    openusage = _account("openusage_sh", "codex")
+    openusage.account = "codex-cli"
+
+    _selected, _checks = _select_and_cross_check(
+        [codexbar_one, codexbar_two, openusage],
+        cswap_authoritative=True,
+        account_aliases={"codex": {"openusage_sh": {"codex-cli": "one@example.com"}}},
+    )
+
+    assert openusage.account == "one@example.com"
+
+
 def test_claude_gets_cross_checked_when_cswap_disabled():
     codexbar_row = _account("codexbar", "claude")
     tokscale_row = _account("tokscale", "claude")

@@ -27,6 +27,12 @@
 # OpenUsage.sh — terminal dashboard, invoked through `openusage-sh`.
 # enabled = true
 
+# Usually unnecessary: aiuse automatically unifies a provider when every live
+# source reports exactly one named account.  For a genuinely multi-account
+# provider, map a source-local id to the account label used elsewhere.
+# [account_aliases.codex.openusage_sh]
+# "codex-cli" = "me@example.com"
+
 [analysis]
 # Persist hourly/manual snapshots for History learning.
 # persist_snapshots = true

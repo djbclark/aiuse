@@ -177,6 +177,13 @@ def test_validate_config_clean_defaults():
     )
 
 
+def test_validate_config_accepts_and_checks_account_aliases():
+    assert validate_config({"account_aliases": {"codex": {"openusage_sh": {"codex-cli": "me@example.com"}}}}) == []
+
+    issues = validate_config({"account_aliases": {"codex": {"openusage_sh": {"codex-cli": 3}}}})
+    assert "account_aliases.codex.openusage_sh entries need non-empty account names" in "\n".join(issues)
+
+
 def test_validate_config_unknown_and_bad_timeouts():
     issues = validate_config(
         {
