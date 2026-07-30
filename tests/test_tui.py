@@ -127,6 +127,42 @@ def test_should_use_tui_true_on_tty_when_rich_present():
     assert should_use_tui(stream=TTY()) is True
 
 
+def test_should_use_tui_honors_force_color_when_piped(monkeypatch):
+    """FORCE_COLOR should opt a piped/non-tty stream into the styled report.
+
+    Mirrors Rich's own ``Console.is_terminal`` behavior so capturing a demo
+    or redirecting output doesn't silently downgrade to the plain-text
+    fallback despite the operator explicitly asking for color.
+    """
+
+    class Pipe:
+        def isatty(self) -> bool:
+            return False
+
+    if not textual_available():
+        return
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    assert should_use_tui(stream=Pipe()) is True
+
+
+def test_should_use_tui_honors_tty_compatible_override(monkeypatch):
+    class TTY:
+        def isatty(self) -> bool:
+            return True
+
+    class Pipe:
+        def isatty(self) -> bool:
+            return False
+
+    if not textual_available():
+        return
+    monkeypatch.setenv("TTY_COMPATIBLE", "1")
+    assert should_use_tui(stream=Pipe()) is True
+
+    monkeypatch.setenv("TTY_COMPATIBLE", "0")
+    assert should_use_tui(stream=TTY()) is False
+
+
 def test_run_usage_app_default_prints_priority_ladder(capsys):
     from aiuse.tui.app import run_usage_app
 
