@@ -143,23 +143,23 @@ Cross-check notes alone never set exit code 2.
 
 ## `alerts[]` (`UseOrLoseAlert`)
 
-| Field                  | Type              | Notes                                                         |
-| ---------------------- | ----------------- | ------------------------------------------------------------- |
-| `urgency`              | string            | `critical` \| `high` \| `medium` \| `low` \| `info` \| `none` |
-| `provider`             | string            |                                                               |
-| `account`              | string \| null    |                                                               |
-| `window_label`         | string            |                                                               |
-| `remaining_percent`    | number            |                                                               |
-| `days_until_reset`     | number \| null    |                                                               |
-| `deadline_is_estimated`| bool              | true when the source supplied a reset date without a time     |
-| `plan`                 | string \| null    |                                                               |
-| `message`              | string            | human sentence                                                |
-| `source`               | string            | data source for the window                                    |
-| `score`                | number            | sort priority (higher = more important)                       |
-| `window_minutes`       | int \| null       |                                                               |
-| `kind`                 | string            | `burn` \| `conserve` \| `prepaid` (non-expiring API balance)  |
-| `consumption_analysis` | object \| omitted | flexibility profile when present                              |
-| `pace`                 | object \| omitted | pace profile when present                                     |
+| Field                   | Type              | Notes                                                         |
+| ----------------------- | ----------------- | ------------------------------------------------------------- |
+| `urgency`               | string            | `critical` \| `high` \| `medium` \| `low` \| `info` \| `none` |
+| `provider`              | string            |                                                               |
+| `account`               | string \| null    |                                                               |
+| `window_label`          | string            |                                                               |
+| `remaining_percent`     | number            |                                                               |
+| `days_until_reset`      | number \| null    |                                                               |
+| `deadline_is_estimated` | bool              | true when the source supplied a reset date without a time     |
+| `plan`                  | string \| null    |                                                               |
+| `message`               | string            | human sentence                                                |
+| `source`                | string            | data source for the window                                    |
+| `score`                 | number            | sort priority (higher = more important)                       |
+| `window_minutes`        | int \| null       |                                                               |
+| `kind`                  | string            | `burn` \| `conserve` \| `prepaid` (non-expiring API balance)  |
+| `consumption_analysis`  | object \| omitted | flexibility profile when present                              |
+| `pace`                  | object \| omitted | pace profile when present                                     |
 
 ### `consumption_analysis` (optional)
 
