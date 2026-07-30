@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -212,6 +213,14 @@ class QuotaWindow:
         now = now or utcnow()
         return (self.resets_at - now).total_seconds() / 86400.0
 
+    def reset_time_is_precise(self) -> bool:
+        """Whether the source supplied a reset time rather than a date alone."""
+        for key in ("resetsAt", "resets_at", "resetAt", "reset_at"):
+            value = self.raw.get(key)
+            if isinstance(value, str):
+                return re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()) is None
+        return True
+
     def same_measurement(self, other: "QuotaWindow") -> bool:
         """Whether two windows look like the same underlying measurement (for dedup)."""
         return (
@@ -310,6 +319,7 @@ class UseOrLoseAlert:
     window_minutes: int | None = None
     kind: str = "burn"  # burn | conserve | prepaid
     pace: PaceProfile | None = None
+    deadline_is_estimated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -325,6 +335,7 @@ class UseOrLoseAlert:
             "score": self.score,
             "window_minutes": self.window_minutes,
             "kind": self.kind,
+            "deadline_is_estimated": self.deadline_is_estimated,
         }
         if self.flexibility_profile:
             d["consumption_analysis"] = self.flexibility_profile.to_dict()

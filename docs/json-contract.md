@@ -151,6 +151,7 @@ Cross-check notes alone never set exit code 2.
 | `window_label`         | string            |                                                               |
 | `remaining_percent`    | number            |                                                               |
 | `days_until_reset`     | number \| null    |                                                               |
+| `deadline_is_estimated`| bool              | true when the source supplied a reset date without a time     |
 | `plan`                 | string \| null    |                                                               |
 | `message`              | string            | human sentence                                                |
 | `source`               | string            | data source for the window                                    |

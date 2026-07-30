@@ -42,3 +42,16 @@ def test_tokscale_copilot_drops_completions_and_chat():
     )
     assert [w.label for w in acc.windows] == ["GitHub Copilot premium requests"]
     assert acc.windows[0].remaining_percent == 0
+
+
+def test_date_only_reset_is_marked_as_an_estimate():
+    acc = _from_row(
+        {
+            "provider": "Copilot",
+            "metrics": [
+                {"label": "Premium", "used_percent": 10, "resets_at": "2026-08-01"},
+            ],
+        }
+    )
+
+    assert not acc.windows[0].reset_time_is_precise()

@@ -34,14 +34,18 @@ def _now() -> datetime:
     ("days", "expected"),
     [
         (0.5, "in 12h"),
-        (1.0, "in 1 day"),
-        (1.01, "in 2 days"),
-        (1.38, "in 2 days"),
-        (2.01, "in 3 days"),
+        (1.0, "in 1.0 days"),
+        (1.01, "in 1.0 days"),
+        (1.38, "in 1.4 days"),
+        (2.01, "in 2.0 days"),
     ],
 )
-def test_human_when_rounds_up_remaining_calendar_days(days: float, expected: str):
+def test_human_when_shows_remaining_days_to_one_decimal(days: float, expected: str):
     assert _human_when(days) == expected
+
+
+def test_human_when_marks_date_only_reset_as_an_estimate():
+    assert _human_when(1.38, estimated=True) == "in ~1 day"
 
 
 def test_flags_nearly_unused_weekly_window():

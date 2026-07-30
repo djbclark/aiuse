@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -446,6 +445,7 @@ def analyze_use_or_lose(
                     verdict=verdict,
                     pace=pace,
                     days=days,
+                    deadline_is_estimated=not window.reset_time_is_precise(),
                     suppressed_children=suppressed,
                 )
                 alerts.append(
@@ -464,6 +464,7 @@ def analyze_use_or_lose(
                         window_minutes=window.window_minutes,
                         kind=kind,
                         pace=pace,
+                        deadline_is_estimated=not window.reset_time_is_precise(),
                     )
                 )
                 continue
@@ -527,6 +528,7 @@ def analyze_use_or_lose(
                 window_label=window.label,
                 remaining=remaining,
                 days=days,
+                deadline_is_estimated=not window.reset_time_is_precise(),
                 plan_notes=plan_meta.get("notes"),
             )
 
@@ -544,6 +546,7 @@ def analyze_use_or_lose(
                     score=score,
                     flexibility_profile=flex_profile,
                     window_minutes=window.window_minutes,
+                    deadline_is_estimated=not window.reset_time_is_precise(),
                 )
             )
     alerts.sort(key=lambda a: (-a.score, a.provider.casefold(), a.window_label.casefold()))
@@ -792,10 +795,11 @@ def _pace_message(
     verdict: str,
     pace: Any,
     days: float | None,
+    deadline_is_estimated: bool,
     suppressed_children: list[QuotaWindow] | None = None,
 ) -> str:
     who = account.account or "default"
-    when = _human_when(days)
+    when = _human_when(days, estimated=deadline_is_estimated)
     remaining = window.remaining()
     rem_s = f"{remaining:.0f}%" if remaining is not None else "some"
     child_note = ""
@@ -820,14 +824,16 @@ def _pace_message(
     )
 
 
-def _human_when(days: float | None) -> str:
+def _human_when(days: float | None, *, estimated: bool = False) -> str:
     if days is None:
         return "on an unknown schedule"
+    if estimated:
+        whole_days = max(1, int(days + 0.5))
+        unit = "day" if whole_days == 1 else "days"
+        return f"in ~{whole_days} {unit}"
     if days < 1:
         return f"in {days * 24:.0f}h"
-    calendar_days = math.ceil(days)
-    unit = "day" if calendar_days == 1 else "days"
-    return f"in {calendar_days} {unit}"
+    return f"in {days:.1f} days"
 
 
 def _message(
@@ -836,11 +842,12 @@ def _message(
     window_label: str,
     remaining: float,
     days: float | None,
+    deadline_is_estimated: bool,
     plan_notes: Any,
 ) -> str:
     who = account.account or "default"
     plan = account.plan or "subscription"
-    time_part = f"resets in {days:.1f} day(s)" if days is not None else "reset time unknown"
+    time_part = f"resets {_human_when(days, estimated=deadline_is_estimated)}" if days is not None else "reset time unknown"
     note = f" {plan_notes}" if plan_notes else ""
     return (
         f"Use {provider_display_name(account.provider)} ({who}, {plan}) soon: "

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import sys
 from datetime import datetime
@@ -601,7 +600,7 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     when = (
         "more each cycle"
         if alert.source == "history" and alert.days_until_reset is None
-        else _human_deadline(alert.days_until_reset)
+        else _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     )
     verb = "pace" if alert.kind == "conserve" else "use"
     # Forecast before the deadline phrase so width-clamp keeps the useful bit.
@@ -641,7 +640,7 @@ def _priority_account_line(
         window = _pick_representative_window(account.windows)
     if window is not None:
         rem = window.remaining() or 0.0
-        when = _human_deadline(window.days_until_reset())
+        when = _human_deadline(window.days_until_reset(), estimated=not window.reset_time_is_precise())
         body = f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · ok {when}"
     elif account.balance_usd is not None:
         body = f"{name} · {who} · balance ${account.balance_usd:.2f}"
@@ -833,7 +832,7 @@ def _render_traditional_summary(
                 ),
                 start=1,
             ):
-                when = _human_deadline(alert.days_until_reset)
+                when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
                 who = alert.account or "default account"
                 lines.append(
                     f"  {i}. {s.bold(provider_display_name(alert.provider))} ({who}): burn "
@@ -933,7 +932,7 @@ def _render_brief_action_plan(
 def _brief_alert_line(alert: UseOrLoseAlert, s: _Style, *, kind: str) -> str:
     icon = URGENCY_ICON.get(alert.urgency, "   ")
     who = alert.account or "default"
-    when = _human_deadline(alert.days_until_reset)
+    when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     verb = "pace" if kind == "conserve" else "use"
     return (
         f"  {s.urgency(alert.urgency, icon)} "
@@ -1071,7 +1070,7 @@ def _action_buckets(alerts: list[UseOrLoseAlert]) -> dict[str, list[UseOrLoseAle
 def _conserve_line(alert: UseOrLoseAlert, s: _Style) -> str:
     icon = URGENCY_ICON.get(alert.urgency, "   ")
     who = alert.account or "default"
-    when = _human_deadline(alert.days_until_reset)
+    when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     pace = alert.pace
     lockout = ""
     if pace and pace.projected_exhaust_at:
@@ -1094,7 +1093,7 @@ def _action_plan_line(alert: UseOrLoseAlert, s: _Style) -> str:
     icon = URGENCY_ICON.get(alert.urgency, "   ")
     badge = s.urgency(alert.urgency, f"{icon}")
     who = alert.account or "default"
-    when = _human_deadline(alert.days_until_reset)
+    when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
 
     profile = alert.flexibility_profile
     value_part = ""
@@ -1160,7 +1159,7 @@ def _throttled_waste_line(
 def _summary_alert_line(alert: UseOrLoseAlert, s: _Style) -> str:
     icon = URGENCY_ICON.get(alert.urgency, "   ")
     badge = s.urgency(alert.urgency, f"[{icon} {alert.urgency.value.upper():8}]")
-    when = _human_deadline(alert.days_until_reset)
+    when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     who = alert.account or "default"
     return (
         f"    {badge} {s.bold(provider_display_name(alert.provider))} · {who} · "
@@ -1182,17 +1181,19 @@ def _time_bucket(days: float | None) -> str:
     return "later / unknown reset"
 
 
-def _human_deadline(days: float | None) -> str:
+def _human_deadline(days: float | None, *, estimated: bool = False) -> str:
     if days is None:
         return "before the next reset (time unknown)"
     if days <= 0:
         return "immediately (reset imminent or past)"
+    if estimated:
+        whole_days = max(1, int(days + 0.5))
+        unit = "day" if whole_days == 1 else "days"
+        return f"within ~{whole_days} {unit}"
     if days < 1:
         hours = max(1, int(round(days * 24)))
         return f"within ~{hours}h"
-    calendar_days = math.ceil(days)
-    unit = "day" if calendar_days == 1 else "days"
-    return f"within {calendar_days} {unit}"
+    return f"within {days:.1f} days"
 
 
 def _sorted_accounts(accounts: list[AccountUsage]) -> list[AccountUsage]:
@@ -1245,7 +1246,10 @@ def _render_account(
         used_s = f"{w.used_percent:.0f}% used" if w.used_percent is not None else ""
         days = w.days_until_reset()
         if days is not None:
-            reset_s = f"resets in {days:.1f}d ({_fmt_dt(w.resets_at)})"
+            reset_s = (
+                f"resets {_human_deadline(days, estimated=not w.reset_time_is_precise())} "
+                f"({_fmt_dt(w.resets_at)})"
+            )
         elif w.reset_description:
             reset_s = w.reset_description
         else:

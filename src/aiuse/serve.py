@@ -279,6 +279,7 @@ def _alerts_from_dicts(rows: list[Any]) -> list[UseOrLoseAlert]:
                 window_minutes=row.get("window_minutes"),
                 kind=str(row.get("kind") or "burn"),
                 pace=pace,
+                deadline_is_estimated=bool(row.get("deadline_is_estimated", False)),
             )
         )
     return out

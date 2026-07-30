@@ -53,6 +53,7 @@ def test_pace_profile_and_alert_kind_round_trip_in_to_dict():
         "source",
         "score",
         "window_minutes",
+        "deadline_is_estimated",
     ):
         assert key in d
     assert d["urgency"] == "medium"

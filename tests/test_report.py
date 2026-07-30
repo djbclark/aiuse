@@ -36,14 +36,18 @@ from aiuse.report import (
     ("days", "expected"),
     [
         (0.5, "within ~12h"),
-        (1.0, "within 1 day"),
-        (1.01, "within 2 days"),
-        (1.38, "within 2 days"),
-        (2.01, "within 3 days"),
+        (1.0, "within 1.0 days"),
+        (1.01, "within 1.0 days"),
+        (1.38, "within 1.4 days"),
+        (2.01, "within 2.0 days"),
     ],
 )
-def test_human_deadline_rounds_up_remaining_calendar_days(days: float, expected: str):
+def test_human_deadline_shows_remaining_days_to_one_decimal(days: float, expected: str):
     assert _human_deadline(days) == expected
+
+
+def test_human_deadline_marks_date_only_reset_as_an_estimate():
+    assert _human_deadline(1.38, estimated=True) == "within ~1 day"
 
 
 def test_ladder_includes_waste_forecast_fragment():
