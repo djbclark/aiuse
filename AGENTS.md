@@ -133,7 +133,7 @@ install steps, CLI flags, and config. Install helpers:
 | `docs/memory/`                                                                                               | Thin Claude memory symlink target for this project (`MEMORY.md` index).                      | Rarely — prefer this file and `docs/` prose.                                                           |
 | `src/aiuse/`                                                                                                 | Source: collectors, analysis, report, cli, config, models.                                   | When implementing.                                                                                     |
 | `tests/`                                                                                                     | Pytest suite.                                                                                | Run `.venv/bin/python -m pytest -q` before and after any change.                                       |
-| `config/services.example.yaml`                                                                               | Example user config.                                                                         | Keep in sync with `config.py`'s `DEFAULT_CONFIG`.                                                      |
+| `config/config.example.toml`                                                                                 | Canonical example user config.                                                               | Keep in sync with `config.py`'s `DEFAULT_CONFIG`.                                                      |
 
 ## If you were asked to fix a bug or implement a feature here
 

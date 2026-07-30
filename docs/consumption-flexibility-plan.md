@@ -542,7 +542,7 @@ Treated as experimental — gated behind `analysis.learn_from_history: true`.
 ## Configuration Reference
 
 ```yaml
-# config/services.yaml additions
+# Historical YAML sketch (pre-config.toml migration)
 
 plans:
   claude:

@@ -349,8 +349,8 @@ def test_show_config_path_exits_without_collecting(monkeypatch, tmp_path, capsys
 
     assert cli.main(["--show-config-path"]) == 0
     out = capsys.readouterr().out
-    assert f"services: {tmp_path / 'aiuse' / 'services.yaml'}" in out
-    assert f"settings: {tmp_path / 'aiuse' / 'config.toml'}" in out
+    assert f"config: {tmp_path / 'aiuse' / 'config.toml'}" in out
+    assert f"legacy services: {tmp_path / 'aiuse' / 'services.yaml'}" in out
 
 
 def test_cli_timeout_flag_sets_force(monkeypatch):
@@ -582,7 +582,6 @@ def test_generate_config_creates_files_and_refuses_overwrite(monkeypatch, tmp_pa
     out = capsys.readouterr()
     assert "created:" in out.out
     assert (tmp_path / "aiuse" / "config.toml").is_file()
-    assert (tmp_path / "aiuse" / "services.yaml").is_file()
 
     assert cli.main(["--generate-config"]) == 1
     err = capsys.readouterr().err

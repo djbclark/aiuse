@@ -14,7 +14,8 @@ DEST_DIR="${HOME}/Library/LaunchAgents"
 DEST="${DEST_DIR}/${LABEL}.plist"
 LOG_DIR="${HOME}/Library/Logs/aiuse"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/aiuse"
-SERVICES="${CONFIG_DIR}/services.yaml"
+CONFIG="${CONFIG_DIR}/config.toml"
+LEGACY_SERVICES="${CONFIG_DIR}/services.yaml"
 
 AIUSE_BIN="$(command -v aiuse || true)"
 if [[ -z "${AIUSE_BIN}" ]]; then
@@ -25,44 +26,44 @@ AIUSE_BIN="$(cd "$(dirname "${AIUSE_BIN}")" && pwd)/$(basename "${AIUSE_BIN}")"
 
 mkdir -p "${DEST_DIR}" "${LOG_DIR}" "${CONFIG_DIR}"
 
-# Enable persist_snapshots without clobbering an existing services.yaml.
-if [[ ! -f "${SERVICES}" ]]; then
-  mkdir -p "${CONFIG_DIR}"
-  cat >"${SERVICES}" <<'EOF'
-analysis:
-  persist_snapshots: true
-  learn_from_history: auto
-EOF
-  echo "created: ${SERVICES} (persist_snapshots: true)"
+# Enable persist_snapshots without clobbering an existing canonical config.
+if [[ -f "${LEGACY_SERVICES}" && ! -f "${CONFIG}" ]]; then
+  echo "error: migrate ${LEGACY_SERVICES} to ${CONFIG} and remove the YAML file first" >&2
+  exit 1
+fi
+if [[ ! -f "${CONFIG}" ]]; then
+  printf '%s\n' '[analysis]' 'persist_snapshots = true' 'learn_from_history = "auto"' >"${CONFIG}"
+  chmod 600 "${CONFIG}"
+  echo "created: ${CONFIG} (persist_snapshots: true)"
 else
-  if grep -q 'persist_snapshots:' "${SERVICES}" 2>/dev/null; then
+  if grep -q '^[[:space:]]*persist_snapshots[[:space:]]*=' "${CONFIG}" 2>/dev/null; then
     # Leave explicit setting alone.
     :
   else
-    if grep -q '^analysis:' "${SERVICES}"; then
-      # Insert under analysis: (first occurrence).
+    if grep -q '^\[analysis\]$' "${CONFIG}"; then
+      # Insert under the first analysis table.
       tmp="$(mktemp)"
       awk '
         BEGIN { done=0 }
-        /^analysis:/ && !done {
+        /^\[analysis\]$/ && !done {
           print
-          print "  persist_snapshots: true"
+          print "persist_snapshots = true"
           done=1
           next
         }
         { print }
         END {
           if (!done) {
-            print "analysis:"
-            print "  persist_snapshots: true"
+            print "[analysis]"
+            print "persist_snapshots = true"
           }
         }
-      ' "${SERVICES}" >"${tmp}"
-      mv "${tmp}" "${SERVICES}"
-      echo "updated: ${SERVICES} (added persist_snapshots: true)"
+      ' "${CONFIG}" >"${tmp}"
+      mv "${tmp}" "${CONFIG}"
+      echo "updated: ${CONFIG} (added persist_snapshots: true)"
     else
-      printf '\nanalysis:\n  persist_snapshots: true\n' >>"${SERVICES}"
-      echo "updated: ${SERVICES} (appended analysis.persist_snapshots)"
+      printf '\n[analysis]\npersist_snapshots = true\n' >>"${CONFIG}"
+      echo "updated: ${CONFIG} (appended analysis.persist_snapshots)"
     fi
   fi
 fi

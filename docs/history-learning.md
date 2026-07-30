@@ -5,14 +5,14 @@ that history into pace scoring / chronic-waste alerts once enough data exists.
 
 ## Config flags
 
-In `~/.config/aiuse/services.yaml`:
+In `~/.config/aiuse/config.toml`:
 
-```yaml
-analysis:
-  persist_snapshots: true
-  # true | false | auto (default)
-  learn_from_history: auto
-  snapshot_retention_days: 90
+```toml
+[analysis]
+persist_snapshots = true
+# true | false | auto (default)
+learn_from_history = "auto"
+snapshot_retention_days = 90
 ```
 
 | Flag                 | Default | Effect                  |
@@ -80,6 +80,6 @@ and leaves learning on `auto`.
 ## Related
 
 - [`json-contract.md`](json-contract.md) — exit codes + `history` object shape
-- [`config/services.example.yaml`](../config/services.example.yaml) — example keys
+- [`config/config.example.toml`](../config/config.example.toml) — example keys
 - [`competitive-landscape.md`](competitive-landscape.md) — History vs onWatch BI
 - [`scheduling.md`](scheduling.md) — LaunchAgent that densifies snapshots

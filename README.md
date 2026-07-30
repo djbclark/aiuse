@@ -68,24 +68,24 @@ More channels and **release / OIDC publish** docs:
 Optional config (standard location: **`~/.config/aiuse/`**, or `$XDG_CONFIG_HOME/aiuse/`):
 
 ```bash
-# Create directories + default files (never overwrites existing files)
+# Create the canonical config.toml (never overwrites)
 aiuse --generate-config
 
-# Or copy examples by hand:
+# Or copy the example by hand:
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/aiuse"
-cp config/services.example.yaml "${XDG_CONFIG_HOME:-$HOME/.config}/aiuse/services.yaml"
 cp config/config.example.toml "${XDG_CONFIG_HOME:-$HOME/.config}/aiuse/config.toml"
 ```
 
-| File                            | Purpose                                                                       |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| `~/.config/aiuse/services.yaml` | Plans, analysis thresholds, which collectors are enabled                      |
-| `~/.config/aiuse/config.toml`   | Tool settings: subprocess **timeouts** (default **45s**), room for more later |
+| File                          | Purpose                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| `~/.config/aiuse/config.toml` | All user settings: collectors, plans, analysis, timeouts, and macOS options |
 
-Run `aiuse --show-config-path` to print both paths. `aiuse --generate-config` creates
-missing parent dirs (`~/.config`, `~/.config/aiuse`) and writes defaults; if a file
-already exists it is left alone and reported on stderr. Provider credentials stay
-with cswap, CodexBar, caut, OpenUsage, and tokscale — these files do not hold tokens or emails.
+Run `aiuse --show-config-path` to print the canonical path and retired YAML path.
+`aiuse --generate-config` creates missing parent dirs and writes the TOML starter
+without overwriting it. Legacy `services.yaml` is read only when `config.toml` is
+absent. If both exist, aiuse exits with a migration error: move the YAML settings
+into TOML, then remove `services.yaml`. Provider credentials stay with cswap,
+CodexBar, caut, OpenUsage, and tokscale — these files do not hold tokens or emails.
 
 ## Daily workflow
 
@@ -186,8 +186,8 @@ aiuse --doctor
 | `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage` | Skip specific collectors                                                                                                 |
 | `--providers copilot,grok`                                                        | Query specific CodexBar providers (CSV, one per subprocess)                                                              |
 | `-t` / `--timeout SECONDS`                                                        | Force subprocess timeout for all external tools (default **45**)                                                         |
-| `--generate-config`                                                               | Write default `~/.config/aiuse/*` files; never overwrites existing                                                       |
-| `--show-config-path`                                                              | Print services.yaml and config.toml paths                                                                                |
+| `--generate-config`                                                               | Write default `~/.config/aiuse/config.toml`; never overwrites existing                                                   |
+| `--show-config-path`                                                              | Print canonical config.toml and retired services.yaml paths                                                              |
 | `doctor` / `--doctor`                                                             | Check tools on PATH, config presence, effective timeouts; no collect                                                     |
 | `trust` …                                                                         | macOS: codesign status / sign caut / Keychain grant guide ([docs/macos-keychain-trust.md](docs/macos-keychain-trust.md)) |
 | `--min-remaining 50 --max-days 10`                                                | Override alert thresholds                                                                                                |
@@ -268,7 +268,7 @@ src/aiuse/
   collectors/            # cswap, codexbar, caut, openusage, tokscale
   analysis/use_or_lose.py
   report.py
-config/services.example.yaml
+config/config.example.toml
 tests/
 ```
 
@@ -295,7 +295,7 @@ of those corresponding inputs.
 | **`multi_dim`**      | Previous value + flexibility + deadline blend (escape hatch)                    |
 | **`legacy`**         | Original deadline-heavy scorer (`use_multi_dim_scoring: false` still maps here) |
 
-Pace knobs (also in `services.yaml` under `analysis.pace`):
+Pace knobs (also in `config.toml` under `[analysis.pace]`):
 
 - `waste_alert_fraction` (default 0.30) — project this much unused → **Burn**
 - `min_elapsed_fraction` (default 0.15) — too early in the window → **On pace** unless history says otherwise

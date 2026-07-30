@@ -166,7 +166,7 @@ curl -sL "https://github.com/djbclark/aiuse/archive/refs/tags/vX.Y.Z.tar.gz" \
 
 ## Config paths
 
-- Config: `~/.config/aiuse/` (`services.yaml`, `config.toml`)
+- Config: `~/.config/aiuse/config.toml` (legacy `services.yaml` must not coexist)
 - Snapshots: `~/.cache/aiuse/snapshots`
 
 The old `~/.config/ai/` path is no longer read. If you still have files there:

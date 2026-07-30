@@ -1,22 +1,36 @@
-# Optional tool settings for the `aiuse` CLI.
-# Copy to: $XDG_CONFIG_HOME/aiuse/config.toml  (or ~/.config/aiuse/config.toml)
-#
-# This file is separate from services.yaml (plans / analysis thresholds).
-# Both are optional; built-in defaults apply when a file is missing.
+# Copy to: $XDG_CONFIG_HOME/aiuse/config.toml (or ~/.config/aiuse/config.toml).
+# This is the single canonical user configuration file. Keep it small: every
+# setting below is optional, because aiuse supplies useful built-in defaults.
 
 [timeouts]
-# Wall-clock seconds for every external data source
-# (cswap, codexbar, caut, openusage, tokscale).
-# Tools either return quickly or hang — long budgets only delay failure.
-default = 45
-
-# Optional per-tool overrides (omit to use default):
+# Wall-clock seconds for external tools. Per-tool entries override default.
+# default = 45
 # cswap = 45
 # codexbar = 45
-# codexbar_discovery = 45   # `codexbar config providers` (local, usually ms)
-# caut = 45
-# openusage = 45
 # tokscale = 45
 
-# CLI `--timeout` / `-t` sets force and overrides every tool for that run.
-# Install tools: packaging/install-deps.sh
+[collectors.caut]
+# Set false when caut is not installed or its Keychain access is unwanted.
+# enabled = false
+
+[collectors.codexbar]
+# "enabled" honors CodexBar's own provider list; use "all" or a CSV to override.
+# providers = "enabled"
+
+[analysis]
+# Persist hourly/manual snapshots for History learning.
+# persist_snapshots = true
+# learn_from_history = "auto" # true | false | auto
+
+[analysis.pace]
+# waste_alert_fraction = 0.30
+# min_elapsed_fraction = 0.15
+# conserve_min_lead_hours = 4.0
+
+[plans.copilot]
+# Override plan metadata when it differs from the built-in Individual plan.
+# monthly_price = 10
+
+# Optional macOS codesign identity for `aiuse trust sign-caut`.
+# [macos]
+# codesign_identity = "aiuse-local-codesign"

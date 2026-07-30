@@ -629,7 +629,7 @@ def _looks_monthly(label: str) -> bool:
 
 
 def _plan_meta(provider: str, plans: dict[str, Any]) -> dict[str, Any]:
-    # Canonical collector key → plans / services.yaml key (e.g. antigravity → gemini).
+    # Canonical collector key → plans / config key (e.g. antigravity → gemini).
     lookup = provider_config_key(provider)
     meta = plans.get(lookup) or plans.get(provider) or {}
     return meta if isinstance(meta, dict) else {}

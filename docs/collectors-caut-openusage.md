@@ -70,24 +70,24 @@ just install-openusage
 2. Else `GET http://127.0.0.1:6736/v1/limits`.
 3. Else try `open -ga OpenUsage` and retry HTTP.
 
-## Config (`~/.config/aiuse/services.yaml`)
+## Config (`~/.config/aiuse/config.toml`)
 
-```yaml
-collectors:
-  caut:
-    enabled: true
-    # both = claude+codex (only pair caut fills windows for reliably)
-    # all  = every name caut knows — most error "unsupported source Auto"
-    providers: both
-  openusage:
-    enabled: true
-    force_refresh: true
-    try_launch_app: true
-    base_url: "http://127.0.0.1:6736"
-    # Doctor / preflight probe path (payload collect still uses base_url + /v1/limits).
-    health_path: "/v1/limits"
-    # Or full URL override:
-    # probe_url: "http://127.0.0.1:6736/v1/limits"
+```toml
+[collectors.caut]
+enabled = true
+# both = claude+codex (only pair caut fills windows for reliably)
+# all  = every name caut knows — most error "unsupported source Auto"
+providers = "both"
+
+[collectors.openusage]
+enabled = true
+force_refresh = true
+try_launch_app = true
+base_url = "http://127.0.0.1:6736"
+# Doctor / preflight probe path (payload collect still uses base_url + /v1/limits).
+health_path = "/v1/limits"
+# Or full URL override:
+# probe_url: "http://127.0.0.1:6736/v1/limits"
 ```
 
 `health_path` / `probe_url` apply to doctor and optional HTTP preflight: “is the
@@ -127,8 +127,7 @@ aiuse doctor               # WARN when caut enabled + still adhoc
 ```
 
 Full guide: [`macos-keychain-trust.md`](macos-keychain-trust.md).  
-If you do not want caut at all: `collectors.caut.enabled: false` in
-`services.yaml`.
+If you do not want caut at all: set `enabled = false` in `[collectors.caut]`.
 
 **CodexBar:** Team-signed app; if **CodexBarCLI** prompts for **CodexBar Cache**,
 run `aiuse trust fix-codexbar-cache` ([#679](https://github.com/steipete/CodexBar/issues/679)).

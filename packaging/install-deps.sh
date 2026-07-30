@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install external data-source tools that aiuse shells out to (or hits via loopback).
 #
-# Collectors (all optional at runtime if disabled in services.yaml, but this
+# Collectors (all optional at runtime if disabled in config.toml, but this
 # script installs the full set for multi-source cross-checks):
 #
 #   cswap      — multi-account Claude (uv tool: claude-swap)

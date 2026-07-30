@@ -46,14 +46,14 @@ def test_collector_health_url_openusage_defaults_and_overrides():
 def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
-    assert default_config_path() == tmp_path / "aiuse" / "services.yaml"
+    assert default_config_path() == tmp_path / "aiuse" / "config.toml"
     assert default_toml_config_path() == tmp_path / "aiuse" / "config.toml"
 
 
-def test_load_config_reads_xdg_ai_directory(monkeypatch, tmp_path):
-    config_path = tmp_path / "aiuse" / "services.yaml"
+def test_load_config_reads_canonical_toml(monkeypatch, tmp_path):
+    config_path = tmp_path / "aiuse" / "config.toml"
     config_path.parent.mkdir()
-    config_path.write_text("analysis:\n  min_remaining_percent: 55\n", encoding="utf-8")
+    config_path.write_text("[analysis]\nmin_remaining_percent = 55\n", encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
     config = load_config()
@@ -65,7 +65,38 @@ def test_relative_xdg_config_home_is_ignored(monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", "relative/path")
 
     path = default_config_path()
-    assert path == Path.home() / ".config" / "aiuse" / "services.yaml"
+    assert path == Path.home() / ".config" / "aiuse" / "config.toml"
+
+
+def test_load_config_reads_legacy_yaml_only(monkeypatch, tmp_path):
+    legacy_path = tmp_path / "aiuse" / "services.yaml"
+    legacy_path.parent.mkdir()
+    legacy_path.write_text("analysis:\n  min_remaining_percent: 55\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    assert load_config()["analysis"]["min_remaining_percent"] == 55
+
+
+def test_load_config_rejects_both_default_config_files(monkeypatch, tmp_path):
+    config_dir = tmp_path / "aiuse"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text("[timeouts]\ndefault = 30\n", encoding="utf-8")
+    (config_dir / "services.yaml").write_text("analysis:\n  min_remaining_percent: 55\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    with pytest.raises(SystemExit, match="Both user config files exist"):
+        load_config()
+
+
+def test_explicit_config_remains_usable_when_both_default_files_exist(monkeypatch, tmp_path):
+    config_dir = tmp_path / "aiuse"
+    config_dir.mkdir()
+    canonical = config_dir / "config.toml"
+    canonical.write_text("[timeouts]\ndefault = 30\n", encoding="utf-8")
+    (config_dir / "services.yaml").write_text("analysis:\n  min_remaining_percent: 55\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    assert timeout_for(load_config(canonical), "cswap") == 30
 
 
 def test_load_config_explicit_missing_path_exits():
@@ -158,11 +189,10 @@ def test_validate_config_unknown_and_bad_timeouts():
 def test_generate_user_config_writes_defaults_without_overwrite(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     first = generate_user_config()
-    assert sorted(Path(p).name for p in first["created"]) == ["config.toml", "services.yaml"]
+    assert [Path(p).name for p in first["created"]] == ["config.toml"]
     assert first["skipped"] == []
     assert first["errors"] == []
     assert (tmp_path / "aiuse" / "config.toml").is_file()
-    assert (tmp_path / "aiuse" / "services.yaml").is_file()
     assert "default = 45" in (tmp_path / "aiuse" / "config.toml").read_text(encoding="utf-8")
 
     # Second run must not overwrite
@@ -171,8 +201,20 @@ def test_generate_user_config_writes_defaults_without_overwrite(monkeypatch, tmp
     toml_path.write_text(stamp, encoding="utf-8")
     second = generate_user_config()
     assert second["created"] == []
-    assert set(Path(p).name for p in second["skipped"]) == {"config.toml", "services.yaml"}
+    assert [Path(p).name for p in second["skipped"]] == ["config.toml"]
     assert toml_path.read_text(encoding="utf-8") == stamp
+
+
+def test_generate_user_config_refuses_to_create_toml_beside_legacy_yaml(monkeypatch, tmp_path):
+    config_dir = tmp_path / "aiuse"
+    config_dir.mkdir()
+    (config_dir / "services.yaml").write_text("collectors:\n  caut:\n    enabled: false\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    result = generate_user_config()
+
+    assert result["created"] == []
+    assert "legacy config exists" in result["errors"][0]
 
 
 def test_default_config_dir_is_under_xdg_ai(monkeypatch, tmp_path):

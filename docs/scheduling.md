@@ -16,7 +16,7 @@ just site-agents-status
 ```
 
 Requires `~/.local/bin/aiuse` (`pipx install aiuse`). The role enables
-`persist_snapshots` in `~/.config/aiuse/services.yaml` and sets LaunchAgent
+`persist_snapshots` in `~/.config/aiuse/config.toml` and sets LaunchAgent
 `PATH` so `cswap` / `codexbar` / `caut` / `tokscale` resolve, and OpenUsage is
 available (CLI on `PATH` and/or OpenUsage.app running for `:6736`). Install:
 `packaging/install-deps.sh` or site `just install-aiuse-deps`.

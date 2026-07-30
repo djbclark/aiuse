@@ -16,15 +16,15 @@ Ship a **trimmed operator QoL feature**, not a product surface. Diagnosis is
 correct; non-goals are firm. Two reviews disagreed on **shell vs Python** and
 on **auto-sign / CodexBar depth** — this plan picks:
 
-| Decision                 | Choice                                                         | Why                                                                                                                                                     |
-| ------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Primary UX               | **`aiuse trust …` (Python)**                                   | Doctor needs the same codesign parse; CLI already has synonym subcommands (`doctor`, `status`, …). Avoids brittle bash parsers of `codesign -d` stderr. |
-| Packaging                | One-line **hint** after caut install; **opt-in** autosign only | codesign itself can pop keychain dialogs for the **signing key**; install must stay non-interactive by default.                                         |
-| Identity creation        | **Guided GUI only** (v1)                                       | Certificate Assistant sets Code Signing EKU correctly; `security` certgen is fragile across macOS versions.                                             |
-| caut when adhoc          | **Warn in doctor; do not auto-disable**                        | Behavior change would surprise operators who tolerate prompts.                                                                                          |
-| CodexBar                 | **Status + docs + read-only prefs peek**                       | Different failure mode (Team-signed). No codesign “fix.” Detect known keys if present; never mutate.                                                    |
-| State file               | **None for v1**                                                | Identity name lives in env / `config.toml` only.                                                                                                        |
-| Operator `services.yaml` | **Out of scope**                                               | Re-enable caut locally only after trust is set up — not part of this PR.                                                                                |
+| Decision               | Choice                                                         | Why                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary UX             | **`aiuse trust …` (Python)**                                   | Doctor needs the same codesign parse; CLI already has synonym subcommands (`doctor`, `status`, …). Avoids brittle bash parsers of `codesign -d` stderr. |
+| Packaging              | One-line **hint** after caut install; **opt-in** autosign only | codesign itself can pop keychain dialogs for the **signing key**; install must stay non-interactive by default.                                         |
+| Identity creation      | **Guided GUI only** (v1)                                       | Certificate Assistant sets Code Signing EKU correctly; `security` certgen is fragile across macOS versions.                                             |
+| caut when adhoc        | **Warn in doctor; do not auto-disable**                        | Behavior change would surprise operators who tolerate prompts.                                                                                          |
+| CodexBar               | **Status + docs + read-only prefs peek**                       | Different failure mode (Team-signed). No codesign “fix.” Detect known keys if present; never mutate.                                                    |
+| State file             | **None for v1**                                                | Identity name lives in env / `config.toml` only.                                                                                                        |
+| Operator `config.toml` | **Out of scope**                                               | Re-enable caut locally only after trust is set up — not part of this PR.                                                                                |
 
 This is **operator tooling** that lives in-tree so install/docs/doctor stay
 aligned — not a ranking feature.
@@ -61,7 +61,7 @@ global “trust this app for all keychain items.”
 - Automated Keychain ACL surgery (`security dump-keychain -i` scripting).
 - Non-interactive cert generation (`--create`) in v1.
 - Changing default collector enablement or the operator’s local
-  `services.yaml`.
+  `config.toml`.
 - Signing the LaunchAgent plist (signing the **binary** `aiuse` invokes is
   enough; document that).
 

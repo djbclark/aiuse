@@ -25,8 +25,8 @@ from aiuse.config import (
     collector_health_url,
     default_config_dir,
     default_config_path,
-    default_toml_config_path,
     generate_user_config,
+    legacy_services_config_path,
     load_config,
     timeout_for,
     validate_config,
@@ -56,7 +56,7 @@ EXIT_ALERTS = 2
 _HELP_EPILOG = f"""\
 config & setup:
   aiuse --generate-config     write defaults under ~/.config/aiuse/ (never overwrites)
-  aiuse --show-config-path    print services.yaml and config.toml paths
+  aiuse --show-config-path    print config.toml and legacy YAML paths
   aiuse doctor                PATH tools, version probe, config validation, timeouts
   aiuse trust …               macOS codesign / Keychain trust for caut (docs/macos-keychain-trust.md)
   aiuse status / prompt       one-line status for shell prompts / status bars
@@ -95,12 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--config",
         "-c",
-        help=("Path to services.yaml (default: $XDG_CONFIG_HOME/aiuse/services.yaml or ~/.config/aiuse/services.yaml)"),
+        help=("Path to TOML/YAML/JSON config (default: $XDG_CONFIG_HOME/aiuse/config.toml)"),
     )
     p.add_argument(
         "--show-config-path",
         action="store_true",
-        help="Print default config paths (services.yaml and config.toml) and exit",
+        help="Print canonical config.toml and retired services.yaml paths, then exit",
     )
     p.add_argument(
         "--generate-config",
@@ -306,8 +306,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(_normalize_argv(argv))
     if args.show_config_path:
-        print(f"services: {default_config_path()}")
-        print(f"settings: {default_toml_config_path()}")
+        print(f"config: {default_config_path()}")
+        print(f"legacy services: {legacy_services_config_path()}")
         return 0
     if args.generate_config:
         return _run_generate_config()
@@ -610,12 +610,12 @@ def diagnose(
     lines: list[str] = [f"aiuse doctor  (v{__version__})", ""]
     problems = 0
 
-    services = default_config_path()
-    settings = default_toml_config_path()
+    config_path = default_config_path()
+    legacy_path = legacy_services_config_path()
     lines.append("Config files")
     lines.append(f"  directory: {default_config_dir()}")
-    lines.append(f"  services.yaml: {_path_status(services)} — {services}")
-    lines.append(f"  config.toml:   {_path_status(settings)} — {settings}")
+    lines.append(f"  config.toml:      {_path_status(config_path)} — {config_path}")
+    lines.append(f"  services.yaml:    {_path_status(legacy_path)} — {legacy_path} (legacy; remove after migration)")
     lines.append("")
 
     issues = validate_config(config)
@@ -704,7 +704,7 @@ def diagnose(
 
     if problems:
         lines.append(f"Problems: {problems} issue(s) (missing tools and/or config errors).")
-        lines.append("Install/authenticate tools, fix timeouts, or disable collectors in services.yaml.")
+        lines.append("Install/authenticate tools, fix timeouts, or disable collectors in config.toml.")
         exit_code = 1
     else:
         lines.append("No hard problems detected for enabled collectors.")
