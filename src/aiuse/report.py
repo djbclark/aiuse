@@ -507,11 +507,15 @@ def render_priority_ladder(
             cov = _ladder_coverage_key(account.provider, account.account, "")
             if cov in covered:
                 continue
-            band = _BAND_NA
+            # A rolling prepaid balance is inventory only while there is money
+            # to spend.  Zero or a negative balance is nevertheless exhausted
+            # capacity and belongs with other empty services, not neutral n/a.
+            depleted = account.balance_usd is not None and account.balance_usd <= 0.0
+            band = _BAND_EMPTY if depleted else _BAND_NA
             entries.append(
                 (
                     _ladder_sort_key(
-                        _LANE_NA,
+                        _LANE_EMPTY if depleted else _LANE_NA,
                         _account_use_urgency(account),
                         account.provider,
                         account.account,

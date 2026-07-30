@@ -159,7 +159,7 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     lines = text.splitlines()
     assert any(line.startswith("empty") and "OpenCode Go" in line for line in lines)
     zen_line = next(line for line in lines if "OpenCode Zen" in line)
-    assert zen_line.startswith("n/a")
+    assert zen_line.startswith("empty")
     assert "balance $-0.04" in zen_line
     assert "no expiry" in zen_line
 

@@ -35,8 +35,9 @@ the pools most worth using right now sort to the bottom.
 ```
 
 Green (`use`) is capacity to burn now before it resets; red is capacity
-already lost (`empty`) or a source that failed to fetch (`error`); everything
-else is informational (`n/a` prepaid balances that never expire, `slow`
+already lost (`empty`, including a zero/negative prepaid balance) or a source
+that failed to fetch (`error`); everything else is informational (`n/a`
+positive prepaid balances that never expire, `slow`
 windows you should pace yourself on, `mid` windows on track — nothing to do).
 
 ## Try it in 60 seconds
