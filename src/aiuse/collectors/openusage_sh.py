@@ -26,7 +26,8 @@ def collect_openusage_sh(*, timeout: float = 45.0) -> list[AccountUsage]:
         metrics = row.get("metrics")
         if not isinstance(metrics, dict):
             continue
-        resets = row.get("resets") if isinstance(row.get("resets"), dict) else {}
+        resets_raw = row.get("resets")
+        resets: dict[object, object] = resets_raw if isinstance(resets_raw, dict) else {}
         windows: list[QuotaWindow] = []
         for key, metric in metrics.items():
             if not isinstance(metric, dict) or not str(key).startswith(_QUOTA_METRIC_PREFIXES):
