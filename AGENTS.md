@@ -23,20 +23,16 @@ Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
 1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
 2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
    (announce → densify history; optional #11–#15 only if pain).
-3. **Step 33 / [#1](https://github.com/djbclark/aiuse/issues/1):** done — prefer
-   cswap 0.24's official `lastGoodUsage` in `collectors/cswap.py`, while retaining
-   local-cache recovery for older cswap versions.
-   ([`docs/cswap-reliability.md`](docs/cswap-reliability.md)).
-4. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
+3. **Operator-only:** announce [#10](https://github.com/djbclark/aiuse/issues/10)
    when ready; leave hourly agent collecting; optional OpenUsage CLI install.
-5. **Optional polish (not default):** [#11](https://github.com/djbclark/aiuse/issues/11)
+4. **Optional polish (not default):** [#11](https://github.com/djbclark/aiuse/issues/11)
    MCP · [#13](https://github.com/djbclark/aiuse/issues/13) History ·
    [#14](https://github.com/djbclark/aiuse/issues/14) watch ·
    [#15](https://github.com/djbclark/aiuse/issues/15) fixtures ·
    [#12](https://github.com/djbclark/aiuse/issues/12) peer outreach (last).
-6. **Parked:** Step **35** (ccusage ≠ plan %) —
+5. **Parked:** Step **35** (ccusage ≠ plan %) —
    [`docs/claude-local-usage.md`](docs/claude-local-usage.md).
-7. **Historical:** [`docs/fix-implementation-plan.md`](docs/fix-implementation-plan.md),
+6. **Historical:** [`docs/fix-implementation-plan.md`](docs/fix-implementation-plan.md),
    [`docs/code-review-2026-07-23.html`](docs/code-review-2026-07-23.html).
 
 ## Persistence policy: durable project knowledge goes in this git repo

@@ -28,6 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 INIT_PY = REPO_ROOT / "src" / "aiuse" / "__init__.py"
 UV_LOCK = REPO_ROOT / "uv.lock"
+PACKAGING_DOC = REPO_ROOT / "docs" / "packaging.md"
 HOMEBREW_FORMULA = REPO_ROOT / "packaging" / "homebrew" / "aiuse.rb"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[a-zA-Z0-9.-]*)?$")
 DEFAULT_TAP = Path.home() / "src" / "homebrew-aiuse"
@@ -136,6 +137,21 @@ def _rewrite_project_version(root: Path, version: str) -> None:
         uv_lock.write_text(lock_new, encoding="utf-8")
 
 
+def _rewrite_packaging_version(root: Path, version: str) -> None:
+    """Keep the published-version note in release documentation accurate."""
+    path = root / "docs" / "packaging.md"
+    text = path.read_text(encoding="utf-8")
+    updated, n = re.subn(
+        r"(?m)^by GitHub Actions via Trusted Publishing\. Current published release: \*\*`[^`]+`\*\*\.$",
+        f"by GitHub Actions via Trusted Publishing. Current published release: **`{version}`**.",
+        text,
+        count=1,
+    )
+    if n != 1:
+        raise ReleaseError("failed to rewrite docs/packaging.md current published release")
+    path.write_text(updated, encoding="utf-8")
+
+
 def _rewrite_homebrew_formula(path: Path, version: str, sha256: str) -> None:
     text = path.read_text(encoding="utf-8")
     text, n1 = re.subn(
@@ -160,6 +176,7 @@ def _bump_version(version: str, *, dry_run: bool) -> None:
         _log(f"[dry-run] bump version → {version}")
         return
     _rewrite_project_version(REPO_ROOT, version)
+    _rewrite_packaging_version(REPO_ROOT, version)
 
 
 def _run_tests(*, skip_tests: bool, dry_run: bool) -> None:
@@ -174,7 +191,7 @@ def _run_tests(*, skip_tests: bool, dry_run: bool) -> None:
 
 
 def _commit_version(version: str, *, dry_run: bool) -> None:
-    files = ["pyproject.toml", "src/aiuse/__init__.py"]
+    files = ["pyproject.toml", "src/aiuse/__init__.py", str(PACKAGING_DOC.relative_to(REPO_ROOT))]
     if UV_LOCK.is_file():
         files.append("uv.lock")
     _run(["git", "add", *files], dry_run=dry_run)

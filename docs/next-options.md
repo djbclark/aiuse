@@ -1,8 +1,8 @@
-# What next (post-2.1.10) and competitive gap difficulty
+# What next (post-2.1.19) and competitive gap difficulty
 
 **Date:** 2026-07-30
-**Status:** Product issues **#2–#9** shipped; fix-plan Steps **1–32** and **34**
-done. No mandatory numbered step.  
+**Status:** Product issues **#1–#9** shipped; fix-plan Steps **1–34** done.
+No mandatory numbered step.
 **Related:** [`handoff.md`](handoff.md), [`competitive-landscape.md`](competitive-landscape.md),
 [`AGENTS.md`](../AGENTS.md)
 
@@ -17,7 +17,7 @@ chat transcript.
 `aiuse` is past “build the product.” Core ranking, five collectors, prepaid
 `n/a`, shared allotment, suggest / status / serve, forecast fragments, History
 learning, health probes, optional local-runtime notes, shared-semantics v0.1,
-and packaging (**2.1.10**) are done.
+and packaging (**2.1.19**) are done.
 
 High-ROI work is **distribution, data density, and input reliability** — not
 cloning menubars, BI dashboards, or request routers.
@@ -75,7 +75,7 @@ Remaining weaknesses vs quotabot / onWatch / Layer 1 (see
 | MCP stdio on `serve`           | Agents that only speak MCP can’t use loopback JSON easily    | Medium (~1–3 days thin tools) | [#11](https://github.com/djbclark/aiuse/issues/11)                     |
 | Richer History text            | More narrative from existing snapshot data; no charts        | Low–medium                    | [#13](https://github.com/djbclark/aiuse/issues/13)                     |
 | More shared-semantics fixtures | Edge cases (Antigravity dual pools, Cursor Included, …)      | Low                           | [#15](https://github.com/djbclark/aiuse/issues/15)                     |
-| Collector reliability polish   | Prefer web over local estimate; clearer cross-check messages | Low–medium                    | Incremental / Step 33 [#1](https://github.com/djbclark/aiuse/issues/1) |
+| Collector reliability polish   | Prefer web over local estimate; clearer cross-check messages | Low–medium                    | Incremental; preserve Step 33's official-field + legacy-cache fallback |
 
 Closes “quotabot has MCP” only for **read-only ranking**, not leases/LiteLLM.
 Do MCP **only** if you actually use MCP clients against ranking daily.

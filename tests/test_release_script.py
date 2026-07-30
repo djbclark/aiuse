@@ -59,6 +59,19 @@ def test_rewrite_homebrew_formula(tmp_path: Path, release):
     assert ("b" * 64) in text
 
 
+def test_rewrite_packaging_version(tmp_path: Path, release):
+    packaging = tmp_path / "docs" / "packaging.md"
+    packaging.parent.mkdir()
+    packaging.write_text(
+        "by GitHub Actions via Trusted Publishing. Current published release: **`1.0.0`**.\n",
+        encoding="utf-8",
+    )
+
+    release._rewrite_packaging_version(tmp_path, "2.1.20")
+
+    assert "Current published release: **`2.1.20`**." in packaging.read_text(encoding="utf-8")
+
+
 def test_find_publish_run_matches_tag(monkeypatch, release):
     import json
 
