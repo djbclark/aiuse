@@ -12,16 +12,19 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-07-30):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.0.0**
-(PyPI/GitHub/Homebrew) — the **first advertised release** (PyPI trove
-classifier moved to Production/Stable) — includes **`aiuse trust`** (caut
+done. Product issues **#1–#9** done. Packaging **3.0.1**
+(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release (PyPI trove
+classifier moved to Production/Stable). 3.0.1 adds the documented optional
+OpenCode Zen browser credential refresh: a validated Chrome session is stored
+through SecretSpec at `~/.config/aiuse/secretspec.toml`, so installed CLI runs
+do not need Chrome or Keychain access. It includes **`aiuse trust`** (caut
 stable codesign + CodexBar#679 cache ACL repair) and release wait-race fix.
 Five collectors; prepaid/`n/a` band; hourly LaunchAgent; history learning
 `auto`. Normal CLI **always live-collects** (hourly snapshots densify History
-only). README's first-impression section rewritten with a colored
-real-output demo ([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py));
-TUI display gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory
-numbered step.** Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
+only). README's first-impression section rewritten with a colored real-output
+demo ([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py)); TUI
+display gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory numbered
+step.** Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
 
 1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
@@ -29,7 +32,10 @@ numbered step.** Open-ended “what next?” → [`docs/next-options.md`](docs/n
    (announce → densify history; optional #11–#15 only if pain).
 3. **Operator-only:** announce 3.0.0 via [#10](https://github.com/djbclark/aiuse/issues/10)
    when ready; leave hourly agent collecting; optional OpenUsage CLI install.
-4. **Optional polish (not default):** [#11](https://github.com/djbclark/aiuse/issues/11)
+4. **Optional expansion / polish (not default):** [#16](https://github.com/djbclark/aiuse/issues/16)
+   DeepSeek second source, [#17](https://github.com/djbclark/aiuse/issues/17)
+   OpenRouter second source, [#18](https://github.com/djbclark/aiuse/issues/18)
+   two Groq client sources; then [#11](https://github.com/djbclark/aiuse/issues/11)
    MCP · [#13](https://github.com/djbclark/aiuse/issues/13) History ·
    [#14](https://github.com/djbclark/aiuse/issues/14) watch ·
    [#15](https://github.com/djbclark/aiuse/issues/15) fixtures ·

@@ -4,9 +4,9 @@
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **340** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **356** passing
 
-**Package version:** **3.0.0** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.1** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
@@ -17,6 +17,19 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 2. OpenCode Go is currently at 0%; its OpenUsage.sh telemetry integration is
    installed but has not been completion-tested. Recheck only after quota is
    available; do not spend a request merely to test telemetry.
+3. Optional source expansion is scoped, not started: [#16](https://github.com/djbclark/aiuse/issues/16)
+   (DeepSeek second source), [#17](https://github.com/djbclark/aiuse/issues/17)
+   (OpenRouter second source), and [#18](https://github.com/djbclark/aiuse/issues/18)
+   (two Groq client sources). Prefer an existing structured collector; use a
+   small Zen-style native path only when that does not exist.
+
+## Done after 3.0.0 (2026-07-30)
+
+| Area                      | Notes                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **OpenCode Zen refresh**  | `aiuse credential refresh opencode-zen --from chrome --profile Default` validates Chrome's OpenCode session before storing it through SecretSpec. Installed commands use `~/.config/aiuse/secretspec.toml`; normal collection never accesses Chrome or Keychain. Published `aiuse` was live-checked against that manifest and returned a native Zen balance. |
+| **Source coverage audit** | [`source-coverage.md`](source-coverage.md) records current successful client sources. DeepSeek and OpenRouter have one successful source; Zen has two client implementations of one upstream billing service; Groq currently has no usable live source.                                                                                                      |
+| **3.0.1 release**         | `just release 3.0.1`: 356 tests and full local quality/security gate green; GitHub release, PyPI Trusted Publishing run `30584144267`, Homebrew formula/tap, Homebrew test, and default `aiuse` / `ai` upgrades all passed.                                                                                                                                  |
 
 ## Reopen checklist (operator)
 
