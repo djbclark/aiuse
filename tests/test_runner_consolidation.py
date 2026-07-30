@@ -198,15 +198,15 @@ def test_claude_gets_cross_checked_when_cswap_disabled():
 
 def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     def slow_cswap(**_kwargs):
-        time.sleep(0.1)
+        time.sleep(1)
         return [_account("cswap", "claude")]
 
     def slow_codexbar(**_kwargs):
-        time.sleep(0.1)
+        time.sleep(1)
         return [_account("codexbar", "codex")]
 
     def slow_tokscale(**_kwargs):
-        time.sleep(0.1)
+        time.sleep(1)
         return [_account("tokscale", "grok")]
 
     monkeypatch.setattr("aiuse.collectors.runner.collect_cswap", slow_cswap)
@@ -220,8 +220,9 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     snapshot = run_collectors({})
     elapsed = time.monotonic() - start
 
-    # Sequential takes >=0.3s; leave scheduler headroom above concurrent's 0.1s.
-    assert elapsed < 0.28
+    # Concurrent execution takes about one second; sequential execution takes
+    # at least three. Keep a full second of scheduler headroom.
+    assert elapsed < 2
     assert {account.provider for account in snapshot.accounts} == {"claude", "codex", "grok"}
     assert snapshot.collector_errors == []
 
