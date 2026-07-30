@@ -220,8 +220,8 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     snapshot = run_collectors({})
     elapsed = time.monotonic() - start
 
-    # Sequential would take >=0.3s; concurrent should take about one sleep's worth.
-    assert elapsed < 0.25
+    # Sequential takes >=0.3s; leave scheduler headroom above concurrent's 0.1s.
+    assert elapsed < 0.28
     assert {account.provider for account in snapshot.accounts} == {"claude", "codex", "grok"}
     assert snapshot.collector_errors == []
 
