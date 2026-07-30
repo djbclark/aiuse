@@ -118,6 +118,24 @@ def test_credential_refresh_saves_only_after_validation(monkeypatch, capsys, tmp
     assert "secret" not in output
 
 
+def test_credential_refresh_creates_default_manifest_after_validation(monkeypatch, tmp_path):
+    manifest = tmp_path / "aiuse" / "secretspec.toml"
+    seen: list[Path] = []
+    monkeypatch.setattr("aiuse.credentials.default_manifest_path", lambda: manifest)
+    monkeypatch.setattr("aiuse.credentials._chrome_cookie_header", lambda _profile: "session=secret")
+    monkeypatch.setattr("aiuse.credentials._validate_opencode_zen_cookie", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "aiuse.credentials._save_with_secretspec",
+        lambda _secret, *, manifest, timeout: seen.append(manifest),
+    )
+
+    assert cli.main(["credential", "refresh", "opencode-zen", "--yes"]) == 0
+    assert seen == [manifest]
+    text = manifest.read_text()
+    assert "OPENCODE_ZEN_COOKIE" in text
+    assert "session=secret" not in text
+
+
 def test_credential_refresh_does_not_save_after_validation_failure(monkeypatch, capsys):
     monkeypatch.setattr("aiuse.credentials._chrome_cookie_header", lambda _profile: "session=secret")
     monkeypatch.setattr(

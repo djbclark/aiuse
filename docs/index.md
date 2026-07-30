@@ -27,7 +27,8 @@ project's guides by the job they help you do; most people only need one or two.
 
 - [`cswap-reliability.md`](cswap-reliability.md) — Claude multi-account source reliability.
 - [`opencode-go-quota.md`](opencode-go-quota.md) — authoritative OpenCode Go web data and shared quota behavior.
-- [`opencode-zen-balance.md`](opencode-zen-balance.md) — Zen-balance source audit and a path to more resilient collection.
+- [`opencode-zen-balance.md`](opencode-zen-balance.md) — Zen-balance source audit, SecretSpec setup, and Chrome credential refresh.
+- [`source-coverage.md`](source-coverage.md) — which services currently have multiple live client sources and which do not.
 - [`cursor-quota.md`](cursor-quota.md) — Cursor Included, Auto, API, and on-demand pools.
 - [`antigravity-pools.md`](antigravity-pools.md) — independent Gemini and Claude/GPT pools.
 - [`tokscale-per-provider-investigation.md`](tokscale-per-provider-investigation.md) — current tokscale per-provider limitation.

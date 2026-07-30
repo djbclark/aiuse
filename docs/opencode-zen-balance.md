@@ -6,11 +6,13 @@ OpenCode Zen is a prepaid service separate from the OpenCode Go subscription.
 `aiuse` records it as the distinct `opencode-zen` provider whenever CodexBar
 returns a `Zen balance` value.
 
-As of 2026-07-30, **CodexBar is the only installed collector that returns the
-actual Zen balance**. Its value can be absent from one refresh and present on a
-later refresh because the OpenCode web billing response itself omits it; retain
-the missing state as missing rather than reusing a stale balance as if it were
-live.
+As of 2026-07-30, `aiuse` has two local client implementations that return the
+actual Zen balance: CodexBar and its optional native collector. Both query the
+same authenticated OpenCode billing service, so they are a useful transport
+cross-check but not independent financial authorities. Its value can be absent
+from one refresh and present on a later refresh because the OpenCode web billing
+response itself omits it; retain the missing state as missing rather than
+reusing a stale balance as if it were live.
 
 ## What was checked
 
@@ -30,11 +32,13 @@ Zen. This is server-side information, unlike the local estimates.
 
 `aiuse` now includes an optional native `opencode_zen` collector that
 independently implements OpenCode's authenticated workspace billing request.
-It automatically resolves `OPENCODE_ZEN_COOKIE` from this repository's
-`secretspec.toml`; store the existing OpenCode console Cookie header there:
+It automatically resolves `OPENCODE_ZEN_COOKIE` from
+`~/.config/aiuse/secretspec.toml` (or an explicit `SECRETSPEC_FILE`); this is
+the standard per-user manifest for an installed CLI. Store an existing OpenCode
+console Cookie header there if you need a manual setup:
 
 ```bash
-secretspec set OPENCODE_ZEN_COOKIE
+secretspec set --file ~/.config/aiuse/secretspec.toml OPENCODE_ZEN_COOKIE
 aiuse -q --json
 ```
 
@@ -64,10 +68,11 @@ aiuse credential refresh opencode-zen --from chrome --profile Default
 
 The command reads only cookies for `opencode.ai`, validates an authenticated
 workspace and a live Zen balance before asking to replace SecretSpec, and never
-prints the cookie. Use `--dry-run` to check without saving or `--yes` for a
-confirmed non-interactive replacement. It is never called by normal collection
-or the scheduled snapshot agent. See `aiuse credential refresh --help` for the
-provider-generic command interface.
+prints the cookie. It creates the standard manifest if it does not exist. Use
+`--dry-run` to check without saving or `--yes` for a confirmed non-interactive
+replacement. It is never called by normal collection or the scheduled snapshot
+agent. See `aiuse credential refresh --help` for the provider-generic command
+interface.
 `aiuse` runs this collector alongside CodexBar and records a cross-check when
 both produce a balance.
 

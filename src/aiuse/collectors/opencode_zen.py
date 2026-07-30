@@ -17,12 +17,12 @@ import shutil
 import subprocess
 import uuid
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
 import requests
 
 from aiuse.models import AccountUsage, BillingKind
+from aiuse.secretspec import resolve_manifest_path
 
 from .base import CollectorError
 
@@ -35,7 +35,6 @@ _COOKIE_ENV = "AIUSE_OPENCODE_ZEN_COOKIE"
 _COOKIE_SECRET = "OPENCODE_ZEN_COOKIE"
 _WORKSPACE_ENV = "AIUSE_OPENCODE_ZEN_WORKSPACE_ID"
 _USER_AGENT = "aiuse OpenCode Zen collector"
-_SECRETSPEC_MANIFEST = Path(__file__).resolve().parents[3] / "secretspec.toml"
 _SECRETSPEC_TIMEOUT = 5.0
 
 
@@ -79,7 +78,7 @@ def _resolve_cookie(env: Mapping[str, str], timeout: float, *, allow_secretspec:
     executable = shutil.which("secretspec")
     if executable is None:
         return None
-    manifest = str(env.get("SECRETSPEC_FILE") or _SECRETSPEC_MANIFEST)
+    manifest = str(resolve_manifest_path(env))
     try:
         result = subprocess.run(
             [

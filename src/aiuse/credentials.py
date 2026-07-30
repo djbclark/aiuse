@@ -26,11 +26,11 @@ from aiuse.collectors.opencode_zen import (
     _first_workspace,
     _parse_billing_balance,
 )
+from aiuse.secretspec import default_manifest_path, ensure_manifest
 
 _OPENCODE_ZEN = "opencode-zen"
 _OPENCODE_HOST = "opencode.ai"
 _OPENCODE_COOKIE_SECRET = "OPENCODE_ZEN_COOKIE"
-_SECRETSPEC_MANIFEST = Path(__file__).resolve().parents[2] / "secretspec.toml"
 _CHROME_ROOT = Path.home() / "Library/Application Support/Google/Chrome"
 _DEFAULT_TIMEOUT_S = 10.0
 
@@ -55,9 +55,9 @@ def run_credential_command(argv: list[str]) -> int:
     refresh.add_argument(
         "--secretspec-file",
         type=Path,
-        default=_SECRETSPEC_MANIFEST,
+        default=default_manifest_path(),
         metavar="PATH",
-        help="SecretSpec manifest to update (default: this project's secretspec.toml)",
+        help="SecretSpec manifest to update (default: ~/.config/aiuse/secretspec.toml)",
     )
     refresh.add_argument("--timeout", type=float, default=_DEFAULT_TIMEOUT_S, metavar="SECONDS")
     args = parser.parse_args(argv)
@@ -85,7 +85,9 @@ def _refresh_opencode_zen(args: argparse.Namespace) -> int:
             print("SecretSpec was not changed.")
             return 0
     try:
-        _save_with_secretspec(cookie, manifest=Path(args.secretspec_file), timeout=float(args.timeout))
+        manifest = Path(args.secretspec_file).expanduser()
+        ensure_manifest(manifest)
+        _save_with_secretspec(cookie, manifest=manifest, timeout=float(args.timeout))
     except CredentialError as exc:
         print(f"credential refresh failed: {exc}", file=sys.stderr)
         return 1

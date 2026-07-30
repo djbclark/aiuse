@@ -60,7 +60,7 @@ config & setup:
   aiuse --show-config-path    print config.toml and legacy YAML paths
   aiuse doctor                PATH tools, version probe, config validation, timeouts
   aiuse trust …               macOS codesign / Keychain trust for caut (docs/macos-keychain-trust.md)
-  aiuse credential …          interactively refresh a validated provider credential
+  aiuse credential refresh …  validate a browser session and save it through SecretSpec
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)

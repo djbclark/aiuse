@@ -89,6 +89,22 @@ def test_collect_opencode_zen_uses_secretspec_cookie_when_no_override(monkeypatc
     assert "from-secretspec" not in str(accounts[0])
 
 
+def test_collect_opencode_zen_prefers_user_manifest_when_not_overridden(monkeypatch, tmp_path):
+    manifest = tmp_path / "secretspec.toml"
+    manifest.write_text("[project]\nname = 'aiuse'\n")
+    seen: list[list[str]] = []
+
+    monkeypatch.setattr("aiuse.collectors.opencode_zen.shutil.which", lambda _name: "/usr/bin/secretspec")
+    monkeypatch.setattr("aiuse.collectors.opencode_zen.resolve_manifest_path", lambda _env: manifest)
+    monkeypatch.setattr(
+        "aiuse.collectors.opencode_zen.subprocess.run",
+        lambda command, **_kwargs: seen.append(command) or SimpleNamespace(returncode=1, stdout=""),
+    )
+
+    assert collect_opencode_zen() == []
+    assert str(manifest) in seen[0]
+
+
 def test_collect_opencode_zen_explicit_cookie_overrides_secretspec(monkeypatch):
     monkeypatch.setattr(
         "aiuse.collectors.opencode_zen.subprocess.run",

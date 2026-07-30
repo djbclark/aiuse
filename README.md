@@ -130,6 +130,30 @@ cp config/config.example.toml "${XDG_CONFIG_HOME:-$HOME/.config}/aiuse/config.to
 starter without overwriting it. Provider credentials stay with cswap, CodexBar,
 caut, OpenUsage, and tokscale — this file does not hold tokens or emails.
 
+### Optional OpenCode Zen balance
+
+OpenCode Zen prepaid balance is a distinct service from OpenCode Go quota.
+CodexBar can report it, and `aiuse` can independently cross-check the live
+OpenCode billing response when a signed-in browser session is available. This
+is opt-in and normal collection never opens a browser or reads its cookie
+database.
+
+```bash
+# One-time optional browser reader for a pipx install.
+pipx inject aiuse browser-cookie3
+
+# Validate the OpenCode session, then save only the validated cookie through
+# SecretSpec. The default manifest is ~/.config/aiuse/secretspec.toml.
+aiuse credential refresh opencode-zen --from chrome --profile Default
+```
+
+The command reads only `opencode.ai` cookies, validates an authenticated
+workspace and a live Zen balance before saving, and never prints the cookie.
+Use `--dry-run` to validate without saving. `aiuse credential refresh --help`
+lists its confirmation, profile, timeout, and manifest options. See the
+[OpenCode Zen balance guide](docs/opencode-zen-balance.md) for the source model
+and SecretSpec details.
+
 aiuse normally unifies source-local account names automatically when each
 identifying source reports exactly one account for a provider. For a genuinely
 multi-account provider, map a local name explicitly instead of letting aiuse
@@ -157,6 +181,9 @@ aiuse doctor                 # PATH tools + config presence + timeouts
 aiuse trust setup            # caut: stable codesign + guide
 aiuse trust sign-caut        # re-run after every cargo install
 aiuse trust fix-codexbar-cache --dry-run   # CodexBar#679: trust CLI on cache items
+
+# Optional: refresh the separately reported OpenCode Zen prepaid balance.
+aiuse credential refresh opencode-zen --from chrome --profile Default
 
 # Morning / before a long coding block
 aiuse                        # priority ladder on stdout (use-soon at bottom); meta on stderr
@@ -269,6 +296,7 @@ not require importing its Python package.
 | `--show-config-path`                                                                                       | Print the active config path                                                         |
 | `doctor` / `--doctor`                                                                                      | Check tools on PATH, config presence, effective timeouts; no collect                 |
 | `trust` …                                                                                                  | macOS: codesign status, sign caut, and Keychain grant guide                          |
+| `credential refresh opencode-zen`                                                                          | Validate a Chrome OpenCode session and save it through SecretSpec                    |
 | `--min-remaining 50 --max-days 10`                                                                         | Override alert thresholds                                                            |
 | `--save PATH`                                                                                              | Also write full JSON snapshot to PATH                                                |
 
