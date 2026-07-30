@@ -1247,8 +1247,7 @@ def _render_account(
         days = w.days_until_reset()
         if days is not None:
             reset_s = (
-                f"resets {_human_deadline(days, estimated=not w.reset_time_is_precise())} "
-                f"({_fmt_dt(w.resets_at)})"
+                f"resets {_human_deadline(days, estimated=not w.reset_time_is_precise())} ({_fmt_dt(w.resets_at)})"
             )
         elif w.reset_description:
             reset_s = w.reset_description

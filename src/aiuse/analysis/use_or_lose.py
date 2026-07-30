@@ -847,7 +847,9 @@ def _message(
 ) -> str:
     who = account.account or "default"
     plan = account.plan or "subscription"
-    time_part = f"resets {_human_when(days, estimated=deadline_is_estimated)}" if days is not None else "reset time unknown"
+    time_part = (
+        f"resets {_human_when(days, estimated=deadline_is_estimated)}" if days is not None else "reset time unknown"
+    )
     note = f" {plan_notes}" if plan_notes else ""
     return (
         f"Use {provider_display_name(account.provider)} ({who}, {plan}) soon: "
