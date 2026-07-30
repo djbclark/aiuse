@@ -3,9 +3,8 @@ import subprocess
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "packaging" / "install-deps.sh"
-SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+def _root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 def _stub(path: Path, body: str = "exit 0") -> None:
@@ -14,6 +13,7 @@ def _stub(path: Path, body: str = "exit 0") -> None:
 
 
 def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
+    root = _root()
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
     formula = tmp_path / "formula"
@@ -26,11 +26,16 @@ def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
 
     env = os.environ | {
         "HOME": str(home),
-        "PATH": f"{bin_dir}:{SYSTEM_PATH}",
+        "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin",
         "FAKE_FORMULA": str(formula),
     }
     result = subprocess.run(
-        ["bash", str(SCRIPT), "--check"], cwd=ROOT, env=env, text=True, capture_output=True, check=False
+        ["bash", str(root / "packaging" / "install-deps.sh"), "--check"],
+        cwd=root,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
     )
 
     assert result.returncode == 1
@@ -39,15 +44,21 @@ def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
 
 
 def test_install_deps_check_recognizes_openusage_sh_wrapper(tmp_path):
+    root = _root()
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for command in ("cswap", "codexbar", "caut", "openusage", "openusage-sh", "tokscale", "curl"):
         _stub(bin_dir / command)
 
-    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}:{SYSTEM_PATH}"}
+    env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin"}
     result = subprocess.run(
-        ["bash", str(SCRIPT), "--check"], cwd=ROOT, env=env, text=True, capture_output=True, check=False
+        ["bash", str(root / "packaging" / "install-deps.sh"), "--check"],
+        cwd=root,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
     )
 
     assert result.returncode == 0
@@ -55,8 +66,8 @@ def test_install_deps_check_recognizes_openusage_sh_wrapper(tmp_path):
 
 
 def test_launchd_template_includes_local_wrapper_path_placeholder():
-    template = (ROOT / "packaging" / "launchd" / "com.djbclark.aiuse.plist").read_text(encoding="utf-8")
-    installer = (ROOT / "packaging" / "launchd" / "install.sh").read_text(encoding="utf-8")
+    template = (_root() / "packaging" / "launchd" / "com.djbclark.aiuse.plist").read_text(encoding="utf-8")
+    installer = (_root() / "packaging" / "launchd" / "install.sh").read_text(encoding="utf-8")
 
     assert "USER_LOCAL_BIN:/opt/homebrew/bin" in template
-    assert 's|USER_LOCAL_BIN|${HOME}/.local/bin|g' in installer
+    assert "s|USER_LOCAL_BIN|${HOME}/.local/bin|g" in installer
