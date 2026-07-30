@@ -15,14 +15,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import tempfile
 import time
-import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
+from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
@@ -291,10 +295,33 @@ def _build_and_release(
         os.unlink(notes_path)
 
 
+@contextmanager
+def _open_release_https_url(url: str, *, timeout: int) -> Iterator[http.client.HTTPResponse]:
+    """Open a fixed release endpoint after rejecting unsafe schemes and hosts."""
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname not in {"github.com", "pypi.org"}:
+        raise ReleaseError(f"refuse non-release URL: {url!r}")
+    target = parsed.path or "/"
+    if parsed.query:
+        target = f"{target}?{parsed.query}"
+    connection = http.client.HTTPSConnection(
+        parsed.hostname,
+        port=parsed.port,
+        timeout=timeout,
+        context=ssl.create_default_context(),  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
+    )
+    try:
+        connection.request("GET", target)
+        with connection.getresponse() as response:
+            yield response
+    finally:
+        connection.close()
+
+
 def _pypi_has_version(version: str) -> bool:
     url = f"https://pypi.org/pypi/aiuse/{version}/json"
     try:
-        with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310 — fixed PyPI URL
+        with _open_release_https_url(url, timeout=15) as resp:
             return resp.status == 200
     except Exception:  # noqa: BLE001
         return False
@@ -372,7 +399,7 @@ def _tarball_sha256(version: str, *, dry_run: bool) -> str:
         return "0" * 64
     _log(f"hashing {url}")
     digest = hashlib.sha256()
-    with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 — GitHub tag tarball
+    with _open_release_https_url(url, timeout=60) as resp:
         while True:
             chunk = resp.read(1024 * 1024)
             if not chunk:

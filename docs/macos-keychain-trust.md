@@ -8,10 +8,10 @@
 macOS Keychain **Always Allow** is bound to a binary’s **code identity**
 (Designated Requirement / signing identity / CDHash), not just a path on disk.
 
-| Binary | Typical install | Signature | Always Allow |
-| ------ | --------------- | --------- | ------------ |
-| **caut** | `cargo install` | **adhoc / linker-signed** | Breaks on every reinstall (new CDHash) |
-| **CodexBar** | Homebrew cask app | Team-signed | Stable; different failure mode (item ACLs / OAuth strategy) |
+| Binary       | Typical install   | Signature                 | Always Allow                                                |
+| ------------ | ----------------- | ------------------------- | ----------------------------------------------------------- |
+| **caut**     | `cargo install`   | **adhoc / linker-signed** | Breaks on every reinstall (new CDHash)                      |
+| **CodexBar** | Homebrew cask app | Team-signed               | Stable; different failure mode (item ACLs / OAuth strategy) |
 
 There is **no** System Setting of the form “allow this app all keychain items
 forever.” Grants are **per keychain item**.
@@ -112,10 +112,10 @@ CodexBar.app is Team-signed — **do not re-sign** it with a local cert.
 
 ### Two different CodexBar prompt classes
 
-| Dialog mentions | Cause | Fix |
-| --------------- | ----- | --- |
-| **CodexBar Cache** / `com.steipete.codexbar.cache` | ACL trusts only the .app, not **CodexBarCLI** ([#679](https://github.com/steipete/CodexBar/issues/679)) | `aiuse trust fix-codexbar-cache` |
-| **Claude Code-credentials** | Foreign item / XARA / OAuth prefs | CodexBar Settings (Avoid Keychain prompts); prefs already often `promptMode=never` |
+| Dialog mentions                                    | Cause                                                                                                   | Fix                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **CodexBar Cache** / `com.steipete.codexbar.cache` | ACL trusts only the .app, not **CodexBarCLI** ([#679](https://github.com/steipete/CodexBar/issues/679)) | `aiuse trust fix-codexbar-cache`                                                   |
+| **Claude Code-credentials**                        | Foreign item / XARA / OAuth prefs                                                                       | CodexBar Settings (Avoid Keychain prompts); prefs already often `promptMode=never` |
 
 ### Fix CodexBar Cache ACLs (#679)
 
@@ -177,14 +177,14 @@ by itself). When caut is disabled in config, doctor stays quiet about codesign.
 
 ## Commands reference
 
-| Command | Role |
-| ------- | ---- |
-| `aiuse trust` / `status` | Codesign status for caut + CodexBar Cache accounts |
-| `aiuse trust setup` | Identity guide → sign if possible → grant-guide |
-| `aiuse trust ensure-identity` | Cert creation steps (opens Keychain Access if needed) |
-| `aiuse trust sign-caut` | `codesign --force --sign …` on realpath of caut |
-| `aiuse trust grant-guide` | Keychain Access steps + CodexBar Cache notes |
-| `aiuse trust probe` | Interactive caut (`both`) + light codexbar |
+| Command                          | Role                                                              |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `aiuse trust` / `status`         | Codesign status for caut + CodexBar Cache accounts                |
+| `aiuse trust setup`              | Identity guide → sign if possible → grant-guide                   |
+| `aiuse trust ensure-identity`    | Cert creation steps (opens Keychain Access if needed)             |
+| `aiuse trust sign-caut`          | `codesign --force --sign …` on realpath of caut                   |
+| `aiuse trust grant-guide`        | Keychain Access steps + CodexBar Cache notes                      |
+| `aiuse trust probe`              | Interactive caut (`both`) + light codexbar                        |
 | `aiuse trust fix-codexbar-cache` | #679: trust CodexBarCLI on cache items (`--dry-run`, `--account`) |
 
 just recipes: `macos-trust`, `macos-trust-status`, `macos-sign-caut`,

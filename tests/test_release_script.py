@@ -34,6 +34,13 @@ def test_validate_version(release):
         release._validate_version("not-a-version")
 
 
+def test_open_release_https_url_rejects_non_release_urls(release):
+    with pytest.raises(release.ReleaseError), release._open_release_https_url("file:///tmp/aiuse", timeout=1):
+        pass
+    with pytest.raises(release.ReleaseError), release._open_release_https_url("https://example.com/aiuse", timeout=1):
+        pass
+
+
 def test_rewrite_project_version(tmp_path: Path, release):
     (tmp_path / "src" / "aiuse").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text('name = "aiuse"\nversion = "1.0.0"\n', encoding="utf-8")

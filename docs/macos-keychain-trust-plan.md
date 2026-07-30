@@ -16,15 +16,15 @@ Ship a **trimmed operator QoL feature**, not a product surface. Diagnosis is
 correct; non-goals are firm. Two reviews disagreed on **shell vs Python** and
 on **auto-sign / CodexBar depth** — this plan picks:
 
-| Decision | Choice | Why |
-| -------- | ------ | --- |
-| Primary UX | **`aiuse trust …` (Python)** | Doctor needs the same codesign parse; CLI already has synonym subcommands (`doctor`, `status`, …). Avoids brittle bash parsers of `codesign -d` stderr. |
-| Packaging | One-line **hint** after caut install; **opt-in** autosign only | codesign itself can pop keychain dialogs for the **signing key**; install must stay non-interactive by default. |
-| Identity creation | **Guided GUI only** (v1) | Certificate Assistant sets Code Signing EKU correctly; `security` certgen is fragile across macOS versions. |
-| caut when adhoc | **Warn in doctor; do not auto-disable** | Behavior change would surprise operators who tolerate prompts. |
-| CodexBar | **Status + docs + read-only prefs peek** | Different failure mode (Team-signed). No codesign “fix.” Detect known keys if present; never mutate. |
-| State file | **None for v1** | Identity name lives in env / `config.toml` only. |
-| Operator `services.yaml` | **Out of scope** | Re-enable caut locally only after trust is set up — not part of this PR. |
+| Decision                 | Choice                                                         | Why                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary UX               | **`aiuse trust …` (Python)**                                   | Doctor needs the same codesign parse; CLI already has synonym subcommands (`doctor`, `status`, …). Avoids brittle bash parsers of `codesign -d` stderr. |
+| Packaging                | One-line **hint** after caut install; **opt-in** autosign only | codesign itself can pop keychain dialogs for the **signing key**; install must stay non-interactive by default.                                         |
+| Identity creation        | **Guided GUI only** (v1)                                       | Certificate Assistant sets Code Signing EKU correctly; `security` certgen is fragile across macOS versions.                                             |
+| caut when adhoc          | **Warn in doctor; do not auto-disable**                        | Behavior change would surprise operators who tolerate prompts.                                                                                          |
+| CodexBar                 | **Status + docs + read-only prefs peek**                       | Different failure mode (Team-signed). No codesign “fix.” Detect known keys if present; never mutate.                                                    |
+| State file               | **None for v1**                                                | Identity name lives in env / `config.toml` only.                                                                                                        |
+| Operator `services.yaml` | **Out of scope**                                               | Re-enable caut locally only after trust is set up — not part of this PR.                                                                                |
 
 This is **operator tooling** that lives in-tree so install/docs/doctor stay
 aligned — not a ranking feature.
@@ -128,13 +128,13 @@ On non-Darwin: print `macOS only` (or skip quietly under doctor) and exit **0**.
 
 ### Behavior details
 
-| Command | Behavior |
-| ------- | -------- |
-| `status` | Resolve `caut` via PATH then `~/.cargo/bin/caut` / `~/.local/bin/caut` (realpath). Run `codesign -dv --verbose=4`; classify **adhoc / signed / missing**. Resolve CodexBar.app / `codexbar` CLI; report Team ID if any. Report configured identity name and whether `security find-identity -v -p codesigning` lists it. Optional read-only CodexBar prefs (below). Exit 0. |
-| `setup` | Print identity steps if missing → if identity present, `sign-caut` → always `grant-guide`. **Does not** run `probe` (interactive education is separate). |
-| `sign-caut` | Require Darwin + identity + binary. `codesign --force --sign "$IDENTITY" --timestamp=none` on **realpath** of binary (never sign a symlink inode as the target of trust without resolving). Print before/after summary. Non-zero on failure. |
-| `grant-guide` | Static (versioned) list of item names + Keychain Access UI steps + Always Allow vs “Allow all applications” warning. |
-| `probe` | Explicit only. Preamble + `caut usage --provider claude --json` and/or light codexbar probe. Not part of `setup` default path. |
+| Command       | Behavior                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`      | Resolve `caut` via PATH then `~/.cargo/bin/caut` / `~/.local/bin/caut` (realpath). Run `codesign -dv --verbose=4`; classify **adhoc / signed / missing**. Resolve CodexBar.app / `codexbar` CLI; report Team ID if any. Report configured identity name and whether `security find-identity -v -p codesigning` lists it. Optional read-only CodexBar prefs (below). Exit 0. |
+| `setup`       | Print identity steps if missing → if identity present, `sign-caut` → always `grant-guide`. **Does not** run `probe` (interactive education is separate).                                                                                                                                                                                                                    |
+| `sign-caut`   | Require Darwin + identity + binary. `codesign --force --sign "$IDENTITY" --timestamp=none` on **realpath** of binary (never sign a symlink inode as the target of trust without resolving). Print before/after summary. Non-zero on failure.                                                                                                                                |
+| `grant-guide` | Static (versioned) list of item names + Keychain Access UI steps + Always Allow vs “Allow all applications” warning.                                                                                                                                                                                                                                                        |
+| `probe`       | Explicit only. Preamble + `caut usage --provider claude --json` and/or light codexbar probe. Not part of `setup` default path.                                                                                                                                                                                                                                              |
 
 ### Doctor (Darwin section)
 
@@ -238,12 +238,12 @@ File: `~/Library/Preferences/com.steipete.codexbar.plist`
 
 Relevant keys observed (names only; values may change across app versions):
 
-| Key | Example meaning (heuristic) |
-| --- | --------------------------- |
-| `claudeOAuthKeychainPromptMode` | e.g. `"never"` — reduced prompting |
+| Key                               | Example meaning (heuristic)                  |
+| --------------------------------- | -------------------------------------------- |
+| `claudeOAuthKeychainPromptMode`   | e.g. `"never"` — reduced prompting           |
 | `claudeOAuthKeychainReadStrategy` | e.g. `"securityFramework"` vs CLI `security` |
-| `debugDisableKeychainAccess` | bool kill-switch |
-| `claudeOAuthKeychainDeniedUntil` | backoff timestamp after Deny |
+| `debugDisableKeychainAccess`      | bool kill-switch                             |
+| `claudeOAuthKeychainDeniedUntil`  | backoff timestamp after Deny                 |
 
 **v1 behavior:** in `aiuse trust status` and optionally doctor, if plist is
 readable, print a short **info** line for these keys (no secrets, no long
@@ -257,13 +257,13 @@ equivalent; aiuse only reports.
 
 ## Docs to add/update
 
-| File | Content |
-| ---- | ------- |
+| File                                                               | Content                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`docs/macos-keychain-trust.md`** (operator guide, not this plan) | Why Always Allow fails for adhoc; create self-signed Code Signing cert (Certificate Assistant steps); `aiuse trust setup` / `sign-caut`; Always Allow once per item; re-sign after cargo install; CodexBar differences + Settings; no global app trust; security tradeoffs of “Allow all applications.” |
-| **`docs/collectors-caut-openusage.md`** | Link to guide; note doctor warning; do not rehash full steps. |
-| **`docs/macos-keychain-trust-plan.md`** | This plan (implementation checklist). |
-| **README / AGENTS.md** | One line under setup + docs table row. |
-| **`docs/next-options.md`** | Optional polish row: macOS trust helper (this). |
+| **`docs/collectors-caut-openusage.md`**                            | Link to guide; note doctor warning; do not rehash full steps.                                                                                                                                                                                                                                           |
+| **`docs/macos-keychain-trust-plan.md`**                            | This plan (implementation checklist).                                                                                                                                                                                                                                                                   |
+| **README / AGENTS.md**                                             | One line under setup + docs table row.                                                                                                                                                                                                                                                                  |
+| **`docs/next-options.md`**                                         | Optional polish row: macOS trust helper (this).                                                                                                                                                                                                                                                         |
 
 ### Identity creation copy (ensure-identity / setup)
 
@@ -301,15 +301,15 @@ Document as “commonly touched; not exhaustive”:
 
 ## Implementation checklist (PR order)
 
-1. [x] `src/aiuse/macos_trust.py` + unit tests with fixture `codesign` output  
-2. [x] CLI: `trust` subcommands; non-Darwin exit 0  
-3. [x] Config: optional `[macos] codesign_identity`; known-key validation  
-4. [x] Doctor Darwin warn when caut enabled + adhoc  
-5. [x] `docs/macos-keychain-trust.md` operator guide  
-6. [x] `install-deps.sh` hint + opt-in `AIUSE_AUTOSIGN_CAUT`  
-7. [x] just recipes  
-8. [x] README + AGENTS.md + collectors doc links; next-options row  
-9. [x] Full pytest (284); Darwin smoke: `aiuse trust status` / help  
+1. [x] `src/aiuse/macos_trust.py` + unit tests with fixture `codesign` output
+2. [x] CLI: `trust` subcommands; non-Darwin exit 0
+3. [x] Config: optional `[macos] codesign_identity`; known-key validation
+4. [x] Doctor Darwin warn when caut enabled + adhoc
+5. [x] `docs/macos-keychain-trust.md` operator guide
+6. [x] `install-deps.sh` hint + opt-in `AIUSE_AUTOSIGN_CAUT`
+7. [x] just recipes
+8. [x] README + AGENTS.md + collectors doc links; next-options row
+9. [x] Full pytest (284); Darwin smoke: `aiuse trust status` / help
 
 No release cut unless operator asks (standing packaging policy).
 
@@ -317,10 +317,10 @@ No release cut unless operator asks (standing packaging policy).
 
 ## Testing strategy
 
-| Layer | What |
-| ----- | ---- |
-| Unit | Parse adhoc vs Authority lines; resolve path with symlink tmp_path; configured identity precedence env > toml > default |
-| CLI | `aiuse trust status` exit 0 on Linux (monkeypatch platform or skip body); doctor does not crash |
+| Layer           | What                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit            | Parse adhoc vs Authority lines; resolve path with symlink tmp_path; configured identity precedence env > toml > default                |
+| CLI             | `aiuse trust status` exit 0 on Linux (monkeypatch platform or skip body); doctor does not crash                                        |
 | Manual (Darwin) | Create cert once; sign caut; `codesign -dv` shows Authority; doctor clean; cargo reinstall + sign-caut; dialogs stop for granted items |
 
 Do not run real `codesign --sign` in CI without an identity.
@@ -329,35 +329,35 @@ Do not run real `codesign --sign` in CI without an identity.
 
 ## Success criteria
 
-1. First-time: `aiuse trust setup` + GUI cert + Always Allow on next caut run → hourly agent no longer spams for granted items.  
-2. After `cargo install`: `aiuse trust sign-caut` (or opt-in autosign) restores identity without recreating the cert.  
-3. Doctor warns only when caut is enabled and still adhoc.  
-4. CodexBar: status/docs/prefs info; no false “re-sign CodexBar” advice.  
+1. First-time: `aiuse trust setup` + GUI cert + Always Allow on next caut run → hourly agent no longer spams for granted items.
+2. After `cargo install`: `aiuse trust sign-caut` (or opt-in autosign) restores identity without recreating the cert.
+3. Doctor warns only when caut is enabled and still adhoc.
+4. CodexBar: status/docs/prefs info; no false “re-sign CodexBar” advice.
 5. Linux CI unchanged (green, no macOS requirement).
 
 ---
 
 ## Explicitly deferred (v2+)
 
-- Non-interactive cert create  
-- Default autosign without `AIUSE_AUTOSIGN_CAUT`  
-- Writing CodexBar prefs / enabling Avoid Keychain prompts programmatically  
-- `security` ACL automation for Safe Storage items  
-- Signing other cargo/go collector binaries if added later  
-- State file of CDHash history  
+- Non-interactive cert create
+- Default autosign without `AIUSE_AUTOSIGN_CAUT`
+- Writing CodexBar prefs / enabling Avoid Keychain prompts programmatically
+- `security` ACL automation for Safe Storage items
+- Signing other cargo/go collector binaries if added later
+- State file of CDHash history
 - Re-enabling operator’s local `caut.enabled`
 
 ---
 
 ## Open residual risks
 
-| Risk | Mitigation |
-| ---- | ---------- |
-| codesign prompts for access to the **signing private key** | Document Allow Always on that key for `/usr/bin/codesign`; never default autosign during install |
-| Self-signed identity not trusted for codesign | Doc: Trust → Code Signing → Always Trust |
-| Operator grants Always Allow then rebuilds **without** re-sign | Doctor warn returns; install-deps hint |
-| CodexBar key names change | Best-effort prefs; never fail status |
-| Probe from automation reintroduces dialogs | Probe is opt-in only; setup excludes it |
+| Risk                                                           | Mitigation                                                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| codesign prompts for access to the **signing private key**     | Document Allow Always on that key for `/usr/bin/codesign`; never default autosign during install |
+| Self-signed identity not trusted for codesign                  | Doc: Trust → Code Signing → Always Trust                                                         |
+| Operator grants Always Allow then rebuilds **without** re-sign | Doctor warn returns; install-deps hint                                                           |
+| CodexBar key names change                                      | Best-effort prefs; never fail status                                                             |
+| Probe from automation reintroduces dialogs                     | Probe is opt-in only; setup excludes it                                                          |
 
 ---
 
