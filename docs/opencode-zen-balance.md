@@ -30,8 +30,16 @@ Zen. This is server-side information, unlike the local estimates.
 
 `aiuse` now includes an optional native `opencode_zen` collector that
 independently implements OpenCode's authenticated workspace billing request.
-To enable the second source, export an existing OpenCode console Cookie header
-for the process that runs `aiuse`:
+It automatically resolves `OPENCODE_ZEN_COOKIE` from this repository's
+`secretspec.toml`; store the existing OpenCode console Cookie header there:
+
+```bash
+secretspec set OPENCODE_ZEN_COOKIE
+aiuse -q --json
+```
+
+An `AIUSE_OPENCODE_ZEN_COOKIE` process environment variable is an explicit
+override for automation or a temporary session:
 
 ```bash
 export AIUSE_OPENCODE_ZEN_COOKIE='session=...; other-cookie=...'
@@ -40,7 +48,9 @@ aiuse -q --json
 
 Optionally set `AIUSE_OPENCODE_ZEN_WORKSPACE_ID` to select a workspace;
 otherwise the collector uses the first workspace in the authenticated response.
-The cookie is never stored in TOML, snapshots, output, or error messages.
+The cookie value is never stored in TOML, snapshots, output, or error messages.
+The `OPENCODE_ZEN_API_KEY` available to the OpenCode client is intentionally
+not used: OpenCode documents it for model requests, not a wallet-balance API.
 `aiuse` runs this collector alongside CodexBar and records a cross-check when
 both produce a balance.
 

@@ -2,9 +2,10 @@
 
 This is intentionally separate from CodexBar: it provides a second client
 implementation of the same server-authoritative billing source.  OpenCode does
-not expose this balance through its API key, so the caller supplies an existing
-console-session Cookie header via ``AIUSE_OPENCODE_ZEN_COOKIE``.  The value is
-never written to config, snapshots, logs, or error messages.
+not expose this balance through its API key, so the collector first asks the
+project's SecretSpec manifest for ``OPENCODE_ZEN_COOKIE``. An explicit
+``AIUSE_OPENCODE_ZEN_COOKIE`` environment variable overrides that lookup. The
+value is never written to config, snapshots, logs, or error messages.
 """
 
 from __future__ import annotations
@@ -12,8 +13,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import uuid
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -28,8 +32,11 @@ _WORKSPACES_SERVER_ID = "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb46084
 _BILLING_SERVER_ID = "c83b78a614689c38ebee981f9b39a8b377716db85c1fd7dbab604adc02d3313d"
 _BALANCE_SCALE = 100_000_000.0
 _COOKIE_ENV = "AIUSE_OPENCODE_ZEN_COOKIE"
+_COOKIE_SECRET = "OPENCODE_ZEN_COOKIE"
 _WORKSPACE_ENV = "AIUSE_OPENCODE_ZEN_WORKSPACE_ID"
 _USER_AGENT = "aiuse OpenCode Zen collector"
+_SECRETSPEC_MANIFEST = Path(__file__).resolve().parents[3] / "secretspec.toml"
+_SECRETSPEC_TIMEOUT = 5.0
 
 
 def collect_opencode_zen(
@@ -39,7 +46,7 @@ def collect_opencode_zen(
 ) -> list[AccountUsage]:
     """Return the native Zen source, or nothing until a session cookie is supplied."""
     env = os.environ if environ is None else environ
-    cookie = str(env.get(_COOKIE_ENV) or "").strip()
+    cookie = _resolve_cookie(env, timeout)
     if not cookie:
         return []
     workspace = _workspace_id(str(env.get(_WORKSPACE_ENV) or ""))
@@ -60,6 +67,41 @@ def collect_opencode_zen(
             notes=["Live data fetched directly from OpenCode Zen billing."],
         )
     ]
+
+
+def _resolve_cookie(env: Mapping[str, str], timeout: float) -> str | None:
+    """Return an explicit cookie or a SecretSpec value without exposing either."""
+    explicit = str(env.get(_COOKIE_ENV) or "").strip()
+    if explicit:
+        return explicit
+    executable = shutil.which("secretspec")
+    if executable is None:
+        return None
+    manifest = str(env.get("SECRETSPEC_FILE") or _SECRETSPEC_MANIFEST)
+    try:
+        result = subprocess.run(
+            [
+                executable,
+                "get",
+                "--file",
+                manifest,
+                "--reason",
+                "aiuse OpenCode Zen balance collection",
+                _COOKIE_SECRET,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=min(max(timeout, 0.1), _SECRETSPEC_TIMEOUT),
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    cookie = result.stdout.strip()
+    return cookie or None
 
 
 def _fetch_server(server_id: str, args: list[str] | None, cookie: str, timeout: float) -> str:
@@ -91,7 +133,7 @@ def _fetch_server(server_id: str, args: list[str] | None, cookie: str, timeout: 
 
 
 def _workspace_id(value: str) -> str | None:
-    match = re.search(r"\bwrk_[A-Za-z0-9]+\b", value)
+    match = re.search(r"\bwork_[A-Za-z0-9]+\b", value)
     return match.group(0) if match else None
 
 
