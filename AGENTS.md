@@ -152,7 +152,9 @@ install steps, CLI flags, and config. Install helpers:
 ## Conventions
 
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
-- Run tests with `.venv/bin/python -m pytest -q` (currently 200+ passing).
+- Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
+  (the same all-files quality gate as GitHub Actions). `pre-commit install --install-hooks`
+  installs this check as a pre-push hook.
 - This repo shells out to external tools that must already be
   installed/authenticated (`cswap`, `codexbar`, `caut`, `openusage` and/or
   OpenUsage.app, `tokscale`) — do not attempt to install, configure, or

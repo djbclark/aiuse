@@ -79,6 +79,13 @@ just-check:
 # Fast, deterministic code and documentation checks.
 check: test ruff mypy yamllint markdownlint prettier typos just-check
 
+# Exact all-files quality gate used by GitHub Actions.
+pre-commit:
+    uv run pre-commit run --all-files
+
+# Full local equivalent of the GitHub test workflow.
+ci: test pre-commit just-check
+
 # Full lint and security suite.
 lint: check bandit semgrep gitleaks
 
