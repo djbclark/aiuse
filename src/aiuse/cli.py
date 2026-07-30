@@ -60,6 +60,7 @@ config & setup:
   aiuse --show-config-path    print config.toml and legacy YAML paths
   aiuse doctor                PATH tools, version probe, config validation, timeouts
   aiuse trust …               macOS codesign / Keychain trust for caut (docs/macos-keychain-trust.md)
+  aiuse credential …          interactively refresh a validated provider credential
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
@@ -76,7 +77,8 @@ exit codes (collect runs):
   1  hard failure (collectors failed and no accounts)
   2  success, but at least one burn/conserve alert
 
-Credentials stay with cswap / CodexBar / caut / OpenUsage / tokscale — this CLI never stores tokens.
+Normal collection reuses credentials from cswap / CodexBar / caut / OpenUsage / tokscale.
+Only explicit ``aiuse credential`` commands can validate and save a credential through SecretSpec.
 See docs/json-contract.md for machine-readable JSON field stability.
 """
 
@@ -310,6 +312,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
     raw = list(argv) if argv is not None else sys.argv[1:]
     if raw and raw[0] == "trust":
         return _run_trust(raw[1:], config_path=None)
+    if raw and raw[0] == "credential":
+        from aiuse.credentials import run_credential_command
+
+        return run_credential_command(raw[1:])
 
     args = build_parser().parse_args(_normalize_argv(argv))
     if args.show_config_path:

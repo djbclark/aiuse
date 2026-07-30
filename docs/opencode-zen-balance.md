@@ -51,6 +51,23 @@ otherwise the collector uses the first workspace in the authenticated response.
 The cookie value is never stored in TOML, snapshots, output, or error messages.
 The `OPENCODE_ZEN_API_KEY` available to the OpenCode client is intentionally
 not used: OpenCode documents it for model requests, not a wallet-balance API.
+
+### Refresh from Chrome (interactive, optional)
+
+Install the optional reader, then explicitly refresh the SecretSpec value from
+one signed-in Chrome profile:
+
+```bash
+pipx inject aiuse browser-cookie3
+aiuse credential refresh opencode-zen --from chrome --profile Default
+```
+
+The command reads only cookies for `opencode.ai`, validates an authenticated
+workspace and a live Zen balance before asking to replace SecretSpec, and never
+prints the cookie. Use `--dry-run` to check without saving or `--yes` for a
+confirmed non-interactive replacement. It is never called by normal collection
+or the scheduled snapshot agent. See `aiuse credential refresh --help` for the
+provider-generic command interface.
 `aiuse` runs this collector alongside CodexBar and records a cross-check when
 both produce a balance.
 

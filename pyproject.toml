@@ -34,6 +34,7 @@ Issues = "https://github.com/djbclark/aiuse/issues"
 Changelog = "https://github.com/djbclark/aiuse/releases"
 
 [project.optional-dependencies]
+chrome-refresh = ["browser-cookie3>=0.19"]
 dev = [
   "bandit>=1.7.9",
   "jsonschema>=4.0",
