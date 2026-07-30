@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -824,9 +825,9 @@ def _human_when(days: float | None) -> str:
         return "on an unknown schedule"
     if days < 1:
         return f"in {days * 24:.0f}h"
-    if days < 2:
-        return "tomorrow"
-    return f"in {days:.1f} days"
+    calendar_days = math.ceil(days)
+    unit = "day" if calendar_days == 1 else "days"
+    return f"in {calendar_days} {unit}"
 
 
 def _message(

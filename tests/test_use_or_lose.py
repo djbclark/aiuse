@@ -10,6 +10,7 @@ from aiuse.analysis.use_or_lose import (
     _classify_flexibility,
     _compute_flexibility_profile,
     _compute_value_at_risk,
+    _human_when,
     _redistribute_weights,
     _score_multi_dimension,
     analyze_use_or_lose,
@@ -27,6 +28,20 @@ from aiuse.models import (
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        (0.5, "in 12h"),
+        (1.0, "in 1 day"),
+        (1.01, "in 2 days"),
+        (1.38, "in 2 days"),
+        (2.01, "in 3 days"),
+    ],
+)
+def test_human_when_rounds_up_remaining_calendar_days(days: float, expected: str):
+    assert _human_when(days) == expected
 
 
 def test_flags_nearly_unused_weekly_window():

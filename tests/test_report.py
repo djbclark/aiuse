@@ -19,6 +19,7 @@ from aiuse.report import (
     ACTION_PLAN_MAX_LINES,
     ACTION_PLAN_WIDTH,
     _action_plan_line,
+    _human_deadline,
     _physical_line_count,
     _render_brief_action_plan,
     _sorted_accounts,
@@ -29,6 +30,20 @@ from aiuse.report import (
     render_report,
     render_status_line,
 )
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        (0.5, "within ~12h"),
+        (1.0, "within 1 day"),
+        (1.01, "within 2 days"),
+        (1.38, "within 2 days"),
+        (2.01, "within 3 days"),
+    ],
+)
+def test_human_deadline_rounds_up_remaining_calendar_days(days: float, expected: str):
+    assert _human_deadline(days) == expected
 
 
 def test_ladder_includes_waste_forecast_fragment():

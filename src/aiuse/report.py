@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from datetime import datetime
@@ -1189,9 +1190,9 @@ def _human_deadline(days: float | None) -> str:
     if days < 1:
         hours = max(1, int(round(days * 24)))
         return f"within ~{hours}h"
-    if days < 2:
-        return "within 1 day"
-    return f"within {days:.1f} days"
+    calendar_days = math.ceil(days)
+    unit = "day" if calendar_days == 1 else "days"
+    return f"within {calendar_days} {unit}"
 
 
 def _sorted_accounts(accounts: list[AccountUsage]) -> list[AccountUsage]:
