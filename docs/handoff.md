@@ -6,7 +6,7 @@
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `.venv/bin/python -m pytest -q` — **356** passing
 
-**Package version:** **3.0.1** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.2** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
@@ -25,17 +25,18 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 ## Done after 3.0.0 (2026-07-30)
 
-| Area                      | Notes                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **OpenCode Zen refresh**  | `aiuse credential refresh opencode-zen --from chrome --profile Default` validates Chrome's OpenCode session before storing it through SecretSpec. Installed commands use `~/.config/aiuse/secretspec.toml`; normal collection never accesses Chrome or Keychain. Published `aiuse` was live-checked against that manifest and returned a native Zen balance. |
-| **Source coverage audit** | [`source-coverage.md`](source-coverage.md) records current successful client sources. DeepSeek and OpenRouter have one successful source; Zen has two client implementations of one upstream billing service; Groq currently has no usable live source.                                                                                                      |
-| **3.0.1 release**         | `just release 3.0.1`: 356 tests and full local quality/security gate green; GitHub release, PyPI Trusted Publishing run `30584144267`, Homebrew formula/tap, Homebrew test, and default `aiuse` / `ai` upgrades all passed.                                                                                                                                  |
+| Area                      | Notes                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OpenCode Zen refresh**  | `aiuse credential refresh opencode-zen --from chrome --profile Default` validates Chrome's OpenCode session before storing it through SecretSpec. Installed commands use `~/.config/aiuse/secretspec.toml`; normal collection never accesses Chrome or Keychain. Published `aiuse` was live-checked against that manifest and returned a native Zen balance.                      |
+| **Source coverage audit** | [`source-coverage.md`](source-coverage.md) records current successful client sources. DeepSeek and OpenRouter have one successful source; Zen has two client implementations of one upstream billing service; Groq currently has no usable live source.                                                                                                                           |
+| **3.0.1 release**         | `just release 3.0.1`: 356 tests and full local quality/security gate green; GitHub release, PyPI Trusted Publishing run `30584144267`, Homebrew formula/tap, Homebrew test, and default `aiuse` / `ai` upgrades all passed.                                                                                                                                                       |
+| **3.0.2 release**         | Negative/zero prepaid balances now render as `empty` rather than neutral `n/a`; positive prepaid balances retain `n/a` semantics. `just release 3.0.2` completed GitHub release, PyPI Trusted Publishing run `30585192853`, Homebrew formula/tap, Homebrew test, and default `aiuse` / `ai` upgrades. A live post-upgrade ladder confirmed `empty OpenCode Zen · balance $-0.04`. |
 
 ## Reopen checklist (operator)
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **3.0.0**.
+   `/opt/homebrew/bin/aiuse --version` → **3.0.2**.
 3. `aiuse doctor` → enabled collectors green; disabled caut is not an error.
 4. `aiuse trust status` only if caut is re-enabled later.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status` — expect

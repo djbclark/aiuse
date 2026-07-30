@@ -12,12 +12,14 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-07-30):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.0.1**
+done. Product issues **#1–#9** done. Packaging **3.0.2**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release (PyPI trove
 classifier moved to Production/Stable). 3.0.1 adds the documented optional
 OpenCode Zen browser credential refresh: a validated Chrome session is stored
 through SecretSpec at `~/.config/aiuse/secretspec.toml`, so installed CLI runs
-do not need Chrome or Keychain access. It includes **`aiuse trust`** (caut
+do not need Chrome or Keychain access. 3.0.2 classifies zero/negative prepaid
+balances as `empty` while keeping positive non-expiring balances `n/a`. It
+includes **`aiuse trust`** (caut
 stable codesign + CodexBar#679 cache ACL repair) and release wait-race fix.
 Five collectors; prepaid/`n/a` band; hourly LaunchAgent; history learning
 `auto`. Normal CLI **always live-collects** (hourly snapshots densify History
