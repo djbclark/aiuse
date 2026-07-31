@@ -576,7 +576,9 @@ def _forecast_fragment(alert: UseOrLoseAlert, *, compact: bool = True) -> str:
     if pace is None:
         return ""
     parts: list[str] = []
-    if alert.kind == "conserve" and pace.projected_exhaust_at is not None:
+    # Already-empty capacity is not "about to lock out" — skip the forecast.
+    rem = float(alert.remaining_percent)
+    if alert.kind == "conserve" and pace.projected_exhaust_at is not None and rem > 1.0:
         parts.append(f"~lockout {pace.projected_exhaust_at.strftime('%a %H:%M')}")
     if alert.kind == "burn" and pace.projected_waste_fraction is not None:
         waste_pct = pace.projected_waste_fraction * 100.0
@@ -606,10 +608,15 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
         if alert.source == "history" and alert.days_until_reset is None
         else _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     )
+    remaining = _format_remaining_percent(alert.remaining_percent)
+    # Depleted rows already use the empty tag — do not also say "pace" or
+    # "~lockout", which imply capacity remains.
+    if band == _BAND_EMPTY:
+        body = f"{name} · {who} · {alert.window_label}: {remaining} left · resets {when}"
+        return f"{_priority_tag(s, band)} {body}"
     verb = "pace" if alert.kind == "conserve" else "use"
     # Forecast before the deadline phrase so width-clamp keeps the useful bit.
     forecast = _forecast_fragment(alert, compact=True)
-    remaining = _format_remaining_percent(alert.remaining_percent)
     body = f"{name} · {who} · {alert.window_label}: {remaining} left{forecast} · {verb} {when}"
     return f"{_priority_tag(s, band)} {body}"
 
@@ -645,7 +652,9 @@ def _priority_account_line(
     if window is not None:
         rem = window.remaining() or 0.0
         when = _human_deadline(window.days_until_reset(), estimated=not window.reset_time_is_precise())
-        body = f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · ok {when}"
+        # Empty capacity is not "ok" — only show reset timing.
+        status = "resets" if band == _BAND_EMPTY else "ok"
+        body = f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · {status} {when}"
     elif account.balance_usd is not None:
         body = f"{name} · {who} · balance ${account.balance_usd:.2f}"
     elif account.credits_remaining is not None:

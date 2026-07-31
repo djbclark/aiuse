@@ -119,7 +119,12 @@ def test_ladder_classifies_every_unalerted_remaining_capacity_band(remaining: fl
     assert "Grok · djbclark@gmail.com · Grok usage limit:" in text
     expected_remaining = "<1%" if 0.0 < remaining < 1.0 else f"{remaining:.0f}%"
     assert f"{expected_remaining} left" in text
-    assert "· ok within" in text
+    if remaining <= 0.0:
+        # Depleted rows name the reset, not "ok" / "pace".
+        assert "· resets within" in text
+        assert "· ok within" not in text
+    else:
+        assert "· ok within" in text
 
 
 def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
@@ -157,11 +162,53 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     text = render_priority_ladder([alert], snapshot=snapshot, color=False)
 
     lines = text.splitlines()
-    assert any(line.startswith("empty") and "OpenCode Go" in line for line in lines)
+    go_line = next(line for line in lines if "OpenCode Go" in line)
+    assert go_line.startswith("empty")
+    assert "0% left" in go_line
+    assert "resets" in go_line
+    # Empty tag must not also claim pace / upcoming lockout.
+    assert " pace " not in go_line
+    assert "~lockout" not in go_line
     zen_line = next(line for line in lines if "OpenCode Zen" in line)
     assert zen_line.startswith("empty")
     assert "balance $-0.04" in zen_line
     assert "no expiry" in zen_line
+
+
+def test_ladder_empty_conserve_skips_pace_and_lockout_forecast():
+    """Fully spent conserve alerts are empty, not 'pace yourself' copy."""
+    from aiuse.report import render_priority_ladder
+
+    exhaust = utcnow()  # already exhausted — projected_exhaust_at is "now"
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="opencode-go",
+        account=None,
+        window_label="OpenCode Go monthly quota (3)",
+        remaining_percent=0.0,
+        days_until_reset=10.0,
+        plan="OpenCode Go",
+        message="exhausted",
+        source="codexbar",
+        score=100.0,
+        kind="conserve",
+        pace=PaceProfile(
+            elapsed_fraction=0.67,
+            used_fraction=1.0,
+            pace_ratio=1.5,
+            projected_used_fraction=1.0,
+            projected_waste_fraction=0.0,
+            projected_waste_usd=None,
+            projected_exhaust_at=exhaust,
+            governing=True,
+        ),
+    )
+    text = render_priority_ladder([alert], color=False, width=120)
+    assert text.startswith("empty")
+    assert "0% left" in text
+    assert "resets within" in text
+    assert "pace" not in text
+    assert "~lockout" not in text
 
 
 def test_ladder_includes_lockout_forecast_for_conserve():

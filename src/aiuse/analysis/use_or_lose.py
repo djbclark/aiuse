@@ -802,15 +802,29 @@ def _pace_message(
     when = _human_when(days, estimated=deadline_is_estimated)
     remaining = window.remaining()
     rem_s = f"{remaining:.0f}%" if remaining is not None else "some"
+    # Already-spent governing windows (e.g. OpenCode Go monthly at 0%) still
+    # suppress shorter siblings that may show 100% open — say so clearly.
+    depleted = remaining is not None and remaining <= 1.0
     child_note = ""
     if suppressed_children:
         labels = ", ".join(c.label for c in suppressed_children)
-        if verdict == "conserve":
+        if verdict == "conserve" and depleted:
+            child_note = (
+                f" Shorter windows ({labels}) may still show open capacity but draw this same exhausted budget."
+            )
+        elif verdict == "conserve":
             child_note = (
                 f" Avoid burning {labels} sessions — they draw the same budget you're already close to exhausting."
             )
         else:
             child_note = f" (this also covers your {labels} — no need to burn it separately)"
+    if verdict == "conserve" and depleted:
+        status = "exhausted" if remaining is not None and remaining <= 0.0 else "nearly exhausted"
+        return (
+            f"{provider_display_name(account.provider)} · {who} · {window.label}: "
+            f"{status} ({rem_s} left, resets {when})."
+            f"{child_note}"
+        )
     if verdict == "conserve":
         return (
             f"{provider_display_name(account.provider)} · {who} · {window.label}: "

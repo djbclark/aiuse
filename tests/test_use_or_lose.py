@@ -935,12 +935,20 @@ def test_shared_allotment_suppresses_history_child_when_governing_window_is_exha
 
     alerts = analyze_use_or_lose(snap, cfg)
 
-    assert any(
-        alert.source == "codexbar"
+    monthly = [
+        alert
+        for alert in alerts
+        if alert.source == "codexbar"
         and alert.kind == "conserve"
         and alert.window_label == "OpenCode Go monthly quota (3)"
-        for alert in alerts
-    )
+    ]
+    assert monthly
+    msg = monthly[0].message.lower()
+    assert "exhausted" in msg
+    assert "pace yourself" not in msg
+    # Short windows look open but share the spent monthly pool.
+    assert "5-hour" in msg or "5h" in msg
+    assert "open capacity" in msg or "same exhausted" in msg
     assert not any(alert.source == "history" for alert in alerts)
 
 
