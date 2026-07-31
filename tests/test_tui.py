@@ -109,7 +109,11 @@ def test_should_use_tui_false_for_json_and_no_tui(monkeypatch):
     assert should_use_tui(no_tui=True, stream=TTY()) is False
 
 
-def test_should_use_tui_false_when_not_tty():
+def test_should_use_tui_false_when_not_tty(monkeypatch):
+    # Isolate from ambient FORCE_COLOR / TTY_COMPATIBLE in agent shells.
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("TTY_COMPATIBLE", raising=False)
+
     class Pipe:
         def isatty(self) -> bool:
             return False
@@ -117,7 +121,10 @@ def test_should_use_tui_false_when_not_tty():
     assert should_use_tui(stream=Pipe()) is False
 
 
-def test_should_use_tui_true_on_tty_when_rich_present():
+def test_should_use_tui_true_on_tty_when_rich_present(monkeypatch):
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.delenv("TTY_COMPATIBLE", raising=False)
+
     class TTY:
         def isatty(self) -> bool:
             return True
