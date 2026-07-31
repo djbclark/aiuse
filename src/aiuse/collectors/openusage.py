@@ -233,6 +233,7 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
     credits_remaining: float | None = None
     usage_credits: UsageCredits | None = None
     notes: list[str] = [f"Live data fetched by OpenUsage via {via}."]
+    estimated_resources: list[str] = []
 
     if body.get("stale"):
         notes.append("OpenUsage snapshot marked stale (past five-minute freshness).")
@@ -244,6 +245,8 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         unit = str(res.get("unit") or "")
         label_key = str(res_id)
         pretty = _RESOURCE_LABELS.get(label_key, label_key)
+        if res.get("estimated") is True:
+            estimated_resources.append(pretty)
 
         if kind == "balance" or label_key in _BALANCE_KEYS:
             available = _f(res.get("available"))
@@ -334,6 +337,16 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         billing = BillingKind.PREPAID_BALANCE
     else:
         billing = BillingKind.UNKNOWN
+
+    if estimated_resources:
+        # OpenCode Go is the known case: OpenUsage sums local spend against
+        # fixed $12/$30/$60 caps (same heuristic as CodexBar --source local).
+        labels = ", ".join(estimated_resources[:6])
+        more = "" if len(estimated_resources) <= 6 else f" (+{len(estimated_resources) - 6} more)"
+        notes.append(
+            f"OpenUsage marked estimated (local cost vs fixed $ caps): {labels}{more}. "
+            "May understate used quota versus official OpenCode web billing."
+        )
 
     return AccountUsage(
         source="openusage_ai",

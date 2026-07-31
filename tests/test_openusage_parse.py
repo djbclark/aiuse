@@ -97,6 +97,59 @@ def test_openusage_balance_resource():
     assert acc.balance_usd == 12.5
 
 
+def test_openusage_opencode_estimated_resources_get_local_cap_note():
+    """OpenUsage marks OpenCode Go windows estimated (same $12/$30/$60 heuristic)."""
+    acc = _from_provider(
+        "opencode",
+        {
+            "displayName": "OpenCode",
+            "plan": "Go",
+            "resources": {
+                "session": {
+                    "kind": "consumption",
+                    "unit": "usd",
+                    "limit": 12,
+                    "used": 0,
+                    "remaining": 12,
+                    "utilization": 0,
+                    "estimated": True,
+                    "resetsAt": "2026-08-01T04:30:00Z",
+                    "windowSeconds": 18000,
+                },
+                "weekly": {
+                    "kind": "consumption",
+                    "unit": "usd",
+                    "limit": 30,
+                    "used": 0,
+                    "remaining": 30,
+                    "utilization": 0,
+                    "estimated": True,
+                    "resetsAt": "2026-08-03T00:00:00Z",
+                    "windowSeconds": 604800,
+                },
+                "monthly": {
+                    "kind": "consumption",
+                    "unit": "usd",
+                    "limit": 60,
+                    "used": 48.3772,
+                    "remaining": 11.6228,
+                    "utilization": 0.8062866666666667,
+                    "estimated": True,
+                    "resetsAt": "2026-08-10T23:18:40Z",
+                    "windowSeconds": 2678400,
+                },
+            },
+        },
+        via="cli",
+    )
+    assert acc.provider == "opencode"
+    assert len(acc.windows) == 3
+    monthly = next(w for w in acc.windows if "monthly" in w.label.lower())
+    assert monthly.remaining() == pytest.approx(19.371333, rel=1e-3)
+    assert any("estimated" in n.casefold() and "fixed $ caps" in n for n in acc.notes)
+    assert all(w.raw.get("estimated") is True for w in acc.windows)
+
+
 def test_openusage_sh_uses_only_explicit_quota_metrics(monkeypatch):
     monkeypatch.setattr(
         "aiuse.collectors.openusage_sh.run_json",

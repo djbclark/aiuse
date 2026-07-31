@@ -1,39 +1,81 @@
 # OpenCode Go quota reliability
 
-**Symptom:** `ai` showed OpenCode Go monthly with remaining % left (e.g. 19%)
-while the official OpenCode TUI said **Go limit reached / monthly usage limit
-reached**, with the same reset countdown (~17d 12h).
+**Symptom:** short Go windows (rolling 5h / weekly) show **0% used** while
+monthly shows **100% used**, and secondary tools report ~19% monthly remaining
+when the official page is already empty.
+
+## Ground truth (official OpenCode usage page)
+
+Example (operator-confirmed, 2026-07-31):
+
+| Window        | Official display        | Meaning for ranking          |
+| ------------- | ----------------------- | ---------------------------- |
+| Rolling usage | 0% used · resets ~5h    | Short bar **looks open**     |
+| Weekly usage  | 0% used · resets ~2d    | Short bar **looks open**     |
+| Monthly usage | 100% used · resets ~10d | **Pool spent** — Go is empty |
+
+Nested windows can reset their own counters while the **monthly shared
+allotment** is still exhausted. Treat monthly as the hard cap for “can I use
+Go?”.
+
+## Source matrix (same machine, same time)
+
+| Source                                 | 5h / session     | Weekly    | Monthly                     | Trust for ranking                        |
+| -------------------------------------- | ---------------- | --------- | --------------------------- | ---------------------------------------- |
+| **OpenCode web page**                  | 0% used          | 0% used   | 100% used                   | **Authoritative**                        |
+| **CodexBar `--source web`**            | `usedPercent: 0` | `0`       | `100`                       | **Authoritative** (matches page)         |
+| **CodexBar `--source local` / `auto`** | 0                | 0         | **~80.6 used** (~19% left)  | **Local estimate — wrong when depleted** |
+| **OpenUsage.ai** (`estimated: true`)   | $0 of $12        | $0 of $30 | **~$48 of $60** (~19% left) | **Same local $cap heuristic**            |
+
+The ~19 percentage-point CodexBar-vs-OpenUsage cross-check on monthly is
+**not** poll timing: OpenUsage marks resources `estimated: true` and uses the
+same fixed dollar caps CodexBar local uses (`$12` / `$30` / `$60`).
 
 ## Cause
 
-CodexBar’s default (`--source auto`) for `opencodego` prefers a **local**
-reader (`~/.local/share/opencode/opencode.db`) that estimates usage by summing
-local message costs against hardcoded dollar caps (`$12` / `$30` / `$60` for
-5h / weekly / monthly). That heuristic can report headroom when the
-**server-side** Go allotment is already exhausted.
+1. **Shared allotment:** 5h ⊂ weekly ⊂ monthly; a fresh short bar does not
+   unlock Go when monthly is spent.
+2. **Local heuristic (CodexBar local + OpenUsage):** sum local message costs
+   against hardcoded dollar caps. Can report headroom when **server-side**
+   monthly is already at 100% used.
+3. **Display wording (aiuse, fixed):** ranking correctly marked monthly
+   `empty`, but conserve copy still said “pace / ~lockout / projected to run
+   out” at 0% left. Exhausted rows now say exhausted + reset time, and note
+   that shorter windows may still look open.
 
-CodexBar `--source web` hits `opencode.ai` billing (cookies) and returns the
-authoritative percentages (monthly `usedPercent: 100` when the TUI says limit
-reached). It can also expose **Zen balance** (overage prepaid) via
-`usage.providerCost` with `period: "Zen balance"`.
-
-## What `ai` does
+## What `aiuse` does
 
 1. For CodexBar provider `opencodego`, query with `--source web` first.
 2. If web fails (no cookies / API error), fall back to CodexBar auto/local and
    annotate that the local estimate may diverge from the official limit.
-3. Default `analysis.provider_overrides.opencode.shared_allotment: true` so the
+3. Prefer CodexBar over OpenUsage for selection; cross-check still runs. When
+   an **estimated/local** peer disagrees with web/server data, the warning
+   states which side is local and that web billing wins.
+4. Default `analysis.provider_overrides.opencode.shared_allotment: true` so the
    longest window (monthly) governs pace scoring — a fresh 5h/weekly bar does
    not get a separate “burn this” alert when it draws the same Go budget.
-   History-derived short-window alerts obey the same gate, so an older
-   “5-hour 100% left” average cannot contradict an exhausted monthly pool.
+   History-derived short-window alerts obey the same gate.
+5. OpenUsage rows with `estimated: true` get an explicit note that figures are
+   local cost vs fixed $ caps.
 
 ## Verify
 
 ```bash
+# Official billing path (should match the OpenCode usage page)
 codexbar usage --provider opencodego --source web --format json --pretty
-ai --brief -q
+
+# Local estimate (often optimistic on monthly when the page is empty)
+codexbar usage --provider opencodego --source local --format json --pretty
+
+# OpenUsage local estimate (resources.estimated == true)
+openusage opencode --force | jq '.providers.opencode.resources'
+
+aiuse --brief -q
+aiuse --json -q | jq '.snapshot.cross_checks[] | select(.provider=="opencode-go")'
 ```
 
-When monthly is exhausted, expect CONSERVE on the monthly window (0% left) and
-no “use this week” push on the sibling weekly/5h windows.
+When monthly is exhausted, expect:
+
+- Ladder: `empty OpenCode Go … monthly … 0% left · resets within …`
+- No “use this week / 5-hour” burn alert on the sibling short windows
+- Cross-check warning if OpenUsage still shows ~19% monthly remaining

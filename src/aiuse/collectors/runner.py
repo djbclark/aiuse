@@ -651,13 +651,7 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
             account=account,
             status="warning",
             sources=sources,
-            message=(
-                "Tools disagree on some live quota figures: "
-                + "; ".join(issues)
-                + ". Small gaps are often expected (poll timing, last-good hydrate, "
-                "label vocabulary, or single-session vs multi-account views) and do not "
-                "mean both sources are wrong — cswap stays authoritative for Claude."
-            ),
+            message=_disagreement_message(left, right, issues),
         )
     return CrossCheck(
         provider=left.provider,
@@ -669,6 +663,52 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
             f"{matched_count} overlapping live quota "
             f"measurement{'s' if matched_count != 1 else ''} within tolerance."
         ),
+    )
+
+
+def _looks_like_local_quota_estimate(account: AccountUsage) -> bool:
+    """True when the source is a local cost/$cap heuristic, not server billing.
+
+    Known cases: CodexBar OpenCode Go ``--source local``, OpenUsage.ai resources
+    with ``estimated: true`` (same $12/$30/$60 style caps).
+    """
+    notes = " ".join(account.notes or []).casefold()
+    if "local estimate" in notes or "estimated (local cost" in notes:
+        return True
+    if "marked estimated" in notes and "fixed $ caps" in notes:
+        return True
+    for window in account.windows:
+        raw = window.raw
+        if isinstance(raw, dict) and raw.get("estimated") is True:
+            return True
+    return False
+
+
+def _disagreement_message(left: AccountUsage, right: AccountUsage, issues: list[str]) -> str:
+    """Explain a multi-source disagreement; call out known local-estimate traps."""
+    detail = "; ".join(issues)
+    left_est = _looks_like_local_quota_estimate(left)
+    right_est = _looks_like_local_quota_estimate(right)
+    if left_est != right_est:
+        estimated = left if left_est else right
+        authoritative = right if left_est else left
+        return (
+            f"{_source_name(estimated.source)} is a local cost estimate "
+            f"(SQLite / fixed $ caps) that can understate used quota; "
+            f"{_source_name(authoritative.source)} tracks OpenCode web billing and "
+            f"should be trusted when they disagree. Details: {detail}."
+        )
+    if left.provider.casefold() in {"opencode-go", "opencode"}:
+        return (
+            "Tools disagree on OpenCode Go quota figures: "
+            f"{detail}. Prefer CodexBar --source web (or the OpenCode usage page); "
+            "local estimates and short-window bars can look open while monthly is spent."
+        )
+    return (
+        "Tools disagree on some live quota figures: "
+        f"{detail}. Small gaps are often expected (poll timing, last-good hydrate, "
+        "label vocabulary, or single-session vs multi-account views) and do not "
+        "mean both sources are wrong — cswap stays authoritative for Claude."
     )
 
 

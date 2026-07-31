@@ -105,6 +105,36 @@ def test_cross_check_warns_when_percentages_disagree():
     assert "percentage points" in warn.message
 
 
+def test_opencode_cross_check_names_local_estimate_when_openusage_disagrees():
+    """CodexBar web monthly 0% vs OpenUsage estimated ~19% — prefer web billing."""
+    codexbar = _account("codexbar", "opencode-go")
+    codexbar.notes = ["Live data fetched by CodexBar via web."]
+    codexbar.windows[0].label = "OpenCode Go monthly quota (3)"
+    codexbar.windows[0].used_percent = 100.0
+    codexbar.windows[0].remaining_percent = 0.0
+    codexbar.windows[0].window_minutes = 43200
+
+    openusage = _account("openusage_ai", "opencode-go")
+    openusage.notes = [
+        "Live data fetched by OpenUsage via cli.",
+        "OpenUsage marked estimated (local cost vs fixed $ caps): session, weekly, monthly. "
+        "May understate used quota versus official OpenCode web billing.",
+    ]
+    openusage.windows[0].label = "OpenCode monthly"
+    openusage.windows[0].used_percent = 80.6
+    openusage.windows[0].remaining_percent = 19.4
+    openusage.windows[0].window_minutes = 43200
+    openusage.windows[0].raw = {"estimated": True, "unit": "usd", "limit": 60}
+
+    accounts, checks = _select_and_cross_check([codexbar, openusage], cswap_authoritative=True)
+    assert [account.source for account in accounts] == ["codexbar"]
+    warn = next(c for c in checks if c.status == "warning" and c.provider == "opencode-go")
+    assert "local cost estimate" in warn.message.casefold()
+    assert "OpenUsage.ai" in warn.message
+    assert "CodexBar" in warn.message
+    assert "percentage points" in warn.message
+
+
 def test_7d_window_label_matches_weekly_window():
     codexbar = _account("codexbar", "codex")
     codexbar.windows[0].label = "Codex weekly quota"
