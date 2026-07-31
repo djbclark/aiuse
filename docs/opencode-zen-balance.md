@@ -2,9 +2,21 @@
 
 ## Status
 
-OpenCode Zen is a prepaid service separate from the OpenCode Go subscription.
-`aiuse` records it as the distinct `opencode-zen` provider whenever CodexBar
-returns a `Zen balance` value.
+**OpenCode Zen and OpenCode Go are totally different services** for billing and
+usage. Do not treat a Zen balance as Go headroom, or a spent Go monthly window
+as “OpenCode empty” in a way that erases Zen inventory (or the reverse).
+
+|                   | **OpenCode Go**                                    | **OpenCode Zen**                                        |
+| ----------------- | -------------------------------------------------- | ------------------------------------------------------- |
+| Product           | Subscription / plan allotment                      | Prepaid wallet                                          |
+| Meter             | 5h / weekly / monthly % windows (shared allotment) | USD balance (no expiry cycle)                           |
+| `aiuse` provider  | `opencode-go`                                      | `opencode-zen`                                          |
+| Ladder band       | use-or-lose / empty from windows                   | `n/a` inventory, or `empty` if balance ≤ 0              |
+| Exhausted meaning | TUI _Go limit reached_ / monthly limit             | No prepaid credits left                                 |
+| Relationship      | Primary included Go usage                          | Optional overage when Go is spent (“available balance”) |
+
+`aiuse` records Zen as the distinct `opencode-zen` provider whenever CodexBar
+returns a `Zen balance` value (or the native Zen collector succeeds).
 
 As of 2026-07-30, `aiuse` has two local client implementations that return the
 actual Zen balance: CodexBar and its optional native collector. Both query the

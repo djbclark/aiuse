@@ -4,6 +4,36 @@
 monthly shows **100% used**, and secondary tools report ~19% monthly remaining
 when the official page is already empty.
 
+## OpenCode Go ≠ OpenCode Zen (do not merge)
+
+From a **billing and usage** point of view these are totally different services.
+`aiuse` keeps them as separate providers and ladder rows:
+
+| Service          | Provider id    | What it is                                                            | When empty                                              |
+| ---------------- | -------------- | --------------------------------------------------------------------- | ------------------------------------------------------- |
+| **OpenCode Go**  | `opencode-go`  | Subscription window allotment (5h / weekly / **monthly** shared pool) | TUI: _Go limit reached_ / _monthly usage limit reached_ |
+| **OpenCode Zen** | `opencode-zen` | Separate **prepaid wallet** (dollar balance, no subscription cycle)   | Inventory only; may fund overage when Go is spent       |
+
+CodexBar often returns Zen as `usage.providerCost` / period `"Zen balance"` on
+the same `opencodego` payload as Go windows. That is a transport convenience
+only — **never** fold Zen into Go quota math or shared-allotment scoring.
+
+When Go monthly is exhausted, the OpenCode TUI may offer _enable usage from
+your available balance_ (Zen). That is a **different** pot of money, not a
+reset of Go. See [`opencode-zen-balance.md`](opencode-zen-balance.md).
+
+### TUI confirmation (operator, 2026-07-31)
+
+Attempting an OpenCode Go model via `opencode` while monthly is spent:
+
+> Go limit reached  
+> monthly usage limit reached. It will reset in 9 days 23 hours. To continue
+> using this model now, enable usage from your available balance
+
+So: short windows can still show 100% available; **monthly overrides**; Go is
+actually unusable until monthly resets (unless the user deliberately spends
+Zen balance).
+
 ## Ground truth (official OpenCode usage page)
 
 Example (operator-confirmed, 2026-07-31):
