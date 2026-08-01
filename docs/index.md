@@ -46,6 +46,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`../AGENTS.md`](../AGENTS.md) — repository orientation and current priorities.
 - [`handoff.md`](handoff.md) — current session handoff and verification commands.
 - [`fix-implementation-plan.md`](fix-implementation-plan.md) — completed review-derived implementation plan.
+- [`quota-algorithm-audit-2026-08-01.md`](quota-algorithm-audit-2026-08-01.md) — pending implementation plan for issues #19–#22 (Cursor pool split, overage awareness, dual-debit investigation), with a full verified vendor-quota-structure appendix.
 - [`code-review-2026-07-23.html`](code-review-2026-07-23.html) — adversarial review source material.
 - [`review-workflow.js`](review-workflow.js) — reproducible review workflow.
 - [`generate-readme-demo.py`](generate-readme-demo.py) — generates the README's synthetic output demo.
