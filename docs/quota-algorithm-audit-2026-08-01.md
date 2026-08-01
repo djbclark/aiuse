@@ -481,3 +481,24 @@ aside, and so the reasoning behind each is preserved.
   from "two separate usage pools" framing, treated as high-confidence in
   this plan, but it's an inference, not a literal quote — worth knowing if
   Phase 2's implementation ever needs to be reconsidered.
+
+## Appendix C: Additional vendor notes to investigate (not yet actioned)
+
+Flagged for a future pass — none of these have been verified or turned into
+a phase/issue yet, unlike everything above.
+
+- **DeepSeek peak/valley time-of-day pricing** (operator-relayed, not yet
+  independently verified against DeepSeek's own current pricing page):
+  DeepSeek's API is expected to charge roughly 2x the regular rate during
+  peak hours, applying to all billing items. Peak hours as relayed: **1:00
+  AM–4:00 AM and 6:00 AM–10:00 AM UTC** (equivalently 9:00 AM–noon and
+  2:00 PM–6:00 PM UTC+8). This is a genuinely different kind of concept
+  from everything in Appendix A/B — it's a **time-of-day cost multiplier**,
+  not a quota/pool structure, and doesn't interact with the pace/burn/conserve
+  algorithm at all (DeepSeek is `prepaid_balance`, which per PP1 never gets
+  burn/conserve urgency regardless of time of day). If this is worth acting
+  on, it'd be a distinct feature — e.g. a cost-aware suggestion ("route
+  prepaid/DeepSeek spend to off-peak hours") — not a fix to any of Phases
+  1-4 above. Verify against DeepSeek's own current pricing docs before
+  building anything on this; time-of-day pricing details like this are
+  exactly the kind of thing that changes without much notice.
