@@ -1,3 +1,5 @@
+import json
+
 from aiuse import cli
 from aiuse.models import CrossCheck, Snapshot, utcnow
 
@@ -337,6 +339,33 @@ def test_json_alerts_only_includes_structured_cross_check_warnings(monkeypatch, 
     output = capsys.readouterr().out
     assert '"cross_check_warnings"' in output
     assert '"One tool failed."' in output
+
+
+def test_json_keeps_nested_live_envelope(monkeypatch, capsys):
+    snapshot = Snapshot(collected_at=utcnow())
+    monkeypatch.setattr(cli, "run_collectors", lambda _config: snapshot)
+    monkeypatch.setattr(cli, "analyze_use_or_lose", lambda *_args: [])
+    monkeypatch.setattr(cli, "should_persist_snapshots", lambda _config: False)
+
+    assert cli.main(["--json", "-q"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert set(payload) == {"snapshot", "alerts", "suggestion", "history"}
+    assert payload["snapshot"]["accounts"] == []
+
+
+def test_json_flatten_matches_cached_snapshot_shape(monkeypatch, capsys):
+    snapshot = Snapshot(collected_at=utcnow())
+    monkeypatch.setattr(cli, "run_collectors", lambda _config: snapshot)
+    monkeypatch.setattr(cli, "analyze_use_or_lose", lambda *_args: [])
+    monkeypatch.setattr(cli, "should_persist_snapshots", lambda _config: False)
+
+    assert cli.main(["--json", "--flatten", "-q"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert set(payload) == {"collected_at", "accounts", "alerts"}
+    assert payload["accounts"] == []
+    assert payload["alerts"] == []
 
 
 def test_show_config_path_exits_without_collecting(monkeypatch, tmp_path, capsys):
