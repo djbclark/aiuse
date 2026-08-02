@@ -65,7 +65,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             },
             # 5h ⊂ weekly ⊂ monthly — burning a short window draws the same Go budget.
             "opencode": {"shared_allotment": True},
-            # Included ⊃ Auto/API category breakdowns — score Included only.
+            # Included+Auto share one governing pool (Included); API is a
+            # separate independent pool (analysis/pace.py independent_pool_key()).
             "cursor": {"shared_allotment": True},
             "grok": {"weekly": {"flexibility": 0.5, "refill_capacity_unit": "requests", "refill_capacity": 100}},
         },
