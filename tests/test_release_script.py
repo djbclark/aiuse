@@ -228,6 +228,11 @@ def test_cleanup_interrupted_bump_restores_only_version_files(monkeypatch, relea
     )
     for name in ("pyproject.toml", "src/aiuse/__init__.py", "docs/packaging.md", "uv.lock"):
         (root / name).write_text("interrupted bump\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "pyproject.toml", "src/aiuse/__init__.py", "docs/packaging.md", "uv.lock"],
+        cwd=root,
+        check=True,
+    )
     (root / "other-staged.txt").write_text("keep staged\n", encoding="utf-8")
     subprocess.run(["git", "add", "other-staged.txt"], cwd=root, check=True)
     (root / "other-dirty.txt").write_text("keep dirty\n", encoding="utf-8")
