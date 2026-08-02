@@ -18,6 +18,7 @@ from aiuse.models import (
     QuotaWindow,
     Snapshot,
     Urgency,
+    UsageCredits,
     parse_dt,
 )
 from aiuse.report import alert_priority_band
@@ -62,6 +63,17 @@ def _account_from_fixture(data: dict) -> AccountUsage:
         billing = BillingKind(str(acc.get("billing_kind") or "unknown"))
     except ValueError:
         billing = BillingKind.UNKNOWN
+    usage_credits = None
+    uc = acc.get("usage_credits")
+    if uc is not None:
+        usage_credits = UsageCredits(
+            used=uc.get("used"),
+            limit=uc.get("limit"),
+            remaining=uc.get("remaining"),
+            currency=uc.get("currency", "USD"),
+            used_percent=uc.get("used_percent"),
+            resets_at=parse_dt(uc.get("resets_at")),
+        )
     return AccountUsage(
         source=str(acc.get("source") or "fixture"),
         provider=str(acc.get("provider") or "unknown"),
@@ -71,6 +83,7 @@ def _account_from_fixture(data: dict) -> AccountUsage:
         windows=windows,
         balance_usd=acc.get("balance_usd"),
         credits_remaining=acc.get("credits_remaining"),
+        usage_credits=usage_credits,
         error=acc.get("error"),
         notes=list(acc.get("notes") or []),
     )
@@ -171,6 +184,9 @@ def test_fixture_expectations(fixture, monkeypatch):
         sample = next(a for a in alerts if a.kind == expected["alert_kind"])
         if expected.get("band"):
             assert _BAND_NAMES[alert_priority_band(sample)] == expected["band"]
+        if "has_overage" in expected:
+            assert sample.pace is not None
+            assert sample.pace.has_overage is bool(expected["has_overage"])
 
     if expected.get("governing_label") and expected.get("notes", "").lower().find("5h") >= 0:
         # Shared allotment: no 5h-only alert when weekly is the governor

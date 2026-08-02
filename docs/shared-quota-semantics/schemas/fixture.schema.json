@@ -21,6 +21,7 @@
         },
         "windows": { "type": "array" },
         "balance_usd": { "type": ["number", "null"] },
+        "usage_credits": { "type": ["object", "null"] },
         "error": { "type": ["string", "null"] },
         "source": { "type": "string" }
       }
@@ -44,6 +45,7 @@
         },
         "suggestion_eligible": { "type": "boolean" },
         "governing_label": { "type": ["string", "null"] },
+        "has_overage": { "type": "boolean" },
         "notes": { "type": "string" }
       }
     }

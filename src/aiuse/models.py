@@ -148,6 +148,11 @@ class PaceProfile:
     confidence: str = "measured"  # measured | inferred | low
     # Set when pace blends snapshot history (sample count > 0).
     learned_sample_count: int = 0
+    # True when the account has a real or config-confirmed overage/extra-usage
+    # wallet available (see AccountUsage.usage_credits and provider_overrides
+    # "overage_state"). Qualifies "conserve": lockout risk (hard ceiling) vs.
+    # unplanned $ spend risk (soft ceiling, overage available).
+    has_overage: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

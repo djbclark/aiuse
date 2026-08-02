@@ -45,6 +45,17 @@ learned_rate_per_day + sample count.
 
 Default parameters: see `policy/pace_defaults.yaml`.
 
+## Overage / soft ceiling (O1)
+
+- **O1:** `has_overage` is true when `AccountUsage.usage_credits` is present
+  (a real, collected overage/extra-usage wallet), or when
+  `provider_overrides.<provider>.overage_state == "enabled"` (a manually set
+  config override, for providers where no collector can populate
+  `usage_credits` — e.g. OpenCode Go's Zen-balance fallback). Default/`unknown`/
+  `disabled` never assert overage. `has_overage` **qualifies**, never
+  suppresses, a `conserve`/`burn` verdict: `true` means the real risk is
+  unplanned $ spend (a soft ceiling), not lockout (a hard ceiling).
+
 ## Prepaid (P-prepaid)
 
 - **PP1:** `billing_kind` in `{prepaid_balance, payg_api}` never yields burn/conserve

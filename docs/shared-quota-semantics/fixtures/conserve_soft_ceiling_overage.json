@@ -1,5 +1,5 @@
 {
-  "id": "conserve_fast_burn",
+  "id": "conserve_soft_ceiling_overage",
   "now": "2026-07-25T12:00:00+00:00",
   "account": {
     "source": "cswap",
@@ -13,7 +13,13 @@
         "resets_at": "2026-07-28T12:00:00+00:00",
         "window_minutes": 10080
       }
-    ]
+    ],
+    "usage_credits": {
+      "used": 5.0,
+      "limit": 20.0,
+      "remaining": 15.0,
+      "used_percent": 25.0
+    }
   },
   "config": {
     "analysis": {
@@ -34,8 +40,7 @@
     "alert_kind": "conserve",
     "band": "slow",
     "suggestion_eligible": false,
-    "has_overage": false,
-    "notes": "Mid-cycle high use; exhaust well before reset. No usage_credits and no overage_state override → hard-ceiling conserve (issue #20 / Phase 3)."
+    "has_overage": true,
+    "notes": "Same mid-cycle high-use shape as conserve_fast_burn, but usage_credits is present → soft-ceiling conserve (issue #20 / Phase 3): real risk is unplanned $ spend, not lockout."
   }
 }
-

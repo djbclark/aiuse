@@ -382,6 +382,7 @@ def analyze_use_or_lose(
                     continue
                 if shared_allotment and id(window) in children_by_gov_id:
                     pace.governing = True
+                pace.has_overage = _account_has_overage(account, provider_key, analysis_cfg)
                 verdict = classify_pace(
                     pace,
                     resets_at=window.resets_at,
@@ -793,6 +794,27 @@ def _shared_allotment_enabled(provider_key: str, analysis_cfg: dict[str, Any]) -
     return bool(prov.get("shared_allotment"))
 
 
+def _account_has_overage(account: AccountUsage, provider_key: str, analysis_cfg: dict[str, Any]) -> bool:
+    """True when overage/extra-usage is real (``usage_credits``) or config-confirmed.
+
+    Some providers (e.g. OpenCode Go's Zen-balance fallback) have no
+    collectible signal at all — confirmed undetectable programmatically, see
+    docs/quota-algorithm-audit-2026-08-01.md Phase 3. For those, a manually
+    set ``provider_overrides.<provider>.overage_state: "enabled"`` is the only
+    way to know; default/"unknown"/"disabled" never assert overage, to avoid
+    understating real lockout risk on a guess.
+    """
+    if account.usage_credits is not None:
+        return True
+    overrides = analysis_cfg.get("provider_overrides") or {}
+    if not isinstance(overrides, dict):
+        return False
+    prov = overrides.get(provider_key)
+    if not isinstance(prov, dict):
+        return False
+    return prov.get("overage_state") == "enabled"
+
+
 def _pace_message(
     *,
     account: AccountUsage,
@@ -823,18 +845,23 @@ def _pace_message(
             )
         else:
             child_note = f" (this also covers your {labels} — no need to burn it separately)"
+    overage_note = (
+        " Overage/extra-usage is available on this account — real risk is unplanned $ spend, not lockout."
+        if pace.has_overage
+        else ""
+    )
     if verdict == "conserve" and depleted:
         status = "exhausted" if remaining is not None and remaining <= 0.0 else "nearly exhausted"
         return (
             f"{provider_display_name(account.provider)} · {who} · {window.label}: "
             f"{status} ({rem_s} left, resets {when})."
-            f"{child_note}"
+            f"{child_note}{overage_note}"
         )
     if verdict == "conserve":
         return (
             f"{provider_display_name(account.provider)} · {who} · {window.label}: "
             f"pace yourself — projected to run out before reset ({rem_s} left, resets {when})."
-            f"{child_note}"
+            f"{child_note}{overage_note}"
         )
     return (
         f"{provider_display_name(account.provider)} · {who} · {window.label}: "
