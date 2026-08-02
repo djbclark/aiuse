@@ -1,27 +1,61 @@
 # Session handoff (current)
 
-**Date:** 2026-07-30
+**Date:** 2026-08-02
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **356** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **364** passing
 
-**Package version:** **3.0.2** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.3** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
 
 ## Immediate unfinished work (do this first)
 
-1. Operator: announce issue #10 mentions **3.0.0** (do not auto-post).
+1. Operator: announce issue #10 exists and is ready to post, but its draft
+   copy/links still say **3.0.2** — refresh to 3.0.3 before posting
+   (do not auto-post either way).
 2. OpenCode Go is currently at 0%; its OpenUsage.sh telemetry integration is
    installed but has not been completion-tested. Recheck only after quota is
-   available; do not spend a request merely to test telemetry.
-3. Optional source expansion is scoped, not started: [#16](https://github.com/djbclark/aiuse/issues/16)
+   available; do not spend a request merely to test telemetry. (Unchanged
+   since 2026-07-30 — not reverified this session.)
+3. Source expansion is scoped, not started: [#16](https://github.com/djbclark/aiuse/issues/16)
    (DeepSeek second source), [#17](https://github.com/djbclark/aiuse/issues/17)
    (OpenRouter second source), and [#18](https://github.com/djbclark/aiuse/issues/18)
    (two Groq client sources). Prefer an existing structured collector; use a
-   small Zen-style native path only when that does not exist.
+   small Zen-style native path only when that does not exist. Per
+   [`source-coverage.md`](source-coverage.md)'s 2026-07-30 audit (not
+   rerun since): DeepSeek/OpenRouter each have exactly one live source,
+   Groq has zero (CodexBar fetch error). These are the only non-optional,
+   unblocked backlog items — #11–15 are explicitly "polish only if pain is
+   real" per [`next-options.md`](next-options.md).
+
+## Done 2026-08-01/02: quota-algorithm-audit (issues #19–23, all closed)
+
+A Gemini-relayed cross-vendor quota-pacing instruction triggered a
+source-level audit of `aiuse`'s own pace/burn architecture, cross-checked
+via two rounds of independent AI research. Full writeup, vendor-quota
+knowledge table, and phase-by-phase implementation plan:
+[`quota-algorithm-audit-2026-08-01.md`](quota-algorithm-audit-2026-08-01.md).
+
+| Issue                                              | Fix                                                                                                                                                                                                                                                                                                                                                  | Commit(s)            |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| [#19](https://github.com/djbclark/aiuse/issues/19) | Stale `pace.py`/`use_or_lose.py` docstrings said pace scoring wasn't wired in yet — it's the live default.                                                                                                                                                                                                                                           | `96adf65`            |
+| [#21](https://github.com/djbclark/aiuse/issues/21) | Cursor's API pool is now independent from Included/Auto (`independent_pool_key()`) — an exhausted API pool used to be silently suppressed as a child of a healthy Included.                                                                                                                                                                          | `a34dff8`, `4cbd710` |
+| [#20](https://github.com/djbclark/aiuse/issues/20) | New `PaceProfile.has_overage` qualifies conserve/burn verdicts: real vs. config-confirmed overage wallet (Claude/Cursor `usage_credits`, or OpenCode Go's manual `overage_state: enabled` override) means the real risk is unplanned $ spend, not lockout.                                                                                           | `2144333`            |
+| [#22](https://github.com/djbclark/aiuse/issues/22) | Investigated the "dual-debit" pattern (one action draining two meters at once). Confirmed real for both examples against primary vendor docs (GitHub's changelog; OpenAI's own pricing docs) — but no code change, since `aiuse` doesn't currently collect either dual-debited meter (GitHub Actions minutes, ChatGPT Desktop Voice minutes) at all. | `75f0512`            |
+
+Full suite green throughout (364 passed); all pushed to `main`; all five
+issues (#19–23) closed with commit-linked comments.
+
+## Done after 3.0.2 (2026-07-31): release 3.0.3
+
+`just release 3.0.3`: fixed empty-ladder copy for fully spent shared
+allotments, surfaced OpenCode local-estimate bugs across OpenUsage and
+cross-checks, documented OpenCode Go/Zen as separate billing services, and
+made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
+(`720e76b`). GitHub release: <https://github.com/djbclark/aiuse/releases/tag/v3.0.3>.
 
 ## Done after 3.0.0 (2026-07-30)
 
@@ -36,7 +70,7 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **3.0.2**.
+   `/opt/homebrew/bin/aiuse --version` → **3.0.3**.
 3. `aiuse doctor` → enabled collectors green; disabled caut is not an error.
 4. `aiuse trust status` only if caut is re-enabled later.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status` — expect
@@ -75,16 +109,18 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 ### Issue estimates (scan)
 
-| #                                                                                                     | Hours    | Norm. tok | Norm. $ | Title                                                |
-| ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------- |
-| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained |
-| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.0** (operator; **do not auto-post**)  |
-| [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                        |
+| #                                                                                                     | Hours    | Norm. tok | Norm. $ | Title                                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ------------------------------------------------------------------------------------------------------ |
+| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained                                                   |
+| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                               |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.3** (operator; **do not auto-post**; draft copy still says 3.0.2)                       |
+| [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                          |
+| [#16](https://github.com/djbclark/aiuse/issues/16)–[#18](https://github.com/djbclark/aiuse/issues/18) | 4–20h    | ~0.3–2M   | ~$3–40  | Source expansion (DeepSeek/OpenRouter 2nd source, Groq restore) — real, unblocked, not optional polish |
+| [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | —        | —         | —       | **done, closed 2026-08-02** — see the quota-algorithm-audit section above                              |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.0
+Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.3
 
-PyPI: https://pypi.org/project/aiuse/3.0.0/
+PyPI: https://pypi.org/project/aiuse/3.0.3/
 
 ## Operator preferences (standing)
 
@@ -98,7 +134,7 @@ PyPI: https://pypi.org/project/aiuse/3.0.0/
 ```bash
 cd ~/src/aiuse
 .venv/bin/python -m pytest -q
-aiuse --version          # expect 3.0.0
+aiuse --version          # expect 3.0.3
 aiuse -q --timeout 15    # terminal echo must remain usable after exit
 just ci                  # same all-files gate as GitHub Actions
 ```

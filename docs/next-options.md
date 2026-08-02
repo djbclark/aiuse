@@ -1,6 +1,8 @@
 # What next (post-3.0.0) and competitive gap difficulty
 
-**Date:** 2026-07-30
+**Date:** 2026-08-02 (originally 2026-07-30; refreshed after 3.0.3 and the
+quota-algorithm-audit issues #19–23, all closed — see
+[`handoff.md`](handoff.md) for the detailed writeup)
 **Status:** Product issues **#1–#9** shipped; fix-plan Steps **1–34** done.
 No mandatory numbered step.
 **Related:** [`handoff.md`](handoff.md), [`competitive-landscape.md`](competitive-landscape.md),
@@ -28,9 +30,10 @@ cloning menubars, BI dashboards, or request routers.
 
 | Priority             | Action                                                       | Why                                                                                                               | Effort                          | Tracker                                                                                               |
 | -------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **1**                | **Announce**                                                 | Best unpaid feedback channel; product ready enough                                                                | Low (0.5–2h, **operator only**) | [#10](https://github.com/djbclark/aiuse/issues/10)                                                    |
+| **1**                | **Announce**                                                 | Best unpaid feedback channel; product ready enough                                                                | Low (0.5–2h, **operator only**) | [#10](https://github.com/djbclark/aiuse/issues/10) (draft copy needs a 3.0.2→3.0.3 refresh first)     |
 | **2**                | **Let hourly LaunchAgent run**                               | History learning needs dense snapshots                                                                            | None (already installed)        | Site `com.djbclark.aiuse`                                                                             |
-| **3**                | **Optional polish only if pain is real**                     | MCP, History text, fixtures, peer tickets, watch                                                                  | See issues below                | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) |
+| **3**                | **Source expansion (real, unblocked, not optional polish)**  | DeepSeek/OpenRouter have one live source each; Groq has zero                                                      | Medium–high (4–20h)             | [#16](https://github.com/djbclark/aiuse/issues/16)–[#18](https://github.com/djbclark/aiuse/issues/18) |
+| **4**                | **Optional polish only if pain is real**                     | MCP, History text, fixtures, peer tickets, watch                                                                  | See issues below                | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) |
 | **4b**               | **macOS collector trust (`aiuse trust`)**                    | **Shipped in 2.1.15** — caut codesign + `fix-codexbar-cache` (#679); operator may still run interactive probe/fix | Done                            | [`macos-keychain-trust.md`](macos-keychain-trust.md) · release `v2.1.15`                              |
 | **Avoid by default** | Menubar app, own scrapers, LiteLLM router, ccusage-as-plan-% | Wrong product identity / trust model                                                                              | High                            | Do not open as default backlog                                                                        |
 
@@ -49,17 +52,21 @@ Open-ended “what next?” → **do not restart** fix plan at Step 1.
 
 ## Open / parked trackers
 
-| Issue                                                                                             | State           | Notes                                                                |
-| ------------------------------------------------------------------------------------------------- | --------------- | -------------------------------------------------------------------- |
-| [#1](https://github.com/djbclark/aiuse/issues/1)                                                  | **Done**        | Official cswap `lastGoodUsage` preferred; legacy cache fallback kept |
-| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9) | **Closed**      | Competitive-strategy pull shipped in 2.1.9 / 2.1.10                  |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                | Open · operator | Public announce draft (venues + copy); **do not auto-post**          |
-| [#11](https://github.com/djbclark/aiuse/issues/11)                                                | Open · optional | Thin MCP stdio over `aiuse serve` payloads                           |
-| [#12](https://github.com/djbclark/aiuse/issues/12)                                                | Open · optional | Peer outreach for shared-quota-semantics (**last**)                  |
-| [#13](https://github.com/djbclark/aiuse/issues/13)                                                | Open · optional | Richer History / operational insights (text, not BI)                 |
-| [#14](https://github.com/djbclark/aiuse/issues/14)                                                | Open · optional | Optional `aiuse watch` pull refresh (not a menubar)                  |
-| [#15](https://github.com/djbclark/aiuse/issues/15)                                                | Open · optional | More shared-semantics golden fixtures                                |
-| Step **35**                                                                                       | Parked          | ccusage ≠ plan % — [`claude-local-usage.md`](claude-local-usage.md)  |
+| Issue                                                                                                 | State                 | Notes                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | **Done**              | Official cswap `lastGoodUsage` preferred; legacy cache fallback kept                                                                                                                               |
+| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | **Closed**            | Competitive-strategy pull shipped in 2.1.9 / 2.1.10                                                                                                                                                |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | Open · operator       | Public announce draft (venues + copy); **do not auto-post**                                                                                                                                        |
+| [#11](https://github.com/djbclark/aiuse/issues/11)                                                    | Open · optional       | Thin MCP stdio over `aiuse serve` payloads                                                                                                                                                         |
+| [#12](https://github.com/djbclark/aiuse/issues/12)                                                    | Open · optional       | Peer outreach for shared-quota-semantics (**last**)                                                                                                                                                |
+| [#13](https://github.com/djbclark/aiuse/issues/13)                                                    | Open · optional       | Richer History / operational insights (text, not BI)                                                                                                                                               |
+| [#14](https://github.com/djbclark/aiuse/issues/14)                                                    | Open · optional       | Optional `aiuse watch` pull refresh (not a menubar)                                                                                                                                                |
+| [#15](https://github.com/djbclark/aiuse/issues/15)                                                    | Open · optional       | More shared-semantics golden fixtures — Cursor Included/Auto/API now covered (issue #21 work); Antigravity dual pools, OpenCode Go nested windows, and multi-account Claude labels still have none |
+| [#16](https://github.com/djbclark/aiuse/issues/16)                                                    | Open · real           | DeepSeek 2nd prepaid-balance source (currently 1)                                                                                                                                                  |
+| [#17](https://github.com/djbclark/aiuse/issues/17)                                                    | Open · real           | OpenRouter 2nd account-credit source (currently 1)                                                                                                                                                 |
+| [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | Open · real           | Groq: restore coverage with 2 client sources (currently 0)                                                                                                                                         |
+| [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | **Closed 2026-08-02** | quota-algorithm-audit-2026-08-01.md — pace-scoring fixes, see [`handoff.md`](handoff.md)                                                                                                           |
+| Step **35**                                                                                           | Parked                | ccusage ≠ plan % — [`claude-local-usage.md`](claude-local-usage.md)                                                                                                                                |
 
 ---
 
@@ -70,12 +77,12 @@ Remaining weaknesses vs quotabot / onWatch / Layer 1 (see
 
 ### Easy wins (worth it _if_ you feel the pain)
 
-| Gap                            | Reality                                                      | Effort                        | Tracker                                                                |
-| ------------------------------ | ------------------------------------------------------------ | ----------------------------- | ---------------------------------------------------------------------- |
-| MCP stdio on `serve`           | Agents that only speak MCP can’t use loopback JSON easily    | Medium (~1–3 days thin tools) | [#11](https://github.com/djbclark/aiuse/issues/11)                     |
-| Richer History text            | More narrative from existing snapshot data; no charts        | Low–medium                    | [#13](https://github.com/djbclark/aiuse/issues/13)                     |
-| More shared-semantics fixtures | Edge cases (Antigravity dual pools, Cursor Included, …)      | Low                           | [#15](https://github.com/djbclark/aiuse/issues/15)                     |
-| Collector reliability polish   | Prefer web over local estimate; clearer cross-check messages | Low–medium                    | Incremental; preserve Step 33's official-field + legacy-cache fallback |
+| Gap                            | Reality                                                                                                                          | Effort                        | Tracker                                                                |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| MCP stdio on `serve`           | Agents that only speak MCP can’t use loopback JSON easily                                                                        | Medium (~1–3 days thin tools) | [#11](https://github.com/djbclark/aiuse/issues/11)                     |
+| Richer History text            | More narrative from existing snapshot data; no charts                                                                            | Low–medium                    | [#13](https://github.com/djbclark/aiuse/issues/13)                     |
+| More shared-semantics fixtures | Cursor Included/Auto/API now covered; Antigravity dual pools, OpenCode Go nested windows, multi-account Claude labels still open | Low                           | [#15](https://github.com/djbclark/aiuse/issues/15)                     |
+| Collector reliability polish   | Prefer web over local estimate; clearer cross-check messages                                                                     | Low–medium                    | Incremental; preserve Step 33's official-field + legacy-cache fallback |
 
 Closes “quotabot has MCP” only for **read-only ranking**, not leases/LiteLLM.
 Do MCP **only** if you actually use MCP clients against ranking daily.
