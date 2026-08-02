@@ -7,3 +7,5 @@ Claude Code symlink target for `~/src/aiuse`.
 Generic / private cross-project memory:
 `~/ops/site-private/memory/` —
 [GitHub](https://github.com/djbclark/site-private/blob/master/memory/MEMORY.md).
+
+- [Continuous work, batch questions](feedback_continuous_work_batch_questions.md) — don't pause between plan phases; batch questions ahead of time.
