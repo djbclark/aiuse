@@ -181,6 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Shorthand for --format json (full snapshot + alerts)",
     )
     p.add_argument(
+        "--flatten",
+        action="store_true",
+        help="With --json, emit the cached snapshot shape instead of the live envelope",
+    )
+    p.add_argument(
         "--no-color",
         action="store_true",
         help="Disable ANSI colors in pretty output (classic string path)",
@@ -407,7 +412,14 @@ def _main_inner(argv: list[str] | None = None) -> int:
                 )
             )
         else:
-            print(json.dumps(payload, indent=2, default=str))
+            json_payload = payload
+            if args.flatten:
+                json_payload = {
+                    "collected_at": snapshot.collected_at.isoformat(),
+                    "accounts": [account.to_dict() for account in snapshot.accounts],
+                    "alerts": payload["alerts"],
+                }
+            print(json.dumps(json_payload, indent=2, default=str))
         return exit_code
 
     # Pretty human-readable (default)

@@ -20,6 +20,21 @@ Default `aiuse --json` stdout:
 }
 ```
 
+`aiuse --json --flatten` stdout:
+
+```json
+{
+  "collected_at": "2026-08-02T12:00:00+00:00",
+  "accounts": [ ... ],
+  "alerts": [ ... ]
+}
+```
+
+`--flatten` omits the live envelope's `snapshot`, `suggestion`, and `history`
+keys so callers get the same three-key shape used by on-disk cached snapshots.
+Files in `~/.cache/aiuse/snapshots/*.json` already use this flattened shape
+natively; no flag is needed when reading those files directly.
+
 `aiuse --json --alerts-only`:
 
 ```json
