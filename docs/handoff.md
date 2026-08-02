@@ -4,9 +4,9 @@
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **364** passing
+**Tests:** `.venv/bin/python -m pytest -q` — **366** passing
 
-**Package version:** **3.0.3** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.4** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
@@ -14,7 +14,7 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 ## Immediate unfinished work (do this first)
 
 1. Operator: announce issue #10 exists and is ready to post, but its draft
-   copy/links still say **3.0.2** — refresh to 3.0.3 before posting
+   copy/links still say **3.0.2** — refresh to 3.0.4 before posting
    (do not auto-post either way).
 2. OpenCode Go is currently at 0%; its OpenUsage.sh telemetry integration is
    installed but has not been completion-tested. Recheck only after quota is
@@ -24,15 +24,10 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
    (DeepSeek second source) and [#17](https://github.com/djbclark/aiuse/issues/17)
    (OpenRouter second source) are still scoped, not started — per
    [`source-coverage.md`](source-coverage.md)'s 2026-08-02 refresh, both
-   remain exactly one live source (CodexBar). [#18](https://github.com/djbclark/aiuse/issues/18)
-   (Groq) has changed: the 2026-07-30 audit found zero usable sources
-   (CodexBar fetch error), but the 2026-08-02 refresh found **three**
-   agreeing live sources (CodexBar via `grok-web`, OpenUsage.ai, tokscale) —
-   re-verify with a second live run before deciding, but this likely closes
-   #18 without any code change rather than needing the originally-scoped
-   8–20h of new client work. These are the only non-optional backlog
-   items — #11–15 are explicitly "polish only if pain is real" per
-   [`next-options.md`](next-options.md).
+   remain exactly one live source (CodexBar). These are the only
+   non-optional backlog items left — #11–15 are explicitly "polish only if
+   pain is real" per [`next-options.md`](next-options.md). [#18](https://github.com/djbclark/aiuse/issues/18)
+   (Groq) is done — closed, confirmed on two independent live runs.
 
 ## Done 2026-08-01/02: quota-algorithm-audit (issues #19–23, all closed)
 
@@ -51,6 +46,28 @@ knowledge table, and phase-by-phase implementation plan:
 
 Full suite green throughout (364 passed); all pushed to `main`; all five
 issues (#19–23) closed with commit-linked comments.
+
+## Done 2026-08-02: release 3.0.4
+
+Shipped the quota-algorithm-audit fixes (#19–22, see above), plus work done
+the same session: every vendor's report line is now grep-able for its real
+CLI name (`claude`, `codex`, `cursor-agent`, `copilot`, `grok`, `agy` —
+`PROVIDER_DISPLAY_NAMES` in `models.py`); `packaging/release.py` now
+survives SIGINT/SIGTERM interruption cleanly (reverts only the version-bump
+files it touched, and the resume path pushes `main` before tagging —
+`c1980ae`, `53ddcc5`, done by a Codex sub-agent via Herdr, independently
+verified); Grok (#18) closed as resolved upstream; OpenCode Zen's missing
+CodexBar source diagnosed to an exact root cause in CodexBar's own source
+(a 250ms fetch race, `optionalZenBalanceJoinGrace`) and filed as
+[steipete/CodexBar#2581](https://github.com/steipete/CodexBar/issues/2581)
+(done by a Gemini/Antigravity sub-agent via Herdr). `just release 3.0.4`:
+366 passed, `just ci` green, GitHub release + PyPI OIDC publish + Homebrew
+formula/tap + `brew test` + pipx upgrade all succeeded. Post-release
+verification (independent of the release script itself): `aiuse --version`
+via pipx, Homebrew, and the dev venv all report 3.0.4; PyPI has 3.0.4; a
+live `aiuse -q --json` run against the real installed binary confirms the
+Cursor independent-pool fix and `has_overage` qualifier are both present
+and correct in production, not just in tests.
 
 ## Done after 3.0.2 (2026-07-31): release 3.0.3
 
@@ -73,7 +90,7 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **3.0.3**.
+   `/opt/homebrew/bin/aiuse --version` → **3.0.4**.
 3. `aiuse doctor` → enabled collectors green; disabled caut is not an error.
 4. `aiuse trust status` only if caut is re-enabled later.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status` — expect
@@ -116,15 +133,15 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 | ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained                                                 |
 | [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.3** (operator; **do not auto-post**; draft copy still says 3.0.2)                     |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.4** (operator; **do not auto-post**; draft copy still says 3.0.2)                     |
 | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                        |
 | [#16](https://github.com/djbclark/aiuse/issues/16)–[#17](https://github.com/djbclark/aiuse/issues/17) | 4–12h    | ~0.3–1M   | ~$3–20  | Source expansion (DeepSeek/OpenRouter 2nd source) — real, unblocked, not optional polish             |
-| [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | —        | —         | —       | Groq restore — likely already resolved upstream (3 sources now agree; re-verify before implementing) |
+| [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | —        | —         | —       | **done, closed 2026-08-02** — Groq confirmed resolved upstream on 2 independent runs, no code needed |
 | [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | —        | —         | —       | **done, closed 2026-08-02** — see the quota-algorithm-audit section above                            |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.3
+Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.4
 
-PyPI: https://pypi.org/project/aiuse/3.0.3/
+PyPI: https://pypi.org/project/aiuse/3.0.4/
 
 ## Operator preferences (standing)
 
@@ -138,7 +155,7 @@ PyPI: https://pypi.org/project/aiuse/3.0.3/
 ```bash
 cd ~/src/aiuse
 .venv/bin/python -m pytest -q
-aiuse --version          # expect 3.0.3
+aiuse --version          # expect 3.0.4
 aiuse -q --timeout 15    # terminal echo must remain usable after exit
 just ci                  # same all-files gate as GitHub Actions
 ```
