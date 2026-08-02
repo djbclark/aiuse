@@ -18,6 +18,7 @@ import hashlib
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -183,6 +184,41 @@ def _bump_version(version: str, *, dry_run: bool) -> None:
     _rewrite_packaging_version(REPO_ROOT, version)
 
 
+def _version_files() -> list[str]:
+    """Return the only files a version bump is allowed to modify."""
+    files = ["pyproject.toml", "src/aiuse/__init__.py", str(PACKAGING_DOC.relative_to(REPO_ROOT))]
+    if UV_LOCK.is_file():
+        files.append("uv.lock")
+    return files
+
+
+def _cleanup_interrupted_bump() -> None:
+    """Discard this run's uncommitted version bump, without touching other paths."""
+    files = _version_files()
+    _log(f"interrupted during version bump; restoring only: {', '.join(files)}")
+    _run(["git", "restore", "--staged", "--worktree", "--", *files])
+
+
+@contextmanager
+def _cleanup_bump_on_interrupt() -> Iterator[dict[str, bool]]:
+    """Clean up only after a successful bump and before its commit completes."""
+    state = {"active": False}
+    previous_handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+
+    def handle_interrupt(signum: int, _frame: object) -> None:
+        if state["active"]:
+            _cleanup_interrupted_bump()
+        raise ReleaseError(f"interrupted by {signal.Signals(signum).name}")
+
+    for signum in previous_handlers:
+        signal.signal(signum, handle_interrupt)
+    try:
+        yield state
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
+
+
 def _run_tests(*, skip_tests: bool, dry_run: bool) -> None:
     if skip_tests:
         _log("skipping tests (--skip-tests)")
@@ -195,10 +231,7 @@ def _run_tests(*, skip_tests: bool, dry_run: bool) -> None:
 
 
 def _commit_version(version: str, *, dry_run: bool) -> None:
-    files = ["pyproject.toml", "src/aiuse/__init__.py", str(PACKAGING_DOC.relative_to(REPO_ROOT))]
-    if UV_LOCK.is_file():
-        files.append("uv.lock")
-    _run(["git", "add", *files], dry_run=dry_run)
+    _run(["git", "add", *_version_files()], dry_run=dry_run)
     # Skip if nothing staged (already bumped).
     if not dry_run:
         staged = _git("diff", "--cached", "--name-only")
@@ -514,11 +547,15 @@ def main(argv: list[str] | None = None) -> int:
     _log(f"current version: {current} → {version}")
     if current == version and not dry:
         _log("version already set; continuing with tag/release/homebrew steps")
-    else:
-        _bump_version(version, dry_run=dry)
-        _run_tests(skip_tests=bool(args.skip_tests), dry_run=dry)
-        _commit_version(version, dry_run=dry)
         _push_main(dry_run=dry)
+    else:
+        with _cleanup_bump_on_interrupt() as bump_state:
+            _bump_version(version, dry_run=dry)
+            bump_state["active"] = not dry
+            _run_tests(skip_tests=bool(args.skip_tests), dry_run=dry)
+            _commit_version(version, dry_run=dry)
+            bump_state["active"] = False
+            _push_main(dry_run=dry)
 
     tag = _create_tag(version, dry_run=dry)
 

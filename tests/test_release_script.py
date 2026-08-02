@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -172,3 +174,85 @@ def test_upgrade_and_verify_default_path_uses_pipx(monkeypatch, release):
         ["aiuse", "--version"],
         ["ai", "--version"],
     ]
+
+
+def test_main_resume_pushes_main_before_tag(monkeypatch, release):
+    calls: list[str] = []
+    args = SimpleNamespace(
+        version="3.0.4",
+        dry_run=False,
+        allow_dirty=False,
+        skip_tests=False,
+        notes=None,
+        notes_file=None,
+        skip_pypi_wait=True,
+        skip_homebrew=True,
+        tap_path=Path("/unused"),
+        pypi_timeout=600,
+    )
+    monkeypatch.setattr(release, "parse_args", lambda argv: args)
+    monkeypatch.setattr(release, "_validate_version", lambda version: None)
+    monkeypatch.setattr(release, "_ensure_on_main", lambda: calls.append("ensure-main"))
+    monkeypatch.setattr(release, "_ensure_clean_tree", lambda **kwargs: calls.append("ensure-clean"))
+    monkeypatch.setattr(release, "_current_version", lambda: "3.0.4")
+    monkeypatch.setattr(release, "_push_main", lambda **kwargs: calls.append("push-main"))
+    monkeypatch.setattr(release, "_create_tag", lambda *args, **kwargs: calls.append("create-tag") or "v3.0.4")
+    monkeypatch.setattr(release, "_default_notes", lambda version: "notes")
+    monkeypatch.setattr(release, "_build_and_release", lambda *args, **kwargs: calls.append("release"))
+    monkeypatch.setattr(release, "_upgrade_and_verify_default_path", lambda *args, **kwargs: calls.append("verify"))
+
+    assert release.main([]) == 0
+    assert calls.index("push-main") < calls.index("create-tag")
+
+
+def test_cleanup_interrupted_bump_restores_only_version_files(monkeypatch, release, tmp_path: Path):
+    root = tmp_path / "repo"
+    (root / "src" / "aiuse").mkdir(parents=True)
+    (root / "docs").mkdir()
+    files = {
+        "pyproject.toml": 'version = "1.0.0"\n',
+        "src/aiuse/__init__.py": '__version__ = "1.0.0"\n',
+        "docs/packaging.md": "Current published release: 1.0.0\n",
+        "uv.lock": 'name = "aiuse"\nversion = "1.0.0"\n',
+        "other-staged.txt": "original\n",
+        "other-dirty.txt": "original\n",
+    }
+    for name, content in files.items():
+        (root / name).write_text(content, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "initial"],
+        cwd=root,
+        check=True,
+    )
+    for name in ("pyproject.toml", "src/aiuse/__init__.py", "docs/packaging.md", "uv.lock"):
+        (root / name).write_text("interrupted bump\n", encoding="utf-8")
+    (root / "other-staged.txt").write_text("keep staged\n", encoding="utf-8")
+    subprocess.run(["git", "add", "other-staged.txt"], cwd=root, check=True)
+    (root / "other-dirty.txt").write_text("keep dirty\n", encoding="utf-8")
+
+    monkeypatch.setattr(release, "REPO_ROOT", root)
+    monkeypatch.setattr(release, "PYPROJECT", root / "pyproject.toml")
+    monkeypatch.setattr(release, "INIT_PY", root / "src" / "aiuse" / "__init__.py")
+    monkeypatch.setattr(release, "UV_LOCK", root / "uv.lock")
+    monkeypatch.setattr(release, "PACKAGING_DOC", root / "docs" / "packaging.md")
+    release._cleanup_interrupted_bump()
+
+    assert all(
+        (root / name).read_text(encoding="utf-8") == files[name]
+        for name in files
+        if name not in {"other-staged.txt", "other-dirty.txt"}
+    )
+    assert (root / "other-staged.txt").read_text(encoding="utf-8") == "keep staged\n"
+    assert (root / "other-dirty.txt").read_text(encoding="utf-8") == "keep dirty\n"
+    assert (
+        subprocess.run(
+            ["git", "diff", "--cached", "--name-only"], cwd=root, check=True, text=True, capture_output=True
+        ).stdout
+        == "other-staged.txt\n"
+    )
+    assert (
+        subprocess.run(["git", "diff", "--name-only"], cwd=root, check=True, text=True, capture_output=True).stdout
+        == "other-dirty.txt\n"
+    )
