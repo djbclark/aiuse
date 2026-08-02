@@ -20,16 +20,19 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
    installed but has not been completion-tested. Recheck only after quota is
    available; do not spend a request merely to test telemetry. (Unchanged
    since 2026-07-30 — not reverified this session.)
-3. Source expansion is scoped, not started: [#16](https://github.com/djbclark/aiuse/issues/16)
-   (DeepSeek second source), [#17](https://github.com/djbclark/aiuse/issues/17)
-   (OpenRouter second source), and [#18](https://github.com/djbclark/aiuse/issues/18)
-   (two Groq client sources). Prefer an existing structured collector; use a
-   small Zen-style native path only when that does not exist. Per
-   [`source-coverage.md`](source-coverage.md)'s 2026-07-30 audit (not
-   rerun since): DeepSeek/OpenRouter each have exactly one live source,
-   Groq has zero (CodexBar fetch error). These are the only non-optional,
-   unblocked backlog items — #11–15 are explicitly "polish only if pain is
-   real" per [`next-options.md`](next-options.md).
+3. Source expansion: [#16](https://github.com/djbclark/aiuse/issues/16)
+   (DeepSeek second source) and [#17](https://github.com/djbclark/aiuse/issues/17)
+   (OpenRouter second source) are still scoped, not started — per
+   [`source-coverage.md`](source-coverage.md)'s 2026-08-02 refresh, both
+   remain exactly one live source (CodexBar). [#18](https://github.com/djbclark/aiuse/issues/18)
+   (Groq) has changed: the 2026-07-30 audit found zero usable sources
+   (CodexBar fetch error), but the 2026-08-02 refresh found **three**
+   agreeing live sources (CodexBar via `grok-web`, OpenUsage.ai, tokscale) —
+   re-verify with a second live run before deciding, but this likely closes
+   #18 without any code change rather than needing the originally-scoped
+   8–20h of new client work. These are the only non-optional backlog
+   items — #11–15 are explicitly "polish only if pain is real" per
+   [`next-options.md`](next-options.md).
 
 ## Done 2026-08-01/02: quota-algorithm-audit (issues #19–23, all closed)
 
@@ -109,14 +112,15 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 
 ### Issue estimates (scan)
 
-| #                                                                                                     | Hours    | Norm. tok | Norm. $ | Title                                                                                                  |
-| ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained                                                   |
-| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                               |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.3** (operator; **do not auto-post**; draft copy still says 3.0.2)                       |
-| [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                          |
-| [#16](https://github.com/djbclark/aiuse/issues/16)–[#18](https://github.com/djbclark/aiuse/issues/18) | 4–20h    | ~0.3–2M   | ~$3–40  | Source expansion (DeepSeek/OpenRouter 2nd source, Groq restore) — real, unblocked, not optional polish |
-| [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | —        | —         | —       | **done, closed 2026-08-02** — see the quota-algorithm-audit section above                              |
+| #                                                                                                     | Hours    | Norm. tok | Norm. $ | Title                                                                                                |
+| ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained                                                 |
+| [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                             |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.3** (operator; **do not auto-post**; draft copy still says 3.0.2)                     |
+| [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                        |
+| [#16](https://github.com/djbclark/aiuse/issues/16)–[#17](https://github.com/djbclark/aiuse/issues/17) | 4–12h    | ~0.3–1M   | ~$3–20  | Source expansion (DeepSeek/OpenRouter 2nd source) — real, unblocked, not optional polish             |
+| [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | —        | —         | —       | Groq restore — likely already resolved upstream (3 sources now agree; re-verify before implementing) |
+| [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | —        | —         | —       | **done, closed 2026-08-02** — see the quota-algorithm-audit section above                            |
 
 Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.3
 

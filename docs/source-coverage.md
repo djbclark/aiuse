@@ -5,11 +5,42 @@ then selects one source for the priority ladder. A provider having two source
 names does **not** necessarily mean two independent upstream authorities:
 tools can share a browser session, an OAuth endpoint, or a billing API.
 
-## Current local audit (2026-07-30)
+## Current local audit (2026-08-02)
 
 This was collected with `aiuse -q --json` and the snapshot's cross-checks,
 without recording account names or credentials. Availability remains
-machine- and login-dependent.
+machine- and login-dependent. Refreshed from the 2026-07-30 audit below
+while triaging issues #16-#18 (source expansion); see
+[`next-options.md`](next-options.md) and [`handoff.md`](handoff.md).
+
+| Service            | Successful local client sources                | Interpretation                                                                                                                                                                                                                                                        |
+| ------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code        | cswap, OpenUsage.ai, tokscale                  | Multiple live measurements; cswap remains the multi-account authority.                                                                                                                                                                                                |
+| Codex              | CodexBar, OpenUsage.ai, OpenUsage.sh, tokscale | Four agreeing live client sources.                                                                                                                                                                                                                                    |
+| GitHub Copilot     | CodexBar, OpenUsage.ai, tokscale               | Multiple live measurements; tokscale remains the selection priority.                                                                                                                                                                                                  |
+| Cursor             | CodexBar, OpenUsage.ai                         | Down from 3 to 2 this run — OpenUsage.sh did not surface a Cursor cross-check this poll. Single-poll observation, not confirmed as a persistent change.                                                                                                               |
+| Grok               | CodexBar, OpenUsage.ai, tokscale               | **Changed from 0 to 3** since 2026-07-30 — CodexBar's earlier fetch error is gone (now succeeds via `grok-web`); all three agree (16% used). Likely resolves issue #18 with no `aiuse`-side code — verify live again, then consider closing rather than implementing. |
+| Google Antigravity | CodexBar, OpenUsage.ai                         | Two live client sources.                                                                                                                                                                                                                                              |
+| OpenCode Go        | CodexBar, OpenUsage.ai                         | Two readings, but billing-web data and local estimates may disagree; prefer CodexBar web data.                                                                                                                                                                        |
+| OpenCode Zen       | native `opencode_zen`                          | Down from 2 to 1 this run — CodexBar did not surface a Zen cross-check this poll. Single-poll observation, not confirmed as a persistent change.                                                                                                                      |
+| DeepSeek prepaid   | CodexBar only                                  | Unchanged — one successful client source. Issue #16's premise still holds.                                                                                                                                                                                            |
+| OpenRouter prepaid | CodexBar only                                  | Unchanged — one successful client source. Issue #17's premise still holds.                                                                                                                                                                                            |
+
+## Practical implication
+
+DeepSeek and OpenRouter remain the only prepaid services with one client
+source on this machine — issues #16 and #17 are still real, unblocked work.
+**Groq is the one that changed materially**: it went from a hard CodexBar
+fetch error (zero usable sources — the entire premise of issue #18) to three
+agreeing live sources in this audit. Before spending #18's estimated 8-20h
+building new client sources, re-verify with a second live run and check
+whether this was a genuine upstream fix (CodexBar or xAI-side) or a
+transient recovery — then likely close #18 as already resolved rather than
+implementing anything. DeepSeek/OpenRouter prepaid balances are marked `n/a`
+and never drive use-it-or-lose-it ranking, so their single-source status
+does not change burn recommendations.
+
+## Previous audit (2026-07-30)
 
 | Service            | Successful local client sources                | Interpretation                                                                                                 |
 | ------------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -24,14 +55,6 @@ machine- and login-dependent.
 | DeepSeek prepaid   | CodexBar only                                  | One successful client source.                                                                                  |
 | OpenRouter prepaid | CodexBar only                                  | One successful client source.                                                                                  |
 | Groq               | none (CodexBar fetch error)                    | No usable live reading in this audit.                                                                          |
-
-## Practical implication
-
-DeepSeek and OpenRouter are the only successfully reported services with one
-client source on this machine today. Their prepaid balances are marked `n/a`
-and never drive use-it-or-lose-it ranking, so their single-source status does
-not change burn recommendations. Groq is surfaced as an error rather than
-pretending an unavailable source is a balance.
 
 For a fresh audit, run:
 
