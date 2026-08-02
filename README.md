@@ -14,6 +14,22 @@ it resets, and what's about to run out early so you can pace yourself.
 
 CLI command: **`aiuse`** (stub **`ai`** → same entrypoint)
 
+## Which vendor CLI is which
+
+Every report line's vendor name is grep-able (case-insensitive, substring OK)
+for the actual agent CLI whose quota it tracks:
+
+| Vendor                      | CLI tracked                   |
+| --------------------------- | ----------------------------- |
+| Claude                      | `claude`                      |
+| Codex                       | `codex`                       |
+| Cursor                      | `cursor-agent`                |
+| GitHub Copilot              | `copilot`                     |
+| Grok / SuperGrok            | `grok` (Grok Build)           |
+| Gemini / Google Antigravity | `agy`                         |
+| OpenCode                    | `opencode`                    |
+| DeepSeek, OpenRouter        | no CLI — per-token $ API only |
+
 ## See it in action
 
 This is real `aiuse` output from synthetic demo accounts, not a screenshot.
@@ -22,15 +38,15 @@ the pools most worth using right now sort to the bottom.
 
 ```diff
 - error Groq · you@example.com · No available fetch strategy for groq.
-- empty Opencode · you@example.com · OpenCode Go weekly quota: 0% left · ~lockout Thu 10:42 · pace within 4.5 days
+- empty Opencode · you@example.com · OpenCode Go weekly quota: 0% left · resets within 4.5 days
   n/a   Deepseek · you@example.com · balance $4.15 (no expiry)
   n/a   Openrouter · you@example.com · balance $18.55 (no expiry)
-  slow  Google AI / Antigravity · you@example.com · Claude/GPT weekly: 22% left · ~lockout Fri 12:42 · pace within 1.2 days
+  slow  Google AI / Antigravity (agy) · you@example.com · Claude/GPT weekly: 22% left · ~lockout Mon 09:19 · pace within 1.2 days
   mid   Claude Code · you@example.com · Claude Code weekly: 23% left · ok within 3.1 days
-  mid   Cursor · you@example.com · Cursor included: 29% left · ok within 3.3 days
+  mid   Cursor (cursor-agent) · you@example.com · Cursor included: 29% left · ok within 3.3 days
   mid   Codex · you@example.com · Codex weekly quota: 46% left · ok within 2.3 days
   mid   Grok · you@example.com · Grok usage limit: 94% left · ok within 6.6 days
-  mid   Gemini · you@example.com · Gemini weekly: 84% left · ok within 4.0 days
+  mid   Gemini (agy) · you@example.com · Gemini weekly: 84% left · ok within 4.0 days
 + use   GitHub Copilot · default · GitHub Copilot premium requests: 42% left · ~42%waste · use within ~1 day
 ```
 

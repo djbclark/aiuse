@@ -49,10 +49,18 @@ def classify_window_minutes(minutes: int | None) -> str | None:
 
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
-    "antigravity": "Google AI / Antigravity",
+    # Every display name should contain its vendor CLI's name as a case-insensitive
+    # substring, so `grep -i <cli-name>` finds the right report line. Most vendor
+    # names already do (Claude/claude, Codex/codex, GitHub Copilot/copilot,
+    # Grok/grok, OpenCode/opencode) — antigravity and cursor need an explicit
+    # suffix since their CLI names ("agy", "cursor-agent") aren't substrings of
+    # the plain vendor name.
+    "antigravity": "Google AI / Antigravity (agy)",
     "claude": "Claude Code",
     "codex": "Codex",
     "copilot": "GitHub Copilot",
+    "cursor": "Cursor (cursor-agent)",
+    "gemini": "Gemini (agy)",
     "grok": "Grok",
     "opencode-go": "OpenCode Go",
     "opencode-zen": "OpenCode Zen",
