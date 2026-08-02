@@ -188,6 +188,9 @@ Cross-check notes alone never set exit code 2.
 | `gated_by`                 | string \| null              |
 | `confidence`               | string                      |
 | `learned_sample_count`     | int (0 if no history blend) |
+| `has_overage`              | bool                        |
+
+`has_overage` is `true` when the account has a real (`AccountUsage.usage_credits`) or config-confirmed (`provider_overrides.<provider>.overage_state: "enabled"`) overage/extra-usage wallet. It qualifies, never suppresses, a `conserve`/`burn` verdict — `true` means the real risk is unplanned $ spend (soft ceiling), not lockout (hard ceiling). See `docs/shared-quota-semantics/formulas/pace.md`'s rule O1.
 
 ## Stability policy
 
