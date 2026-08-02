@@ -1,4 +1,5 @@
-"""Pure pace-math for Phase 2 scoring (not wired into analyze_use_or_lose yet)."""
+"""Pace math for use-or-lose scoring — the default `mode == "pace"` path in
+analyze_use_or_lose (see use_or_lose.py)."""
 
 from __future__ import annotations
 
