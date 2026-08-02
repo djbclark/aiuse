@@ -414,6 +414,57 @@ using the same primary source).
 - If not implemented: no code change required; just document why in the
   issue.
 
+### Phase 4 outcome (2026-08-02): confirmed real, no code change needed
+
+Both examples were independently re-verified directly against current
+primary vendor documentation (not the secondhand attributions this document
+started with):
+
+- **GitHub Copilot Code Review** — confirmed via GitHub's own changelog,
+  [`github.blog/changelog/2026-04-27-github-copilot-code-review-will-start-consuming-github-actions-minutes-on-june-1-2026`](https://github.blog/changelog/2026-04-27-github-copilot-code-review-will-start-consuming-github-actions-minutes-on-june-1-2026/):
+  _"Starting June 1, 2026, each Copilot code review will be billed in two
+  ways: all Copilot usage (including code reviews) will be billed as AI
+  Credits... GitHub Actions minutes will be consumed from your existing
+  plan entitlement for each review that is run on private repositories."_
+  Public repos are unaffected (Actions minutes stay free there).
+- **OpenAI Codex Voice (desktop)** — confirmed via OpenAI's own docs
+  (`developers.openai.com/codex/pricing`, which redirects to
+  `learn.chatgpt.com/docs/pricing`): Desktop Voice is metered on its own
+  rolling five-hour connected-minute allowance (~6 credits/minute on
+  credit-based Business/Enterprise billing), and _"Tasks started through
+  Voice use your existing Codex usage budget"_ — i.e. a voice-initiated
+  coding task debits the voice-minute meter and the shared Codex
+  task-usage/credit pool at the same time.
+
+**Decision: no code change, for both examples, right now.** Confirming the
+pattern is real doesn't by itself require action — the question is whether
+`aiuse` has any live window that's incorrectly scored because of it. It doesn't:
+`grep -rniE "actions.minute|voice" src/aiuse/collectors/*.py` returns
+nothing. `aiuse` never tracks per-_action_ consumption at all — every
+collector (`cswap`, `CodexBar`, `tokscale`, `OpenUsage`) reports
+already-aggregated windows, and none of them currently expose GitHub
+Actions minutes or ChatGPT Desktop Voice minutes as a queryable quota at
+all. There is no existing window for either meter that could be wrongly
+folded into the other pool, so the "action → exactly one pool" undercount
+risk described in Appendix A is real in principle but has no live
+consequence today. Per this phase's own guidance (prefer the narrow fix,
+and only 2 examples are confirmed — not the 3+ that would justify a general
+`action -> [pool_id, ...]` schema change), there's nothing narrower to fix
+either: there's no code path currently merging these two meters.
+
+**Revisit trigger, if this ever needs picking back up:** not "is dual-debit
+real" (settled, yes) but "did a collector start reporting either meter as
+its own window." If `CodexBar` ever adds a Voice-minutes slot, or
+`tokscale`/`codexbar.py`'s Copilot handling starts surfacing Actions-minutes
+consumption from code reviews, check at that point whether
+`shared_allotment`/`independent_pool_key()` is folding it into the existing
+governing window instead of treating it as its own independent pool — _that
+specific merge_ would be the actual bug, not the dual-debit fact by itself.
+
+Issue #22 is left open per the operator's standing preference for this
+session (not auto-closed) — recommend closing with a link to this section
+once reviewed.
+
 ---
 
 ## What was explicitly NOT done, and why
