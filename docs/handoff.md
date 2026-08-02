@@ -13,9 +13,10 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 ## Immediate unfinished work (do this first)
 
-1. Operator: announce issue #10 exists and is ready to post, but its draft
-   copy/links still say **3.0.2** — refresh to 3.0.4 before posting
-   (do not auto-post either way).
+1. Operator: announce issue #10 is refreshed (title/body/links now say
+   **3.0.4**, updated 2026-08-02) and ready to post — still **operator
+   action, do not auto-post**. Draft copy itself untouched, only versions
+   and links.
 2. OpenCode Go is currently at 0%; its OpenUsage.sh telemetry integration is
    installed but has not been completion-tested. Recheck only after quota is
    available; do not spend a request merely to test telemetry. (Unchanged
@@ -133,7 +134,7 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 | ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained                                                 |
 | [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.4** (operator; **do not auto-post**; draft copy still says 3.0.2)                     |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.4** (operator; **do not auto-post**; refreshed 2026-08-02, ready)                     |
 | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                        |
 | [#16](https://github.com/djbclark/aiuse/issues/16)–[#17](https://github.com/djbclark/aiuse/issues/17) | 4–12h    | ~0.3–1M   | ~$3–20  | Source expansion (DeepSeek/OpenRouter 2nd source) — real, unblocked, not optional polish             |
 | [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | —        | —         | —       | **done, closed 2026-08-02** — Groq confirmed resolved upstream on 2 independent runs, no code needed |
