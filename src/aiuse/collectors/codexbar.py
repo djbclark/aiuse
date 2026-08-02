@@ -53,8 +53,12 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
         "GitHub Copilot chat messages",
         "GitHub Copilot quota 3",
     ),
-    # Cursor dashboard: Included (overall) ⊃ Auto + API breakdowns; On-Demand
-    # is separate (providerCost). Primary is the governing included bar.
+    # Cursor's confirmed billing model (2026-08, see docs/cursor-quota.md): two
+    # independent monthly pools — Included+Auto (first-party, "Auto+Composer")
+    # and API (third-party, billed at provider rates). On-Demand is separate
+    # again (providerCost). Primary is the governing Included+Auto bar; API is
+    # scored as its own independent pool (analysis/pace.py's
+    # independent_pool_key()), not suppressed as a child of Included.
     "cursor": (
         "Cursor included",
         "Cursor Auto",

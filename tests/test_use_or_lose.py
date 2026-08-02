@@ -793,8 +793,10 @@ def test_pace_mode_burn_weekly():
     assert alerts[0].kind == "burn"
 
 
-def test_cursor_shared_allotment_scores_included_not_exhausted_api():
-    """Cursor API at 100% must not CONSERVE when Included still has headroom."""
+def test_cursor_shared_allotment_scores_included_and_api_independently():
+    """Cursor Included/Auto (healthy) and API (exhausted) are independent pools
+    (issue #21 / Phase 2): API must raise its own conserve alert instead of
+    being silently suppressed as a child of Included."""
     now = _now()
     snap = Snapshot(
         collected_at=now,
@@ -833,9 +835,12 @@ def test_cursor_shared_allotment_scores_included_not_exhausted_api():
     cfg = _pace_cfg()
     cfg["analysis"]["provider_overrides"] = {"cursor": {"shared_allotment": True}}
     alerts = analyze_use_or_lose(snap, cfg)
-    assert not any("API" in (a.window_label or "") for a in alerts)
-    # Included at ~pace for mid-cycle may be on_pace (no alert) or mild burn — never API conserve
-    assert not any(a.kind == "conserve" and "API" in (a.window_label or "") for a in alerts)
+    # Included/Auto stay governed together and are healthy → no alert for either.
+    assert not any(a.window_label in ("Cursor included", "Cursor Auto") for a in alerts)
+    # API is its own independent pool and is genuinely exhausted → its own conserve alert.
+    api_alerts = [a for a in alerts if a.window_label == "Cursor API"]
+    assert len(api_alerts) == 1
+    assert api_alerts[0].kind == "conserve"
 
 
 def test_shared_allotment_suppresses_fresh_5h_when_weekly_on_pace():

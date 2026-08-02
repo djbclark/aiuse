@@ -121,8 +121,11 @@ def independent_pool_key(label: str | None) -> str | None:
 
     Some providers (notably Google AI / Antigravity) expose **independent**
     budgets that must not be collapsed by shared-allotment logic — e.g. Gemini
-    usage vs Claude/GPT usage. Returns a stable slug for grouping, or None for
-    the residual “same pool” group (Claude 5h⊂weekly, Cursor Included⊃Auto/API).
+    usage vs Claude/GPT usage. Cursor is similar: Included+Auto (first-party,
+    "Auto+Composer" in Cursor's own docs) is one pool, but API (third-party,
+    billed separately) is a second, independent pool — exhausting one has no
+    effect on the other. Returns a stable slug for grouping, or None for the
+    residual “same pool” group (Claude 5h⊂weekly, Cursor Included⊂Auto).
     """
     text = (label or "").casefold()
     if not text:
@@ -138,6 +141,8 @@ def independent_pool_key(label: str | None) -> str | None:
         return "claude_gpt"
     if "gemini" in text:
         return "gemini"
+    if "cursor api" in text:
+        return "cursor_api"
     return None
 
 

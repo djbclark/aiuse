@@ -206,7 +206,7 @@ def test_partition_independent_pools_antigravity_splits_families():
     assert {"Claude/GPT 5-hour", "Claude/GPT weekly"} in labels
 
 
-def test_partition_independent_pools_cursor_stays_one_pool():
+def test_partition_independent_pools_cursor_included_auto_stay_one_pool():
     from aiuse.analysis.pace import partition_independent_pools
 
     windows = [
@@ -215,8 +215,20 @@ def test_partition_independent_pools_cursor_stays_one_pool():
         QuotaWindow(label="Cursor API", remaining_percent=0.0, window_minutes=44640),
     ]
     pools = partition_independent_pools(windows)
-    assert len(pools) == 1
-    assert len(pools[0]) == 3
+    # Included+Auto (first-party "Auto+Composer") is one pool; API (third-party,
+    # billed separately) is a second, independent pool (issue #21 / Phase 2).
+    assert len(pools) == 2
+    pool_labels = [sorted(w.label for w in pool) for pool in pools]
+    assert ["Cursor Auto", "Cursor included"] in pool_labels
+    assert ["Cursor API"] in pool_labels
+
+
+def test_independent_pool_key_cursor_api():
+    from aiuse.analysis.pace import independent_pool_key
+
+    assert independent_pool_key("Cursor API") == "cursor_api"
+    assert independent_pool_key("Cursor included") is None
+    assert independent_pool_key("Cursor Auto") is None
 
 
 def test_early_window_on_pace_even_if_usage_looks_high():
