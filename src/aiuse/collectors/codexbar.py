@@ -62,7 +62,7 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
     "cursor": (
         "Cursor included",
         "Cursor Auto",
-        "Cursor API",
+        "Cursor other models",
     ),
     "grok": ("Grok usage limit", "Grok quota 2", "Grok quota 3"),
     "warp": ("Warp credits", "Warp quota 2", "Warp quota 3"),

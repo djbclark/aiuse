@@ -209,4 +209,8 @@ def test_openusage_sh_deduplicates_identical_windows_and_labels_cursor_metrics(m
 
     codex, cursor = accounts
     assert [(window.label, window.remaining()) for window in codex.windows] == [("weekly", 50.0)]
-    assert [window.label for window in cursor.windows] == ["Cursor Included", "Cursor Auto", "Cursor API"]
+    assert [window.label for window in cursor.windows] == [
+        "Cursor Included",
+        "Cursor Auto",
+        "Cursor other models",
+    ]

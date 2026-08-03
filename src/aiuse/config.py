@@ -100,8 +100,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cursor": {
             "name": "Cursor",
             "notes": (
-                "Monthly included usage (Auto/API are category breakdowns of the same pool); "
-                "on-demand is a separate dollar cap."
+                "Two monthly pools: Included+Auto (Cursor Models) and Other Models "
+                "(third-party at provider rates); on-demand is a separate dollar cap."
             ),
             "monthly_price": 20,
         },

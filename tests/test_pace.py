@@ -212,21 +212,22 @@ def test_partition_independent_pools_cursor_included_auto_stay_one_pool():
     windows = [
         QuotaWindow(label="Cursor included", remaining_percent=39.0, window_minutes=44640),
         QuotaWindow(label="Cursor Auto", remaining_percent=45.0, window_minutes=44640),
-        QuotaWindow(label="Cursor API", remaining_percent=0.0, window_minutes=44640),
+        QuotaWindow(label="Cursor other models", remaining_percent=0.0, window_minutes=44640),
     ]
     pools = partition_independent_pools(windows)
-    # Included+Auto (first-party "Auto+Composer") is one pool; API (third-party,
-    # billed separately) is a second, independent pool (issue #21 / Phase 2).
+    # Included+Auto (first-party "Cursor Models") is one pool; Other Models
+    # (third-party) is a second, independent pool (issue #21 / Phase 2).
     assert len(pools) == 2
     pool_labels = [sorted(w.label for w in pool) for pool in pools]
     assert ["Cursor Auto", "Cursor included"] in pool_labels
-    assert ["Cursor API"] in pool_labels
+    assert ["Cursor other models"] in pool_labels
 
 
-def test_independent_pool_key_cursor_api():
+def test_independent_pool_key_cursor_other_models():
     from aiuse.analysis.pace import independent_pool_key
 
-    assert independent_pool_key("Cursor API") == "cursor_api"
+    assert independent_pool_key("Cursor other models") == "cursor_other_models"
+    assert independent_pool_key("Cursor API") == "cursor_other_models"
     assert independent_pool_key("Cursor included") is None
     assert independent_pool_key("Cursor Auto") is None
 

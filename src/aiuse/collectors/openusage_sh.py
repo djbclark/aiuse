@@ -23,7 +23,7 @@ def _window_label(provider_id: str, key: str, metric: dict[object, object]) -> s
         return {
             "plan_percent_used": "Cursor Included",
             "plan_auto_percent_used": "Cursor Auto",
-            "plan_api_percent_used": "Cursor API",
+            "plan_api_percent_used": "Cursor other models",
         }.get(key, str(metric.get("window") or key).replace("_", " "))
     label = str(metric.get("window") or key).replace("_", " ")
     return "weekly" if label.casefold() == "7d" else label

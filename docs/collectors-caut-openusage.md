@@ -114,7 +114,7 @@ brew unlink openusage
 `aiuse` invokes `openusage-sh export --output - --format json`; it accepts only
 explicit rate-limit and plan-percent metrics as quota windows, never local
 token/cost estimates. Identical metric aliases are collapsed, while Cursor's
-Included/Auto/API pools remain distinct. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
+Included/Auto/Other Models pools remain distinct. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
 `--no-openusage`), and `--no-openusage-sh`.
 
 ## Selection priority (generalized)

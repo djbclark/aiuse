@@ -822,7 +822,7 @@ def test_cursor_shared_allotment_scores_included_and_api_independently():
                         window_minutes=44640,
                     ),
                     QuotaWindow(
-                        label="Cursor API",
+                        label="Cursor other models",
                         used_percent=100.0,
                         remaining_percent=0.0,
                         resets_at=now + timedelta(days=9.5),
@@ -838,7 +838,7 @@ def test_cursor_shared_allotment_scores_included_and_api_independently():
     # Included/Auto stay governed together and are healthy → no alert for either.
     assert not any(a.window_label in ("Cursor included", "Cursor Auto") for a in alerts)
     # API is its own independent pool and is genuinely exhausted → its own conserve alert.
-    api_alerts = [a for a in alerts if a.window_label == "Cursor API"]
+    api_alerts = [a for a in alerts if a.window_label == "Cursor other models"]
     assert len(api_alerts) == 1
     assert api_alerts[0].kind == "conserve"
 

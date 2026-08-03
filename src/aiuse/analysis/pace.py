@@ -95,7 +95,7 @@ def classify_pace(
 def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None, list[QuotaWindow]]:
     """Longest-duration window with usable remaining() governs; the rest are children.
 
-    When durations tie (e.g. Cursor Included/Auto/API all monthly), prefer a
+    When durations tie (e.g. Cursor Included/Auto/other-models all monthly), prefer a
     window whose label looks like the overall included bar, then list order.
     """
     scored = [
@@ -122,10 +122,11 @@ def independent_pool_key(label: str | None) -> str | None:
     Some providers (notably Google AI / Antigravity) expose **independent**
     budgets that must not be collapsed by shared-allotment logic — e.g. Gemini
     usage vs Claude/GPT usage. Cursor is similar: Included+Auto (first-party,
-    "Auto+Composer" in Cursor's own docs) is one pool, but API (third-party,
-    billed separately) is a second, independent pool — exhausting one has no
-    effect on the other. Returns a stable slug for grouping, or None for the
-    residual “same pool” group (Claude 5h⊂weekly, Cursor Included⊂Auto).
+    "Cursor Models" / Auto+Composer in Cursor's docs) is one pool, but Other
+    Models (third-party at provider rates) is a second, independent pool —
+    exhausting one has no effect on the other. Returns a stable slug for
+    grouping, or None for the residual “same pool” group (Claude 5h⊂weekly,
+    Cursor Included⊂Auto).
     """
     text = (label or "").casefold()
     if not text:
@@ -141,8 +142,9 @@ def independent_pool_key(label: str | None) -> str | None:
         return "claude_gpt"
     if "gemini" in text:
         return "gemini"
-    if "cursor api" in text:
-        return "cursor_api"
+    # Display label is "Cursor other models"; accept legacy "Cursor API" too.
+    if "cursor other models" in text or "cursor api" in text:
+        return "cursor_other_models"
     return None
 
 

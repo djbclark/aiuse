@@ -22,7 +22,7 @@
         "window_minutes": 44640
       },
       {
-        "label": "Cursor API",
+        "label": "Cursor other models",
         "used_percent": 100.0,
         "remaining_percent": 0.0,
         "resets_at": "2026-08-04T12:00:00+00:00",
@@ -42,6 +42,6 @@
     "suggestion_eligible": false,
     "alert_kind": "conserve",
     "band": "empty",
-    "notes": "Included/Auto stay governed together (healthy, no alert); API is its own independent pool (see Phase 2 / issue #21) and correctly raises its own conserve alert when exhausted, instead of being silently suppressed as a child of Included. suggestion_eligible stays false because conserve alerts never win pick_suggestion (burn-only), not because API was suppressed."
+    "notes": "Included/Auto stay governed together (healthy, no alert); Other Models is its own independent pool (see Phase 2 / issue #21) and correctly raises its own conserve alert when exhausted, instead of being silently suppressed as a child of Included. suggestion_eligible stays false because conserve alerts never win pick_suggestion (burn-only), not because Other Models was suppressed."
   }
 }

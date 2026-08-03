@@ -536,7 +536,7 @@ def test_parse_cursor_included_auto_api_and_ondemand():
     assert [w.label for w in acc.windows] == [
         "Cursor included",
         "Cursor Auto",
-        "Cursor API",
+        "Cursor other models",
     ]
     assert abs((acc.windows[0].remaining_percent or 0) - (100 - 61.35942028985507)) < 0.01
     assert acc.windows[2].remaining_percent == 0
