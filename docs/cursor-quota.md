@@ -34,6 +34,11 @@ individual plans (Pro / Pro+ / Ultra). Both reset with the billing cycle.
 Other Models is **not** a non-expiring prepaid wallet (unlike DeepSeek /
 OpenRouter) — unused headroom is use-or-lose at month end.
 
+In `aiuse`, a Cursor CodexBar/OpenUsage row with those windows is classified as
+`billing_kind: subscription_window` (because each slot has `resetsAt`). That
+puts Other Models through pace / use-or-lose scoring like Included — burn,
+conserve, or on-pace `mid` — never the prepaid `n/a` lane.
+
 | Pool (Cursor docs) | What burns it                                                          | Included amount (individual)                        |
 | ------------------ | ---------------------------------------------------------------------- | --------------------------------------------------- |
 | **Cursor Models**  | First-party: **Cursor Grok 4.5**, **Composer 2.5**; Auto **Cost** mode | “Generous included usage” (size not published as $) |

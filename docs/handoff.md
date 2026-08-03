@@ -1,15 +1,23 @@
 # Session handoff (current)
 
-**Date:** 2026-08-02
+**Date:** 2026-08-03
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
-**Tests:** `.venv/bin/python -m pytest -q` — **366** passing
+**Tests:** `uv run --extra dev pytest -q`
 
-**Package version:** **3.0.4** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.6** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
+
+## Done 2026-08-03: Cursor “other models” rename (3.0.6)
+
+CodexBar tertiary slot display label is **Cursor other models** (Cursor docs:
+Other Models), not “API”. Pool key `cursor_other_models`; legacy “Cursor API”
+still matches. Documented in [`cursor-quota.md`](cursor-quota.md). Billing
+remains `subscription_window` (monthly reset / use-or-lose) — not prepaid
+`n/a`. Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.6
 
 ## Immediate unfinished work (do this first)
 
@@ -41,7 +49,7 @@ knowledge table, and phase-by-phase implementation plan:
 | Issue                                              | Fix                                                                                                                                                                                                                                                                                                                                                  | Commit(s)            |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
 | [#19](https://github.com/djbclark/aiuse/issues/19) | Stale `pace.py`/`use_or_lose.py` docstrings said pace scoring wasn't wired in yet — it's the live default.                                                                                                                                                                                                                                           | `96adf65`            |
-| [#21](https://github.com/djbclark/aiuse/issues/21) | Cursor's API pool is now independent from Included/Auto (`independent_pool_key()`) — an exhausted API pool used to be silently suppressed as a child of a healthy Included.                                                                                                                                                                          | `a34dff8`, `4cbd710` |
+| [#21](https://github.com/djbclark/aiuse/issues/21) | Cursor's Other Models pool is independent from Included/Auto (`independent_pool_key()`) — an exhausted Other Models pool used to be silently suppressed as a child of a healthy Included. (Display label was later renamed from “Cursor API” → “Cursor other models” in 3.0.6.)                                                                      | `a34dff8`, `4cbd710` |
 | [#20](https://github.com/djbclark/aiuse/issues/20) | New `PaceProfile.has_overage` qualifies conserve/burn verdicts: real vs. config-confirmed overage wallet (Claude/Cursor `usage_credits`, or OpenCode Go's manual `overage_state: enabled` override) means the real risk is unplanned $ spend, not lockout.                                                                                           | `2144333`            |
 | [#22](https://github.com/djbclark/aiuse/issues/22) | Investigated the "dual-debit" pattern (one action draining two meters at once). Confirmed real for both examples against primary vendor docs (GitHub's changelog; OpenAI's own pricing docs) — but no code change, since `aiuse` doesn't currently collect either dual-debited meter (GitHub Actions minutes, ChatGPT Desktop Voice minutes) at all. | `75f0512`            |
 

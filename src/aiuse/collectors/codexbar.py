@@ -54,11 +54,12 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
         "GitHub Copilot quota 3",
     ),
     # Cursor's confirmed billing model (2026-08, see docs/cursor-quota.md): two
-    # independent monthly pools — Included+Auto (first-party, "Auto+Composer")
-    # and API (third-party, billed at provider rates). On-Demand is separate
-    # again (providerCost). Primary is the governing Included+Auto bar; API is
-    # scored as its own independent pool (analysis/pace.py's
-    # independent_pool_key()), not suppressed as a child of Included.
+    # independent monthly subscription windows — Included+Auto (first-party,
+    # "Cursor Models") and Other Models (third-party at provider rates). Both
+    # reset with the billing cycle (use-or-lose); neither is a prepaid wallet.
+    # On-Demand is separate again (providerCost). Primary governs Included+Auto;
+    # Other Models is its own independent pool (analysis/pace.py
+    # independent_pool_key()), not a suppressed child of Included.
     "cursor": (
         "Cursor included",
         "Cursor Auto",

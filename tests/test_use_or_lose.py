@@ -793,10 +793,10 @@ def test_pace_mode_burn_weekly():
     assert alerts[0].kind == "burn"
 
 
-def test_cursor_shared_allotment_scores_included_and_api_independently():
-    """Cursor Included/Auto (healthy) and API (exhausted) are independent pools
-    (issue #21 / Phase 2): API must raise its own conserve alert instead of
-    being silently suppressed as a child of Included."""
+def test_cursor_shared_allotment_scores_included_and_other_models_independently():
+    """Cursor Included/Auto (healthy) and Other Models (exhausted) are independent
+    monthly pools (issue #21 / Phase 2): Other Models must raise its own conserve
+    alert instead of being silently suppressed as a child of Included."""
     now = _now()
     snap = Snapshot(
         collected_at=now,
@@ -837,10 +837,40 @@ def test_cursor_shared_allotment_scores_included_and_api_independently():
     alerts = analyze_use_or_lose(snap, cfg)
     # Included/Auto stay governed together and are healthy → no alert for either.
     assert not any(a.window_label in ("Cursor included", "Cursor Auto") for a in alerts)
-    # API is its own independent pool and is genuinely exhausted → its own conserve alert.
-    api_alerts = [a for a in alerts if a.window_label == "Cursor other models"]
-    assert len(api_alerts) == 1
-    assert api_alerts[0].kind == "conserve"
+    # Other Models is its own independent pool and is genuinely exhausted → conserve.
+    other_alerts = [a for a in alerts if a.window_label == "Cursor other models"]
+    assert len(other_alerts) == 1
+    assert other_alerts[0].kind == "conserve"
+    assert other_alerts[0].kind != "prepaid"
+    assert other_alerts[0].days_until_reset is not None
+
+
+def test_cursor_other_models_is_subscription_use_or_lose_not_prepaid():
+    """Other Models has a monthly reset — pace/use-or-lose, never prepaid n/a."""
+    from aiuse.report import _account_is_non_expiring_prepaid, _account_use_urgency
+
+    now = _now()
+    acc = AccountUsage(
+        source="codexbar",
+        provider="cursor",
+        account="user@example.com",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Cursor other models",
+                used_percent=0.0,
+                remaining_percent=100.0,
+                resets_at=now + timedelta(days=30),
+                window_minutes=44640,
+            ),
+        ],
+    )
+    assert not _account_is_non_expiring_prepaid(acc)
+    assert _account_use_urgency(acc) > 0.0
+
+    snap = Snapshot(collected_at=now, accounts=[acc])
+    alerts = analyze_use_or_lose(snap, _pace_cfg())
+    assert all(a.kind != "prepaid" for a in alerts)
 
 
 def test_shared_allotment_suppresses_fresh_5h_when_weekly_on_pace():

@@ -499,7 +499,7 @@ def test_dollar_in_reset_description_does_not_flip_subscription_billing():
     assert len(account.windows) == 1
 
 
-def test_parse_cursor_included_auto_api_and_ondemand():
+def test_parse_cursor_included_auto_other_models_and_ondemand():
     row = {
         "provider": "cursor",
         "source": "web",
@@ -533,11 +533,13 @@ def test_parse_cursor_included_auto_api_and_ondemand():
     }
     acc = _from_row(row)
     assert acc.provider == "cursor"
+    assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
     assert [w.label for w in acc.windows] == [
         "Cursor included",
         "Cursor Auto",
         "Cursor other models",
     ]
+    assert all(w.resets_at is not None for w in acc.windows)
     assert abs((acc.windows[0].remaining_percent or 0) - (100 - 61.35942028985507)) < 0.01
     assert acc.windows[2].remaining_percent == 0
     assert acc.usage_credits is not None
@@ -545,3 +547,30 @@ def test_parse_cursor_included_auto_api_and_ondemand():
     assert acc.usage_credits.limit == 2
     assert abs((acc.usage_credits.remaining or 0) - 0.53) < 0.001
     assert any("On-demand" in n for n in acc.notes)
+
+    # Parse → use-or-lose: Other Models is a monthly window, not prepaid inventory.
+    # Fixture resetsAt is a fixed historical timestamp; move windows into the future
+    # so analyze_use_or_lose (which uses utcnow()) still sees an open window.
+    from datetime import UTC, datetime, timedelta
+
+    from aiuse.analysis.use_or_lose import analyze_use_or_lose
+    from aiuse.models import Snapshot
+
+    future = datetime.now(UTC) + timedelta(days=9)
+    for window in acc.windows:
+        window.resets_at = future
+    snap = Snapshot(collected_at=datetime.now(UTC), accounts=[acc])
+    cfg = {
+        "analysis": {
+            "scoring_mode": "pace",
+            "learn_from_history": False,
+            "provider_overrides": {"cursor": {"shared_allotment": True}},
+            "pace": {"waste_alert_fraction": 0.30, "min_elapsed_fraction": 0.15},
+        },
+        "plans": {},
+    }
+    alerts = analyze_use_or_lose(snap, cfg)
+    other = [a for a in alerts if a.window_label == "Cursor other models"]
+    assert len(other) == 1
+    assert other[0].kind == "conserve"
+    assert all(a.kind != "prepaid" for a in alerts)

@@ -22,6 +22,13 @@ design rationale behind current Cursor handling; `docs/fix-implementation-plan.m
 for this repo's established plan-format convention, which this document
 follows.
 
+**Naming note (2026-08-03 / aiuse 3.0.6+):** Cursor’s tertiary slot is labeled
+**Cursor other models** (Cursor docs: “Other Models”), not “Cursor API”. The
+independent pool key is `cursor_other_models` (legacy `"Cursor API"` labels
+still match). Historical prose below may still say “API pool”; treat that as
+the same monthly use-or-lose allotment — not prepaid. Canonical write-up:
+[`cursor-quota.md`](cursor-quota.md).
+
 ## How this document came to exist
 
 The operator relayed a Gemini-authored "system instruction" for cross-vendor
