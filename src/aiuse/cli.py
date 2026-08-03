@@ -64,6 +64,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
+  aiuse schema                print the machine-readable JSON contract (markdown) for AI agents
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
   aiuse -q / --quiet          no progress on stderr (JSON stdout stays clean either way)
@@ -116,28 +117,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--doctor",
         action="store_true",
-        help=(
-            "Check tools on PATH (plus light --version probe), config validation, "
-            "and timeouts; no usage collection (also: aiuse doctor)"
-        ),
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "--status",
         action="store_true",
-        help=("Print one-line status for prompts/status bars and exit (also: aiuse status / aiuse prompt)"),
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "--suggest",
         action="store_true",
-        help=(
-            "Print the single best burn recommendation (or nothing urgent); "
-            "with --json includes top-level suggestion (also: aiuse suggest)"
-        ),
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--schema",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "--serve",
         action="store_true",
-        help="Run loopback HTTP API for agents (also: aiuse serve). See docs/agent-api.md",
+        help=argparse.SUPPRESS,
     )
     p.add_argument(
         "--port",
@@ -306,6 +306,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--suggest", *raw[1:]]
     if head == "serve":
         return ["--serve", *raw[1:]]
+    if head == "schema":
+        return ["--schema", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -330,6 +332,29 @@ def _main_inner(argv: list[str] | None = None) -> int:
         return run_credential_command(raw[1:])
 
     args = build_parser().parse_args(_normalize_argv(argv))
+    if getattr(args, "schema", False):
+        from pathlib import Path
+
+        local_path = Path(__file__).resolve().parents[2] / "docs" / "json-contract.md"
+        if local_path.is_file():
+            print(local_path.read_text("utf-8"))
+            return 0
+
+        url = "https://raw.githubusercontent.com/djbclark/aiuse/main/docs/json-contract.md"
+        try:
+            import requests
+
+            response = requests.get(url, timeout=5.0)
+            response.raise_for_status()
+            print(response.text)
+            return 0
+        except Exception as e:
+            print(
+                f"Error: Could not load local docs/json-contract.md and failed to fetch from GitHub: {e}",
+                file=sys.stderr,
+            )
+            return 1
+
     if args.show_config_path:
         print(f"config: {default_config_path()}")
         print(f"legacy services: {legacy_services_config_path()}")

@@ -17,6 +17,7 @@ Implemented JSON schema versioning and `--for-chat` flag:
 
 - Added `provider_id`, `service_id`, `collector_id`, and `window_id` to models to decouple stable IDs from human-readable labels.
 - Added `schema_version` (1.0) and `contract_url` to JSON output.
+- Added `--schema` (and `aiuse schema` subcommand) to dump the markdown contract directly to stdout, enabling agents to self-discover the contract without finding the file.
 - Added `--format chat` and `--for-chat` options which yield a deterministic, LLM-friendly text output of active quotas and limits.
 - CI/CD passed. This resolves the feature requests from the two tickets discussed.
 
