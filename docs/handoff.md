@@ -11,6 +11,15 @@
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
 
+## Done 2026-08-03: JSON contract and chat format
+
+Implemented JSON schema versioning and `--for-chat` flag:
+
+- Added `provider_id`, `service_id`, `collector_id`, and `window_id` to models to decouple stable IDs from human-readable labels.
+- Added `schema_version` (1.0) and `contract_url` to JSON output.
+- Added `--format chat` and `--for-chat` options which yield a deterministic, LLM-friendly text output of active quotas and limits.
+- CI/CD passed. This resolves the feature requests from the two tickets discussed.
+
 ## Done 2026-08-03: Cursor “other models” rename (3.0.6)
 
 CodexBar tertiary slot display label is **Cursor other models** (Cursor docs:
