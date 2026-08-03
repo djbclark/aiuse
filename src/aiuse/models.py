@@ -214,6 +214,8 @@ class QuotaWindow:
     refill_capacity_unit: str | None = None  # "tokens" | "requests" | "usd"
     internal_throttle: bool = False
 
+    window_id: str | None = None
+
     def remaining(self) -> float | None:
         if self.remaining_percent is not None:
             return self.remaining_percent
@@ -248,6 +250,8 @@ class QuotaWindow:
         d = asdict(self)
         if self.resets_at:
             d["resets_at"] = self.resets_at.isoformat()
+        if "raw" in d:
+            del d["raw"]
         return d
 
 
@@ -296,6 +300,10 @@ class AccountUsage:
     notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
+    provider_id: str | None = None
+    service_id: str | None = None
+    collector_id: str | None = None
+
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "source": self.source,
@@ -308,6 +316,9 @@ class AccountUsage:
             "credits_remaining": self.credits_remaining,
             "error": self.error,
             "notes": self.notes,
+            "provider_id": self.provider_id or self.provider,
+            "service_id": self.service_id,
+            "collector_id": self.collector_id or self.source,
         }
         if self.usage_credits is not None:
             d["usage_credits"] = self.usage_credits.to_dict()

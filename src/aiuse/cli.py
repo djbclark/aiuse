@@ -171,9 +171,16 @@ def build_parser() -> argparse.ArgumentParser:
     fmt = p.add_mutually_exclusive_group()
     fmt.add_argument(
         "--format",
-        choices=("pretty", "json"),
+        choices=("pretty", "json", "chat"),
         default="pretty",
         help="Output format (default: pretty human-readable report)",
+    )
+    fmt.add_argument(
+        "--for-chat",
+        action="store_const",
+        dest="format",
+        const="chat",
+        help="Shorthand for --format chat (deterministic bulleted chat output)",
     )
     fmt.add_argument(
         "--json",
@@ -345,9 +352,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
     _apply_cli_overrides(config, args)
 
     as_json = bool(args.json) or args.format == "json"
+    as_chat = args.format == "chat"
     status_mode = bool(getattr(args, "status", False))
     suggest_mode = bool(getattr(args, "suggest", False))
-    quiet = bool(args.quiet) or status_mode or suggest_mode
+    quiet = bool(args.quiet) or status_mode or suggest_mode or as_chat
 
     def _progress(msg: str) -> None:
         if not quiet:
@@ -372,6 +380,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
     suggestion = suggestion_to_dict(suggestion_alert)
     insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     payload = {
+        "schema_version": "1.0",
+        "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
         "snapshot": snapshot.to_dict(),
         "alerts": [a.to_dict() for a in alerts],
         "suggestion": suggestion,
@@ -403,6 +413,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     {
+                        "schema_version": "1.0",
+                        "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
                         "alerts": payload["alerts"],
                         "cross_check_warnings": cross_check_warnings,
                         "suggestion": suggestion,
@@ -437,6 +449,12 @@ def _main_inner(argv: list[str] | None = None) -> int:
             print(f"[{a.urgency.value}] {a.message}")
         if not alerts and not cross_check_warnings:
             print("No use-or-lose alerts or cross-check notes.")
+        return exit_code
+
+    if as_chat:
+        from aiuse.report import render_chat_report
+
+        print(render_chat_report(snapshot, alerts))
         return exit_code
 
     from aiuse.tui import run_inline_report, should_use_tui

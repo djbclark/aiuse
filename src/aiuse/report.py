@@ -1487,3 +1487,72 @@ def _consumption_line(
         parts.append(pace_s)
 
     return " · ".join(parts) if parts else None
+
+
+def render_chat_report(snapshot: Snapshot, alerts: list[UseOrLoseAlert]) -> str:
+    """Deterministic chat-friendly output mode."""
+    lines: list[str] = []
+
+    accounts = _sorted_accounts(snapshot.accounts)
+    subs = []
+    prepaid = []
+    errors = []
+
+    for account in accounts:
+        if account.error:
+            errors.append(account)
+        elif _account_is_non_expiring_prepaid(account):
+            prepaid.append(account)
+        else:
+            subs.append(account)
+
+    if subs:
+        lines.append("Subscription Windows:")
+        for account in subs:
+            name = provider_display_name(account.provider)
+            who = account.account or "default"
+
+            if not account.windows:
+                lines.append(f"* {name} ({who}): no active windows")
+                continue
+
+            for window in account.windows:
+                rem = window.remaining()
+                rem_pct = _format_remaining_percent(rem) if rem is not None else "unknown%"
+                when = _human_deadline(window.days_until_reset(), estimated=not window.reset_time_is_precise())
+                cadence = "window"
+                if window.window_minutes:
+                    cadence = classify_window_minutes(window.window_minutes) or "window"
+
+                lines.append(f"* {name} ({who})")
+                lines.append(f"  ↳ {cadence}: {window.label}")
+                lines.append(f"  ↳ {rem_pct} remaining (resets {when})")
+
+    if prepaid:
+        lines.append("Prepaid/API Balances:")
+        for account in prepaid:
+            name = provider_display_name(account.provider)
+            who = account.account or "default"
+            if account.balance_usd is not None:
+                bal = f"${account.balance_usd:.2f}"
+            elif account.credits_remaining is not None:
+                bal = f"{account.credits_remaining:g} credits"
+            else:
+                bal = "API balance"
+            lines.append(f"* {name} ({who})")
+            lines.append(f"  ↳ Balance: {bal} (no expiry)")
+
+    if errors or snapshot.collector_errors:
+        lines.append("Errors:")
+        for err in snapshot.collector_errors:
+            lines.append(f"* {err}")
+        for acc in errors:
+            name = provider_display_name(acc.provider)
+            who = acc.account or "default"
+            lines.append(f"* {name} ({who})")
+            lines.append(f"  ↳ {acc.error}")
+
+    if not lines:
+        lines.append("No usage data collected.")
+
+    return "\n".join(lines)
