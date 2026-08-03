@@ -6,7 +6,7 @@
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `uv run --extra dev pytest -q`
 
-**Package version:** **3.0.6** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.7** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
@@ -19,6 +19,7 @@ Implemented JSON schema versioning and `--for-chat` flag:
 - Added `schema_version` (1.0) and `contract_url` to JSON output.
 - Added `--schema` (and `aiuse schema` subcommand) to dump the markdown contract directly to stdout, enabling agents to self-discover the contract without finding the file.
 - Added `--format chat` and `--for-chat` options which yield a deterministic, LLM-friendly text output of active quotas and limits.
+- Suppressed redundant CLI help flags (`--doctor`, `--status`, etc.) in the main help output to declutter it while keeping epilog subcommands visible.
 - CI/CD passed. This resolves the feature requests from the two tickets discussed.
 
 ## Done 2026-08-03: Cursor “other models” rename (3.0.6)
@@ -32,7 +33,7 @@ remains `subscription_window` (monthly reset / use-or-lose) — not prepaid
 ## Immediate unfinished work (do this first)
 
 1. Operator: announce issue #10 is refreshed (title/body/links now say
-   **3.0.4**, updated 2026-08-02) and ready to post — still **operator
+   **3.0.7**, updated 2026-08-03) and ready to post — still **operator
    action, do not auto-post**. Draft copy itself untouched, only versions
    and links.
 2. OpenCode Go is currently at 0%; its OpenUsage.sh telemetry integration is
@@ -109,7 +110,7 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **3.0.4**.
+   `/opt/homebrew/bin/aiuse --version` → **3.0.7**.
 3. `aiuse doctor` → enabled collectors green; disabled caut is not an error.
 4. `aiuse trust status` only if caut is re-enabled later.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status` — expect
@@ -152,15 +153,15 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 | ----------------------------------------------------------------------------------------------------- | -------- | --------- | ------- | ---------------------------------------------------------------------------------------------------- |
 | [#1](https://github.com/djbclark/aiuse/issues/1)                                                      | —        | —         | —       | **done** — official field + legacy fallback retained                                                 |
 | [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                             |
-| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.4** (operator; **do not auto-post**; refreshed 2026-08-02, ready)                     |
+| [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.7** (operator; **do not auto-post**; refreshed 2026-08-03, ready)                     |
 | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                        |
 | [#16](https://github.com/djbclark/aiuse/issues/16)–[#17](https://github.com/djbclark/aiuse/issues/17) | 4–12h    | ~0.3–1M   | ~$3–20  | Source expansion (DeepSeek/OpenRouter 2nd source) — real, unblocked, not optional polish             |
 | [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | —        | —         | —       | **done, closed 2026-08-02** — Groq confirmed resolved upstream on 2 independent runs, no code needed |
 | [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | —        | —         | —       | **done, closed 2026-08-02** — see the quota-algorithm-audit section above                            |
 
-Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.4
+Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.7
 
-PyPI: https://pypi.org/project/aiuse/3.0.4/
+PyPI: https://pypi.org/project/aiuse/3.0.7/
 
 ## Operator preferences (standing)
 
@@ -174,7 +175,7 @@ PyPI: https://pypi.org/project/aiuse/3.0.4/
 ```bash
 cd ~/src/aiuse
 .venv/bin/python -m pytest -q
-aiuse --version          # expect 3.0.4
+aiuse --version          # expect 3.0.7
 aiuse -q --timeout 15    # terminal echo must remain usable after exit
 just ci                  # same all-files gate as GitHub Actions
 ```
