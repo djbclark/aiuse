@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djbclark/aiuse/docs/shared-quota-semantics/schemas/account.schema.json",
+  "title": "AccountUsage",
+  "type": "object",
+  "required": ["provider", "billing_kind"],
+  "additionalProperties": true,
+  "properties": {
+    "provider": { "type": "string" },
+    "account": { "type": ["string", "null"] },
+    "plan": { "type": ["string", "null"] },
+    "billing_kind": {
+      "type": "string",
+      "enum": ["subscription_window", "prepaid_balance", "payg_api", "unknown"]
+    },
+    "windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label"],
+        "additionalProperties": true,
+        "properties": {
+          "label": { "type": "string" },
+          "used_percent": { "type": ["number", "null"] },
+          "remaining_percent": { "type": ["number", "null"] },
+          "resets_at": { "type": ["string", "null"] },
+          "window_minutes": { "type": ["integer", "null"] },
+          "reset_description": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "balance_usd": { "type": ["number", "null"] },
+    "credits_remaining": { "type": ["number", "null"] },
+    "error": { "type": ["string", "null"] },
+    "source": { "type": "string" }
+  }
+}

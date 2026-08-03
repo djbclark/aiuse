@@ -1,0 +1,7 @@
+# Default shared-allotment providers (5h ⊂ weekly, Included ⊃ categories, …)
+version: "0.1.0"
+shared_allotment_defaults:
+  claude: true
+  gemini: true # antigravity / Google AI
+  opencode: true
+  cursor: true

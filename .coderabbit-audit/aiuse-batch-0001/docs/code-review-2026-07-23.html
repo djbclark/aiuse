@@ -1,0 +1,675 @@
+<!doctype html>
+<!--
+  Checked-in copy of a review artifact originally published to:
+  https://claude.ai/code/artifact/f368673c-72c6-40d6-bba3-7bbf0b512380
+  Generated 2026-07-23 from a 79-agent adversarial code review of this
+  repository. See docs/fix-implementation-plan.md for the ordered,
+  step-by-step plan derived from these findings and designs.
+  Note: GitHub's file viewer shows this as source, not rendered HTML —
+  use the "raw" view and open it locally, or the live artifact link
+  above, to see it styled.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai — code review &amp; design proposals</title>
+<style>
+  :root {
+    --paper: #eef0ec;
+    --paper-raised: #e4e7e0;
+    --ink: #1a231f;
+    --muted: #5b665d;
+    --line: #cdd3c9;
+    --accent: #1f6f64;
+    --accent-soft: #d9e8e3;
+    --critical: #a8391b;
+    --critical-soft: #f2ded5;
+    --major: #9c6a12;
+    --major-soft: #f1e4c9;
+    --minor: #2f5f8f;
+    --minor-soft: #dbe6f0;
+    --nit: #6d7669;
+    --nit-soft: #e2e5de;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --serif: "Iowan Old Style", "Charter", Georgia, "Palatino Linotype", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #101512;
+      --paper-raised: #171d19;
+      --ink: #e6ece7;
+      --muted: #93a39a;
+      --line: #2a352e;
+      --accent: #5fd1bd;
+      --accent-soft: #1b322d;
+      --critical: #ff7a54;
+      --critical-soft: #33201a;
+      --major: #ffbf5c;
+      --major-soft: #332912;
+      --minor: #7bb0ea;
+      --minor-soft: #16273a;
+      --nit: #8b9a8f;
+      --nit-soft: #202722;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #101512; --paper-raised: #171d19; --ink: #e6ece7; --muted: #93a39a; --line: #2a352e;
+    --accent: #5fd1bd; --accent-soft: #1b322d;
+    --critical: #ff7a54; --critical-soft: #33201a;
+    --major: #ffbf5c; --major-soft: #332912;
+    --minor: #7bb0ea; --minor-soft: #16273a;
+    --nit: #8b9a8f; --nit-soft: #202722;
+  }
+  :root[data-theme="light"] {
+    --paper: #eef0ec; --paper-raised: #e4e7e0; --ink: #1a231f; --muted: #5b665d; --line: #cdd3c9;
+    --accent: #1f6f64; --accent-soft: #d9e8e3;
+    --critical: #a8391b; --critical-soft: #f2ded5;
+    --major: #9c6a12; --major-soft: #f1e4c9;
+    --minor: #2f5f8f; --minor-soft: #dbe6f0;
+    --nit: #6d7669; --nit-soft: #e2e5de;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-soft); }
+
+  .page { max-width: 780px; margin: 0 auto; padding: 3.5rem 1.5rem 6rem; }
+
+  /* ---- masthead ---- */
+  .masthead { margin-bottom: 3rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.9rem;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.7rem, 4vw, 2.35rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin: 0 0 0.6rem;
+    text-wrap: balance;
+  }
+  .dek {
+    color: var(--muted);
+    font-size: 1.05rem;
+    max-width: 58ch;
+    margin: 0 0 1.4rem;
+  }
+  .meta-row {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    border-top: 1px solid var(--line);
+    padding-top: 0.9rem;
+  }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  /* ---- stat strip ---- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 2rem 0 3rem;
+  }
+  .stat {
+    background: var(--paper-raised);
+    padding: 1rem 0.9rem;
+    text-align: left;
+  }
+  .stat .n {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.9rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .stat .lbl {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    display: block;
+  }
+  .stat.crit .n { color: var(--critical); }
+  .stat.maj .n { color: var(--major); }
+  .stat.min .n { color: var(--minor); }
+  .stat.nit .n { color: var(--nit); }
+
+  /* ---- section rhythm ---- */
+  section { margin-top: 3.4rem; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1.6rem;
+  }
+  .section-head .idx {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+  }
+  h2 {
+    font-family: var(--mono);
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.12rem;
+    margin: 1.6rem 0 0.5rem;
+  }
+  p { margin: 0 0 1rem; }
+  .lede { color: var(--muted); font-size: 1.02rem; }
+
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  .path {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--muted);
+    background: var(--paper-raised);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  /* ---- findings ---- */
+  .sev-group { margin-bottom: 2.2rem; }
+  .sev-label {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 0 0 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .sev-label::before {
+    content: "";
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 1px;
+    display: inline-block;
+  }
+  .sev-label.crit { color: var(--critical); }
+  .sev-label.crit::before { background: var(--critical); }
+  .sev-label.maj { color: var(--major); }
+  .sev-label.maj::before { background: var(--major); }
+  .sev-label.min { color: var(--minor); }
+  .sev-label.min::before { background: var(--minor); }
+  .sev-label.nit { color: var(--nit); }
+  .sev-label.nit::before { background: var(--nit); }
+
+  .finding {
+    border: 1px solid var(--line);
+    border-left-width: 3px;
+    border-radius: 3px;
+    padding: 0.95rem 1.1rem 1.05rem;
+    margin-bottom: 0.7rem;
+    background: var(--paper-raised);
+  }
+  .finding.crit { border-left-color: var(--critical); }
+  .finding.maj { border-left-color: var(--major); }
+  .finding.min { border-left-color: var(--minor); }
+  .finding.nit { border-left-color: var(--nit); }
+  .f-title {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+  }
+  .f-file { margin-bottom: 0.5rem; }
+  .f-body { color: var(--ink); font-size: 0.96rem; }
+  .f-body p { margin-bottom: 0.5rem; }
+  .f-fix {
+    margin-top: 0.6rem;
+    padding-top: 0.55rem;
+    border-top: 1px dashed var(--line);
+    font-size: 0.92rem;
+    color: var(--muted);
+  }
+  .f-fix b { color: var(--ink); font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  details { margin-top: 0.9rem; }
+  summary {
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    text-transform: uppercase;
+    user-select: none;
+  }
+  summary::marker { color: var(--accent); }
+  .rest { margin-top: 0.7rem; }
+
+  /* ---- design proposals ---- */
+  .verdict-bar {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    margin: 0.2rem 0 1.6rem;
+  }
+  .pill {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .pill.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
+
+  .callout {
+    background: var(--accent-soft);
+    border-radius: 4px;
+    padding: 1rem 1.15rem;
+    margin: 1.2rem 0;
+  }
+  .callout .k { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); display: block; margin-bottom: 0.4rem; }
+
+  .file-plan {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 1.2rem 0 1.6rem;
+  }
+  .file-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 220px) 1fr;
+    gap: 1rem;
+    padding: 0.7rem 1rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.92rem;
+  }
+  .file-row:first-child { border-top: none; }
+  .file-row .fp { font-family: var(--mono); font-size: 0.8rem; color: var(--ink); align-self: start; padding-top: 0.1rem; }
+  .file-row .fd { color: var(--muted); }
+
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin: 1.2rem 0 1.6rem;
+  }
+  table.compare th, table.compare td {
+    text-align: left;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  table.compare th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  table.compare td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.1rem 0 0.1rem 1rem;
+    border-left: 2px solid var(--accent);
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  ul, ol { padding-left: 1.3rem; margin: 0 0 1rem; }
+  li { margin-bottom: 0.35rem; }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 3rem 0;
+  }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--muted);
+  }
+
+  @media (max-width: 560px) {
+    .file-row { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="masthead">
+    <span class="eyebrow">Engineering review · handoff synthesis</span>
+    <h1>ai — quota tracker: review &amp; two design proposals</h1>
+    <p class="dek">A 79-agent adversarial review of the collectors, scoring, and reporting layers, plus recommended designs for containing tokscale's timeouts and fixing why Claude's 5-hour window always outranks its own weekly quota.</p>
+    <div class="meta-row">
+      <span><b>Repo</b> ~/src/ai</span>
+      <span><b>Findings</b> 45 raised · 44 confirmed on re-verification</span>
+      <span><b>Tests</b> 80/80 passing (behavior gaps, not crashes)</span>
+      <span><b>Scope</b> incl. uncommitted working-tree diff</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat crit"><span class="n">3</span><span class="lbl">Critical</span></div>
+    <div class="stat maj"><span class="n">18</span><span class="lbl">Major</span></div>
+    <div class="stat min"><span class="n">22</span><span class="lbl">Minor</span></div>
+    <div class="stat nit"><span class="n">2</span><span class="lbl">Nit</span></div>
+  </div>
+
+  <section id="summary">
+    <div class="section-head"><span class="idx">00</span><h2>Where things stand</h2></div>
+    <p>The suite is green — 80 tests pass — because almost nothing here is a crash. Every finding below is <em>quietly wrong output</em>: a number that looks plausible, a row that vanishes with no error, an alert that never fires. That's the harder failure mode to catch and exactly what this review was built to surface.</p>
+    <p class="lede">Two threads run through the confirmed findings and tie directly to what you asked about:</p>
+    <ul>
+      <li><b>Silent data loss compounds.</b> A JSON-parsing fallback that can return the wrong fragment, a single 120-second call that has no partial-result path, and a selection rule that drops tokscale's Claude rows entirely — each on its own is a minor gap, but together they mean the report can look complete while several sources have quietly gone dark.</li>
+      <li><b>The scoring model has a self-cancelling formula at its center.</b> One line of arithmetic that reduces to a constant is why Claude's 5-hour window tops your report run after run — not a tuning problem, a bug with one specific, traceable cause. See §2.</li>
+    </ul>
+  </section>
+
+  <section id="findings">
+    <div class="section-head"><span class="idx">01</span><h2>Confirmed findings</h2></div>
+    <p class="lede">Ranked by severity. Each was raised by an independent reviewer reading only that file, then re-derived from the actual code by a second, adversarial pass instructed to default to disbelief. <span class="mono">file:line</span> anchors point at the current working tree.</p>
+
+    <div class="sev-group">
+      <p class="sev-label crit">Critical — silently wrong, high blast radius</p>
+
+      <div class="finding crit">
+        <div class="f-title">All live Claude data disappears when cswap is enabled but returns nothing</div>
+        <div class="f-file"><span class="path">collectors/runner.py:98</span></div>
+        <div class="f-body">
+          <p><span class="mono">_select_and_cross_check</span> treats cswap as the sole authority for the <code>claude</code> provider whenever it's enabled — <em>even if cswap produced zero rows.</em> CodexBar's live Claude data is cross-checked but never promoted to fill the gap, and tokscale's Claude rows (which exist in a real run right now — Session 3% used, Weekly 64% used) are excluded from selection <em>and</em> from the cross-check, so the "no independent cross-check available" warning it does emit is itself inaccurate.</p>
+        </div>
+        <div class="f-fix"><b>Fix direction</b> — fall back to a live CodexBar or tokscale row when cswap returns none, and include tokscale in the Claude cross-check set rather than silently dropping it.</div>
+      </div>
+
+      <div class="finding crit">
+        <div class="f-title">A cancelled-out formula pins Claude's 5-hour urgency at 100, every run</div>
+        <div class="f-file"><span class="path">analysis/use_or_lose.py:153</span></div>
+        <div class="f-body">
+          <p><code>cycles_needed = max(1, round((remaining/100) * capacity / capacity))</code> — <code>capacity</code> cancels algebraically. The expression is just <code>round(remaining/100)</code>, which is always <code>1</code> for any remaining value under 150%. For Claude's 5-hour window (configured <code>flexibility: 0.0</code>), that forces <code>earliest_start_calendar = resets_at − 300min</code>, which is always in the past, which pins <code>flexibility_urgency</code> at exactly 100 on every single run, regardless of actual usage. This is the direct, traceable mechanism behind the behavior you flagged — full write-up in §2.</p>
+        </div>
+      </div>
+
+      <div class="finding crit">
+        <div class="f-title">Reported "monthly waste" is off by more than 10×</div>
+        <div class="f-file"><span class="path">report.py:380</span></div>
+        <div class="f-body">
+          <p><code>_throttled_waste_line</code> computes <code>monthly_waste = value_usd * 30</code>, treating a per-cycle dollar figure as a per-day figure. For a 5-hour window there are roughly 4.9 waking cycles <em>per day</em>, not per month — the correct multiplier is closer to <code>value_usd × cycles_per_day × 30</code>. As written, every throttled-waste estimate the tool prints overstates the real monthly cost by roughly 15×.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="sev-group">
+      <p class="sev-label maj">Major — wrong numbers or missing alerts a user would act on</p>
+
+      <div class="finding maj">
+        <div class="f-title">Monthly windows report more dollar value than the plan costs</div>
+        <div class="f-file"><span class="path">analysis/use_or_lose.py:52</span> &amp; <span class="path">report.py:577</span></div>
+        <div class="f-body">
+          <p><code>_compute_value_at_risk</code> divides monthly price by <code>active_cycles = waking_minutes_per_month / window_minutes</code>. For a monthly-bucketed window that's <code>&lt;1</code> active cycle, so <code>value_per_refill &gt; monthly_price</code>. Reproduced end-to-end: a $10 Copilot plan reports <b>"$13.75 at risk"</b> for one 90%-remaining monthly window — 137% of what the whole plan costs. Previously latent because tokscale never set <code>window_minutes</code>; the uncommitted diff's new <code>_infer_window_minutes</code> makes this newly user-visible for every Copilot row.</p>
+        </div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">The uncommitted diff's new gates silently kill real alerts — including your weekly example</div>
+        <div class="f-file"><span class="path">analysis/use_or_lose.py:303</span></div>
+        <div class="f-body">
+          <p>The two new lines (<code>days &gt; max_days</code>, <code>remaining &lt; min_remaining</code>) now apply to the multi-dimensional scoring path too. Concretely: a weekly window at 64% used / 36% remaining is filtered before it's even scored, because 36 &lt; the default <code>min_remaining_percent=40</code>. That's exactly the "weekly nearly exhausted, days left" case from your complaint — it doesn't get scored low, it never gets scored at all, and the THROTTLED-waste report section loses its main data source the same way.</p>
+        </div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">Claude's 5-hour window never gets a real window duration from cswap</div>
+        <div class="f-file"><span class="path">collectors/cswap.py:171</span></div>
+        <div class="f-body">
+          <p>cswap's named-window blocks (<code>fiveHour</code>, <code>sevenDay</code>, <code>monthly</code>) only get <code>window_minutes</code> populated if cswap's own payload happens to include a <code>windowMinutes</code> field — schema v1 doesn't guarantee it. Without it, multi-dimensional scoring can't classify the window's duration bucket at all, degrading exactly the account that matters most (Claude is cswap-authoritative).</p>
+        </div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">A single 120-second tokscale call has no partial-result path</div>
+        <div class="f-file"><span class="path">collectors/tokscale.py:25</span></div>
+        <div class="f-body">
+          <p>This is the crux of your first ask. CodexBar solved exactly this problem — discover enabled providers via a fast local call, then query each one in its own concurrent subprocess (90s each) so one slow provider can't take the others down with it. tokscale gets none of that: one bundled call, one 120s timeout (not even matched to CodexBar's own 180s bundled-fallback budget), and if it times out every tokscale-sourced provider vanishes at once with a single generic error line. Full design in §3.</p>
+        </div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">The JSON-recovery fallback can return the wrong fragment, silently</div>
+        <div class="f-file"><span class="path">collectors/base.py:61</span></div>
+        <div class="f-body">
+          <p><code>run_json</code>'s banner-tolerant fallback returns the <em>first</em> bracketed substring that parses as valid JSON. Reproduced: stdout <code>"Fetched [1] provider\n[{...real data...}]"</code> returns <code>[1]</code>, not the payload. Downstream, <code>collect_tokscale</code> gets <code>rows=[1]</code>, the <code>isinstance(row, dict)</code> guard silently skips it, and the collector returns an empty list — no exception, no entry in <code>collector_errors</code>. The same helper backs every CodexBar per-provider call too.</p>
+        </div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title"><code>gemini</code> provider overrides never apply — dead config</div>
+        <div class="f-file"><span class="path">config.py:33</span></div>
+        <div class="f-body"><p>The default config keys its Gemini override under <code>"gemini"</code>, but <span class="mono">runner._canonical_provider</span> normalizes Gemini/Antigravity rows to <code>"antigravity"</code> before scoring ever sees them — <code>_classify_flexibility</code> looks up overrides by the canonical key, so this block has never fired.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">Learned flexibility can leak from one provider into another</div>
+        <div class="f-file"><span class="path">analysis/history.py:161</span></div>
+        <div class="f-body"><p><code>merge_learned_flexibility</code> falls back to <em>any</em> provider sharing the same duration bucket (e.g. any <code>":weekly"</code> key) when the exact provider has no learned rate, in Python dict iteration order — a fast-burning Grok weekly can quietly reclassify an unrelated Codex weekly as burstable.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">Burn-rate learning weights a two-minute gap the same as a two-week one</div>
+        <div class="f-file"><span class="path">analysis/history.py:122</span></div>
+        <div class="f-body"><p>Two snapshots taken minutes apart, with any usage delta at all, extrapolate to an enormous %/day burn rate and get equal weight in the average — a window can get marked BURSTABLE off pure timing noise.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">Burn-rate learning goes blind across every window reset</div>
+        <div class="f-file"><span class="path">analysis/history.py:119</span></div>
+        <div class="f-body"><p>The exact-<code>resets_at</code>-match requirement plus the <code>consumed &lt;= 0</code> skip mean any pair of snapshots straddling a reset contributes nothing — the one moment that would show a full-cycle burn rate is the one moment the learner discards.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">"Chronic waste" can be one fresh reset, counted repeatedly</div>
+        <div class="f-file"><span class="path">analysis/history.py:181</span></div>
+        <div class="f-body"><p><code>chronic_waste_summary</code> averages remaining-% across the last 7 snapshots without checking whether they span the same cycle — several snapshots taken right after a reset (100% remaining) can read as "consistently underused" with no chronic pattern behind it.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">The most expensive configured plan dilutes every other plan's urgency</div>
+        <div class="f-file"><span class="path">analysis/use_or_lose.py:507</span></div>
+        <div class="f-body"><p><code>max_plan_price</code> is the maximum <code>monthly_price</code> across <em>every</em> plan in config, used to normalize <code>value_urgency</code> for all of them. Add one $30/mo Grok plan, and a $10 Copilot window's value score is silently squashed by a factor of 3, independent of anything about Copilot.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">Colliding fallback labels can drop a real quota window</div>
+        <div class="f-file"><span class="path">collectors/codexbar.py:350</span></div>
+        <div class="f-body"><p>When CodexBar doesn't name a provider's slots, <code>_slot_label</code> falls back to a duration-based label ("… 5-hour quota") — two same-duration slots on the same account collide on that label, and the account/window de-dup keyed on it silently keeps only one.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">A dollar-sign regex can reclassify a real subscription window as prepaid</div>
+        <div class="f-file"><span class="path">collectors/codexbar.py:281</span></div>
+        <div class="f-body"><p>The DeepSeek-style balance-in-description heuristic scans any window's reset description for a bare <code>$</code> figure and, on match, can flip an <code>UNKNOWN</code>-billing account to <code>PREPAID_BALANCE</code> — which then <em>exits the use-or-lose pipeline entirely</em> (prepaid rows are treated as non-expiring), suppressing what may be a real subscription window.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">tokscale's Claude rows are dropped from cross-check, not just from the report</div>
+        <div class="f-file"><span class="path">collectors/runner.py:99</span></div>
+        <div class="f-body"><p>Same root cause as the first critical finding, narrower blast radius: even when cswap succeeds, tokscale's independent Claude measurement is never compared against it, so a real discrepancy between the two sources would never surface as a cross-check warning.</p></div>
+      </div>
+
+      <div class="finding maj">
+        <div class="f-title">A matched-then-errored cswap row can never trigger its own designed warning</div>
+        <div class="f-file"><span class="path">collectors/runner.py:164</span></div>
+        <div class="f-body"><p>The code path meant to warn "cswap failed for this account, don't substitute CodexBar's data for a different one" is unreachable as written — an email match against CodexBar takes precedence and produces a generic "inconsistency" message instead of the specific, more useful warning that was clearly intended here.</p></div>
+      </div>
+    </div>
+
+    <details>
+      <summary>Show 22 minor findings and 2 nits</summary>
+      <div class="rest">
+
+        <div class="sev-group">
+          <p class="sev-label min">Minor</p>
+          <div class="finding min"><div class="f-title">Explicit <code class="mono">--config</code> path that doesn't exist is silently ignored</div><div class="f-file"><span class="path">config.py:91</span></div><div class="f-body"><p>Falls back to defaults with zero warning — a typo'd path looks identical to "no override wanted."</p></div></div>
+          <div class="finding min"><div class="f-title"><code class="mono">'daily'</code> flexibility default is dead config</div><div class="f-file"><span class="path">config.py:27</span></div><div class="f-body"><p><code>classify_window_minutes</code> never emits <code>"daily"</code> — those windows fall into the <code>weekly</code> bucket and get flexibility 0.7, not the intended 0.1.</p></div></div>
+          <div class="finding min"><div class="f-title">Snapshot saves can silently overwrite each other</div><div class="f-file"><span class="path">analysis/history.py:27</span></div><div class="f-body"><p>Filename resolution is second-granularity; two runs in the same second collide. File also briefly exists at the process umask before the explicit <code>chmod 0600</code>.</p></div></div>
+          <div class="finding min"><div class="f-title">JSON fallback gives up after 5 candidates</div><div class="f-file"><span class="path">collectors/base.py:61</span></div><div class="f-body"><p>A tool that emits more than 5 banner lines before its JSON, each starting with a stray <code>{</code>/<code>[</code>, produces a hard parse failure instead of finding the real payload.</p></div></div>
+          <div class="finding min"><div class="f-title">Non-zero exit codes are ignored if stdout still parses as JSON</div><div class="f-file"><span class="path">collectors/base.py:50</span></div><div class="f-body"><p>A tool that exits 1 but prints a JSON error object on stdout gets that object treated as a real account row.</p></div></div>
+          <div class="finding min"><div class="f-title">tokscale window-duration inference stores bucket maximums, not real durations</div><div class="f-file"><span class="path">collectors/tokscale.py:105</span></div><div class="f-body"><p>Uses <code>WINDOW_5H_MAX_MINUTES</code> (360) for a window that's actually 300 minutes — a 20% overstatement that flows straight into value-at-risk math.</p></div></div>
+          <div class="finding min"><div class="f-title"><code class="mono">"chat"/"completions"/"premium"</code> are classified monthly for any provider, not just Copilot</div><div class="f-file"><span class="path">collectors/tokscale.py:103</span></div><div class="f-body"><p>The label check has no provider guard — any future provider using those label strings inherits the monthly bucket by accident.</p></div></div>
+          <div class="finding min"><div class="f-title">The digit "7" in a label is treated as evidence of a weekly window</div><div class="f-file"><span class="path">collectors/tokscale.py:107</span></div><div class="f-body"><p><code>"7" in display_label.lower()</code> — any label or provider name that happens to contain the digit 7 false-positives into the weekly bucket.</p></div></div>
+          <div class="finding min"><div class="f-title">Credit balances are flattened into note strings, never structured fields</div><div class="f-file"><span class="path">collectors/tokscale.py:63</span></div><div class="f-body"><p><code>balance_usd</code>/<code>credits_remaining</code> stay <code>None</code> even when tokscale reports a real credit balance — a credit-only account looks dead in the report.</p></div></div>
+          <div class="finding min"><div class="f-title">Burn-time estimate assumes full capacity regardless of actual remaining</div><div class="f-file"><span class="path">analysis/use_or_lose.py:162</span></div><div class="f-body"><p><code>burn_minutes</code> is computed from total <code>capacity</code>, not <code>capacity × (remaining/100)</code> — the printed "~1.5h at typical pace" is the same whether 10% or 90% remains.</p></div></div>
+          <div class="finding min"><div class="f-title">Window de-dup treats different remaining% as the same measurement</div><div class="f-file"><span class="path">models.py:163</span></div><div class="f-body"><p><code>same_measurement</code> compares <code>used_percent</code> but not <code>remaining_percent</code> — two windows reported only via <code>remaining_percent</code>, at different values, compare as identical and can be wrongly merged.</p></div></div>
+          <div class="finding min"><div class="f-title">Per-provider report line doesn't reflect learned history, contradicting the action plan</div><div class="f-file"><span class="path">report.py:568</span></div><div class="f-body"><p>The flexibility badge shown per-window is always the static config value; the actual score used for ranking (when <code>learn_from_history</code> is on) can differ, so the detail view and the action plan can visibly disagree.</p></div></div>
+          <div class="finding min"><div class="f-title">Process exit code is always 0, even when every collector fails</div><div class="f-file"><span class="path">cli.py:191</span></div><div class="f-body"><p>Scripting/cron use of <code>ai</code> can't detect a fully-failed run from the exit code alone.</p></div></div>
+          <div class="finding min"><div class="f-title">Action-plan rendering — buckets, throttled-waste math, consumption line — has no test coverage</div><div class="f-file"><span class="path">tests/test_report.py</span></div><div class="f-body"><p>The 10×-overstatement critical finding above would not have been caught by the existing suite; nothing exercises <code>_render_action_plan</code>'s math.</p></div></div>
+          <div class="finding min"><div class="f-title">tokscale collector has no test file at all</div><div class="f-file"><span class="path">tests/</span></div><div class="f-body"><p>The uncommitted <code>window_minutes</code> inference — the source of two of the findings above — ships with zero test coverage.</p></div></div>
+          <div class="finding min"><div class="f-title">Per-provider query failures are folded into a synthetic account row</div><div class="f-file"><span class="path">collectors/codexbar.py:92</span></div><div class="f-body"><p>Wrapping failures as a <code>codexbar-query-errors</code> pseudo-account means the runner's cross-check "CodexBar failed" branch, which expects a real per-provider error, never actually fires.</p></div></div>
+          <div class="finding min"><div class="f-title">Per-provider timeout (90s) is tighter than the old bundled-call budget (180s)</div><div class="f-file"><span class="path">collectors/codexbar.py:177</span></div><div class="f-body"><p>The concurrency win can be partly offset by a lower per-provider ceiling for a genuinely slow provider that used to fit inside the old bundled timeout.</p></div></div>
+          <div class="finding min"><div class="f-title">An unrecognized provider argument silently returns everything</div><div class="f-file"><span class="path">collectors/codexbar.py:105</span></div><div class="f-body"><p>A typo'd <code>--providers</code> value falls through to the full bundled call instead of erroring, duplicating every enabled provider's rows under an unexpected argument.</p></div></div>
+          <div class="finding min"><div class="f-title">Balance-blob detection outranks subscription-window evidence</div><div class="f-file"><span class="path">collectors/codexbar.py:226</span></div><div class="f-body"><p>Contradicts <code>_billing_kind</code>'s own stated precedence rule and can hide a slot's real quota windows behind a prepaid classification.</p></div></div>
+          <div class="finding min"><div class="f-title">cswap slot without an email address never matches CodexBar by identity</div><div class="f-file"><span class="path">collectors/runner.py:208</span></div><div class="f-body"><p>Produces a spurious cross-check warning pair for what may be the exact same physical account.</p></div></div>
+          <div class="finding min"><div class="f-title">Cross-source window matching depends entirely on <code>resets_at</code> being present and close</div><div class="f-file"><span class="path">collectors/runner.py:326</span></div><div class="f-body"><p>Label-based matching between cswap and CodexBar windows never succeeds in practice because the two sources don't share label vocabulary — the 15-minute <code>resets_at</code> window is the only path that ever matches.</p></div></div>
+        </div>
+
+        <div class="sev-group">
+          <p class="sev-label nit">Nit</p>
+          <div class="finding nit"><div class="f-title">A missing account number marks every slot "active"</div><div class="f-file"><span class="path">collectors/cswap.py:51</span></div><div class="f-body"><p><code>None == None</code> in the active-slot comparison means an absent field reads as a match by accident.</p></div></div>
+          <div class="finding nit"><div class="f-title">Dead code and an over-broad substring check for "5-hour" labels</div><div class="f-file"><span class="path">collectors/tokscale.py:105</span></div><div class="f-body"><p>The membership tuple is unreachable given the substring checks beside it, and <code>"5h" in key</code> also matches <code>"15h"</code>/<code>"45h"</code>.</p></div></div>
+        </div>
+
+      </div>
+    </details>
+  </section>
+
+  <hr class="divider" />
+
+  <section id="rating">
+    <div class="section-head"><span class="idx">02</span><h2>Design: fixing the rating algorithm</h2></div>
+    <p class="lede">Your read was correct, and it traces to one specific bug plus one structural gap — not a tuning problem.</p>
+
+    <h3>Why the 5-hour window always wins today</h3>
+    <p>Claude's 5-hour and weekly windows draw from the <em>same underlying allotment</em> — burning the 5-hour window spends weekly budget. Three things in <span class="path">analysis/use_or_lose.py</span> conspire to ignore that:</p>
+    <ol>
+      <li><b>Deadline urgency is absolute, not relative.</b> <code>days ≤ 0.5 → raw urgency 100</code>. A 5-hour window is <em>always</em> within half a day of reset, so it always maxes this term — the term can't tell the difference between "resets in 5 hours because it's a 5-hour window" and "resets in 5 hours because something's actually urgent."</li>
+      <li><b>The cancelled-out formula from §1.</b> Claude's 5-hour override sets <code>flexibility: 0.0</code>; the cycles-needed bug then always computes <code>1</code>, which always places the "earliest reasonable start time" in the past, which pins <code>flexibility_urgency</code> at exactly 100.</li>
+      <li><b>Nothing looks at sibling windows.</b> Each window is scored in isolation. The weekly window's actual state — 64% used with two days left — never factors into the 5-hour window's score at all.</li>
+    </ol>
+    <p>Verified against your live numbers (Session 3% used/resets ~5h; Weekly 64% used/resets ~2d): at your configured Max pricing, the 5-hour window scores <b>MEDIUM (72)</b> and is the only alert printed — the weekly is filtered out entirely by the <code>min_remaining_percent=40</code> gate before it's even scored (36% remaining &lt; 40).</p>
+
+    <div class="callout">
+      <span class="k">Recommendation</span>
+      Replace absolute-days deadline scoring with <b>pace-based projection</b>, and make short windows within a shared allotment report through their governing (longest) window instead of scoring independently.
+    </div>
+
+    <h3>The core idea: score pace, not deadline</h3>
+    <p>For any window with a known reset time and duration, compute <b>elapsed fraction</b> (how far through the cycle you are) against <b>used fraction</b> (how much you've burned). Project forward at the current pace — blended with a learned historical burn rate when available — to get <b>projected waste at reset</b>. Rank by <em>projected wasted dollars</em>, not by how soon the window happens to close.</p>
+
+    <table class="compare">
+      <thead><tr><th>Scenario</th><th>Elapsed</th><th>Used</th><th>Today's result</th><th>Pace-based result</th></tr></thead>
+      <tbody>
+        <tr><td>Weekly, your live data</td><td class="num">71%</td><td class="num">64%</td><td>Silently filtered</td><td><b>On pace</b> — silent, correctly this time</td></tr>
+        <tr><td>Weekly, nearly gone early</td><td class="num">57%</td><td class="num">90%</td><td>Silently filtered</td><td><b>Conserve</b> — "will lock out ~10h before reset"</td></tr>
+        <tr><td>Weekly, barely touched</td><td class="num">50%</td><td class="num">10%</td><td>Loses to any 5h alert</td><td><b>Burn</b> — ranked top by ~$27.60 projected waste</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Three states replace one urgency ladder</h3>
+    <ul>
+      <li><b>Burn</b> — projected waste at reset ≥ 30% of the window's value. This is today's alert, but ranked by real projected dollars instead of by raw remaining-%.</li>
+      <li><b>Conserve</b> — <em>new.</em> At current pace you'll be locked out before reset. Replaces today's silent <code>min_remaining_percent</code> gate with an actual advisory: "pace yourself, don't burn 5-hour sessions, this resets Thursday."</li>
+      <li><b>On pace</b> — no alert, matching expected consumption. Still visible in the per-window detail line so nothing looks broken, just quiet.</li>
+    </ul>
+
+    <h3>Shared-allotment gating — this is what stops the 5h window from winning</h3>
+    <p>For an account where multiple window durations share one real budget (Claude and OpenCode Go, by config), the <b>longest window with usable data governs</b>. Shorter sibling windows (the 5-hour) never emit their own alert — they only contribute burn logistics to the governing alert ("about 14 five-hour sessions' worth of headroom, start by Tuesday 9am"), and when the governing window is in Conserve state, the message explicitly warns against burning the short window. A lone 5-hour window with no weekly sibling still scores normally — this only suppresses the redundant, misleading half of a coupled pair.</p>
+
+    <div class="file-plan">
+      <div class="file-row"><div class="fp">models.py</div><div class="fd">Add nominal window-duration constants (300/10080/43800 min, not today's bucket-maximums), a <code>PaceProfile</code> dataclass, and a <code>kind</code> field (<code>burn</code>/<code>conserve</code>) plus optional <code>pace</code> on each alert — additive, existing JSON keys untouched.</div></div>
+      <div class="file-row"><div class="fp">analysis/pace.py <span class="mono">(new)</span></div><div class="fd">Pure functions: elapsed/used fractions, pace ratio, projected-waste extrapolation (optionally blended with a learned burn rate), classification into burn/conserve/on-pace, and the governing-window partition for shared-allotment accounts.</div></div>
+      <div class="file-row"><div class="fp">analysis/use_or_lose.py</div><div class="fd">New <code>scoring_mode: "pace"</code> path alongside the existing legacy and multi-dim paths (both kept, unchanged, as an explicit escape hatch); this also directly fixes the cancelled-out <code>cycles_needed</code> formula, since the fix requires real cycle counts anyway.</div></div>
+      <div class="file-row"><div class="fp">analysis/history.py</div><div class="fd">Extract the burn-rate computation that <code>compute_learned_flexibility</code> already does internally into a reusable <code>compute_learned_burn_rates()</code>, so pace projection and the existing flexibility-learning feature share one calculation instead of duplicating it.</div></div>
+      <div class="file-row"><div class="fp">config.py</div><div class="fd">New <code>analysis.pace</code> block (waste-alert threshold, confidence gates) and a per-provider <code>shared_allotment: true</code> flag, defaulted on for Claude and OpenCode Go, overridable back to independent scoring.</div></div>
+      <div class="file-row"><div class="fp">report.py</div><div class="fd">A new Conserve section rendered first (it's the anti-footgun case), existing action-plan buckets filtered to burn-kind alerts only, and a <code>pace 0.9x</code> fragment added to every per-window detail line so on-pace windows stay visible without alerting.</div></div>
+    </div>
+
+    <p class="lede">This is one of two independently-designed proposals compared for this problem; the surviving design also folds in the smaller "just fix the formula" alternative as a first, low-risk implementation step rather than requiring the full pace model up front.</p>
+  </section>
+
+  <hr class="divider" />
+
+  <section id="tokscale">
+    <div class="section-head"><span class="idx">03</span><h2>Design: containing tokscale's timeouts</h2></div>
+    <p class="lede">The honest constraint first: tokscale's CLI has no per-provider flag today. <code>tokscale usage --help</code> exposes only <code>--json</code>, <code>--light</code>, <code>--home</code> — confirmed both from the help text and by inspecting the binary's compiled string table. CodexBar's pattern (discover enabled providers, fan out one subprocess per provider) can't be replicated verbatim until that changes upstream.</p>
+
+    <div class="verdict-bar">
+      <span class="pill">tokscale usage --provider · not available</span>
+      <span class="pill on">tokscale usage --json · warm run ~1s</span>
+      <span class="pill">PATH shim: <code class="mono">exec npx tokscale@latest</code></span>
+    </div>
+
+    <h3>What's actually causing the risk, concretely</h3>
+    <ul>
+      <li>The <code>tokscale</code> on your PATH is a one-line shim — <code>exec npx tokscale@latest "$@"</code>. A cold npx resolution (observed today: it auto-installed <code>tokscale@4.7.0</code>) runs <em>inside</em> the collector's 120-second timeout budget, and <code>@latest</code> means the exact binary running on any given day is unpinned.</li>
+      <li>One bundled call means one slow or hanging provider inside tokscale's own serial querying takes down every provider it reports — Copilot, Grok, and Claude's tokscale-side reading alike — with a single generic error line and no partial data.</li>
+      <li>None of this shows up in normal use: a warm run today completed in ~1 second. The risk is specifically cold-start latency and any one upstream provider API stalling.</li>
+    </ul>
+
+    <div class="callout">
+      <span class="k">Recommendation — do now, no upstream dependency</span>
+      Pin the tokscale version the shim resolves (stop trusting <code>@latest</code> inside a timed collector), raise the bundled timeout to match CodexBar's own 180s bundled-fallback budget, and demote tokscale from "must succeed" to cross-check-only: if it fails, CodexBar's live data for the same providers still populates the report, exactly as the runner's existing selection logic (<span class="path">runner.py:111</span>) already prefers CodexBar when both are live. A tokscale failure should degrade the cross-check, never the primary report.
+    </div>
+
+    <h3>What true per-provider containment would require</h3>
+    <p>Two real paths, in order of how much they depend on tokscale changing upstream:</p>
+    <ol>
+      <li><b>An upstream <code>--provider</code> flag on <code>tokscale usage</code>.</b> Once it exists, <span class="path">collectors/tokscale.py</span> can mirror <span class="path">codexbar.py</span> exactly: a fast local discovery call, then one concurrent subprocess per provider with its own timeout and its own error isolation, falling back to today's single bundled call when an older tokscale version doesn't support the flag.</li>
+      <li><b>Per-integration subcommands as a stopgap.</b> tokscale already exposes separate <code>codex</code>, <code>cursor</code>, <code>antigravity</code>, <code>trae</code>, and <code>warp</code> subcommands for some integrations — worth checking by hand whether any of these expose the same usage data <code>tokscale usage</code> aggregates, which would let today's version get partial per-provider isolation without waiting on an upstream change. This wasn't confirmed hands-on before this review's usage budget ran out — flagging it as the one open question rather than a settled recommendation.</li>
+    </ol>
+
+    <p class="lede">Given tokscale is already the secondary source for every provider it shares with CodexBar (runner.py only selects it when CodexBar has nothing live), the pragmatic sequencing is: ship the containment fixes above immediately, and treat true per-provider fan-out as a follow-up gated on confirming subcommand (2) or landing a flag request upstream — not a blocker to closing out the timeout risk this week.</p>
+  </section>
+
+  <footer>
+    Synthesized from a 79-agent review run (findings + adversarial verification completed; two of the original five design-panel agents hit a usage-credit limit mid-run and are folded in here from the completed proposal plus hand-verified facts) · repo state includes the uncommitted working-tree diff to tokscale.py, use_or_lose.py, and report.py
+  </footer>
+
+</div>
+</body>
+</html>

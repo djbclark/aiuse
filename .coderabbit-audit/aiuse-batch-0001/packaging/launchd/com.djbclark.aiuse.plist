@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template: packaging/launchd/com.djbclark.aiuse.plist
+  Install: see docs/scheduling.md or packaging/launchd/install.sh
+
+  AIUSE_BIN is replaced by install.sh with the absolute path to `aiuse`.
+  StartInterval 3600 = every hour.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.djbclark.aiuse</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>AIUSE_BIN</string>
+		<string>-q</string>
+		<string>--json</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>USER_LOCAL_BIN:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>LOG_DIR/aiuse.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>LOG_DIR/aiuse.stderr.log</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

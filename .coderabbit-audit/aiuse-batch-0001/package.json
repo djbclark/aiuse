@@ -1,0 +1,10 @@
+{
+  "name": "ai",
+  "private": true,
+  "description": "Documentation formatting and linting for ai",
+  "devDependencies": {
+    "markdownlint-cli": "^0.48.0",
+    "prettier": "^3.8.2",
+    "prettier-plugin-toml": "^2.0.6"
+  }
+}

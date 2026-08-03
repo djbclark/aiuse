@@ -1,0 +1,71 @@
+---
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: ci-all-files
+        name: CI all-files quality gate
+        entry: uv run pre-commit run --all-files
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: mypy
+        name: mypy
+        entry: uv run --extra dev mypy src tests
+        language: system
+        pass_filenames: false
+        files: '\.py$'
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.48.0
+    hooks:
+      - id: typos
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        entry: bunx prettier --plugin=prettier-plugin-toml --check
+        language: system
+        files: '\.(md|toml)$'
+
+      - id: markdownlint
+        name: markdownlint
+        entry: bunx markdownlint --config .markdownlint.json
+        language: system
+        files: '\.md$'
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [-c, .yamllint]
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      - id: bandit
+        args: ["-ll"]
+        exclude: "^tests/"
+
+  - repo: local
+    hooks:
+      - id: semgrep
+        name: semgrep
+        entry: semgrep scan --config auto --quiet --error --exclude .github
+        language: system
+        pass_filenames: false
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks

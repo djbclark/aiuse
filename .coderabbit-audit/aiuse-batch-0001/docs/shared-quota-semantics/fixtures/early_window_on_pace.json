@@ -1,0 +1,37 @@
+{
+  "id": "early_window_on_pace",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "codex",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Codex weekly",
+        "used_percent": 40.0,
+        "remaining_percent": 60.0,
+        "resets_at": "2026-07-31T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "pace": {
+        "waste_alert_fraction": 0.30,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    },
+    "plans": { "codex": { "monthly_price": 20 } }
+  },
+  "expected": {
+    "pace_verdict": "on_pace",
+    "suggestion_eligible": false,
+    "notes": "Elapsed ~0.5/7 < 0.15 without learned rate → on_pace"
+  }
+}

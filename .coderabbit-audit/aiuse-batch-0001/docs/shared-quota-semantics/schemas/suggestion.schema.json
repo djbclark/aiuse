@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djbclark/aiuse/docs/shared-quota-semantics/schemas/suggestion.schema.json",
+  "title": "Suggestion",
+  "type": ["object", "null"],
+  "additionalProperties": true,
+  "properties": {
+    "provider": { "type": "string" },
+    "account": { "type": ["string", "null"] },
+    "window_label": { "type": "string" },
+    "kind": { "type": "string", "const": "burn" },
+    "urgency": { "type": "string" },
+    "remaining_percent": { "type": "number" },
+    "days_until_reset": { "type": ["number", "null"] },
+    "score": { "type": "number" },
+    "reason": { "type": "string" },
+    "source": { "type": "string" },
+    "plan": { "type": ["string", "null"] }
+  }
+}

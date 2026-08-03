@@ -1,0 +1,7 @@
+# Shared billing_kind enum
+version: "0.1.0"
+values:
+  - subscription_window
+  - prepaid_balance
+  - payg_api
+  - unknown

@@ -1,0 +1,17 @@
+{
+  "id": "error_account",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "cswap",
+    "provider": "claude",
+    "account": "broken@example.com",
+    "billing_kind": "unknown",
+    "error": "No Claude session key",
+    "windows": []
+  },
+  "expected": {
+    "band": "error",
+    "suggestion_eligible": false,
+    "notes": "Failed collect row is error band, never suggestion"
+  }
+}

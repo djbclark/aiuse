@@ -1,0 +1,12 @@
+# Window duration class bounds (minutes)
+version: "0.1.0"
+classes:
+  "5h":
+    max_minutes: 360
+    nominal_minutes: 300
+  weekly:
+    max_minutes: 10080
+    nominal_minutes: 10080
+  monthly:
+    max_minutes: 44640
+    nominal_minutes: 43800

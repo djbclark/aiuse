@@ -1,0 +1,9 @@
+# Decision / display bands (sort lanes). Order is top-to-bottom of the ladder.
+version: "0.1.0"
+values:
+  - error
+  - empty
+  - n_a
+  - slow
+  - mid
+  - use

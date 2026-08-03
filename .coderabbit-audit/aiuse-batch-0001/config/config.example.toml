@@ -1,0 +1,59 @@
+# Copy to: $XDG_CONFIG_HOME/aiuse/config.toml (or ~/.config/aiuse/config.toml).
+# This is the single canonical user configuration file. Keep it small: every
+# setting below is optional, because aiuse supplies useful built-in defaults.
+
+[timeouts]
+# Wall-clock seconds for external tools. Per-tool entries override default.
+# default = 45
+# cswap = 45
+# codexbar = 45
+# openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
+# openusage_sh = 45  # OpenUsage.sh terminal dashboard
+# opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
+# tokscale = 45
+
+[collectors.caut]
+# Set false when caut is not installed or its Keychain access is unwanted.
+# enabled = false
+
+[collectors.codexbar]
+# "enabled" honors CodexBar's own provider list; use "all" or a CSV to override.
+# providers = "enabled"
+
+[collectors.openusage_ai]
+# OpenUsage.ai — the macOS menu-bar app's CLI / loopback API.
+# enabled = true
+
+[collectors.openusage_sh]
+# OpenUsage.sh — terminal dashboard, invoked through `openusage-sh`.
+# enabled = true
+
+[collectors.opencode_zen]
+# Optional direct OpenCode Zen billing source. Enable it by exporting
+# AIUSE_OPENCODE_ZEN_COOKIE with an existing OpenCode console Cookie header.
+# The cookie is never stored in this file.
+# enabled = true
+
+# Usually unnecessary: aiuse automatically unifies a provider when every live
+# source reports exactly one named account.  For a genuinely multi-account
+# provider, map a source-local id to the account label used elsewhere.
+# [account_aliases.codex.openusage_sh]
+# "codex-cli" = "me@example.com"
+
+[analysis]
+# Persist hourly/manual snapshots for History learning.
+# persist_snapshots = true
+# learn_from_history = "auto" # true | false | auto
+
+[analysis.pace]
+# waste_alert_fraction = 0.30
+# min_elapsed_fraction = 0.15
+# conserve_min_lead_hours = 4.0
+
+[plans.copilot]
+# Override plan metadata when it differs from the built-in Individual plan.
+# monthly_price = 10
+
+# Optional macOS codesign identity for `aiuse trust sign-caut`.
+# [macos]
+# codesign_identity = "aiuse-local-codesign"

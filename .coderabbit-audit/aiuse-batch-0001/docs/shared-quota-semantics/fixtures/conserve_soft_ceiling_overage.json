@@ -1,0 +1,46 @@
+{
+  "id": "conserve_soft_ceiling_overage",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "cswap",
+    "provider": "claude",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Claude Code weekly",
+        "used_percent": 85.0,
+        "remaining_percent": 15.0,
+        "resets_at": "2026-07-28T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ],
+    "usage_credits": {
+      "used": 5.0,
+      "limit": 20.0,
+      "remaining": 15.0,
+      "used_percent": 25.0
+    }
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "pace": {
+        "waste_alert_fraction": 0.30,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    },
+    "plans": { "claude": { "monthly_price": 20 } }
+  },
+  "expected": {
+    "pace_verdict": "conserve",
+    "alert_kind": "conserve",
+    "band": "slow",
+    "suggestion_eligible": false,
+    "has_overage": true,
+    "notes": "Same mid-cycle high-use shape as conserve_fast_burn, but usage_credits is present → soft-ceiling conserve (issue #20 / Phase 3): real risk is unplanned $ spend, not lockout."
+  }
+}

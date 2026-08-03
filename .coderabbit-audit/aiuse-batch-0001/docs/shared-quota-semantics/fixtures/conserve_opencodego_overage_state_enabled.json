@@ -1,0 +1,40 @@
+{
+  "id": "conserve_opencodego_overage_state_enabled",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "openusage_ai",
+    "provider": "opencode",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "OpenCode Go weekly",
+        "used_percent": 85.0,
+        "remaining_percent": 15.0,
+        "resets_at": "2026-07-28T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "provider_overrides": { "opencode": { "overage_state": "enabled" } },
+      "pace": {
+        "waste_alert_fraction": 0.30,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    }
+  },
+  "expected": {
+    "pace_verdict": "conserve",
+    "alert_kind": "conserve",
+    "band": "slow",
+    "suggestion_eligible": false,
+    "has_overage": true,
+    "notes": "OpenCode Go's Zen-balance fallback is confirmed undetectable programmatically (audit doc Phase 3) — a manually set provider_overrides.opencode.overage_state: \"enabled\" is the only way aiuse can know overage is available here, since no collector populates usage_credits for this account."
+  }
+}

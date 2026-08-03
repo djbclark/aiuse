@@ -1,0 +1,6 @@
+# Shared alert kind enum (use-or-lose decision kind)
+version: "0.1.0"
+values:
+  - burn
+  - conserve
+  - prepaid

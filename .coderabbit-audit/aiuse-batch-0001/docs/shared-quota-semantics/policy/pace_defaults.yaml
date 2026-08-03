@@ -1,0 +1,7 @@
+# Default pace thresholds (parameters, not hard law)
+version: "0.1.0"
+pace_defaults:
+  waste_alert_fraction: 0.30
+  min_elapsed_fraction: 0.15
+  conserve_min_lead_hours: 4.0
+  e_min: 0.05
