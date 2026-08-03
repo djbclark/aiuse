@@ -1,0 +1,50 @@
+{
+  "id": "opencodego_nested_windows",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "openusage_ai",
+    "provider": "opencode",
+    "account": "user@example.com",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "OpenCode Go 5-hour",
+        "used_percent": 3.0,
+        "remaining_percent": 97.0,
+        "resets_at": "2026-07-25T16:00:00+00:00",
+        "window_minutes": 300
+      },
+      {
+        "label": "OpenCode Go weekly",
+        "used_percent": 5.0,
+        "remaining_percent": 95.0,
+        "resets_at": "2026-07-26T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "provider_overrides": { "opencode": { "shared_allotment": true } },
+      "pace": {
+        "waste_alert_fraction": 0.3,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    },
+    "plans": { "opencode": { "monthly_price": 20 } }
+  },
+  "expected": {
+    "governing_label": "OpenCode Go weekly",
+    "pace_verdict": "burn",
+    "alert_kind": "burn",
+    "band": "use",
+    "suggestion_eligible": true,
+    "suppressed_labels": ["OpenCode Go 5-hour"],
+    "notes": "OpenCode Go nests 5h inside weekly the same as Claude (Rule S1, shared_allotment defaults to true for opencode); a fresh 5h must not out-rank or duplicate-alert the governing weekly."
+  }
+}

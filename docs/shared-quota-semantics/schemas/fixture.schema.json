@@ -17,7 +17,12 @@
         "account": { "type": ["string", "null"] },
         "billing_kind": {
           "type": "string",
-          "enum": ["subscription_window", "prepaid_balance", "payg_api", "unknown"]
+          "enum": [
+            "subscription_window",
+            "prepaid_balance",
+            "payg_api",
+            "unknown"
+          ]
         },
         "windows": { "type": "array" },
         "balance_usd": { "type": ["number", "null"] },
@@ -46,6 +51,8 @@
         "suggestion_eligible": { "type": "boolean" },
         "governing_label": { "type": ["string", "null"] },
         "has_overage": { "type": "boolean" },
+        "alert_labels": { "type": "array", "items": { "type": "string" } },
+        "suppressed_labels": { "type": "array", "items": { "type": "string" } },
         "notes": { "type": "string" }
       }
     }
