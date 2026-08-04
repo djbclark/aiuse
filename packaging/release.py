@@ -544,6 +544,17 @@ def main(argv: list[str] | None = None) -> int:
         _ensure_clean_tree(allow_dirty=bool(args.allow_dirty))
 
     current = _current_version()
+
+    def version_tuple(v: str) -> tuple[int, int, int, int, str]:
+        m = re.match(r"^(\d+)\.(\d+)\.(\d+)(.*)$", v)
+        if not m:
+            return (0, 0, 0, 0, v)
+        weight = 1 if not m.group(4) else 0
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3)), weight, m.group(4))
+
+    if version_tuple(version) < version_tuple(current):
+        raise ReleaseError(f"refusing to downgrade version from {current} to {version}")
+
     _log(f"current version: {current} → {version}")
     if current == version and not dry:
         _log("version already set; continuing with tag/release/homebrew steps")
