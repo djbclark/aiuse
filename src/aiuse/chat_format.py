@@ -610,7 +610,7 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     if account.balance_usd is not None:
         bal = account.balance_usd
         if bal < 0:
-            lines.append(f"   ↳ `Balance: ${bal:.2f}` · no expiry")
+            lines.append(f"   ↳ `Balance: -${abs(bal):.2f}` · no expiry")
             lines.append("   ↳ Negative balance reported; do not treat this as available capacity.")
         elif bal == 0:
             lines.append("   ↳ `empty`")
