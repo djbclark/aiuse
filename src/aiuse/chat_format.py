@@ -610,7 +610,8 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     if account.balance_usd is not None:
         bal = account.balance_usd
         if bal < 0:
-            lines.append(f"   ↳ `Balance: ${bal:.2f}` · empty")
+            lines.append(f"   ↳ `Balance: ${bal:.2f}` · no expiry")
+            lines.append("   ↳ Negative balance reported; do not treat this as available capacity.")
         elif bal == 0:
             lines.append("   ↳ `empty`")
         else:
@@ -618,7 +619,8 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     elif account.credits_remaining is not None:
         creds = account.credits_remaining
         if creds < 0:
-            lines.append(f"   ↳ `{creds:g} credits remaining` · empty")
+            lines.append(f"   ↳ `{creds:g} credits remaining` · no expiry")
+            lines.append("   ↳ Negative balance reported; do not treat this as available capacity.")
         elif creds == 0:
             lines.append("   ↳ `empty`")
         else:
