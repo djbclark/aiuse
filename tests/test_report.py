@@ -933,6 +933,25 @@ def test_priority_ladder_lists_antigravity_pools_separately():
     assert "Claude/GPT weekly" in text2
 
 
+def test_negative_prepaid_is_empty_band():
+    """Negative/zero prepaid balance should be classified as empty, not n/a."""
+    from aiuse.models import AccountUsage, BillingKind, Snapshot, utcnow
+    from aiuse.report import render_priority_ladder
+
+    acc = AccountUsage(
+        source="codexbar",
+        provider="opencode-zen",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=-0.04,
+        windows=[],
+    )
+    snap = Snapshot(collected_at=utcnow(), accounts=[acc])
+    text = render_priority_ladder([], snapshot=snap, color=False)
+    assert text.startswith("empty")
+    assert "n/a" not in text
+    assert "-0.04" in text
+
+
 def test_deepseek_prepaid_has_no_use_urgency():
     """Deepseek CodexBar row is prepaid tokens — not '100% left · use before reset'."""
     from aiuse.models import BillingKind, QuotaWindow

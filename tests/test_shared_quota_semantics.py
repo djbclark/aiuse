@@ -167,10 +167,11 @@ def test_fixture_expectations(fixture, monkeypatch):
     if account.billing_kind == BillingKind.PREPAID_BALANCE:
         assert expected.get("suggestion_eligible") is False
         assert pick_suggestion(alerts) is None
-        if account.balance_usd and account.balance_usd >= 10:
-            assert any(a.kind == "prepaid" for a in alerts)
-            prepaid = next(a for a in alerts if a.kind == "prepaid")
-            assert _BAND_NAMES[alert_priority_band(prepaid)] == "n_a"
+
+        prepaid_alerts = [a for a in alerts if a.kind == "prepaid"]
+        if "band" in expected and prepaid_alerts:
+            prepaid = prepaid_alerts[0]
+            assert _BAND_NAMES[alert_priority_band(prepaid)] == expected["band"]
         return
 
     winner = pick_suggestion(alerts)

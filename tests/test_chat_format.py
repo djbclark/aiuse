@@ -391,7 +391,7 @@ class TestGoverningWarnings:
         # Monthly row should have the warning.
         monthly_row = [r for r in rows if r.window.label == "monthly"][0]
         assert monthly_row.governing_warning is not None
-        assert "exhausted budget" in monthly_row.governing_warning
+        assert "exhausted monthly budget" in monthly_row.governing_warning
 
         # Shorter windows should NOT have warnings.
         for r in rows:
@@ -620,7 +620,7 @@ class TestRenderChatReport:
         )
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
-        assert "exhausted budget" in output
+        assert "exhausted monthly budget" in output
 
     def test_action_section_appears(self):
         alerts = [

@@ -1,0 +1,18 @@
+{
+  "id": "prepaid_negative",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "opencode_zen",
+    "account": null,
+    "billing_kind": "prepaid_balance",
+    "balance_usd": -0.04,
+    "windows": []
+  },
+  "expected": {
+    "band": "empty",
+    "alert_kind": "prepaid",
+    "suggestion_eligible": false,
+    "notes": "Negative/zero non-expiring balance must rank as empty"
+  }
+}

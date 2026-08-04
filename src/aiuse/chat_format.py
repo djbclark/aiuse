@@ -19,6 +19,7 @@ from aiuse.models import (
     BillingKind,
     PaceProfile,
     QuotaWindow,
+    RoutingContext,
     Snapshot,
     UseOrLoseAlert,
     classify_window_minutes,
@@ -44,6 +45,17 @@ MAX_ACTION_ITEMS = 5
 
 # Window-duration sort order (shorter first).
 _DURATION_ORDER = {"5h": 0, "daily": 1, "weekly": 2, "monthly": 3}
+
+
+def _format_english_list(items: list[str]) -> str:
+    """Format a list of strings into proper English (e.g., A, B, and C)."""
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
 
 # ---------------------------------------------------------------------------
@@ -369,9 +381,9 @@ def _apply_governing_warnings(rows: list[_WindowRow]) -> None:
                 continue  # Governing is not exhausted; no warning needed.
             siblings_with_capacity = [r for r in pool_rows if r is not governing and r.remaining > 0]
             if siblings_with_capacity:
-                governing.governing_warning = (
-                    "The shorter windows may still show open capacity, but they draw this same exhausted budget."
-                )
+                sibs_str = _format_english_list([r.cadence for r in siblings_with_capacity])
+                gov_cad = governing.cadence
+                governing.governing_warning = f"The shorter windows ({sibs_str}) may still show open capacity, but they draw this same exhausted {gov_cad} budget."
 
 
 # ---------------------------------------------------------------------------
@@ -473,12 +485,18 @@ def _monthly_pacing_note(
     missing_names = sorted(provider_display_name(p) for p in missing)
     has_names = sorted(provider_display_name(p) for p in has_monthly)
 
+    missing_str = _format_english_list(missing_names)
+    verb = "are" if len(missing_names) > 1 else "is"
+
     if has_names:
-        has_part = f"aiuse reports a true monthly window for {', '.join(has_names)}, but "
-        miss_part = f"{' and '.join(missing_names)} {'are' if len(missing_names) > 1 else 'is'} reported as weekly windows, so weekly pacing is shown instead of inventing monthly data"
+        has_str = _format_english_list(has_names)
+        has_part = f"aiuse reports a true monthly window for {has_str}, but "
+        miss_part = f"{missing_str} {verb} reported as weekly windows, so weekly pacing is shown instead of inventing monthly data"
         return f"{has_part}{miss_part}"
 
-    miss_part = f"{' and '.join(missing_names)} {'are' if len(missing_names) > 1 else 'is'} reported as weekly windows; weekly pacing is shown instead of inventing monthly data"
+    miss_part = (
+        f"{missing_str} {verb} reported as weekly windows; weekly pacing is shown instead of inventing monthly data"
+    )
     return miss_part
 
 
@@ -487,7 +505,11 @@ def _monthly_pacing_note(
 # ---------------------------------------------------------------------------
 
 
-def _build_action_items(alerts: list[UseOrLoseAlert]) -> list[str]:
+def _build_action_items(
+    alerts: list[UseOrLoseAlert],
+    routing_context: RoutingContext | None = None,
+    sub_rows: list[_WindowRow] | None = None,
+) -> list[str]:
     """Build deterministic action items from alerts.
 
     Priority:
@@ -499,6 +521,20 @@ def _build_action_items(alerts: list[UseOrLoseAlert]) -> list[str]:
     """
     items: list[str] = []
     seen_pools: set[tuple[str, str | None]] = set()
+
+    if routing_context is not None and sub_rows is not None:
+        primary_prov = routing_context.primary_provider
+        primary_rows = [r for r in sub_rows if r.provider == primary_prov]
+        if primary_rows:
+            min_remaining = min(r.remaining for r in primary_rows)
+            if min_remaining >= 25:
+                name = provider_display_name(primary_prov)
+                rem = _format_remaining(min_remaining)
+                items.append(f"Keep {name} as primary: it has `{rem}` remaining, above the `25%` stability threshold")
+
+        if routing_context.fallback_provider:
+            name = provider_display_name(routing_context.fallback_provider)
+            items.append(f"Use {name} as the free fallback")
 
     # Sort alerts into priority buckets.
     buckets: list[list[UseOrLoseAlert]] = [[] for _ in range(5)]
@@ -597,7 +633,23 @@ def _prepaid_sort_key(account: AccountUsage) -> tuple[Any, ...]:
 # ---------------------------------------------------------------------------
 
 
-def render_chat_report(snapshot: Snapshot, alerts: list[UseOrLoseAlert]) -> str:
+def _render_routing(routing: RoutingContext) -> str:
+    lines = ["🎯 **ROUTING**", ""]
+    primary_prov = provider_display_name(routing.primary_provider)
+    primary = f"`{routing.primary_model}` via `{primary_prov}`"
+    lines.append(f"Primary: {primary}")
+    if routing.fallback_model and routing.fallback_provider:
+        fallback_prov = provider_display_name(routing.fallback_provider)
+        fallback = f"`{routing.fallback_model}` via `{fallback_prov}`"
+        lines.append(f"Fallback: {fallback}")
+    return "\n".join(lines)
+
+
+def render_chat_report(
+    snapshot: Snapshot,
+    alerts: list[UseOrLoseAlert],
+    routing_context: RoutingContext | None = None,
+) -> str:
     """Deterministic rich chat-format renderer.
 
     Produces structured output with emoji status markers, pacing language,
@@ -609,6 +661,9 @@ def render_chat_report(snapshot: Snapshot, alerts: list[UseOrLoseAlert]) -> str:
     # --- Header ---
     ts = snapshot.collected_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sections.append(f"🤖 **AI USAGE · {ts}**\n━━━━━━━━━━━━━━━━━━━━")
+
+    if routing_context is not None:
+        sections.append(_render_routing(routing_context))
 
     # --- Build alert index ---
     alert_idx = _build_alert_index(alerts)
@@ -686,7 +741,7 @@ def render_chat_report(snapshot: Snapshot, alerts: list[UseOrLoseAlert]) -> str:
         sections.append(f"{EMOJI_INFO} **MONTHLY PACING NOTE**\n   ↳ {note}")
 
     # --- Action section ---
-    action_items = _build_action_items(alerts)
+    action_items = _build_action_items(alerts, routing_context=routing_context, sub_rows=sub_rows)
     if action_items:
         lines = ["📌 **ACTION**"]
         for item in action_items:

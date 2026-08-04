@@ -9,6 +9,19 @@ from enum import Enum
 from typing import Any
 
 
+@dataclass
+class RoutingContext:
+    """External routing context supplied by Hermes or another orchestrator."""
+
+    primary_model: str
+    primary_provider: str
+    fallback_model: str | None = None
+    fallback_provider: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 

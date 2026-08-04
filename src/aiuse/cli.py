@@ -135,6 +135,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     p.add_argument(
+        "--routing-context",
+        help="JSON string with Hermes routing context (primary_model, primary_provider, fallback_model, fallback_provider)",
+    )
+    p.add_argument(
         "--serve",
         action="store_true",
         help=argparse.SUPPRESS,
@@ -479,7 +483,22 @@ def _main_inner(argv: list[str] | None = None) -> int:
     if as_chat:
         from aiuse.chat_format import render_chat_report
 
-        print(render_chat_report(snapshot, alerts))
+        routing_context = None
+        if getattr(args, "routing_context", None):
+            try:
+                r_dict = json.loads(args.routing_context)
+                from aiuse.models import RoutingContext
+
+                routing_context = RoutingContext(
+                    primary_model=r_dict["primary_model"],
+                    primary_provider=r_dict["primary_provider"],
+                    fallback_model=r_dict.get("fallback_model"),
+                    fallback_provider=r_dict.get("fallback_provider"),
+                )
+            except Exception as e:
+                print(f"Warning: could not parse --routing-context: {e}", file=sys.stderr)
+
+        print(render_chat_report(snapshot, alerts, routing_context=routing_context))
         return exit_code
 
     from aiuse.tui import run_inline_report, should_use_tui
