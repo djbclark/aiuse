@@ -36,6 +36,7 @@ from aiuse.models import (
     BillingKind,
     PaceProfile,
     QuotaWindow,
+    RoutingContext,
     Snapshot,
     Urgency,
     UseOrLoseAlert,
@@ -391,7 +392,7 @@ class TestGoverningWarnings:
         # Monthly row should have the warning.
         monthly_row = [r for r in rows if r.window.label == "monthly"][0]
         assert monthly_row.governing_warning is not None
-        assert "exhausted monthly budget" in monthly_row.governing_warning
+        assert "exhausted 'monthly' budget" in monthly_row.governing_warning
 
         # Shorter windows should NOT have warnings.
         for r in rows:
@@ -520,6 +521,19 @@ class TestActionItems:
         # Same provider+account should be deduped.
         assert len(items) == 1
 
+    def test_routing_action_aliasing(self):
+        # Hermes uses 'openai-codex', aiuse account uses 'codex'
+        routing = RoutingContext(
+            primary_model="gpt-5",
+            primary_provider="openai-codex",
+        )
+        weekly = _window("weekly", remaining=49.0, window_minutes=10080)
+        row = _WindowRow("codex", "user@example.com", weekly, None)
+        items = _build_action_items([], routing_context=routing, sub_rows=[row])
+        assert len(items) >= 1
+        assert "Keep Codex as primary" in items[0]
+        assert "49%" in items[0]
+
     def test_prepaid_excluded(self):
         alerts = [
             _alert(kind="prepaid", remaining=50.0, urgency=Urgency.MEDIUM),
@@ -567,6 +581,7 @@ class TestRenderChatReport:
         output = render_chat_report(snap, [])
         assert "PREPAID" in output
         assert "$4.03" in output
+        assert "no expiry" in output
         assert EMOJI_PREPAID in output
 
     def test_negative_prepaid_warning(self):
@@ -578,8 +593,22 @@ class TestRenderChatReport:
         )
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
-        assert "-$0.04" in output
-        assert "Negative balance" in output
+        assert "empty" in output
+        assert "$-0.04" in output
+        assert "Balance: $-0.04" in output
+
+    def test_zero_prepaid_balance(self):
+        acc = _account(
+            provider="opencode_zen",
+            billing_kind=BillingKind.PREPAID_BALANCE,
+            balance_usd=0.00,
+            windows=[],
+        )
+        snap = _snapshot([acc])
+        output = render_chat_report(snap, [])
+        assert "empty" in output
+        assert "$0.00" not in output
+        assert "Negative balance" not in output
 
     def test_account_email_shown(self):
         """Spec §10: always show account email when known."""
@@ -620,7 +649,7 @@ class TestRenderChatReport:
         )
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
-        assert "exhausted monthly budget" in output
+        assert "exhausted 'monthly' budget" in output
 
     def test_action_section_appears(self):
         alerts = [

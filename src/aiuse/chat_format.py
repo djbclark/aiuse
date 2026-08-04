@@ -381,9 +381,8 @@ def _apply_governing_warnings(rows: list[_WindowRow]) -> None:
                 continue  # Governing is not exhausted; no warning needed.
             siblings_with_capacity = [r for r in pool_rows if r is not governing and r.remaining > 0]
             if siblings_with_capacity:
-                sibs_str = _format_english_list([r.cadence for r in siblings_with_capacity])
-                gov_cad = governing.cadence
-                governing.governing_warning = f"The shorter windows ({sibs_str}) may still show open capacity, but they draw this same exhausted {gov_cad} budget."
+                sibs_str = _format_english_list([f"'{r.window.label}'" for r in siblings_with_capacity])
+                governing.governing_warning = f"The shorter {sibs_str} windows may still show open capacity, but they draw from this same exhausted '{governing.window.label}' budget."
 
 
 # ---------------------------------------------------------------------------
@@ -490,14 +489,9 @@ def _monthly_pacing_note(
 
     if has_names:
         has_str = _format_english_list(has_names)
-        has_part = f"aiuse reports a true monthly window for {has_str}, but "
-        miss_part = f"{missing_str} {verb} reported as weekly windows, so weekly pacing is shown instead of inventing monthly data"
-        return f"{has_part}{miss_part}"
+        return f"aiuse reports a true monthly window for {has_str}. Note: {missing_str} {verb} reported on a weekly cadence. Pacing is shown against these weekly windows instead of inventing monthly data."
 
-    miss_part = (
-        f"{missing_str} {verb} reported as weekly windows; weekly pacing is shown instead of inventing monthly data"
-    )
-    return miss_part
+    return f"Note: {missing_str} {verb} reported on a weekly cadence. Pacing is shown against these weekly windows instead of inventing monthly data."
 
 
 # ---------------------------------------------------------------------------
@@ -527,10 +521,20 @@ def _build_action_items(
         primary_rows = [r for r in sub_rows if r.provider == primary_prov]
         if primary_rows:
             min_remaining = min(r.remaining for r in primary_rows)
+            name = provider_display_name(primary_prov)
+            rem = _format_remaining(min_remaining)
             if min_remaining >= 25:
-                name = provider_display_name(primary_prov)
-                rem = _format_remaining(min_remaining)
                 items.append(f"Keep {name} as primary: it has `{rem}` remaining, above the `25%` stability threshold")
+            else:
+                if routing_context.fallback_provider:
+                    fallback_name = provider_display_name(routing_context.fallback_provider)
+                    items.append(
+                        f"Switch primary to {fallback_name}: {name} is below the `25%` stability threshold (`{rem}` remaining)"
+                    )
+                else:
+                    items.append(
+                        f"Primary {name} is below the `25%` stability threshold (`{rem}` remaining), but no fallback is configured"
+                    )
 
         if routing_context.fallback_provider:
             name = provider_display_name(routing_context.fallback_provider)
@@ -606,12 +610,19 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     if account.balance_usd is not None:
         bal = account.balance_usd
         if bal < 0:
-            lines.append(f"   ↳ `-${abs(bal):.2f}` balance · no expiry")
-            lines.append("   ↳ Negative balance reported; do not treat this as available capacity")
+            lines.append(f"   ↳ `Balance: ${bal:.2f}` · empty")
+        elif bal == 0:
+            lines.append("   ↳ `empty`")
         else:
             lines.append(f"   ↳ `Balance: ${bal:.2f}` · no expiry")
     elif account.credits_remaining is not None:
-        lines.append(f"   ↳ `{account.credits_remaining:g} credits remaining` · no expiry")
+        creds = account.credits_remaining
+        if creds < 0:
+            lines.append(f"   ↳ `{creds:g} credits remaining` · empty")
+        elif creds == 0:
+            lines.append("   ↳ `empty`")
+        else:
+            lines.append(f"   ↳ `{creds:g} credits remaining` · no expiry")
     else:
         lines.append("   ↳ API balance · no expiry")
 

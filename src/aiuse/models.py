@@ -18,8 +18,21 @@ class RoutingContext:
     fallback_model: str | None = None
     fallback_provider: str | None = None
 
+    def __post_init__(self):
+        self.primary_provider = normalize_provider(self.primary_provider)
+        if self.fallback_provider:
+            self.fallback_provider = normalize_provider(self.fallback_provider)
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def normalize_provider(provider: str) -> str:
+    """Normalize external provider IDs (like 'openai-codex') to internal canonical keys."""
+    if not provider:
+        return provider
+    key = provider.lower()
+    return EXTERNAL_PROVIDER_ALIASES.get(key, key)
 
 
 def utcnow() -> datetime:
@@ -83,6 +96,11 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
 PROVIDER_CONFIG_ALIASES: dict[str, str] = {
     "antigravity": "gemini",
     "opencode-go": "opencode",
+}
+
+# Map external orchestrator (e.g. Hermes) provider IDs to aiuse canonical providers.
+EXTERNAL_PROVIDER_ALIASES: dict[str, str] = {
+    "openai-codex": "codex",
 }
 
 
