@@ -420,26 +420,14 @@ def _select_long_cycle_highlights(
             seen.add(id(row))
             continue
 
-    # 3 & 4: Weekly windows with notable alerts.
+    # 3: All weekly windows.
     for row in rows:
         if id(row) in seen:
             continue
         cadence = classify_window_minutes(row.window.window_minutes)
-        if cadence != "weekly":
-            continue
-        if row.alert is None:
-            continue
-        # Projected to exhaust → conserve alert.
-        if row.alert.kind == "conserve":
+        if cadence == "weekly":
             selected.append(row)
             seen.add(id(row))
-            continue
-        # Significant waste projected.
-        pace = row.alert.pace
-        if pace and pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= 0.20:
-            selected.append(row)
-            seen.add(id(row))
-            continue
 
     return selected
 

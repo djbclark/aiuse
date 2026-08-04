@@ -445,11 +445,11 @@ class TestLongCycleHighlights:
         selected = _select_long_cycle_highlights([row], [])
         assert len(selected) == 1
 
-    def test_non_monthly_non_alerted_excluded(self):
+    def test_weekly_non_alerted_included(self):
         weekly = _window("weekly", remaining=80.0, window_minutes=10080)
         row = _WindowRow("provider", None, weekly, None)
         selected = _select_long_cycle_highlights([row], [])
-        assert len(selected) == 0
+        assert len(selected) == 1
 
     def test_weekly_conserve_included(self):
         weekly = _window("weekly", remaining=20.0, window_minutes=10080)
