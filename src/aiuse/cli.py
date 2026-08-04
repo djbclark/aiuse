@@ -337,8 +337,6 @@ def _main_inner(argv: list[str] | None = None) -> int:
 
     args = build_parser().parse_args(_normalize_argv(argv))
     if getattr(args, "schema", False):
-        from pathlib import Path
-
         local_path = Path(__file__).resolve().parents[2] / "docs" / "json-contract.md"
         if local_path.is_file():
             print(local_path.read_text("utf-8"))
