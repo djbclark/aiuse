@@ -23,7 +23,7 @@
       "min_value_fraction": 0,
       "provider_overrides": { "opencode": { "overage_state": "enabled" } },
       "pace": {
-        "waste_alert_fraction": 0.30,
+        "waste_alert_fraction": 0.3,
         "min_elapsed_fraction": 0.15,
         "conserve_min_lead_hours": 4.0
       }

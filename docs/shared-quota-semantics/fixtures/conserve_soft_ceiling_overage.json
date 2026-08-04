@@ -28,7 +28,7 @@
       "min_value_at_risk_usd": 0,
       "min_value_fraction": 0,
       "pace": {
-        "waste_alert_fraction": 0.30,
+        "waste_alert_fraction": 0.3,
         "min_elapsed_fraction": 0.15,
         "conserve_min_lead_hours": 4.0
       }

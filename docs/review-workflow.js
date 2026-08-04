@@ -18,18 +18,25 @@
 // cache and only re-executes new/changed ones.
 
 export const meta = {
-  name: 'ai-project-ultra-review',
-  description: 'Multi-agent review of the ai quota CLI plus design panels for tokscale timeouts and rating algorithm',
+  name: "ai-project-ultra-review",
+  description:
+    "Multi-agent review of the ai quota CLI plus design panels for tokscale timeouts and rating algorithm",
   phases: [
-    { title: 'Review', detail: 'six dimension finders over collectors, analysis, report, tests' },
-    { title: 'Verify', detail: 'adversarial verification of each finding' },
-    { title: 'Design', detail: 'independent proposals: tokscale containment, rating redesign' },
-    { title: 'Judge', detail: 'judge + synthesis per design topic' },
+    {
+      title: "Review",
+      detail: "six dimension finders over collectors, analysis, report, tests",
+    },
+    { title: "Verify", detail: "adversarial verification of each finding" },
+    {
+      title: "Design",
+      detail: "independent proposals: tokscale containment, rating redesign",
+    },
+    { title: "Judge", detail: "judge + synthesis per design topic" },
   ],
-}
+};
 
-const ROOT = '/Users/djbclark/src/ai'
-const SP = args.scratchpad
+const ROOT = "/Users/djbclark/src/ai";
+const SP = args.scratchpad;
 
 const CONTEXT = `
 PROJECT CONTEXT — the "ai" CLI (${ROOT}, Python 3.14, src layout at src/aiuse/, tests in tests/).
@@ -55,71 +62,118 @@ multi-dim path, and renames a report section.
 Use absolute paths when reading files. You may run read-only commands and
 ${ROOT}/.venv/bin/python for experiments. Do NOT modify any files, do NOT run git commands that
 change state, do NOT run any external CLI subcommand that logs in, submits, or deletes data.
-`
+`;
 
 const FINDINGS_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
     findings: {
-      type: 'array',
+      type: "array",
       maxItems: 10,
       items: {
-        type: 'object',
+        type: "object",
         properties: {
-          file: { type: 'string', description: 'repo-relative path, e.g. src/aiuse/analysis/use_or_lose.py' },
-          line: { type: 'integer' },
-          title: { type: 'string' },
-          severity: { enum: ['critical', 'major', 'minor', 'nit'] },
-          category: { type: 'string' },
-          description: { type: 'string' },
-          failure_scenario: { type: 'string', description: 'concrete inputs/state -> wrong output' },
-          suggested_fix: { type: 'string' },
+          file: {
+            type: "string",
+            description:
+              "repo-relative path, e.g. src/aiuse/analysis/use_or_lose.py",
+          },
+          line: { type: "integer" },
+          title: { type: "string" },
+          severity: { enum: ["critical", "major", "minor", "nit"] },
+          category: { type: "string" },
+          description: { type: "string" },
+          failure_scenario: {
+            type: "string",
+            description: "concrete inputs/state -> wrong output",
+          },
+          suggested_fix: { type: "string" },
         },
-        required: ['file', 'title', 'severity', 'description', 'failure_scenario'],
+        required: [
+          "file",
+          "title",
+          "severity",
+          "description",
+          "failure_scenario",
+        ],
         additionalProperties: false,
       },
     },
   },
-  required: ['findings'],
+  required: ["findings"],
   additionalProperties: false,
-}
+};
 
 const VERDICT_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
-    verdict: { enum: ['CONFIRMED', 'REFUTED', 'UNCERTAIN'] },
-    reasoning: { type: 'string' },
-    corrected_severity: { enum: ['critical', 'major', 'minor', 'nit'] },
-    corrected_description: { type: 'string' },
+    verdict: { enum: ["CONFIRMED", "REFUTED", "UNCERTAIN"] },
+    reasoning: { type: "string" },
+    corrected_severity: { enum: ["critical", "major", "minor", "nit"] },
+    corrected_description: { type: "string" },
   },
-  required: ['verdict', 'reasoning'],
+  required: ["verdict", "reasoning"],
   additionalProperties: false,
-}
+};
 
 const PROPOSAL_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
-    title: { type: 'string' },
-    summary: { type: 'string' },
-    detailed_design: { type: 'string', description: 'full markdown design incl. exact functions/files to change' },
-    tradeoffs: { type: 'string' },
-    implementation_sketch: { type: 'string', description: 'concrete code-level sketch' },
-    facts_discovered: { type: 'string', description: 'any new facts you verified (CLI flags, configs, timings)' },
+    title: { type: "string" },
+    summary: { type: "string" },
+    detailed_design: {
+      type: "string",
+      description: "full markdown design incl. exact functions/files to change",
+    },
+    tradeoffs: { type: "string" },
+    implementation_sketch: {
+      type: "string",
+      description: "concrete code-level sketch",
+    },
+    facts_discovered: {
+      type: "string",
+      description: "any new facts you verified (CLI flags, configs, timings)",
+    },
   },
-  required: ['title', 'summary', 'detailed_design', 'tradeoffs', 'implementation_sketch'],
+  required: [
+    "title",
+    "summary",
+    "detailed_design",
+    "tradeoffs",
+    "implementation_sketch",
+  ],
   additionalProperties: false,
-}
+};
 
 const JUDGE_SCHEMA = {
-  type: 'object',
+  type: "object",
   properties: {
-    winner: { type: 'integer', description: '1-based index of winning proposal' },
-    scores: { type: 'array', items: { type: 'object', properties: { proposal: { type: 'integer' }, score: { type: 'number' }, rationale: { type: 'string' } }, required: ['proposal', 'score', 'rationale'], additionalProperties: false } },
-    synthesis: { type: 'string', description: 'final recommended design in markdown, merging the best ideas' },
+    winner: {
+      type: "integer",
+      description: "1-based index of winning proposal",
+    },
+    scores: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          proposal: { type: "integer" },
+          score: { type: "number" },
+          rationale: { type: "string" },
+        },
+        required: ["proposal", "score", "rationale"],
+        additionalProperties: false,
+      },
+    },
+    synthesis: {
+      type: "string",
+      description:
+        "final recommended design in markdown, merging the best ideas",
+    },
   },
-  required: ['winner', 'scores', 'synthesis'],
+  required: ["winner", "scores", "synthesis"],
   additionalProperties: false,
-}
+};
 
 const FINDER_COMMON = `
 You are one reviewer in a fan-out code review. Find REAL defects: correctness bugs, logic errors,
@@ -131,11 +185,11 @@ Where practical, verify by running ${ROOT}/.venv/bin/python snippets importing t
 Rank findings most-severe first. Report at most 10; if you find more, keep the worst.
 Leads below are unverified hypotheses from a first read — check each honestly (some may be wrong),
 and search beyond them.
-`
+`;
 
 const FINDERS = [
   {
-    key: 'tokscale',
+    key: "tokscale",
     prompt: `${CONTEXT}\n${FINDER_COMMON}
 SCOPE: src/aiuse/collectors/tokscale.py (including its uncommitted diff hunks) and src/aiuse/collectors/base.py.
 Real payload sample from a live run is saved at ${SP}/tokscale-usage.json (labels seen live:
@@ -150,7 +204,7 @@ Leads:
 Also check base.py run_json JSON-extraction fallback for edge cases (e.g. stderr banners, multiple JSON values).`,
   },
   {
-    key: 'codexbar',
+    key: "codexbar",
     prompt: `${CONTEXT}\n${FINDER_COMMON}
 SCOPE: src/aiuse/collectors/codexbar.py.
 Leads:
@@ -163,7 +217,7 @@ Leads:
 - error row shape: provider "codexbar-query-errors" account row — how does the rest of the pipeline treat it (canonicalization, report, analysis)?`,
   },
   {
-    key: 'runner-cswap',
+    key: "runner-cswap",
     prompt: `${CONTEXT}\n${FINDER_COMMON}
 SCOPE: src/aiuse/collectors/runner.py and src/aiuse/collectors/cswap.py.
 Leads:
@@ -175,7 +229,7 @@ Leads:
 - _canonical_provider aliases vs tokscale provider keys ("grok-build" -> "grok"; "Claude" -> "claude"?) — check case and space normalization end to end.`,
   },
   {
-    key: 'analysis',
+    key: "analysis",
     prompt: `${CONTEXT}\n${FINDER_COMMON}
 SCOPE: src/aiuse/analysis/use_or_lose.py (including uncommitted diff hunks) and src/aiuse/models.py.
 Leads:
@@ -189,7 +243,7 @@ Leads:
 - score scaling *1.5 and urgency thresholds: reachable ranges for each urgency; is CRITICAL reachable at all for realistic inputs?`,
   },
   {
-    key: 'history-config',
+    key: "history-config",
     prompt: `${CONTEXT}\n${FINDER_COMMON}
 SCOPE: src/aiuse/analysis/history.py and src/aiuse/config.py.
 Leads:
@@ -203,7 +257,7 @@ Leads:
 - DEFAULT_CONFIG: consumption_flexibility_defaults has 'daily' key but classify_window_minutes never produces 'daily'; provider_overrides use 'gemini' but runner canonicalizes to 'antigravity' with alias mapping in _plan_meta — check _classify_flexibility uses provider_overrides with the CANONICAL key while _plan_meta aliases antigravity->gemini; are overrides for gemini ever applied to antigravity rows?`,
   },
   {
-    key: 'report-cli-tests',
+    key: "report-cli-tests",
     prompt: `${CONTEXT}\n${FINDER_COMMON}
 SCOPE: src/aiuse/report.py (incl. uncommitted diff), src/aiuse/cli.py, src/aiuse/__main__.py, tests/ (all files), pyproject.toml, justfile.
 First run the test suite: cd ${ROOT} && .venv/bin/python -m pytest -q  (report failures as findings; do not fix anything).
@@ -216,7 +270,7 @@ Leads:
 - cli.py: argument handling, --json path (does it include cross_checks/collector_errors?), exit codes, snapshot saving call sites.
 - tests: enumerate which currently-shipping behaviors have NO test (multi-dim scoring path, the new uncommitted gates, tokscale window_minutes inference, runner claude/tokscale drop) and report the riskiest gaps as findings (category 'test-coverage', severity minor unless the gap hides a live bug).`,
   },
-]
+];
 
 function verifyPrompt(fd, i) {
   return `${CONTEXT}
@@ -229,12 +283,12 @@ verification genuinely needs data you cannot obtain. If confirmed but severity i
 set corrected_severity.
 FINDING:
 file: ${fd.file}
-line: ${fd.line || 'unspecified'}
+line: ${fd.line || "unspecified"}
 title: ${fd.title}
 severity: ${fd.severity}
 description: ${fd.description}
 failure_scenario: ${fd.failure_scenario}
-suggested_fix: ${fd.suggested_fix || 'none given'}`
+suggested_fix: ${fd.suggested_fix || "none given"}`;
 }
 
 const TOKSCALE_FACTS = `
@@ -257,7 +311,7 @@ VERIFIED FACTS (from live inspection today — re-verify anything you build on):
   SELECTED when codexbar has no live rows for that provider; claude rows from tokscale are
   currently dropped when cswap is authoritative.
 USER'S ASK: "do tokscale per-provider like codexbar so timeouts are contained."
-Your design must honestly confront that tokscale's CLI has no provider filter today.`
+Your design must honestly confront that tokscale's CLI has no provider filter today.`;
 
 const RATING_FACTS = `
 USER'S COMPLAINT (verbatim): "we should reconsider the rating algorithm, claude code goes to the
@@ -290,30 +344,34 @@ DESIGN REQUIREMENTS:
    explainable report lines, JSON output stability, testability (spec the tests).
 Read src/aiuse/analysis/use_or_lose.py, src/aiuse/models.py, src/aiuse/config.py, src/aiuse/report.py,
 tests/test_use_or_lose.py before designing. Cover both the scoring change AND how report.py
-presents it (incl. the action-plan buckets).`
+presents it (incl. the action-plan buckets).`;
 
 const TOPICS = [
   {
-    key: 'tokscale-timeouts',
+    key: "tokscale-timeouts",
     angles: [
       `${CONTEXT}\n${TOKSCALE_FACTS}\nANGLE 1 — WORK WITH TODAY'S TOKSCALE AS-IS. Design timeout containment without changing tokscale upstream: think version pinning / bypassing the npx-latest wrapper from the collector, tighter budget with cached-last-good fallback (staleness-labeled), demoting tokscale to cross-check-only so its failure never blocks selection, per-integration subcommands if any expose usage, killing the subprocess early while runner proceeds, etc. Investigate the CLI hands-on (read-only) before proposing. Be specific about changes to src/aiuse/collectors/tokscale.py, base.py, runner.py and config.`,
       `${CONTEXT}\n${TOKSCALE_FACTS}\nANGLE 2 — CHANGE THE INTERFACE. Design the ideal per-provider containment matching codexbar.py's pattern, including what has to change outside this repo: an upstream tokscale '--provider' flag (spec it: discovery of enabled providers, per-provider usage), or replacing the bundled call with N concurrent 'tokscale usage' calls each filtered via whatever mechanism exists (settings toggles? --home trick with per-provider config dirs? evaluate honestly), or dropping tokscale's aggregated call for direct per-integration subcommand calls. Spec the collector code (mirror codexbar.py's discovery/fan-out/fallback structure) and the migration/fallback story when the flag is absent (old tokscale version).`,
     ],
   },
   {
-    key: 'rating-algorithm',
+    key: "rating-algorithm",
     angles: [
       `${CONTEXT}\n${RATING_FACTS}\nANGLE A — HIERARCHICAL BUDGET COUPLING. Model the real constraint: per account, windows form a hierarchy (5h ⊂ weekly ⊂ monthly) sharing one allotment. Derive each window's EFFECTIVE usable remaining = min(own remaining, tightest enclosing window's remaining headroom), gate/demote child-window alerts accordingly, and emit CONSERVE advisories when a parent is behind pace. Spec the grouping logic (how to detect the hierarchy from window_minutes per account), the scoring changes, and report changes.`,
       `${CONTEXT}\n${RATING_FACTS}\nANGLE B — PACE-BASED EXPECTED-WASTE SCORING. Replace absolute-days deadline urgency with pace: compare fraction-of-window-elapsed vs fraction-used; project waste at reset (optionally using history.py burn rates); rank by projected wasted VALUE, so a weekly window 90% unused halfway through outranks any 5h window, and a weekly 64% used at 70% elapsed is ON PACE (no alert, or conserve note). Define the math precisely for windows with/without resets_at and window_minutes, and how the 5h window's score derives from weekly headroom.`,
       `${CONTEXT}\n${RATING_FACTS}\nANGLE C — MINIMAL SURGICAL FIX. Smallest diff that fixes the complaint without re-architecting: e.g. normalize deadline urgency by window duration, cap short-window urgency by sibling long-window remaining (a simple per-account pre-pass), replace the min_remaining hard gate with a conserve-advisory branch, fix the cycles_needed cancellation. Every change must name exact functions/lines and keep existing tests' spirit; spec new tests. Argue why minimal beats redesign here (or concede where it can't).`,
     ],
   },
-]
+];
 
 function judgePrompt(topic, proposals) {
   const blob = proposals
-    .map((p, i) => (p ? `PROPOSAL ${i + 1}: ${p.title}\nSUMMARY: ${p.summary}\nDESIGN:\n${p.detailed_design}\nTRADEOFFS:\n${p.tradeoffs}\nIMPLEMENTATION:\n${p.implementation_sketch}\nFACTS DISCOVERED:\n${p.facts_discovered || 'n/a'}` : `PROPOSAL ${i + 1}: (failed)`))
-    .join('\n\n========\n\n')
+    .map((p, i) =>
+      p
+        ? `PROPOSAL ${i + 1}: ${p.title}\nSUMMARY: ${p.summary}\nDESIGN:\n${p.detailed_design}\nTRADEOFFS:\n${p.tradeoffs}\nIMPLEMENTATION:\n${p.implementation_sketch}\nFACTS DISCOVERED:\n${p.facts_discovered || "n/a"}`
+        : `PROPOSAL ${i + 1}: (failed)`,
+    )
+    .join("\n\n========\n\n");
   return `${CONTEXT}
 You are the judge for design topic "${topic.key}". Score each proposal 0-10 on: (a) actually fixes
 the user's stated problem, (b) technical soundness against the REAL code (read the files to check
@@ -321,56 +379,85 @@ claims; distrust any CLI capability claims you can cheaply re-verify), (c) imple
 risk, (d) operability (fallbacks, back-compat, explainable output). Then write a SYNTHESIS: the
 single recommended design, merging the best ideas across proposals, concrete enough to implement
 (files, functions, config keys, test list). Note open questions the user must decide.
-${topic.key === 'rating-algorithm' ? RATING_FACTS : TOKSCALE_FACTS}
-${blob}`
+${topic.key === "rating-algorithm" ? RATING_FACTS : TOKSCALE_FACTS}
+${blob}`;
 }
 
-phase('Review')
+phase("Review");
 const reviewed = await pipeline(
   FINDERS,
-  (f) => agent(f.prompt, { label: `find:${f.key}`, phase: 'Review', schema: FINDINGS_SCHEMA, effort: 'high' }),
+  (f) =>
+    agent(f.prompt, {
+      label: `find:${f.key}`,
+      phase: "Review",
+      schema: FINDINGS_SCHEMA,
+      effort: "high",
+    }),
   (res, f) => {
-    const fs = (res && res.findings) || []
-    log(`${f.key}: ${fs.length} findings`)
+    const fs = (res && res.findings) || [];
+    log(`${f.key}: ${fs.length} findings`);
     return parallel(
       fs.map((fd) => () => {
-        const n = fd.severity === 'critical' || fd.severity === 'major' ? 2 : 1
+        const n = fd.severity === "critical" || fd.severity === "major" ? 2 : 1;
         return parallel(
-          Array.from({ length: n }, (_, i) => () =>
-            agent(verifyPrompt(fd, i), {
-              label: `verify:${f.key}:${(fd.file || '?').split('/').pop()}:${fd.line || 0}${n > 1 ? ':' + (i + 1) : ''}`,
-              phase: 'Verify',
-              schema: VERDICT_SCHEMA,
-              effort: 'high',
-            })
-          )
-        ).then((vs) => ({ ...fd, dimension: f.key, verdicts: vs.filter(Boolean) }))
-      })
-    )
-  }
-)
+          Array.from(
+            { length: n },
+            (_, i) => () =>
+              agent(verifyPrompt(fd, i), {
+                label: `verify:${f.key}:${(fd.file || "?").split("/").pop()}:${fd.line || 0}${n > 1 ? ":" + (i + 1) : ""}`,
+                phase: "Verify",
+                schema: VERDICT_SCHEMA,
+                effort: "high",
+              }),
+          ),
+        ).then((vs) => ({
+          ...fd,
+          dimension: f.key,
+          verdicts: vs.filter(Boolean),
+        }));
+      }),
+    );
+  },
+);
 
-phase('Design')
+phase("Design");
 const designs = await pipeline(
   TOPICS,
   (t) =>
     parallel(
-      t.angles.map((p, i) => () => agent(p, { label: `design:${t.key}:${i + 1}`, phase: 'Design', schema: PROPOSAL_SCHEMA }))
+      t.angles.map(
+        (p, i) => () =>
+          agent(p, {
+            label: `design:${t.key}:${i + 1}`,
+            phase: "Design",
+            schema: PROPOSAL_SCHEMA,
+          }),
+      ),
     ),
   (props, t) =>
     agent(judgePrompt(t, props.filter(Boolean).length ? props : []), {
       label: `judge:${t.key}`,
-      phase: 'Judge',
+      phase: "Judge",
       schema: JUDGE_SCHEMA,
-    }).then((j) => ({ topic: t.key, proposals: props, judgment: j }))
-)
+    }).then((j) => ({ topic: t.key, proposals: props, judgment: j })),
+);
 
-const flat = reviewed.filter(Boolean).flat().filter(Boolean)
+const flat = reviewed.filter(Boolean).flat().filter(Boolean);
 const confirmed = flat.filter((f) => {
-  const c = f.verdicts.filter((v) => v.verdict === 'CONFIRMED').length
-  const r = f.verdicts.filter((v) => v.verdict === 'REFUTED').length
-  return c > 0 && c >= r
-})
-const uncertain = flat.filter((f) => !confirmed.includes(f) && f.verdicts.some((v) => v.verdict !== 'REFUTED'))
-log(`findings: ${flat.length} raw, ${confirmed.length} confirmed, ${uncertain.length} uncertain`)
-return { confirmed, uncertain, refuted: flat.length - confirmed.length - uncertain.length, designs }
+  const c = f.verdicts.filter((v) => v.verdict === "CONFIRMED").length;
+  const r = f.verdicts.filter((v) => v.verdict === "REFUTED").length;
+  return c > 0 && c >= r;
+});
+const uncertain = flat.filter(
+  (f) =>
+    !confirmed.includes(f) && f.verdicts.some((v) => v.verdict !== "REFUTED"),
+);
+log(
+  `findings: ${flat.length} raw, ${confirmed.length} confirmed, ${uncertain.length} uncertain`,
+);
+return {
+  confirmed,
+  uncertain,
+  refuted: flat.length - confirmed.length - uncertain.length,
+  designs,
+};

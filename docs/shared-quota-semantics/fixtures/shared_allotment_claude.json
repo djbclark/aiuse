@@ -29,7 +29,7 @@
       "learn_from_history": false,
       "provider_overrides": { "claude": { "shared_allotment": true } },
       "pace": {
-        "waste_alert_fraction": 0.30,
+        "waste_alert_fraction": 0.3,
         "min_elapsed_fraction": 0.15,
         "conserve_min_lead_hours": 4.0
       }

@@ -17,7 +17,12 @@
         "account": { "type": ["string", "null"] },
         "billing_kind": {
           "type": "string",
-          "enum": ["subscription_window", "prepaid_balance", "payg_api", "unknown"]
+          "enum": [
+            "subscription_window",
+            "prepaid_balance",
+            "payg_api",
+            "unknown"
+          ]
         },
         "windows": { "type": "array" },
         "balance_usd": { "type": ["number", "null"] },
