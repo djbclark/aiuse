@@ -1,6 +1,6 @@
 # Session handoff (current)
 
-**Date:** 2026-08-03
+**Date:** 2026-08-04
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
@@ -10,6 +10,29 @@
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
+
+## Done 2026-08-04: Rich chat format renderer (#29)
+
+Rewrote `--for-chat` / `--format chat` output from a flat dump to a full
+structured report with emoji status markers, pacing language, governing-window
+warnings, and action recommendations.  New module: `src/aiuse/chat_format.py`.
+
+Key design decisions (from the spec author's answers to 10 questions):
+
+- **Status emoji**: severity aggregation — worst-of(remaining-% band, pace band)
+- **Sections**: subscription windows → prepaid/API → monthly/long-cycle (derived
+  highlight, *repeats* windows) → monthly pacing note → action → errors
+- **Governing-window warning**: on the exhausted governing row, not on children;
+  children stay visible in the main list
+- **Account labels**: always show email when known; omit `(default)` when no
+  real identity exists
+- **Action section**: deterministic, max 5 items, priority-ordered, deduplicated
+  by provider+account pool; the 25% stability threshold is Hermes's routing
+  policy, not hardcoded in aiuse
+- **No ANSI codes, no hard wraps, ↳ continuation markers**
+
+67 new tests across 8 test classes (436 total). Old `report.py` renderer
+replaced with a thin shim. Commit `d81710c`.
 
 ## Done 2026-08-03: JSON contract and chat format
 
