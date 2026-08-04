@@ -15,13 +15,13 @@ Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1
 
 Rewrote `--for-chat` / `--format chat` output from a flat dump to a full
 structured report with emoji status markers, pacing language, governing-window
-warnings, and action recommendations.  New module: `src/aiuse/chat_format.py`.
+warnings, and action recommendations. New module: `src/aiuse/chat_format.py`.
 
 Key design decisions (from the spec author's answers to 10 questions):
 
 - **Status emoji**: severity aggregation — worst-of(remaining-% band, pace band)
 - **Sections**: subscription windows → prepaid/API → monthly/long-cycle (derived
-  highlight, *repeats* windows) → monthly pacing note → action → errors
+  highlight, _repeats_ windows) → monthly pacing note → action → errors
 - **Governing-window warning**: on the exhausted governing row, not on children;
   children stay visible in the main list
 - **Account labels**: always show email when known; omit `(default)` when no
