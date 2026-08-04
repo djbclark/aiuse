@@ -477,7 +477,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
         return exit_code
 
     if as_chat:
-        from aiuse.report import render_chat_report
+        from aiuse.chat_format import render_chat_report
 
         print(render_chat_report(snapshot, alerts))
         return exit_code
