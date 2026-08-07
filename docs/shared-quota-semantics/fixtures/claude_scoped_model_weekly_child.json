@@ -1,0 +1,61 @@
+{
+  "id": "claude_scoped_model_weekly_child",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "cswap",
+    "provider": "claude",
+    "account": "work-account@example.org",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Claude Code 5-hour",
+        "used_percent": 3.0,
+        "remaining_percent": 97.0,
+        "resets_at": "2026-07-25T16:00:00+00:00",
+        "window_minutes": 300
+      },
+      {
+        "label": "Claude Code weekly",
+        "used_percent": 5.0,
+        "remaining_percent": 95.0,
+        "resets_at": "2026-07-26T12:00:00+00:00",
+        "window_minutes": 10080
+      },
+      {
+        "label": "Claude Code weekly — Claude Opus",
+        "used_percent": 90.0,
+        "remaining_percent": 10.0,
+        "resets_at": "2026-07-26T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ],
+    "notes": ["cswap slot 2", "cswap alias: work"]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "provider_overrides": { "claude": { "shared_allotment": true } },
+      "pace": {
+        "waste_alert_fraction": 0.3,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    },
+    "plans": { "claude": { "monthly_price": 20 } }
+  },
+  "expected": {
+    "governing_label": "Claude Code weekly",
+    "pace_verdict": "burn",
+    "alert_kind": "burn",
+    "band": "use",
+    "suggestion_eligible": true,
+    "suppressed_labels": [
+      "Claude Code 5-hour",
+      "Claude Code weekly — Claude Opus"
+    ],
+    "notes": "cswap's per-model sub-limit (usage.scoped → \"Claude Code weekly — {model}\", collectors/cswap.py) ties duration with the un-scoped weekly; list order keeps the plain weekly governing so the model-scoped sibling is suppressed like 5h, never double-ranked, for a non-primary multi-account cswap slot (aliased work account)."
+  }
+}

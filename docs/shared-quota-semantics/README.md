@@ -43,6 +43,25 @@ Most names are already 1:1 with `docs/json-contract.md`.
 .venv/bin/python -m pytest -q tests/test_shared_quota_semantics.py
 ```
 
+## Fixture `expected` fields
+
+`schemas/fixture.schema.json` keeps `expected` as `additionalProperties: true`,
+but the contract suite (`tests/test_shared_quota_semantics.py`) currently
+understands:
+
+| Field                                                                      | Checks                                                                                                                                                                                                               |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `band`, `alert_kind`, `pace_verdict`, `suggestion_eligible`, `has_overage` | Core scoring outputs (see `docs/shared-quota-semantics.md`)                                                                                                                                                          |
+| `governing_label`                                                          | Longest-duration window across _all_ windows (single-pool cases only — see caveat below)                                                                                                                             |
+| `alert_labels`                                                             | List of window labels that **must** each produce their own burn/conserve alert — for hard-separated independent pools (e.g. Antigravity Gemini vs Claude/GPT) where more than one governing window can alert at once |
+| `suppressed_labels`                                                        | List of window labels that **must never** alert on their own — shared-allotment children (nested 5h, cswap model-scoped weekly sub-windows, …)                                                                       |
+
+Caveat: `governing_label` is checked against the raw, pool-unaware
+`governing_partition()` (matching the original v0.1 fixtures, which are all
+single-pool). For multi-pool fixtures (Antigravity dual pools) use
+`alert_labels` / `suppressed_labels` instead, which are checked against the
+full `analyze_use_or_lose()` output and are pool-aware.
+
 ## Non-goals (v0.1)
 
 - Multi-language runtime / WASM

@@ -51,6 +51,8 @@
         "suggestion_eligible": { "type": "boolean" },
         "governing_label": { "type": ["string", "null"] },
         "has_overage": { "type": "boolean" },
+        "alert_labels": { "type": "array", "items": { "type": "string" } },
+        "suppressed_labels": { "type": "array", "items": { "type": "string" } },
         "notes": { "type": "string" }
       }
     }

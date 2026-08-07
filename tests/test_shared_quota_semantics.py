@@ -193,6 +193,20 @@ def test_fixture_expectations(fixture, monkeypatch):
         # Shared allotment: no 5h-only alert when weekly is the governor
         assert not any("5-hour" in (a.window_label or "") for a in alerts)
 
+    # Windows that must independently alert (e.g. hard-separated pools like
+    # Antigravity's Gemini vs Claude/GPT, each with its own governing weekly).
+    if expected.get("alert_labels"):
+        alerting = {a.window_label for a in alerts if a.kind in ("burn", "conserve")}
+        for label in expected["alert_labels"]:
+            assert label in alerting, f"expected an alert for window {label!r}, got {alerting}"
+
+    # Windows that must never alert on their own (shared-allotment children:
+    # nested 5h siblings, cswap model-scoped weekly sub-windows, …).
+    if expected.get("suppressed_labels"):
+        alerting = {a.window_label for a in alerts}
+        for label in expected["suppressed_labels"]:
+            assert label not in alerting, f"expected {label!r} to be a suppressed child, but it alerted"
+
 
 def test_account_schema_accepts_aiuse_to_dict(jsonschema_mod):
     schema = json.loads((SCHEMAS / "account.schema.json").read_text())

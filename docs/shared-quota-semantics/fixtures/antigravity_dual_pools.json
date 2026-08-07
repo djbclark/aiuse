@@ -1,0 +1,63 @@
+{
+  "id": "antigravity_dual_pools",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "antigravity",
+    "account": "user@example.com",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "Gemini 5-hour",
+        "used_percent": 10.0,
+        "remaining_percent": 90.0,
+        "resets_at": "2026-07-25T16:00:00+00:00",
+        "window_minutes": 300
+      },
+      {
+        "label": "Gemini weekly",
+        "used_percent": 5.0,
+        "remaining_percent": 95.0,
+        "resets_at": "2026-07-26T12:00:00+00:00",
+        "window_minutes": 10080
+      },
+      {
+        "label": "Claude/GPT 5-hour",
+        "used_percent": 10.0,
+        "remaining_percent": 90.0,
+        "resets_at": "2026-07-25T16:00:00+00:00",
+        "window_minutes": 300
+      },
+      {
+        "label": "Claude/GPT weekly",
+        "used_percent": 5.0,
+        "remaining_percent": 95.0,
+        "resets_at": "2026-07-26T12:00:00+00:00",
+        "window_minutes": 10080
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "min_value_at_risk_usd": 0,
+      "min_value_fraction": 0,
+      "provider_overrides": { "gemini": { "shared_allotment": true } },
+      "pace": {
+        "waste_alert_fraction": 0.3,
+        "min_elapsed_fraction": 0.15,
+        "conserve_min_lead_hours": 4.0
+      }
+    },
+    "plans": { "gemini": { "monthly_price": 20, "name": "Google AI" } }
+  },
+  "expected": {
+    "alert_kind": "burn",
+    "band": "use",
+    "suggestion_eligible": true,
+    "alert_labels": ["Gemini weekly", "Claude/GPT weekly"],
+    "suppressed_labels": ["Gemini 5-hour", "Claude/GPT 5-hour"],
+    "notes": "Antigravity's Gemini and Claude/GPT pools are hard-separated (independent_pool_key, docs/antigravity-pools.md); shared_allotment runs per pool so each family's own 5h⊂weekly nests independently — both weeklies can burn at once and neither pool's 5h ever gets its own alert."
+  }
+}
