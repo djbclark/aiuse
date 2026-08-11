@@ -147,7 +147,7 @@ def test_save_and_load_snapshot(tmp_path: Path):
         path2 = save_snapshot(snap, [alert])
         assert path2 != path
         assert path2.exists()
-        assert len(list(tmp_path.glob("*.json"))) == 2
+        assert len([f for f in tmp_path.glob("*.json") if f.name != "latest.json"]) == 2
 
 
 def test_history_status_line(tmp_path: Path):

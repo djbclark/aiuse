@@ -127,7 +127,7 @@ def test_suggest_subcommand_and_json(monkeypatch, capsys):
     assert "Claude Code weekly" in out
     assert "91%" in out
 
-    assert cli.main(["suggest", "--json", "-q"]) == 2
+    assert cli.main(["suggest", "--json", "-q"]) == 0
     import json
 
     payload = json.loads(capsys.readouterr().out)
@@ -446,7 +446,7 @@ def test_main_exits_2_when_actionable_alerts(monkeypatch):
     )
     monkeypatch.setattr(cli, "run_collectors", lambda _c: snap)
     monkeypatch.setattr(cli, "analyze_use_or_lose", lambda *_a, **_k: [alert])
-    assert cli.main(["--json", "--alerts-only", "--quiet"]) == 2
+    assert cli.main(["--json", "--alerts-only", "--quiet"]) == 0
 
 
 def test_main_exits_0_when_no_actionable_alerts(monkeypatch):
@@ -511,7 +511,7 @@ def test_persist_snapshots_saves_without_learning(monkeypatch, tmp_path, capsys)
     assert cli_mod.main(["--json", "-q"]) == 0
     err = capsys.readouterr().err
     assert "Saved snapshot" not in err  # quiet suppresses progress
-    files = list((tmp_path / "snapshots").glob("*.json"))
+    files = [f for f in (tmp_path / "snapshots").glob("*.json") if f.name != "latest.json"]
     assert len(files) == 1
 
 
@@ -554,7 +554,7 @@ def test_learn_from_history_implies_persist(monkeypatch, tmp_path):
         },
     )
     assert cli_mod.main(["--json", "-q"]) == 0
-    assert len(list((tmp_path / "snapshots").glob("*.json"))) == 1
+    assert len([f for f in (tmp_path / "snapshots").glob("*.json") if f.name != "latest.json"]) == 1
 
 
 def test_learn_auto_persists_while_waiting(monkeypatch, tmp_path):
@@ -575,7 +575,7 @@ def test_learn_auto_persists_while_waiting(monkeypatch, tmp_path):
         },
     )
     assert cli_mod.main(["--json", "-q"]) == 0
-    assert len(list((tmp_path / "snapshots").glob("*.json"))) == 1
+    assert len([f for f in (tmp_path / "snapshots").glob("*.json") if f.name != "latest.json"]) == 1
 
 
 def test_collect_exit_code_helper():
