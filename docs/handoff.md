@@ -1,15 +1,26 @@
 # Session handoff (current)
 
-**Date:** 2026-08-04
+**Date:** 2026-08-11
 **Branch:** `main`  
 **Local tree:** `~/src/aiuse`  
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `uv run --extra dev pytest -q`
 
-**Package version:** **3.0.7** on GitHub + PyPI + Homebrew tap
+**Package version:** **3.0.12** on GitHub + PyPI + Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
+
+## Done 2026-08-11: OpenRouter, atomic snapshots, chat compression (3.0.12)
+
+Shipped a number of fixes and features in `3.0.12`:
+
+- **OpenRouter Support**: Added a new collector for tracking OpenRouter API prepaid balances.
+- **Snapshot Atomicity / launchd**: Replaced the non-atomic file writing in `history.py` with an atomic `tempfile` creation and `os.rename()` plus `os.fsync()`, fixing partial JSON reads by downstream consumers.
+- **Exit Codes in launchd**: Fixed the `aiuse --json` exit code in non-TTY environments. It now correctly exits `0` on success so that `launchd` and cron jobs don't falsely report failures.
+- **Compact Chat Format**: Compressed the `--for-chat` string output significantly to fit inside messenger limits like Telegram. Removed redundant text, padded blank lines, and compacted the API balances section.
+- **CI / Prettier Maintenance**: Re-enabled and stabilized Prettier formatting for markdown table alignment that was previously blocking `pre-commit` and `git push`.
+- All tests (454) pass locally and in CI.
 
 ## Done 2026-08-04: Rich chat format renderer (#29)
 
@@ -133,7 +144,7 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 
 1. Open workspace at **`~/src/aiuse`**.
 2. Confirm package: `.venv/bin/aiuse --version`, global `aiuse --version`, and
-   `/opt/homebrew/bin/aiuse --version` → **3.0.7**.
+   `/opt/homebrew/bin/aiuse --version` → **3.0.12**.
 3. `aiuse doctor` → enabled collectors green; disabled caut is not an error.
 4. `aiuse trust status` only if caut is re-enabled later.
 5. LaunchAgent: `just -f ~/ops/site-djbclark/justfile site-agents-status` — expect
@@ -198,7 +209,7 @@ PyPI: https://pypi.org/project/aiuse/3.0.7/
 ```bash
 cd ~/src/aiuse
 .venv/bin/python -m pytest -q
-aiuse --version          # expect 3.0.7
+aiuse --version          # expect 3.0.12
 aiuse -q --timeout 15    # terminal echo must remain usable after exit
 just ci                  # same all-files gate as GitHub Actions
 ```
