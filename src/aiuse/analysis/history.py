@@ -32,14 +32,44 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any]) -> Path:
         filepath = path / f"{ts}-{n}.json"
         n += 1
     payload = {
+        "schema_version": "1.0",
+        "collection_id": f"{ts}-{os.getpid()}",
+        "complete": True,
+        "started_at": snapshot.collected_at.isoformat(),
+        "completed_at": utcnow().isoformat(),
         "collected_at": snapshot.collected_at.isoformat(),
+        "collector_success_count": len({a.source for a in snapshot.accounts}),
+        "collector_failure_count": len(snapshot.collector_errors),
+        "account_count": len(snapshot.accounts),
         "accounts": [a.to_dict() for a in snapshot.accounts],
         "alerts": [a.to_dict() for a in alerts],
+        "collector_errors": snapshot.collector_errors,
     }
     text = json.dumps(payload, indent=2, default=str) + "\n"
-    fd = os.open(filepath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(text)
+
+    tmp_filepath = filepath.with_suffix(".tmp")
+    fd = os.open(tmp_filepath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.rename(tmp_filepath, filepath)
+
+        # Atomically update latest.json pointer
+        latest_path = path / "latest.json"
+        latest_tmp = path / "latest.tmp"
+        fd_latest = os.open(latest_tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd_latest, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.rename(latest_tmp, latest_path)
+    except Exception:
+        if tmp_filepath.exists():
+            tmp_filepath.unlink()
+        raise
+
     return filepath
 
 
@@ -53,6 +83,8 @@ def load_recent_snapshots(
     snapshots: list[dict[str, Any]] = []
     for entry in sorted(directory.iterdir(), reverse=True):
         if not entry.is_file() or not entry.suffix.lower() == ".json":
+            continue
+        if entry.name == "latest.json":
             continue
         try:
             data = json.loads(entry.read_text(encoding="utf-8"))

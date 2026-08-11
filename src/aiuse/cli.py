@@ -459,7 +459,9 @@ def _main_inner(argv: list[str] | None = None) -> int:
                     "alerts": payload["alerts"],
                 }
             print(json.dumps(json_payload, indent=2, default=str))
-        return exit_code
+        if exit_code == EXIT_FAILURE:
+            return EXIT_FAILURE
+        return 0
 
     # Pretty human-readable (default)
     color = False if args.no_color else None

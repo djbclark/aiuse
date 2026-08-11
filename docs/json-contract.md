@@ -13,6 +13,18 @@ Default `aiuse --json` stdout:
 
 ```json
 {
+  "schema_version": "1.0",
+  "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+
+  // New in 3.0.12+ for on-disk snapshots:
+  "complete": true,
+  "collection_id": "2026-08-11T133605.800315Z-12345",
+  "started_at": "2026-08-11T13:36:00.000000+00:00",
+  "completed_at": "2026-08-11T13:36:05.800315+00:00",
+  "collector_success_count": 4,
+  "collector_failure_count": 0,
+  "account_count": 8,
+
   "snapshot": { ... },
   "alerts": [ ... ],
   "suggestion": { ... } | null,
@@ -32,6 +44,15 @@ Default `aiuse --json` stdout:
 
 `--flatten` omits the live envelope's `snapshot`, `suggestion`, and `history`
 keys so callers get the same three-key shape used by on-disk cached snapshots.
+
+## On-Disk Snapshots (Launchd/Hourly Mode)
+
+If `analysis.persist_snapshots` is enabled (e.g. via macOS LaunchAgent), `aiuse` writes a history of payloads to `~/.cache/aiuse/snapshots/`.
+
+Starting in **3.0.12**, these files are written atomically, guaranteeing that no consumer can observe a partial/torn snapshot during creation. A stable copy named `latest.json` is atomically updated so consumers can immediately locate the most recent valid snapshot without performing filename parsing or sorting.
+
+Consumers reading these files should verify the `"complete": true` field before relying on them, though the atomic implementation prevents torn reads natively. Do not rely on lexicographical sorting of timestamps for the "latest" file, as older formats used colon-separated timestamps which sort differently than the newer compact ones. Use `latest.json` or sort by `mtime`.
+
 Files in `~/.cache/aiuse/snapshots/*.json` already use this flattened shape
 natively; no flag is needed when reading those files directly.
 
@@ -86,13 +107,11 @@ Snapshot learning insights (additive). Empty-ish when learning is off or thin.
 
 ## Exit codes (collect runs)
 
-| Code  | Meaning                                              |
-| ----- | ---------------------------------------------------- |
-| **0** | Success; no burn/conserve alerts (INFO-only still 0) |
-| **1** | Hard failure: collector errors and **no** accounts   |
-| **2** | Success with at least one burn/conserve alert        |
+- **0** — Data collected (or deliberately skipped), producing valid output.
+- **1** — Hard failure. The tool could not run or all configured collectors failed. No usable data.
+- **2** — (Only in human-readable/TTY mode) Success, but there is at least one active use-or-lose alert. In `--json` mode, this returns 0 since the JSON itself is usable.
 
-Cross-check notes alone never set exit code 2.
+Cross-check disagreements alone do **not** change the exit code.
 
 ## `snapshot` object
 
