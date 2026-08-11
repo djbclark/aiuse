@@ -1,4 +1,3 @@
-import json
 from types import SimpleNamespace
 
 import pytest
@@ -18,10 +17,10 @@ def test_collect_openrouter_returns_prepaid_account(monkeypatch):
 
     class FakeResponse:
         status_code = 200
-        
+
         def json(self):
             return {"data": {"total_usage": 10.5, "total_credits": 50.0}}
-            
+
         def raise_for_status(self):
             pass
 
@@ -37,7 +36,7 @@ def test_collect_openrouter_returns_prepaid_account(monkeypatch):
     assert len(calls) == 1
     assert calls[0][0] == "https://openrouter.ai/api/v1/credits"
     assert calls[0][1]["Authorization"] == "Bearer sk-or-example"
-    
+
     assert len(accounts) == 1
     assert accounts[0].provider == "openrouter"
     assert accounts[0].source == "openrouter_api"
@@ -49,10 +48,10 @@ def test_collect_openrouter_returns_prepaid_account(monkeypatch):
 def test_collect_openrouter_handles_negative_or_malformed_values(monkeypatch):
     class FakeResponse:
         status_code = 200
-        
+
         def json(self):
             return {"data": {"total_usage": 60.0, "total_credits": 50.0}}
-            
+
         def raise_for_status(self):
             pass
 
@@ -65,8 +64,12 @@ def test_collect_openrouter_handles_negative_or_malformed_values(monkeypatch):
 
     class FakeMissingData:
         status_code = 200
-        def json(self): return {"data": {}}
-        def raise_for_status(self): pass
+
+        def json(self):
+            return {"data": {}}
+
+        def raise_for_status(self):
+            pass
 
     monkeypatch.setattr(requests, "get", lambda *args, **kwargs: FakeMissingData())
     with pytest.raises(CollectorError, match="missing numeric total_credits"):
@@ -76,10 +79,10 @@ def test_collect_openrouter_handles_negative_or_malformed_values(monkeypatch):
 def test_collect_openrouter_handles_401_403(monkeypatch):
     class FakeResponse401:
         status_code = 401
-        
+
         def json(self):
             return {}
-            
+
         def raise_for_status(self):
             raise requests.HTTPError("401 Client Error")
 
@@ -104,8 +107,12 @@ def test_collect_openrouter_uses_secretspec_key_when_no_override(monkeypatch):
 
     class FakeResponse:
         status_code = 200
-        def json(self): return {"data": {"total_credits": 100, "total_usage": 0}}
-        def raise_for_status(self): pass
+
+        def json(self):
+            return {"data": {"total_credits": 100, "total_usage": 0}}
+
+        def raise_for_status(self):
+            pass
 
     def fake_get(url, timeout, headers):
         assert headers["Authorization"] == "Bearer sk-or-secret"

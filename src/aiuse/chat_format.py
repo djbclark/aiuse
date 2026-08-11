@@ -593,28 +593,28 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     name = provider_display_name(account.provider)
     acct_part = f" · {account.account}" if account.account else ""
 
-    lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**")
-
     if account.balance_usd is not None:
         bal = account.balance_usd
         if bal < 0:
-            lines.append(f"   ↳ `Balance: -${abs(bal):.2f}` · no expiry")
-            lines.append("   ↳ Negative balance reported; do not treat this as available capacity.")
+            lines.append(
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `Balance: -${abs(bal):.2f}` · no expiry (Negative balance reported)"
+            )
         elif bal == 0:
-            lines.append("   ↳ `empty`")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
         else:
-            lines.append(f"   ↳ `Balance: ${bal:.2f}` · no expiry")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `Balance: ${bal:.2f}` · no expiry")
     elif account.credits_remaining is not None:
         creds = account.credits_remaining
         if creds < 0:
-            lines.append(f"   ↳ `{creds:g} credits remaining` · no expiry")
-            lines.append("   ↳ Negative balance reported; do not treat this as available capacity.")
+            lines.append(
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits remaining` · no expiry (Negative balance reported)"
+            )
         elif creds == 0:
-            lines.append("   ↳ `empty`")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
         else:
-            lines.append(f"   ↳ `{creds:g} credits remaining` · no expiry")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits remaining` · no expiry")
     else:
-        lines.append("   ↳ API balance · no expiry")
+        lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: API balance · no expiry")
 
     return lines
 
@@ -700,7 +700,6 @@ def render_chat_report(
     if sub_rows:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
         for row in sub_rows:
-            lines.append("")
             lines.append(f"{row.emoji} {row.heading}")
             lines.append(f"   ↳ {row.status_line}")
             if row.pace_line:
@@ -716,30 +715,8 @@ def render_chat_report(
         prepaid_accounts.sort(key=_prepaid_sort_key)
         lines = [f"{EMOJI_PREPAID} **PREPAID / API BALANCES**"]
         for account in prepaid_accounts:
-            lines.append("")
             lines.extend(_render_prepaid_row(account))
         sections.append("\n".join(lines))
-
-    # --- Long-cycle / monthly outlook ---
-    long_cycle_rows = _select_long_cycle_highlights(sub_rows, alerts)
-    if long_cycle_rows:
-        # Sort: exhausted governing first, then high-risk, then waste.
-        long_cycle_rows.sort(key=lambda r: r.sort_key())
-        lines = ["📅 **MONTHLY / LONG-CYCLE OUTLOOK**"]
-        for row in long_cycle_rows:
-            lines.append("")
-            lines.append(f"{row.emoji} {row.heading}")
-            lines.append(f"   ↳ {row.status_line}")
-            if row.pace_line:
-                lines.append(f"   ↳ {row.pace_line}")
-            if row.governing_warning:
-                lines.append(f"   ↳ {row.governing_warning}")
-        sections.append("\n".join(lines))
-
-    # --- Monthly pacing note ---
-    note = _monthly_pacing_note(sub_rows, long_cycle_rows)
-    if note:
-        sections.append(f"{EMOJI_INFO} **MONTHLY PACING NOTE**\n   ↳ {note}")
 
     # --- Action section ---
     action_items = _build_action_items(alerts, routing_context=routing_context, sub_rows=sub_rows)

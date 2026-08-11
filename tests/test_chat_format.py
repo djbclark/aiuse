@@ -594,7 +594,7 @@ class TestRenderChatReport:
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
         assert "no expiry" in output
-        assert "Negative balance reported; do not treat this as available capacity." in output
+        assert "(Negative balance reported)" in output
         assert "-$0.04" in output
         assert "Balance: -$0.04" in output
 
