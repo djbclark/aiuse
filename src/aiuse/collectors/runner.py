@@ -16,6 +16,7 @@ from .caut import collect_caut
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .opencode_zen import collect_opencode_zen
+from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .tokscale import collect_tokscale
@@ -28,6 +29,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "openusage_ai",
     "openusage_sh",
     "opencode_zen",
+    "openrouter",
     "tokscale",
 )
 
@@ -45,6 +47,7 @@ SOURCE_LABELS: dict[str, str] = {
     "openusage_ai": "OpenUsage.ai",
     "openusage_sh": "OpenUsage.sh",
     "opencode_zen": "OpenCode Zen (native)",
+    "openrouter": "OpenRouter (native)",
     "tokscale": "tokscale",
 }
 
@@ -117,6 +120,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("openusage_sh", partial(collect_openusage_sh, timeout=timeout_for(config, "openusage_sh"))))
     if _enabled(collectors_cfg, "opencode_zen"):
         jobs.append(("opencode_zen", partial(collect_opencode_zen, timeout=timeout_for(config, "opencode_zen"))))
+    if _enabled(collectors_cfg, "openrouter"):
+        jobs.append(("openrouter", partial(collect_openrouter, timeout=timeout_for(config, "openrouter"))))
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))

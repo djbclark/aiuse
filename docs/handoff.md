@@ -64,10 +64,10 @@ remains `subscription_window` (monthly reset / use-or-lose) — not prepaid
    available; do not spend a request merely to test telemetry. (Unchanged
    since 2026-07-30 — not reverified this session.)
 3. Source expansion: [#16](https://github.com/djbclark/aiuse/issues/16)
-   (DeepSeek second source) and [#17](https://github.com/djbclark/aiuse/issues/17)
-   (OpenRouter second source) are still scoped, not started — per
-   [`source-coverage.md`](source-coverage.md)'s 2026-08-02 refresh, both
-   remain exactly one live source (CodexBar). These are the only
+   (DeepSeek second source) is still scoped, not started. [#17](https://github.com/djbclark/aiuse/issues/17)
+   (OpenRouter second source) is resolved. Per
+   [`source-coverage.md`](source-coverage.md)'s refresh, DeepSeek
+   remains exactly one live source (CodexBar). These are the only
    non-optional backlog items left — #11–15 are explicitly "polish only if
    pain is real" per [`next-options.md`](next-options.md). [#18](https://github.com/djbclark/aiuse/issues/18)
    (Groq) is done — closed, confirmed on two independent live runs.
@@ -125,7 +125,7 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 | Area                      | Notes                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **OpenCode Zen refresh**  | `aiuse credential refresh opencode-zen --from chrome --profile Default` validates Chrome's OpenCode session before storing it through SecretSpec. Installed commands use `~/.config/aiuse/secretspec.toml`; normal collection never accesses Chrome or Keychain. Published `aiuse` was live-checked against that manifest and returned a native Zen balance.                      |
-| **Source coverage audit** | [`source-coverage.md`](source-coverage.md) records current successful client sources. DeepSeek and OpenRouter have one successful source; Zen has two client implementations of one upstream billing service; Groq currently has no usable live source.                                                                                                                           |
+| **Source coverage audit** | [`source-coverage.md`](source-coverage.md) records current successful client sources. DeepSeek has one successful source; OpenRouter #17 resolved; Zen has two client implementations of one upstream billing service; Groq currently has no usable live source.                                                                                                                           |
 | **3.0.1 release**         | `just release 3.0.1`: 356 tests and full local quality/security gate green; GitHub release, PyPI Trusted Publishing run `30584144267`, Homebrew formula/tap, Homebrew test, and default `aiuse` / `ai` upgrades all passed.                                                                                                                                                       |
 | **3.0.2 release**         | Negative/zero prepaid balances now render as `empty` rather than neutral `n/a`; positive prepaid balances retain `n/a` semantics. `just release 3.0.2` completed GitHub release, PyPI Trusted Publishing run `30585192853`, Homebrew formula/tap, Homebrew test, and default `aiuse` / `ai` upgrades. A live post-upgrade ladder confirmed `empty OpenCode Zen · balance $-0.04`. |
 
@@ -178,7 +178,7 @@ made TUI tty tests ignore ambient `FORCE_COLOR`. Homebrew formula updated
 | [#2](https://github.com/djbclark/aiuse/issues/2)–[#9](https://github.com/djbclark/aiuse/issues/9)     | —        | —         | —       | **done**                                                                                             |
 | [#10](https://github.com/djbclark/aiuse/issues/10)                                                    | 0.5–2h   | ~10k–100k | ~$0–2   | Announce **3.0.7** (operator; **do not auto-post**; refreshed 2026-08-03, ready)                     |
 | [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | optional | —         | —       | Polish; only if concrete pain                                                                        |
-| [#16](https://github.com/djbclark/aiuse/issues/16)–[#17](https://github.com/djbclark/aiuse/issues/17) | 4–12h    | ~0.3–1M   | ~$3–20  | Source expansion (DeepSeek/OpenRouter 2nd source) — real, unblocked, not optional polish             |
+| [#16](https://github.com/djbclark/aiuse/issues/16) | 4–12h    | ~0.3–1M   | ~$3–20  | Source expansion (DeepSeek 2nd source) — real, unblocked, not optional polish             |
 | [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | —        | —         | —       | **done, closed 2026-08-02** — Groq confirmed resolved upstream on 2 independent runs, no code needed |
 | [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | —        | —         | —       | **done, closed 2026-08-02** — see the quota-algorithm-audit section above                            |
 

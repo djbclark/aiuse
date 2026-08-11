@@ -23,6 +23,7 @@ revision = \"1.0\"
 
 [profiles.default]
 OPENCODE_ZEN_COOKIE = { description = \"OpenCode console-session Cookie header for direct Zen balance collection; the Zen API key alone cannot read this balance.\", required = false }
+OPENROUTER_MANAGEMENT_KEY = { description = \"OpenRouter management key for fetching account-level prepaid credit balances.\", required = false }
 """
 
 
