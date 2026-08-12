@@ -1,7 +1,14 @@
 import json
 
+import pytest
+
 from aiuse import cli
 from aiuse.models import CrossCheck, Snapshot, utcnow
+
+
+@pytest.fixture(autouse=True)
+def _mock_deps(monkeypatch):
+    monkeypatch.setattr(cli, "check_dependencies", lambda _config: [])
 
 
 def test_help_epilog_mentions_setup_flags(capsys):

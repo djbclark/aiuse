@@ -390,6 +390,16 @@ def _main_inner(argv: list[str] | None = None) -> int:
 
     # Progress stays on stderr so --json stdout is clean for piping
     _progress("Collecting usage from local tools…")
+
+    # Fail early if configured dependencies are completely missing from PATH
+    missing = check_dependencies(config)
+    if missing:
+        print(f"Error: Required collector tools are missing from PATH: {', '.join(missing)}", file=sys.stderr)
+        print(
+            "Please install them (e.g. via packaging/install-deps.sh) or disable them in config.toml.", file=sys.stderr
+        )
+        return 1
+
     snapshot = run_collectors(config)
     alerts = analyze_use_or_lose(snapshot, config)
     alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
@@ -679,6 +689,20 @@ def probe_tool_version(
         first = first[:77] + "..."
     ok = proc.returncode == 0 or bool(text)
     return ok, first
+
+
+def check_dependencies(config: dict[str, Any]) -> list[str]:
+    """Return a list of missing CLI commands for enabled collectors."""
+    from aiuse.collectors.base import which
+
+    missing = []
+    for key, cmd, _ in _EXTERNAL_TOOLS:
+        if key == "openusage_ai":
+            continue  # OpenUsage can serve loopback HTTP without a CLI on PATH
+        if _collector_enabled(config, key):
+            if not which(cmd):
+                missing.append(cmd)
+    return missing
 
 
 def diagnose(

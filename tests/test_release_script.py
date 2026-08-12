@@ -222,7 +222,18 @@ def test_cleanup_interrupted_bump_restores_only_version_files(monkeypatch, relea
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "add", "."], cwd=root, check=True)
     subprocess.run(
-        ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "initial"],
+        [
+            "git",
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "initial",
+        ],
         cwd=root,
         check=True,
     )

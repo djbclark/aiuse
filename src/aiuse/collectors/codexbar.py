@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -73,6 +74,12 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
         "ElevenLabs quota 3",
     ),
 }
+
+
+def _codexbar_bin() -> str:
+    """Resolve symlinks for the executable to work around CodexBar issue #2756/#2889."""
+    cmd = which("codexbar")
+    return os.path.realpath(cmd) if cmd else "codexbar"
 
 
 def collect_codexbar(
@@ -150,7 +157,7 @@ def _discover_enabled_providers(*, timeout: float = 45.0) -> list[str | None] | 
     than propagate, since discovery is a best-effort optimization.
     """
     try:
-        payload = run_json(["codexbar", "config", "providers", "--format", "json"], timeout=timeout)
+        payload = run_json([_codexbar_bin(), "config", "providers", "--format", "json"], timeout=timeout)
     except Exception:  # noqa: BLE001
         return None
     return _parse_enabled_providers(payload)
@@ -198,7 +205,7 @@ def _query_providers(
 def _query_provider(provider_arg: str | None, *, timeout: float = 45.0) -> Any:
     # Omitting --provider asks CodexBar for its enabled-provider list and data
     # (only reached as a fallback if _discover_enabled_providers() fails).
-    argv = ["codexbar", "usage", "--format", "json"]
+    argv = [_codexbar_bin(), "usage", "--format", "json"]
     if provider_arg is not None:
         argv.extend(["--provider", provider_arg])
 
