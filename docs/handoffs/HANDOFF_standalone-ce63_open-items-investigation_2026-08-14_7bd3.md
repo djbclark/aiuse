@@ -235,8 +235,22 @@ snapshot and visible in `ai --json` today (absent from table and chat):
 
 `_SLOT_POOL_PREFIXES` (`collectors/codexbar.py:490`) maps antigravity only.
 
-**`--full` is width-invariant and its rules are narrower than its content.**
-Byte-identical at COLUMNS=200/120/100/80/64. Measured line lengths:
+**`--full` has TWO renderers, and only one is width-pinned.** _(Corrected
+after the resumed workflow landed — an earlier draft of this section said
+`--full` was width-invariant full stop. That was measured only on the
+`--no-tui` path and is wrong for what the operator actually sees.)_
+
+- **Plain text** — `render_report(..., full=True)`, `report.py:202` sets
+  `width = ACTION_PLAN_WIDTH`. Reached when stdout is not a tty, or with
+  `--no-tui`. Genuinely pinned: byte-identical at COLUMNS=200/120/100/80/64,
+  with 80-wide rules around content lines running to 97+.
+- **Rich/styled** — `tui/app.py:106-107` builds `Console(...)` and
+  `glance_width = max(40, console.width - _PANEL_CHROME)`, **uncapped**. This
+  is the tty path, i.e. normal interactive use. Verified on a real pty: the
+  same rules measure ~300 characters longer at 200 columns than at 100. The
+  operator never sees an 80-wide rule here.
+
+Measured line lengths, plain path only:
 
 ```
  80| ================================================================================
@@ -247,10 +261,20 @@ Byte-identical at COLUMNS=200/120/100/80/64. Measured line lengths:
 
 `ACTION_PLAN_WIDTH = 80` at `report.py:54`; used at `:97` (as
 `terminal_width()`'s default), `:202`, `:619`, and `tui/builders.py:16,63`.
-So the deferral note in 067d ("widening the rules would look absurd") targets
-the wrong risk: at every width the rules are already **too narrow** for their
-own content, and lines soft-wrap at COLUMNS ≤ 96. The fix is
-`min(terminal_width(), TABLE_MAX_WIDTH)`, the clamp the table already uses.
+
+**`--full` does have exactly one truncation site**, contrary to 067d's "not
+truncating": `_clamp_display_width(row, clamp_width)` at **`report.py:1474`**,
+inside `_render_brief_action_plan` (`:1399`). It is only reached when the
+detailed plan exceeds `ACTION_PLAN_MAX_LINES = 23` (`report.py:53`, gate at
+`:1277`) — today's 4 alerts don't get near it, which is why live runs show
+zero `…`. So "not truncating" is true of current data and false of the code.
+
+Net: 067d's "widening the rules would look absurd" describes something that
+**already ships** on the styled path (200-column Rich rules beside a 78-column
+inner plan rule). The middle option — `min(terminal_width(), TABLE_MAX_WIDTH)`,
+the clamp the table already uses at `report.py:971` — is blocked by neither
+objection. The project currently has three width policies for one product: 80
+pinned, `min(term, 110)`, and unbounded.
 
 **The redesign is unreleased.** `git describe --tags HEAD` →
 `v3.0.16-4-g69d259d`. The installed 3.0.16 has 0 `render_clock_matrix` and 1
@@ -335,9 +359,14 @@ agy alone was 4 chat entries against 2 table rows.
    prepaid/no-expiry accounts whose window label never reaches the table or
    chat, so the payoff is `--json` cleanliness and snapshot hygiene only.
 
-5. **`--full` width clamp**: `min(terminal_width(), TABLE_MAX_WIDTH)` in place
-   of the bare `ACTION_PLAN_WIDTH` at `report.py:202` and `:619`. Cheap; makes
-   the rules bound their own content.
+5. **`--full` width clamp**, now understood to be two decisions, not one.
+   Cheap half: `min(terminal_width(), TABLE_MAX_WIDTH)` at `report.py:202` for
+   the plain path — but note `terminal_width()` honours `$COLUMNS` even off a
+   tty, so `tests/test_report.py:633` (which asserts `<= ACTION_PLAN_WIDTH + 5`)
+   must pin `COLUMNS` via monkeypatch or it becomes shell-dependent. Separate
+   decision needing operator sign-off: whether to also cap the **styled** path
+   at `tui/app.py:106`, which would visibly shrink today's full-terminal Rich
+   rules to 110. Do not bundle the two.
 
 6. **One-liners**: `AGENTS.md:14` version 3.0.2 → current; a pointer from
    `AGENTS.md:32`/`:114` and `docs/index.md:48` to `docs/handoffs/`; retitle
@@ -384,8 +413,11 @@ for f in sorted(glob.glob(os.path.join(d,'*.json')))[-40:]:
 # 4. The other live instance (json only)
 uv run ai --json | grep "name not supplied"     # -> Deepseek / Openrouter
 
-# 5. Prove --full is width-invariant
+# 5. Prove the plain --full path is pinned but the styled one is not
 for w in 200 80 64; do echo "== $w =="; COLUMNS=$w uv run ai --full --no-tui 2>/dev/null | head -5; done
+for w in 200 100; do echo "== pty $w =="; script -q /dev/null bash -c \
+  "stty cols $w rows 50; uv run ai --full 2>/dev/null" \
+  | sed 's/\x1b\[[0-9;]*m//g' | awk '/^[-=─]{6,}/ { print length($0) }' | sort -u | head -3; done
 
 # 6. Confirm the redesign is unreleased
 git describe --tags HEAD        # -> v3.0.16-4-g69d259d
@@ -393,13 +425,14 @@ git describe --tags HEAD        # -> v3.0.16-4-g69d259d
 
 **Where the new code lives**
 
-| Concern              | Location                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------- |
-| Chat pool grouping   | `src/aiuse/chat_format.py` `_PoolEntry`, `_group_rows_into_pools()`                               |
-| Chat entry rendering | `src/aiuse/chat_format.py` `_render_pool_entry()`, `_row_notes()`, `_window_line_label()`         |
-| No-data accounts     | `src/aiuse/chat_format.py` `_has_reportable_usage()` + the ERRORS section                         |
-| Pool vocabulary      | `src/aiuse/analysis/pace.py` `POOL_SCOPE_LABELS`, `pool_scope_label()`                            |
-| agy slot→pool        | `src/aiuse/collectors/codexbar.py:490` `_SLOT_POOL_PREFIXES`, `_slot_label()`                     |
-| Stale-label filter   | `src/aiuse/analysis/history.py:361` (guard) → `:370` (`window_series_key`)                        |
-| `--full` width pin   | `src/aiuse/report.py:54` `ACTION_PLAN_WIDTH`, used `:202`, `:619`                                 |
-| Tests                | `TestPoolGrouping`, `TestActionItemsPerPool`, `TestNoDataAccounts` in `tests/test_chat_format.py` |
+| Concern              | Location                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| Chat pool grouping   | `src/aiuse/chat_format.py` `_PoolEntry`, `_group_rows_into_pools()`                                 |
+| Chat entry rendering | `src/aiuse/chat_format.py` `_render_pool_entry()`, `_row_notes()`, `_window_line_label()`           |
+| No-data accounts     | `src/aiuse/chat_format.py` `_has_reportable_usage()` + the ERRORS section                           |
+| Pool vocabulary      | `src/aiuse/analysis/pace.py` `POOL_SCOPE_LABELS`, `pool_scope_label()`                              |
+| agy slot→pool        | `src/aiuse/collectors/codexbar.py:490` `_SLOT_POOL_PREFIXES`, `_slot_label()`                       |
+| Stale-label filter   | `src/aiuse/analysis/history.py:361` (guard) → `:370` (`window_series_key`)                          |
+| `--full` width pin   | plain: `report.py:202` (`ACTION_PLAN_WIDTH`, `:54`); styled: `tui/app.py:106-107` (uncapped)        |
+| `--full` truncation  | `src/aiuse/report.py:1474` in `_render_brief_action_plan`, gated on `ACTION_PLAN_MAX_LINES` (`:53`) |
+| Tests                | `TestPoolGrouping`, `TestActionItemsPerPool`, `TestNoDataAccounts` in `tests/test_chat_format.py`   |
