@@ -184,8 +184,9 @@ def render_report(
     """
     Pretty report.
 
-    **Default** (and ``brief=True``): ranked priority ladder only (stdout).
-    Meta / errors / ``ai --full`` hint belong on stderr via
+    **Default** (and ``brief=True``): the clock matrix only (stdout), via
+    ``render_clock_matrix`` — one row per account/pool, one column per reset
+    clock. Meta / errors / ``ai --full`` hint belong on stderr via
     ``render_stderr_meta``.
 
     **Full** (``full=True``): long report with per-provider detail.

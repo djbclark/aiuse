@@ -36,20 +36,24 @@ This is real `aiuse` output from synthetic demo accounts, not a screenshot.
 It's the exact table printed by plain `aiuse`, read **bottom → top**: the
 pools most worth using right now sort to the bottom.
 
+<!-- readme-demo:start -->
+
 ```diff
-       SERVICE    ACCT     SCOPE           5H  WEEK MONTH   NEXT $ UNUSED
-- error grok       you      —            No available fetch strategy for grok.
-- empty oc-go      you      —                —  100%     —   4.5d    $0.00
-  n/a   deepseek   you      —            balance $4.15 (no expiry)
-  n/a   openrouter you      —            balance $18.55 (no expiry)
-  slow  agy        you      claude/gpt     61%   78%     —   1.2d    $4.90
-  mid   claude     you      —              12%   77%     —   3.1d    $6.02
-  mid   cursor     you      —                —     —   71%   3.3d   $14.20
-  mid   codex      you      —                —   54%     —   2.3d    $3.31
-  mid   grok       you      —                —    6%     —   6.6d        —
-  mid   agy        you      gemini          4%   16%     —   4.0d    $6.07
-+ use   copilot    —        —                —     —   58%    ~1d    $4.20
+        SERVICE    ACCT  SCOPE         5H  WEEK MONTH   NEXT $ UNUSED
+- error oc-zen     gmail —          No available fetch strategy for opencode-zen.
+- empty oc-go      gmail —              —  100%     —   4.5d        —
+  n/a   deepseek   gmail —          balance $4.15 (no expiry)
+  n/a   openrouter gmail —          balance $18.55 (no expiry)
+  slow  agy        gmail claude/gpt     —   78%     —    29h        —
+  mid   claude     gmail —            12%   77%     —     3h    $1.59
+  mid   cursor     gmail —              —     —   71%   3.3d    $5.80
+  mid   codex      gmail —              —   54%     —   2.3d    $3.17
+  mid   grok       gmail —              —    6%     —   6.6d        —
+  mid   agy        gmail gemini        4%   16%     —     4h    $5.80
++ use   copilot    —     —              —   58%     —   ~34h        —
 ```
+
+<!-- readme-demo:end -->
 
 Every row is measured on the same three clocks, so a column reads top to
 bottom. An em-dash means that service has no window on that clock at all.
@@ -70,7 +74,7 @@ abbreviate to an `oc-` family prefix (`oc-go`, `oc-zen`) to stay narrow.
 ```bash
 pipx install aiuse
 aiuse doctor   # see which data-source tools are already on your PATH
-aiuse          # priority ladder for everything aiuse can see right now
+aiuse          # usage table for everything aiuse can see right now
 ```
 
 No config file is required to start — `aiuse doctor` tells you exactly which
@@ -212,11 +216,11 @@ aiuse trust fix-codexbar-cache --dry-run   # CodexBar#679: trust CLI on cache it
 aiuse credential refresh opencode-zen --from chrome --profile Default
 
 # Morning / before a long coding block
-aiuse                        # priority ladder on stdout (use-soon at bottom); meta on stderr
+aiuse                        # usage table on stdout (use-soon at bottom); meta on stderr
 aiuse --full                 # long report: per-provider, tips, History, detailed plan
 aiuse --brief                # same as default (compat alias)
 aiuse --no-tui               # classic plain-text report (also used when piping)
-aiuse -q                     # ladder only (no stderr meta / Collecting…)
+aiuse -q                     # table only (no stderr meta / Collecting…)
 aiuse suggest                # single best burn pool (or “nothing urgent”)
 aiuse status                 # one line for shell prompts / status bars
 aiuse prompt                 # synonym of status
@@ -300,31 +304,31 @@ JSON Schemas, enums, pace rules, and golden fixtures are designed to be copied
 or validated from any language. `aiuse` uses those fixtures itself, but they do
 not require importing its Python package.
 
-| Flag                                                                                                       | Effect                                                                               |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| _(none)_ / `--format pretty`                                                                               | Priority ladder on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
-| `--full`                                                                                                   | Long pretty report: per-provider, cross-checks, tips, History, detailed plan         |
-| `--json` / `--format json`                                                                                 | Full snapshot + alerts + `suggestion` + `history` as JSON                            |
-| `--brief`                                                                                                  | Alias of default priority-ladder pretty report                                       |
-| `--no-tui`                                                                                                 | Force classic plain-text pretty report                                               |
-| `--no-color`                                                                                               | Disable ANSI colors in plain-text pretty mode                                        |
-| `-q` / `--quiet`                                                                                           | Suppress progress messages on stderr                                                 |
-| `--alerts-only`                                                                                            | Recommendations only (respects pretty vs json)                                       |
-| `suggest` / `--suggest`                                                                                    | Single best burn pool (or nothing urgent); pair with `--json` for structured         |
-| `status` / `prompt` / `--status`                                                                           | One-line status for shell prompts / status bars                                      |
-| `serve` / `--serve`                                                                                        | Loopback HTTP API for agents (`127.0.0.1`)                                           |
-| `--port` / `--max-age`                                                                                     | Serve bind port (default 8787) and snapshot cache max age                            |
-| `--print-completion bash\|zsh`                                                                             | Print shell completion script to stdout                                              |
-| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage-ai` / `--no-openusage-sh` | Skip specific collectors                                                             |
-| `--providers copilot,grok`                                                                                 | Query specific CodexBar providers (CSV, one per subprocess)                          |
-| `-t` / `--timeout SECONDS`                                                                                 | Force subprocess timeout for all external tools (default **45**)                     |
-| `--generate-config`                                                                                        | Write default `~/.config/aiuse/config.toml`; never overwrites existing               |
-| `--show-config-path`                                                                                       | Print the active config path                                                         |
-| `doctor` / `--doctor`                                                                                      | Check tools on PATH, config presence, effective timeouts; no collect                 |
-| `trust` …                                                                                                  | macOS: codesign status, sign caut, and Keychain grant guide                          |
-| `credential refresh opencode-zen`                                                                          | Validate a Chrome OpenCode session and save it through SecretSpec                    |
-| `--min-remaining 50 --max-days 10`                                                                         | Override alert thresholds                                                            |
-| `--save PATH`                                                                                              | Also write full JSON snapshot to PATH                                                |
+| Flag                                                                                                       | Effect                                                                            |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| _(none)_ / `--format pretty`                                                                               | Clock matrix on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
+| `--full`                                                                                                   | Long pretty report: per-provider, cross-checks, tips, History, detailed plan      |
+| `--json` / `--format json`                                                                                 | Full snapshot + alerts + `suggestion` + `history` as JSON                         |
+| `--brief`                                                                                                  | Alias of the default pretty report                                                |
+| `--no-tui`                                                                                                 | Force classic plain-text pretty report                                            |
+| `--no-color`                                                                                               | Disable ANSI colors in plain-text pretty mode                                     |
+| `-q` / `--quiet`                                                                                           | Suppress progress messages on stderr                                              |
+| `--alerts-only`                                                                                            | Recommendations only (respects pretty vs json)                                    |
+| `suggest` / `--suggest`                                                                                    | Single best burn pool (or nothing urgent); pair with `--json` for structured      |
+| `status` / `prompt` / `--status`                                                                           | One-line status for shell prompts / status bars                                   |
+| `serve` / `--serve`                                                                                        | Loopback HTTP API for agents (`127.0.0.1`)                                        |
+| `--port` / `--max-age`                                                                                     | Serve bind port (default 8787) and snapshot cache max age                         |
+| `--print-completion bash\|zsh`                                                                             | Print shell completion script to stdout                                           |
+| `--no-tokscale` / `--no-cswap` / `--no-codexbar` / `--no-caut` / `--no-openusage-ai` / `--no-openusage-sh` | Skip specific collectors                                                          |
+| `--providers copilot,grok`                                                                                 | Query specific CodexBar providers (CSV, one per subprocess)                       |
+| `-t` / `--timeout SECONDS`                                                                                 | Force subprocess timeout for all external tools (default **45**)                  |
+| `--generate-config`                                                                                        | Write default `~/.config/aiuse/config.toml`; never overwrites existing            |
+| `--show-config-path`                                                                                       | Print the active config path                                                      |
+| `doctor` / `--doctor`                                                                                      | Check tools on PATH, config presence, effective timeouts; no collect              |
+| `trust` …                                                                                                  | macOS: codesign status, sign caut, and Keychain grant guide                       |
+| `credential refresh opencode-zen`                                                                          | Validate a Chrome OpenCode session and save it through SecretSpec                 |
+| `--min-remaining 50 --max-days 10`                                                                         | Override alert thresholds                                                         |
+| `--save PATH`                                                                                              | Also write full JSON snapshot to PATH                                             |
 
 ### Exit codes
 
@@ -351,8 +355,8 @@ This tool:
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from — but genuinely **independent pools are never merged into that governing window**: Cursor's Included+Auto pool and its separate Other Models pool are scored on their own, so an exhausted Other Models pool raises its own alert instead of being masked by a healthy Included.
 5. Qualifies **Conserve** alerts with **overage awareness**: if the account has a real or config-confirmed overage/extra-usage wallet (Claude's usage credits, Cursor's on-demand balance, or a manually confirmed OpenCode Go overage state), the message says so — the real risk there is unplanned $ spend, not lockout, which is a different situation from a genuinely hard ceiling.
-6. Default pretty output is a **priority ladder** on stdout (depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
-7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout …`, projected waste %) appear on ladder/status lines when pace can project them.
+6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH), percentages **used** (depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
+7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout …`, projected waste %) appear on table/status lines when pace can project them.
 8. Cross-checks **all live sources** pairwise; Claude multi-account stays canonical in cswap.
 9. Optional surfaces: `aiuse suggest` (single burn winner), `aiuse status` / `prompt` (one-liner), and `aiuse serve` (loopback ranking API for agents). Snapshot history can blend into pace when enabled.
 

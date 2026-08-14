@@ -228,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     detail.add_argument(
         "--brief",
         action="store_true",
-        help="Alias of the default priority-ladder pretty report (kept for compatibility)",
+        help="Alias of the default pretty report (kept for compatibility)",
     )
     p.add_argument(
         "--no-tokscale",

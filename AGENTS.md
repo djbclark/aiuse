@@ -11,8 +11,8 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-07-30):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.0.2**
+**Status (2026-08-14):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+done. Product issues **#1–#9** done. Packaging **3.0.17**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release (PyPI trove
 classifier moved to Production/Stable). 3.0.1 adds the documented optional
 OpenCode Zen browser credential refresh: a validated Chrome session is stored
@@ -27,9 +27,10 @@ only). README's first-impression section rewritten with a colored real-output
 demo ([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py)); TUI
 display gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory numbered
 step.** Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
-[`docs/handoff.md`](docs/handoff.md) — **do not restart at Step 1**.
+[`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**.
 
-1. **Session handoff:** [`docs/handoff.md`](docs/handoff.md).
+1. **Session handoff:** [`docs/handoffs/`](docs/handoffs/) — newest file wins.
+   [`docs/handoff.md`](docs/handoff.md) (singular) is the pre-3.0.13 archive.
 2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
    (announce → densify history; optional #11–#15 only if pain).
 3. **Operator-only:** announce 3.0.0 via [#10](https://github.com/djbclark/aiuse/issues/10)
@@ -111,7 +112,8 @@ install steps, CLI flags, and config. Install helpers:
 | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `README.md`                                                                                                  | Project overview: install, usage, CLI flags, config, output format.                          | First, for "what does this tool do / how do I run it."                                                 |
 | `AGENTS.md` (this file)                                                                                      | Agent orientation, doc map, persistence policy, **active priorities**.                       | First, for "where is everything / what next."                                                          |
-| `docs/handoff.md`                                                                                            | Latest session wrap-up, loose ends, verify commands.                                         | First stop after this file when resuming.                                                              |
+| `docs/handoffs/`                                                                                             | Per-session Tier 2 handoffs (DAG-linked front matter). **Newest file is the resume point.**  | First stop after this file when resuming.                                                              |
+| `docs/handoff.md`                                                                                            | Archive: one accreting file, releases 2.1.16–3.0.12. Superseded by `docs/handoffs/`.         | Per-release forensics (workflow run IDs, tap SHAs) not recorded anywhere else.                         |
 | `docs/fix-implementation-plan.md`                                                                            | Review-derived task list (Steps 1–32 + Phase 7 optional 33–35). **1–32 and 34 done.**        | Historical scope / remaining optional steps only.                                                      |
 | `docs/json-contract.md`                                                                                      | Stable `aiuse --json` fields and exit codes for scripts.                                     | Cron / automation consumers.                                                                           |
 | `docs/provider-identity.md`                                                                                  | Canonical provider id vs config key; window identity across collectors.                      | Any change touching provider names, history keys, or display.                                          |
@@ -151,7 +153,7 @@ install steps, CLI flags, and config. Install helpers:
 
 ## If you were asked to fix a bug or implement a feature here
 
-1. Check **Active priorities** and [`docs/handoff.md`](docs/handoff.md).
+1. Check **Active priorities** and the newest file in [`docs/handoffs/`](docs/handoffs/).
    Open-ended “what next?” → summarize status and offer choices (Step 33 when
    unblocked, operator-picked polish, or parked Step 35). Do **not** restart
    completed Steps 1–32.

@@ -18,7 +18,7 @@ or site `just install-aiuse-deps`.
 ## Typical operator loop
 
 1. **Glance** CodexBar / OpenUsage when switching tasks.
-2. **Decide** with `aiuse` (default priority ladder) or a one-liner:
+2. **Decide** with `aiuse` (default clock matrix) or a one-liner:
 
    ```bash
    aiuse status          # one line for prompts / status bars

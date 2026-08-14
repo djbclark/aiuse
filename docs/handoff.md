@@ -1,4 +1,14 @@
-# Session handoff (current)
+# Session handoff archive: releases 2.1.16 → 3.0.12
+
+> **This file is not the current handoff.** It stopped being updated at
+> **3.0.12 / 2026-08-11**. Per-session handoffs now live in
+> [`handoffs/`](handoffs/) — the newest file there is the resume point.
+>
+> Kept because it is the only in-repo record of releases 2.1.16 through
+> 3.0.12 (PyPI OIDC workflow run IDs, Homebrew formula and tap commit SHAs,
+> the reasoning behind the Cursor pool split) and the repo has no
+> `CHANGELOG.md`. **Every state claim below is as of 2026-08-11** — the
+> version, test counts, and "unfinished work" lists are all superseded.
 
 **Date:** 2026-08-11
 **Branch:** `main`  
@@ -6,7 +16,8 @@
 **Remote:** https://github.com/djbclark/aiuse  
 **Tests:** `uv run --extra dev pytest -q`
 
-**Package version:** **3.0.12** on GitHub + PyPI + Homebrew tap
+**Package version at the time of writing:** **3.0.12** on GitHub + PyPI +
+Homebrew tap
 
 Fresh agents: start at [`AGENTS.md`](../AGENTS.md).  
 Open-ended “what next?” → [`next-options.md`](next-options.md) (not Step 1 of the fix plan).
