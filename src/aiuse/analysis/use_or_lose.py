@@ -6,15 +6,19 @@ and `multi_dim` are back-compat scoring modes selectable via
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from aiuse.analysis.history import (
+    account_key,
     chronic_waste_summary,
     compute_learned_burn_rates,
     compute_learned_flexibility,
+    live_window_index,
     merge_learned_flexibility,
+    resolve_live_window,
     should_learn_from_history,
+    window_series_key,
 )
 from aiuse.analysis.pace import (
     classify_pace,
@@ -32,6 +36,7 @@ from aiuse.models import (
     Snapshot,
     Urgency,
     UseOrLoseAlert,
+    canonical_provider,
     classify_window_minutes,
     provider_config_key,
     provider_display_name,
@@ -362,7 +367,9 @@ def analyze_use_or_lose(
                 learned_rate: float | None = None
                 learned_n = 0
                 if learned_burn_rates and duration_kind:
-                    rate_key = f"{provider_key}:{duration_kind}"
+                    # Learned rates are stored under the canonical provider id,
+                    # not the config key (see history.compute_learned_burn_rates).
+                    rate_key = f"{canonical_provider(account.provider)}:{duration_kind}"
                     if rate_key in learned_burn_rates:
                         learned_rate, learned_n = learned_burn_rates[rate_key]
                 pace = compute_pace(
@@ -565,29 +572,27 @@ def analyze_use_or_lose(
         # weekly/monthly window in the current snapshot.
         shared_child_keys = _shared_allotment_child_keys(snapshot, analysis_cfg)
         # Chronic-waste stats are averaged across past cycles and carry no reset
-        # time of their own — but the matching *live* window in this snapshot
-        # usually has one, so borrow it instead of reporting "time unknown".
-        live_resets_by_key: dict[str, datetime | None] = {}
-        for live_account in snapshot.accounts:
-            live_provider = provider_config_key(live_account.provider)
-            for live_window in live_account.windows:
-                live_key = f"{live_provider}:{live_window.label}"
-                if live_window.resets_at is not None or live_key not in live_resets_by_key:
-                    live_resets_by_key[live_key] = live_window.resets_at
+        # time or account of their own — but the matching *live* window in this
+        # snapshot usually has both, so borrow that identity instead of
+        # reporting "time unknown" under a second name for the same vendor.
+        live_windows = live_window_index(snapshot)
         for wasted in chronic_waste_summary(current=snapshot, retention_days=retention):
-            provider = wasted["provider"]
-            label = wasted["label"]
-            if (provider_config_key(str(provider)), str(label).casefold()) in shared_child_keys:
+            series_key = _chronic_series_key(wasted)
+            account = wasted.get("account")
+            if (series_key, account_key(account)) in shared_child_keys:
                 continue
+            provider = canonical_provider(str(wasted["provider"]))
+            label = wasted["label"]
             avg_remaining = wasted["avg_remaining_pct"]
             samples = wasted["sample_count"]
-            live_resets_at = live_resets_by_key.get(f"{provider}:{label}")
+            live_entry = resolve_live_window(live_windows, series_key, account) or {}
+            live_resets_at = live_entry.get("resets_at")
             days = (live_resets_at - utcnow()).total_seconds() / 86400.0 if live_resets_at is not None else None
             alerts.append(
                 UseOrLoseAlert(
                     urgency=Urgency.INFO,
                     provider=provider,
-                    account=None,
+                    account=account,
                     window_label=label,
                     remaining_percent=avg_remaining,
                     days_until_reset=days,
@@ -604,11 +609,39 @@ def analyze_use_or_lose(
     return alerts
 
 
+def _chronic_series_key(wasted: dict[str, Any]) -> str:
+    """Series key for one chronic-waste record.
+
+    Falls back to deriving the key from provider + label when the record does
+    not carry one: chronic_waste_summary only tracks short windows, so the
+    duration bucket is known even without the field. Suppression must not
+    quietly no-op just because a record came from an older shape.
+    """
+    key = str(wasted.get("window_key") or "")
+    if key:
+        return key
+    return window_series_key(
+        str(wasted.get("provider") or ""),
+        str(wasted.get("label") or ""),
+        WINDOW_5H_MAX_MINUTES,
+    )
+
+
 def _shared_allotment_child_keys(
     snapshot: Snapshot,
     analysis_cfg: dict[str, Any],
 ) -> set[tuple[str, str]]:
-    """Return current shared-pool children as ``(config provider, label)`` keys."""
+    """Return current shared-pool children as ``(series key, account)`` pairs.
+
+    Keyed by series rather than by label: history records are written by
+    whichever collector was primary at the time, and two collectors label the
+    same window differently, so a label comparison silently fails to suppress.
+    """
+    single_account_providers = {
+        provider
+        for provider in {canonical_provider(a.provider) for a in snapshot.accounts}
+        if len({account_key(a.account) for a in snapshot.accounts if canonical_provider(a.provider) == provider}) == 1
+    }
     keys: set[tuple[str, str]] = set()
     for account in snapshot.accounts:
         provider_key = provider_config_key(account.provider)
@@ -618,7 +651,13 @@ def _shared_allotment_child_keys(
             governing, children = governing_partition(pool)
             if governing is None:
                 continue
-            keys.update((provider_key, child.label.casefold()) for child in children)
+            for child in children:
+                series = window_series_key(account.provider, child.label, child.window_minutes)
+                keys.add((series, account_key(account.account)))
+                # A history record whose account could not be resolved still
+                # belongs to this pool when the provider holds only one account.
+                if canonical_provider(account.provider) in single_account_providers:
+                    keys.add((series, ""))
     return keys
 
 

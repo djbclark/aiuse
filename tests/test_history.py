@@ -493,3 +493,295 @@ def test_chronic_waste_requires_distinct_reset_cycles(tmp_path: Path):
             (tmp_path / f"cycle{i}.json").write_text(json.dumps(data))
         result = chronic_waste_summary(current=current)
         assert any(r["provider"] == "claude" and r["label"] == "5-hour" for r in result)
+
+
+def _antigravity_history_snapshot(ts: datetime, resets: datetime) -> dict:
+    """A snapshot as OpenUsage writes it: no account, vendor-prefixed labels."""
+    return {
+        "collected_at": ts.isoformat(),
+        "accounts": [
+            {
+                "source": "openusage_ai",
+                "provider": "antigravity",
+                "account": None,
+                "windows": [
+                    {
+                        "label": "Antigravity Gemini 5-hour",
+                        "remaining_percent": 96.0,
+                        "window_minutes": 300,
+                        "resets_at": resets.isoformat(),
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _antigravity_live_snapshot(now: datetime, resets: datetime) -> Snapshot:
+    """The same subscription as CodexBar reports it: real account, bare labels."""
+    return Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="antigravity",
+                account="user@example.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Gemini 5-hour",
+                        remaining_percent=100.0,
+                        resets_at=resets,
+                        window_minutes=300,
+                    )
+                ],
+            )
+        ],
+    )
+
+
+def test_window_series_key_is_stable_across_collector_label_variants():
+    """CodexBar and OpenUsage name the same window differently — one series."""
+    from aiuse.analysis.history import window_series_key
+
+    codexbar = window_series_key("antigravity", "Gemini 5-hour", 300)
+    openusage = window_series_key("antigravity", "Antigravity Gemini 5-hour", 300)
+    assert codexbar == openusage
+
+    # A config-key spelling of the provider is the same series too.
+    assert window_series_key("gemini", "Gemini 5-hour", 300) == codexbar
+
+    # Independent pools within one provider stay distinct.
+    assert window_series_key("antigravity", "Claude/GPT 5-hour", 300) != codexbar
+    # So do different durations.
+    assert window_series_key("antigravity", "Gemini weekly", 10080) != codexbar
+
+
+def test_chronic_waste_reports_live_account_and_label(tmp_path: Path):
+    """A history row written by an anonymous collector adopts the live identity."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        live_resets = now + timedelta(hours=4)
+        for i in range(3):
+            payload = _antigravity_history_snapshot(
+                now - timedelta(hours=6 * (i + 1)),
+                now - timedelta(hours=6 * i),
+            )
+            (tmp_path / f"h{i}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        current = _antigravity_live_snapshot(now, live_resets)
+        rows = chronic_waste_summary(current=current, retention_days=90)
+
+        assert len(rows) == 1
+        row = rows[0]
+        # Canonical provider id — never the `[plans]` config key, which would
+        # render as a second display name for the same vendor.
+        assert row["provider"] == "antigravity"
+        assert row["account"] == "user@example.com"
+        assert row["label"] == "Gemini 5-hour"
+        assert row["window_key"] == "antigravity:gemini:5h"
+        assert row["sample_count"] == 3
+
+
+def test_chronic_waste_merges_both_collectors_into_one_series(tmp_path: Path):
+    """Two collectors describing one subscription must not fork into two rows."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        # Alternating sources, each with its own labelling and account.
+        for i in range(4):
+            resets = now - timedelta(hours=6 * i)
+            if i % 2:
+                payload = _antigravity_history_snapshot(now - timedelta(hours=6 * (i + 1)), resets)
+            else:
+                payload = {
+                    "collected_at": (now - timedelta(hours=6 * (i + 1))).isoformat(),
+                    "accounts": [
+                        {
+                            "source": "codexbar",
+                            "provider": "antigravity",
+                            "account": "user@example.com",
+                            "windows": [
+                                {
+                                    "label": "Gemini 5-hour",
+                                    "remaining_percent": 94.0,
+                                    "window_minutes": 300,
+                                    "resets_at": resets.isoformat(),
+                                }
+                            ],
+                        }
+                    ],
+                }
+            (tmp_path / f"m{i}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        current = _antigravity_live_snapshot(now, now + timedelta(hours=4))
+        rows = chronic_waste_summary(current=current, retention_days=90)
+        assert len(rows) == 1
+        assert rows[0]["sample_count"] == 4
+
+
+def test_learned_burn_rates_key_on_canonical_provider(tmp_path: Path):
+    """merge_learned_flexibility must find the rate the store wrote."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        resets = now + timedelta(days=3)
+        for i, rem in enumerate((90.0, 70.0)):
+            payload = {
+                "collected_at": (now - timedelta(days=2 - i)).isoformat(),
+                "accounts": [
+                    {
+                        "source": "codexbar",
+                        "provider": "antigravity",
+                        "account": "user@example.com",
+                        "windows": [
+                            {
+                                "label": "Gemini weekly",
+                                "remaining_percent": rem,
+                                "window_minutes": 10080,
+                                "resets_at": resets.isoformat(),
+                            }
+                        ],
+                    }
+                ],
+            }
+            (tmp_path / f"b{i}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        current = Snapshot(
+            collected_at=now,
+            accounts=[
+                AccountUsage(
+                    source="codexbar",
+                    provider="antigravity",
+                    account="user@example.com",
+                    billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                    windows=[
+                        QuotaWindow(
+                            label="Gemini weekly",
+                            remaining_percent=50.0,
+                            resets_at=resets,
+                            window_minutes=10080,
+                        )
+                    ],
+                )
+            ],
+        )
+        rates = compute_learned_burn_rates(current=current, retention_days=90, min_snapshots=2)
+        assert "antigravity:weekly" in rates
+
+        learned = compute_learned_flexibility(current=current, retention_days=90, min_snapshots=2)
+        # The provider spelling used by callers must hit the stored key.
+        assert merge_learned_flexibility(0.5, "antigravity", "weekly", learned) != 0.5
+
+
+def test_history_matches_snapshot_rows_with_null_account(tmp_path: Path):
+    """`"account": null` must not be read back as the literal string "none"."""
+    from aiuse.analysis.history import _find_current_remaining
+
+    snapshot = Snapshot(
+        collected_at=_now(),
+        accounts=[
+            AccountUsage(
+                source="tokscale",
+                provider="copilot",
+                account=None,
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="GitHub Copilot premium requests",
+                        remaining_percent=42.0,
+                        window_minutes=43200,
+                    )
+                ],
+            )
+        ],
+    )
+    prev_account = {"provider": "copilot", "account": None}
+    prev_window = {"label": "GitHub Copilot premium requests"}
+    assert _find_current_remaining(snapshot, prev_account, prev_window, match_resets=False) == 42.0
+
+
+def test_chronic_waste_keeps_two_accounts_of_one_provider_apart(tmp_path: Path):
+    """Two Claude subscriptions are two series, not one averaged together."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        for i in range(3):
+            resets = now - timedelta(hours=6 * i)
+            payload = {
+                "collected_at": (now - timedelta(hours=6 * (i + 1))).isoformat(),
+                "accounts": [
+                    {
+                        "source": "cswap",
+                        "provider": "claude",
+                        "account": who,
+                        "windows": [
+                            {
+                                "label": "Claude Code 5-hour",
+                                "remaining_percent": rem,
+                                "window_minutes": 300,
+                                "resets_at": resets.isoformat(),
+                            }
+                        ],
+                    }
+                    for who, rem in (("a@example.com", 90.0), ("b@example.com", 50.0))
+                ],
+            }
+            (tmp_path / f"two{i}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        current = Snapshot(
+            collected_at=now,
+            accounts=[
+                AccountUsage(
+                    source="cswap",
+                    provider="claude",
+                    account=who,
+                    billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                    windows=[
+                        QuotaWindow(
+                            label="Claude Code 5-hour",
+                            remaining_percent=80.0,
+                            resets_at=now + timedelta(hours=2),
+                            window_minutes=300,
+                        )
+                    ],
+                )
+                for who in ("a@example.com", "b@example.com")
+            ],
+        )
+        rows = chronic_waste_summary(current=current, retention_days=90)
+        by_account = {row["account"]: row for row in rows}
+        assert set(by_account) == {"a@example.com", "b@example.com"}
+        assert by_account["a@example.com"]["avg_remaining_pct"] == 90.0
+        assert by_account["b@example.com"]["avg_remaining_pct"] == 50.0
+
+
+def test_anonymous_history_row_does_not_borrow_a_sibling_account(tmp_path: Path):
+    """With two live accounts, an account-less history row stays anonymous."""
+    from aiuse.analysis.history import live_window_index, resolve_live_window, window_series_key
+
+    now = _now()
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="cswap",
+                provider="claude",
+                account=who,
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code 5-hour",
+                        remaining_percent=80.0,
+                        resets_at=now + timedelta(hours=2),
+                        window_minutes=300,
+                    )
+                ],
+            )
+            for who in ("a@example.com", "b@example.com")
+        ],
+    )
+    index = live_window_index(snapshot)
+    key = window_series_key("claude", "Claude Code 5-hour", 300)
+    assert len(index[key]) == 2
+    # Ambiguous → no identity adopted.
+    assert resolve_live_window(index, key, None) is None
+    # Named → exactly that account.
+    assert resolve_live_window(index, key, "b@example.com")["account"] == "b@example.com"

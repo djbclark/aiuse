@@ -38,7 +38,7 @@ the pools most worth using right now sort to the bottom.
 
 ```diff
 - error Groq · you@example.com · No available fetch strategy for groq.
-- empty Opencode · you@example.com · OpenCode Go weekly quota: 0% left · resets within 4.5 days
+- empty OpenCode Go · you@example.com · OpenCode Go weekly quota: 0% left · resets within 4.5 days
   n/a   Deepseek · you@example.com · balance $4.15 (no expiry)
   n/a   Openrouter · you@example.com · balance $18.55 (no expiry)
   slow  Google AI / Antigravity (agy) · you@example.com · Claude/GPT weekly: 22% left · ~lockout Mon 09:19 · pace within 1.2 days
@@ -46,7 +46,7 @@ the pools most worth using right now sort to the bottom.
   mid   Cursor (cursor-agent) · you@example.com · Cursor included: 29% left · ok within 3.3 days
   mid   Codex · you@example.com · Codex weekly quota: 46% left · ok within 2.3 days
   mid   Grok · you@example.com · Grok usage limit: 94% left · ok within 6.6 days
-  mid   Gemini (agy) · you@example.com · Gemini weekly: 84% left · ok within 4.0 days
+  mid   Google AI / Antigravity (agy) · you@example.com · Gemini weekly: 84% left · ok within 4.0 days
 + use   GitHub Copilot · default · GitHub Copilot premium requests: 42% left · ~42%waste · use within ~1 day
 ```
 
@@ -434,5 +434,6 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install the optional data-source tools.
 - [`docs/json-contract.md`](docs/json-contract.md) — stable JSON fields and exit codes.
+- [`docs/provider-identity.md`](docs/provider-identity.md) — canonical provider id vs config key, and window identity across collectors.
 - [`docs/shared-quota-semantics/`](docs/shared-quota-semantics/) — reusable language-neutral schemas, rules, and fixtures.
 - [Documentation index](docs/index.md) — categorized guides, collector notes, automation, and maintainer material.

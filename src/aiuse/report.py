@@ -27,6 +27,7 @@ from aiuse.models import (
     Snapshot,
     Urgency,
     UseOrLoseAlert,
+    canonical_provider,
     classify_window_minutes,
     provider_config_key,
     provider_display_name,
@@ -1467,7 +1468,9 @@ def _consumption_line(
     learned_n = 0
     rates = learned_burn_rates or {}
     if rates and duration_kind:
-        rate_key = f"{provider_key}:{duration_kind}"
+        # Canonical provider id, not the config key — that is how
+        # history.compute_learned_burn_rates stores them.
+        rate_key = f"{canonical_provider(provider)}:{duration_kind}"
         if rate_key in rates:
             learned_rate, learned_n = rates[rate_key]
     try:

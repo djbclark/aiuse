@@ -66,4 +66,7 @@ aiuse --no-tui -q
 ```
 
 Expect two Antigravity lines (Gemini weekly and Claude/GPT weekly, or alerts
-for each when off-pace), not a single combined row.
+for each when off-pace), not a single combined row. Both must print under the
+same provider name — two pools of one subscription, not two vendors. See
+[`provider-identity.md`](provider-identity.md) for why they once did not, and
+for the canonical-id rule that keeps them together.

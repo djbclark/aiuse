@@ -132,34 +132,62 @@ def window_series_key(provider: str, label: str | None, window_minutes: Any) -> 
     return f"{canonical_provider(provider)}:{pool}:{duration}"
 
 
-def live_window_index(snapshot: Snapshot) -> dict[str, dict[str, Any]]:
-    """Series key → identity of the matching window in the current snapshot.
+def account_key(account: str | None) -> str:
+    """Normalized account identity; empty string means "not reported"."""
+    return (account or "").strip().lower()
+
+
+def live_window_index(snapshot: Snapshot) -> dict[str, list[dict[str, Any]]]:
+    """Series key → the live windows matching it, one entry per account.
 
     History records carry whatever account/label the source that wrote them
     used. When the same series is live now, the live row is the better identity
     to report: it names the account the user actually holds and the label the
     rest of the report shows.
+
+    A list rather than one entry because a provider can hold several accounts
+    (two Claude subscriptions), and those must never be merged.
     """
-    index: dict[str, dict[str, Any]] = {}
+    index: dict[str, list[dict[str, Any]]] = {}
     for account in snapshot.accounts:
         for window in account.windows:
             key = window_series_key(account.provider, window.label, window.window_minutes)
-            entry = index.get(key)
-            if entry is None:
-                index[key] = {
-                    "provider": canonical_provider(account.provider),
-                    "account": account.account,
-                    "label": window.label,
-                    "resets_at": window.resets_at,
-                }
+            entries = index.setdefault(key, [])
+            existing = next((e for e in entries if account_key(e["account"]) == account_key(account.account)), None)
+            if existing is None:
+                entries.append(
+                    {
+                        "provider": canonical_provider(account.provider),
+                        "account": account.account,
+                        "label": window.label,
+                        "resets_at": window.resets_at,
+                    }
+                )
                 continue
-            # Prefer an entry that carries an account and a reset time.
-            if entry.get("account") is None and account.account:
-                entry["account"] = account.account
-                entry["label"] = window.label
-            if entry.get("resets_at") is None and window.resets_at is not None:
-                entry["resets_at"] = window.resets_at
+            if existing.get("resets_at") is None and window.resets_at is not None:
+                existing["resets_at"] = window.resets_at
     return index
+
+
+def resolve_live_window(
+    index: dict[str, list[dict[str, Any]]],
+    series_key: str,
+    account: str | None,
+) -> dict[str, Any] | None:
+    """Find the live window for one history record, if it is still live.
+
+    A record that names an account matches only that account. A record with no
+    account — OpenUsage's envelope is provider-scoped, not per-account — adopts
+    the live identity only when there is exactly one candidate, so a
+    multi-account provider never silently borrows a sibling's row.
+    """
+    entries = index.get(series_key) or []
+    wanted = account_key(account)
+    if wanted:
+        return next((e for e in entries if account_key(e["account"]) == wanted), None)
+    if len(entries) == 1:
+        return entries[0]
+    return None
 
 
 def compute_learned_burn_rates(
@@ -322,8 +350,10 @@ def chronic_waste_summary(
 
     live = live_window_index(current)
 
-    # samples: list of (resets_at_key, remaining) — at most one per cycle
-    wasted: dict[str, dict[str, Any]] = {}
+    # samples: list of (resets_at_key, remaining) — at most one per cycle.
+    # Keyed by (series, account): one provider can hold several subscriptions
+    # and their windows must not average together.
+    wasted: dict[tuple[str, str], dict[str, Any]] = {}
 
     for prev_data in history[:7]:
         ts_str = prev_data.get("collected_at", "")
@@ -348,11 +378,17 @@ def chronic_waste_summary(
 
                 label = str(prev_window.get("label") or "")
                 key = window_series_key(provider, label, window_minutes)
+                # An anonymous row adopts the live account when that is
+                # unambiguous, so one subscription seen by two collectors stays
+                # one series instead of forking on the missing account.
+                live_entry = resolve_live_window(live, key, prev_account.get("account"))
+                account = prev_account.get("account") or (live_entry or {}).get("account")
                 resets_key = str(prev_window.get("resets_at") or "") or f"unknown:{ts_str}"
                 bucket = wasted.setdefault(
-                    key,
+                    (key, account_key(account)),
                     {
                         "provider": provider,
+                        "account": account,
                         "label": label,
                         "by_reset": {},  # resets_at -> remaining (most recent wins)
                     },
@@ -362,7 +398,7 @@ def chronic_waste_summary(
                     bucket["by_reset"][resets_key] = float(prev_remaining)
 
     result: list[dict[str, Any]] = []
-    for key, data in wasted.items():
+    for (key, _acct_key), data in wasted.items():
         by_reset: dict[str, float] = data["by_reset"]
         if len(by_reset) < 2:
             continue
@@ -370,18 +406,18 @@ def chronic_waste_summary(
         avg = sum(samples) / len(samples)
         # Report the live row's identity when this series still exists, so a
         # history line names the same account and label as the live lines above it.
-        live_entry = live.get(key) or {}
+        live_entry = resolve_live_window(live, key, data["account"]) or {}
         result.append(
             {
                 "provider": live_entry.get("provider") or data["provider"],
-                "account": live_entry.get("account"),
+                "account": live_entry.get("account") or data["account"],
                 "label": live_entry.get("label") or data["label"],
                 "window_key": key,
                 "avg_remaining_pct": round(avg, 1),
                 "sample_count": len(samples),
             }
         )
-    result.sort(key=lambda x: x["avg_remaining_pct"], reverse=True)
+    result.sort(key=lambda x: (-x["avg_remaining_pct"], x["window_key"], account_key(x["account"])))
     return result
 
 
@@ -751,8 +787,12 @@ def history_section_lines(
         lines.append("  Chronic underuse (short windows, multiple reset cycles):")
         for item in chronic[:8]:
             name = provider_display_name(str(item["provider"]))
+            # Two subscriptions on one provider are separate rows; without the
+            # account they would read as the same line printed twice.
+            who = item.get("account")
+            subject = f"{name} · {who}" if who else name
             lines.append(
-                f"    · {name} {item['label']}: {item['avg_remaining_pct']:.0f}% left avg "
+                f"    · {subject} {item['label']}: {item['avg_remaining_pct']:.0f}% left avg "
                 f"over {item['sample_count']} cycles"
             )
     elif rates or late:

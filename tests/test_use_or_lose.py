@@ -1226,3 +1226,141 @@ def test_legacy_mode_via_use_multi_dim_false():
     )
     assert len(alerts) >= 1
     assert all(a.kind == "burn" for a in alerts)  # default kind; no pace path
+
+
+def _antigravity_snapshot(now: datetime) -> Snapshot:
+    """CodexBar's view of the Antigravity subscription: real account, bare labels."""
+    return Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="antigravity",
+                account="user@example.com",
+                plan="Google AI Pro",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Gemini 5-hour",
+                        remaining_percent=100.0,
+                        resets_at=now + timedelta(hours=4),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT 5-hour",
+                        remaining_percent=100.0,
+                        resets_at=now + timedelta(hours=4),
+                        window_minutes=300,
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+def _chronic_openusage_rows() -> list[dict]:
+    """chronic_waste_summary output for rows OpenUsage wrote (no account, prefixed)."""
+    from aiuse.analysis.history import window_series_key
+
+    return [
+        {
+            "provider": "antigravity",
+            "account": "user@example.com",
+            "label": "Gemini 5-hour",
+            "window_key": window_series_key("antigravity", "Antigravity Gemini 5-hour", 300),
+            "avg_remaining_pct": 94.0,
+            "sample_count": 3,
+        }
+    ]
+
+
+def test_history_alert_uses_the_same_provider_name_as_live_rows(monkeypatch):
+    """One vendor, one display name — history rows must not print a second one."""
+    from aiuse.models import provider_display_name
+
+    now = _now()
+    snap = _antigravity_snapshot(now)
+
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.should_learn_from_history", lambda _cfg: True)
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.compute_learned_burn_rates", lambda **_k: {})
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.compute_learned_flexibility", lambda **_k: {})
+    monkeypatch.setattr(
+        "aiuse.analysis.use_or_lose.chronic_waste_summary",
+        lambda **_k: _chronic_openusage_rows(),
+    )
+
+    cfg = _pace_cfg(learn_from_history=True)
+    cfg["plans"] = {"gemini": {"monthly_price": 20, "name": "Google AI Pro / Ultra"}}
+
+    alerts = analyze_use_or_lose(snap, cfg)
+
+    history_alerts = [a for a in alerts if a.source == "history"]
+    assert history_alerts, "expected the chronic-waste row to survive (no weekly parent here)"
+
+    names = {provider_display_name(a.provider) for a in alerts}
+    assert names == {"Google AI / Antigravity (agy)"}, names
+
+    alert = history_alerts[0]
+    # Identity is borrowed from the live row, not left anonymous.
+    assert alert.account == "user@example.com"
+    assert alert.window_label == "Gemini 5-hour"
+    # And it inherits the live reset instead of reporting an unknown deadline.
+    assert alert.days_until_reset is not None
+
+
+def test_history_child_is_suppressed_across_collector_label_variants(monkeypatch):
+    """A 5h child under a live weekly parent stays suppressed despite relabelling."""
+    from aiuse.analysis.history import window_series_key
+
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="antigravity",
+                account="user@example.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Gemini 5-hour",
+                        remaining_percent=100.0,
+                        resets_at=now + timedelta(hours=4),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Gemini weekly",
+                        remaining_percent=91.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                ],
+            )
+        ],
+    )
+
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.should_learn_from_history", lambda _cfg: True)
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.compute_learned_burn_rates", lambda **_k: {})
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.compute_learned_flexibility", lambda **_k: {})
+    monkeypatch.setattr(
+        "aiuse.analysis.use_or_lose.chronic_waste_summary",
+        lambda **_k: [
+            {
+                "provider": "antigravity",
+                "account": None,
+                # Label as the *other* collector wrote it — suppression must
+                # still recognise this as the live weekly window's child.
+                "label": "Antigravity Gemini 5-hour",
+                "window_key": window_series_key("antigravity", "Antigravity Gemini 5-hour", 300),
+                "avg_remaining_pct": 94.0,
+                "sample_count": 3,
+            }
+        ],
+    )
+
+    cfg = _pace_cfg(learn_from_history=True)
+    cfg["analysis"]["provider_overrides"] = {"gemini": {"shared_allotment": True}}
+    cfg["plans"] = {"gemini": {"monthly_price": 20}}
+
+    alerts = analyze_use_or_lose(snap, cfg)
+    assert not any(a.source == "history" for a in alerts)

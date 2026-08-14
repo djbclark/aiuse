@@ -105,6 +105,30 @@ Snapshot learning insights (additive). Empty-ish when learning is off or thin.
 | `usually_left_late_cycle`      | array  | Avg remaining when observed ≥70% into a window               |
 | `burn_candidates_from_history` | array  | Subset of late-cycle leftovers (≥40% left avg) as burn hints |
 
+Every `provider` in this section — including the `provider:duration` keys of
+`learned_burn_rates` — is the **canonical** provider id used everywhere else in
+the payload (`antigravity`, `opencode-go`), never the `[plans]` config key
+(`gemini`, `opencode`). Sorting or joining history rows against `accounts[]`
+rows by provider is therefore safe.
+
+`chronic_underuse` entries carry:
+
+| Field               | Type        | Notes                                                                  |
+| ------------------- | ----------- | ---------------------------------------------------------------------- |
+| `provider`          | string      | Canonical provider id                                                  |
+| `account`           | string∣null | Account of the matching live window, when that series is still present |
+| `label`             | string      | Window label, preferring the live row's spelling                       |
+| `window_key`        | string      | `provider:pool:duration` — stable across collectors and relabelling    |
+| `avg_remaining_pct` | number      | Mean remaining across the sampled reset cycles                         |
+| `sample_count`      | int         | Distinct reset cycles sampled                                          |
+
+`window_key` identifies one recurring allotment independently of which
+collector observed it: collectors label the same window differently (CodexBar
+`Gemini 5-hour` vs OpenUsage `Antigravity Gemini 5-hour`), so it is the field to
+group or deduplicate on, not `label`. It is **not** unique on its own — a
+provider with two subscriptions yields one row per account under the same
+`window_key`. The row identity is the `(window_key, account)` pair.
+
 ## Exit codes (collect runs)
 
 - **0** — Data collected (or deliberately skipped), producing valid output.

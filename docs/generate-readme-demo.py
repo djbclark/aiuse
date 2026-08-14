@@ -98,9 +98,11 @@ def _demo_snapshot() -> Snapshot:
                 account="you@example.com",
                 windows=[_window("Cursor included", 29.0, 3.3)],
             ),
+            # Antigravity's Gemini and Claude/GPT pools are independent, so one
+            # account legitimately produces two ladder lines — under one name.
             AccountUsage(
                 source="codexbar",
-                provider="gemini",
+                provider="antigravity",
                 account="you@example.com",
                 windows=[_window("Gemini weekly", 84.0, 4.0)],
             ),
@@ -118,7 +120,7 @@ def _demo_alerts() -> list[UseOrLoseAlert]:
     return [
         UseOrLoseAlert(
             urgency=Urgency.CRITICAL,
-            provider="opencode",
+            provider="opencode-go",
             account="you@example.com",
             window_label="OpenCode Go weekly quota",
             remaining_percent=0.0,

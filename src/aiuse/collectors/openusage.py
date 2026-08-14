@@ -76,6 +76,19 @@ _RESOURCE_LABELS: dict[str, str] = {
     "webSearches": "web searches",
 }
 
+# Resource ids whose label above already names the pool, so prefixing the
+# provider's displayName would double-qualify it ("Antigravity Gemini 5-hour"
+# where CodexBar says "Gemini 5-hour"). Two spellings of one window fork the
+# history series that analysis/history.py keys on.
+_SELF_QUALIFIED_LABELS = frozenset(
+    {
+        "geminiSession",
+        "geminiWeekly",
+        "nonGeminiSession",
+        "nonGeminiWeekly",
+    }
+)
+
 
 def collect_openusage_ai(
     *,
@@ -299,6 +312,8 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
                 label = f"{display} {pretty}"
                 if not keep_copilot_report_window(label):
                     continue
+        elif label_key in _SELF_QUALIFIED_LABELS:
+            label = pretty
         else:
             label = f"{display} {pretty}"
 
