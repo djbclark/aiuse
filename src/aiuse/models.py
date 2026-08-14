@@ -29,10 +29,7 @@ class RoutingContext:
 
 def normalize_provider(provider: str) -> str:
     """Normalize external provider IDs (like 'openai-codex') to internal canonical keys."""
-    if not provider:
-        return provider
-    key = provider.lower()
-    return EXTERNAL_PROVIDER_ALIASES.get(key, key)
+    return canonical_provider(provider)
 
 
 def utcnow() -> datetime:
@@ -75,6 +72,9 @@ def classify_window_minutes(minutes: int | None) -> str | None:
 
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
+    # Keyed by *canonical* provider id (see canonical_provider) — never by a
+    # config key, or the same vendor prints under two names in one report.
+    #
     # Every display name should contain its vendor CLI's name as a case-insensitive
     # substring, so `grep -i <cli-name>` finds the right report line. Most vendor
     # names already do (Claude/claude, Codex/codex, GitHub Copilot/copilot,
@@ -86,10 +86,29 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "codex": "Codex",
     "copilot": "GitHub Copilot",
     "cursor": "Cursor (cursor-agent)",
-    "gemini": "Gemini (agy)",
     "grok": "Grok",
     "opencode-go": "OpenCode Go",
     "opencode-zen": "OpenCode Zen",
+}
+
+# Any provider spelling that may reach us — vendor ids from collectors, external
+# orchestrator ids, and the config keys below — mapped to the one canonical
+# provider id used for identity, matching and display.
+#
+# Note the direction: this table collapses *toward* the collector id, while
+# PROVIDER_CONFIG_ALIASES maps the other way, toward the `[plans]` /
+# `[provider_overrides]` config key. Config keys are included here (gemini,
+# opencode) so a round trip through provider_config_key — or an old snapshot
+# written before this normalization existed — still lands on one identity.
+PROVIDER_ID_ALIASES: dict[str, str] = {
+    "chatgpt": "codex",
+    "openai-codex": "codex",
+    "github-copilot": "copilot",
+    "grok-build": "grok",
+    "supergrok": "grok",
+    "opencodego": "opencode-go",
+    "opencode": "opencode-go",
+    "gemini": "antigravity",
 }
 
 # Map canonical collector provider keys to config plan/override keys.
@@ -99,18 +118,37 @@ PROVIDER_CONFIG_ALIASES: dict[str, str] = {
 }
 
 # Map external orchestrator (e.g. Hermes) provider IDs to aiuse canonical providers.
+# Subset of PROVIDER_ID_ALIASES, kept for callers that import it by name.
 EXTERNAL_PROVIDER_ALIASES: dict[str, str] = {
     "openai-codex": "codex",
 }
 
 
+def canonical_provider(provider: str) -> str:
+    """Normalize any provider spelling to the canonical collector provider id.
+
+    This is the identity key: two rows describing the same vendor subscription
+    must agree here, whether they came from a collector, an external
+    orchestrator, or a snapshot written by an older version.
+    """
+    if not provider:
+        return provider
+    key = provider.strip().lower().replace(" ", "-")
+    return PROVIDER_ID_ALIASES.get(key, key)
+
+
 def provider_display_name(provider: str) -> str:
-    return PROVIDER_DISPLAY_NAMES.get(provider, provider.replace("-", " ").title())
+    key = canonical_provider(provider)
+    return PROVIDER_DISPLAY_NAMES.get(key, key.replace("-", " ").title())
 
 
 def provider_config_key(provider: str) -> str:
-    """Normalize a provider id for looking up plans / provider_overrides."""
-    key = provider.lower().replace(" ", "-")
+    """Normalize a provider id for looking up plans / provider_overrides.
+
+    Config lookup only. Never use the result as an identity or display key —
+    it deliberately collapses onto the config's spelling of the vendor.
+    """
+    key = canonical_provider(provider)
     return PROVIDER_CONFIG_ALIASES.get(key, key)
 
 

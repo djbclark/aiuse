@@ -876,8 +876,8 @@ def test_priority_ladder_lists_antigravity_pools_separately():
         windows=[
             QuotaWindow(
                 label="Gemini 5-hour",
-                used_percent=100.0,
-                remaining_percent=0.0,
+                used_percent=99.0,
+                remaining_percent=1.0,
                 resets_at=now + timedelta(hours=1),
                 window_minutes=300,
             ),

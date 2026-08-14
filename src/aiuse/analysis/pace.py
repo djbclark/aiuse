@@ -95,20 +95,36 @@ def classify_pace(
 def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None, list[QuotaWindow]]:
     """Longest-duration window with usable remaining() governs; the rest are children.
 
+    If any window is completely exhausted (0% remaining), it becomes the governing
+    window because it temporarily blocks the entire pool, overriding longer durations.
     When durations tie (e.g. Cursor Included/Auto/other-models all monthly), prefer a
     window whose label looks like the overall included bar, then list order.
     """
+    usable = [w for w in windows if w.remaining() is not None]
+    if not usable:
+        return None, list(windows)
+
+    exhausted = [w for w in usable if (w.remaining() or 0.0) <= 0.0]
+    if exhausted:
+        # Shortest duration first (the immediate block)
+        exhausted.sort(
+            key=lambda w: (
+                w.window_minutes or nominal_window_minutes(classify_window_minutes(w.window_minutes)) or 0,
+                0 if "included" in (w.label or "").casefold() else 1,
+            )
+        )
+        governing = exhausted[0]
+        children = [w for w in windows if w is not governing]
+        return governing, children
+
     scored = [
         (
             w.window_minutes or nominal_window_minutes(classify_window_minutes(w.window_minutes)) or 0,
             0 if "included" in (w.label or "").casefold() else 1,
             w,
         )
-        for w in windows
-        if w.remaining() is not None
+        for w in usable
     ]
-    if not scored:
-        return None, list(windows)
     # Longest minutes first; among ties, included (rank 0) before others.
     scored.sort(key=lambda pair: (-pair[0], pair[1]))
     governing = scored[0][2]

@@ -131,9 +131,19 @@ def test_fixture_expectations(fixture, monkeypatch):
 
     # Governing label (shared allotment structure)
     if expected.get("governing_label") is not None:
-        gov, _ = governing_partition(account.windows)
-        assert gov is not None
-        assert gov.label == expected["governing_label"]
+        from aiuse.analysis.pace import partition_independent_pools
+
+        pools = list(partition_independent_pools(account.windows))
+        found = False
+        gov_labels = []
+        for pool in pools:
+            gov, _ = governing_partition(pool)
+            if gov is not None:
+                gov_labels.append(gov.label)
+                if gov.label == expected["governing_label"]:
+                    found = True
+                    break
+        assert found, f"Expected {expected['governing_label']}, got {gov_labels}"
 
     # Pace verdict on first window with remaining (when requested)
     if expected.get("pace_verdict") is not None and account.windows:

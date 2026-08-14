@@ -9,7 +9,16 @@ from functools import partial
 from typing import Any
 
 from aiuse.config import timeout_for
-from aiuse.models import AccountUsage, CrossCheck, QuotaWindow, Snapshot, provider_display_name, utcnow
+from aiuse.models import (
+    PROVIDER_ID_ALIASES,
+    AccountUsage,
+    CrossCheck,
+    QuotaWindow,
+    Snapshot,
+    canonical_provider,
+    provider_display_name,
+    utcnow,
+)
 
 from .base import which
 from .caut import collect_caut
@@ -51,15 +60,9 @@ SOURCE_LABELS: dict[str, str] = {
     "tokscale": "tokscale",
 }
 
-_PROVIDER_ALIASES = {
-    "chatgpt": "codex",
-    "openai-codex": "codex",
-    "github-copilot": "copilot",
-    "grok-build": "grok",
-    "supergrok": "grok",
-    "opencodego": "opencode-go",
-    "opencode": "opencode-go",
-}
+# Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
+# and the history/analysis passes cannot drift onto different spellings.
+_PROVIDER_ALIASES = PROVIDER_ID_ALIASES
 
 
 def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
@@ -155,8 +158,7 @@ def _enabled(collectors_cfg: dict[str, Any], name: str) -> bool:
 
 
 def _canonical_provider(provider: str) -> str:
-    key = provider.lower().replace(" ", "-")
-    return _PROVIDER_ALIASES.get(key, key)
+    return canonical_provider(provider)
 
 
 def _source_priority(provider: str, *, cswap_authoritative: bool) -> tuple[str, ...]:

@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from aiuse.models import Snapshot, provider_config_key, utcnow
+from aiuse.analysis.pace import independent_pool_key
+from aiuse.models import Snapshot, canonical_provider, utcnow
 
 _DEFAULT_SNAPSHOT_DIR = "~/.cache/aiuse/snapshots"
 _DEFAULT_RETENTION_DAYS = 90
@@ -107,11 +108,58 @@ def load_recent_snapshots(
 
 
 def _account_window_key(account: dict[str, Any], window: dict[str, Any]) -> str:
-    provider = str(account.get("provider", "")).lower()
-    acct = str(account.get("account", "")).lower()
-    label = str(window.get("label", "")).lower()
+    provider = canonical_provider(str(account.get("provider") or ""))
+    # `.get("account", "")` is not enough: snapshots store an explicit null for
+    # anonymous rows, and str(None) would key them under the literal "none".
+    acct = str(account.get("account") or "").lower()
+    label = str(window.get("label") or "").lower()
     resets = window.get("resets_at") or ""
     return f"{provider}|{acct}|{label}|{resets}"
+
+
+def window_series_key(provider: str, label: str | None, window_minutes: Any) -> str:
+    """Source-independent identity for one recurring quota window.
+
+    Collectors label the same window differently — CodexBar reports Antigravity's
+    short Gemini pool as ``Gemini 5-hour`` while OpenUsage reports it as
+    ``Antigravity Gemini 5-hour`` — so keying history on the raw label forks one
+    subscription into two series that never match each other or the live
+    snapshot. What actually identifies the allotment is the provider, the
+    independent pool within it (Gemini vs Claude/GPT), and the window duration.
+    """
+    pool = independent_pool_key(label) or "-"
+    duration = _duration_key(window_minutes) or "?"
+    return f"{canonical_provider(provider)}:{pool}:{duration}"
+
+
+def live_window_index(snapshot: Snapshot) -> dict[str, dict[str, Any]]:
+    """Series key → identity of the matching window in the current snapshot.
+
+    History records carry whatever account/label the source that wrote them
+    used. When the same series is live now, the live row is the better identity
+    to report: it names the account the user actually holds and the label the
+    rest of the report shows.
+    """
+    index: dict[str, dict[str, Any]] = {}
+    for account in snapshot.accounts:
+        for window in account.windows:
+            key = window_series_key(account.provider, window.label, window.window_minutes)
+            entry = index.get(key)
+            if entry is None:
+                index[key] = {
+                    "provider": canonical_provider(account.provider),
+                    "account": account.account,
+                    "label": window.label,
+                    "resets_at": window.resets_at,
+                }
+                continue
+            # Prefer an entry that carries an account and a reset time.
+            if entry.get("account") is None and account.account:
+                entry["account"] = account.account
+                entry["label"] = window.label
+            if entry.get("resets_at") is None and window.resets_at is not None:
+                entry["resets_at"] = window.resets_at
+    return index
 
 
 def compute_learned_burn_rates(
@@ -152,7 +200,7 @@ def compute_learned_burn_rates(
         weight = min(time_delta_days, 1.0)
 
         for prev_account in prev_data.get("accounts") or []:
-            provider = provider_config_key(str(prev_account.get("provider", "")))
+            provider = canonical_provider(str(prev_account.get("provider") or ""))
             for prev_window in prev_account.get("windows") or []:
                 prev_remaining = prev_window.get("remaining_percent")
                 if prev_remaining is None:
@@ -252,7 +300,9 @@ def merge_learned_flexibility(
 ) -> float:
     if not duration_kind or not learned:
         return base_flex
-    key = f"{provider.lower().replace(' ', '-')}:{duration_kind}"
+    # Same canonicalization the rates were stored under — spelling the provider
+    # any other way here silently never matched (antigravity vs gemini).
+    key = f"{canonical_provider(provider)}:{duration_kind}"
     learned_flex = learned.get(key)
     # Exact provider match only — never blend another provider's rate for the
     # same duration bucket (Grok weekly ≠ Codex weekly).
@@ -270,6 +320,8 @@ def chronic_waste_summary(
     if len(history) < _DEFAULT_MIN_SNAPSHOTS:
         return []
 
+    live = live_window_index(current)
+
     # samples: list of (resets_at_key, remaining) — at most one per cycle
     wasted: dict[str, dict[str, Any]] = {}
 
@@ -283,7 +335,7 @@ def chronic_waste_summary(
             continue
 
         for prev_account in prev_data.get("accounts") or []:
-            provider = provider_config_key(str(prev_account.get("provider", "")))
+            provider = canonical_provider(str(prev_account.get("provider") or ""))
             for prev_window in prev_account.get("windows") or []:
                 window_minutes = prev_window.get("window_minutes")
                 if not window_minutes or window_minutes > 360:
@@ -294,13 +346,14 @@ def chronic_waste_summary(
                 if prev_remaining is None:
                     continue
 
-                key = f"{provider}:{prev_window.get('label', '')}"
+                label = str(prev_window.get("label") or "")
+                key = window_series_key(provider, label, window_minutes)
                 resets_key = str(prev_window.get("resets_at") or "") or f"unknown:{ts_str}"
                 bucket = wasted.setdefault(
                     key,
                     {
                         "provider": provider,
-                        "label": prev_window.get("label", ""),
+                        "label": label,
                         "by_reset": {},  # resets_at -> remaining (most recent wins)
                     },
                 )
@@ -315,10 +368,15 @@ def chronic_waste_summary(
             continue
         samples = list(by_reset.values())
         avg = sum(samples) / len(samples)
+        # Report the live row's identity when this series still exists, so a
+        # history line names the same account and label as the live lines above it.
+        live_entry = live.get(key) or {}
         result.append(
             {
-                "provider": data["provider"],
-                "label": data["label"],
+                "provider": live_entry.get("provider") or data["provider"],
+                "account": live_entry.get("account"),
+                "label": live_entry.get("label") or data["label"],
+                "window_key": key,
                 "avg_remaining_pct": round(avg, 1),
                 "sample_count": len(samples),
             }
@@ -343,27 +401,42 @@ def _find_current_remaining(
     *,
     match_resets: bool = True,
 ) -> float | None:
-    prev_provider = provider_config_key(str(prev_account.get("provider", "")))
-    prev_account_id = str(prev_account.get("account", "")).lower()
-    prev_label = str(prev_window.get("label", "")).lower()
+    prev_provider = canonical_provider(str(prev_account.get("provider") or ""))
+    # Anonymous rows store an explicit null, so `.get("account", "")` would
+    # stringify to "none" and never match a live account of None.
+    prev_account_id = str(prev_account.get("account") or "").strip().lower()
+    prev_label = str(prev_window.get("label") or "").strip().lower()
     prev_resets = prev_window.get("resets_at") or ""
 
+    exact: list[float] = []
+    anonymous: list[float] = []
     for acc in snapshot.accounts:
-        if provider_config_key(acc.provider) != prev_provider:
+        if canonical_provider(acc.provider) != prev_provider:
             continue
-        if (acc.account or "").lower() != prev_account_id:
-            continue
+        acc_id = (acc.account or "").strip().lower()
         for w in acc.windows:
-            if w.label.lower() != prev_label:
+            if w.label.strip().lower() != prev_label:
                 continue
             if match_resets and prev_resets:
                 w_resets = w.resets_at.isoformat() if w.resets_at else ""
                 if w_resets != prev_resets:
                     continue
             val = w.remaining()
-            if val is not None:
-                return val
-            return _remaining_from_used(w.used_percent)
+            if val is None:
+                val = _remaining_from_used(w.used_percent)
+            if val is None:
+                continue
+            if acc_id == prev_account_id:
+                exact.append(val)
+            elif not prev_account_id or not acc_id:
+                # One side never reported an account (OpenUsage's envelope is
+                # provider-scoped). Usable, but only when unambiguous — a
+                # multi-account provider must not silently borrow a sibling's row.
+                anonymous.append(val)
+    if exact:
+        return exact[0]
+    if len(anonymous) == 1:
+        return anonymous[0]
     return None
 
 
@@ -484,7 +557,7 @@ def late_cycle_remaining_summary(
             continue
 
         for prev_account in prev_data.get("accounts") or []:
-            provider = provider_config_key(str(prev_account.get("provider", "")))
+            provider = canonical_provider(str(prev_account.get("provider") or ""))
             for prev_window in prev_account.get("windows") or []:
                 remaining = prev_window.get("remaining_percent")
                 if remaining is None:
