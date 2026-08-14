@@ -11,7 +11,7 @@ from rich.rule import Rule
 from rich.text import Text
 
 from aiuse.models import Snapshot, UseOrLoseAlert
-from aiuse.report import render_priority_ladder, render_stderr_meta
+from aiuse.report import render_clock_matrix, render_stderr_meta
 from aiuse.tui.builders import ReportSection, build_report_sections
 
 # Panel chrome (borders + padding) eats columns from glance clamp width.
@@ -83,7 +83,7 @@ def run_usage_app(
     quiet: bool = False,
     color: bool | None = None,
 ) -> None:
-    """Print the styled report (default: priority ladder on stdout, meta on stderr)."""
+    """Print the styled report (default: usage table on stdout, meta on stderr)."""
     if not full:
         out = Console(highlight=False, soft_wrap=True, emoji=False)
         width = max(40, out.width)
@@ -92,13 +92,14 @@ def run_usage_app(
             meta = render_stderr_meta(snapshot, alerts, color=color)
             for line in meta.splitlines():
                 err.print(_as_text(line))
-        ladder = render_priority_ladder(
+        table = render_clock_matrix(
             alerts,
             snapshot=snapshot,
+            config=config,
             color=color if color is not None else None,
             width=width,
         )
-        for line in ladder.splitlines():
+        for line in table.splitlines():
             out.print(_as_text(line) if line else "")
         return
 

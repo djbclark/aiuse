@@ -170,13 +170,14 @@ def test_should_use_tui_honors_tty_compatible_override(monkeypatch):
     assert should_use_tui(stream=TTY()) is False
 
 
-def test_run_usage_app_default_prints_priority_ladder(capsys):
+def test_run_usage_app_default_prints_usage_table(capsys):
     from aiuse.tui.app import run_usage_app
 
     run_usage_app(_snap_with_account(), [_burn_alert()], full=False, quiet=True)
     out = capsys.readouterr().out
     assert "use" in out
-    assert "Codex" in out
+    assert "codex" in out
+    assert "WEEK" in out  # the table header, not the long report
     assert "Per-provider usage" not in out
     assert "Detail: ai --full" not in out
 

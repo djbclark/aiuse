@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from aiuse.analysis.history import (
-    _account_window_key,
     _burn_rate_to_flexibility,
     _duration_key,
     _remaining_from_used,
@@ -55,16 +54,6 @@ def test_duration_key():
     assert _duration_key(44640) == "monthly"
     assert _duration_key(None) is None
     assert _duration_key("bad") is None
-
-
-def test_account_window_key():
-    account = {"provider": "claude", "account": "test@example.com"}
-    window = {"label": "5-hour", "resets_at": "2026-01-01T00:00:00Z"}
-    key = _account_window_key(account, window)
-    assert "claude" in key
-    assert "test@example.com" in key
-    assert "5-hour" in key
-    assert "2026" in key
 
 
 def test_burn_rate_to_flexibility():
@@ -785,3 +774,147 @@ def test_anonymous_history_row_does_not_borrow_a_sibling_account(tmp_path: Path)
     assert resolve_live_window(index, key, None) is None
     # Named → exactly that account.
     assert resolve_live_window(index, key, "b@example.com")["account"] == "b@example.com"
+
+
+def test_sliding_reset_counts_one_cycle_not_one_per_collection(tmp_path: Path):
+    """Most providers recompute the reset on every poll — that is not a new cycle.
+
+    Regression: `by_reset` keyed the raw `resets_at` string, so seven snapshots
+    ~90s apart produced seven distinct keys and the report claimed "over 7
+    cycles" for a 5-hour window. Seven cycles would take 35 hours.
+    """
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        for i in range(8):
+            collected = now - timedelta(minutes=90 * i / 60.0)
+            data = {
+                "collected_at": collected.isoformat(),
+                "accounts": [
+                    {
+                        "provider": "claude",
+                        "account": "u@x.com",
+                        "windows": [
+                            {
+                                "label": "Claude Code 5-hour",
+                                "remaining_percent": 90.0,
+                                "window_minutes": 300,
+                                # Sliding: recomputed relative to each poll.
+                                "resets_at": (collected + timedelta(hours=4)).isoformat(),
+                            }
+                        ],
+                    }
+                ],
+            }
+            (tmp_path / f"s{i}.json").write_text(json.dumps(data), encoding="utf-8")
+
+        current = Snapshot(collected_at=now, accounts=[])
+        wasted = chronic_waste_summary(current=current, retention_days=90)
+        # All eight observations sit inside a single 5-hour cycle, so there are
+        # not >=2 cycles to call anything "chronic".
+        assert wasted == []
+
+
+def test_genuine_reset_cycles_are_still_counted(tmp_path: Path):
+    """A fixed reset that really does advance a window at a time still counts."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        for i in range(3):
+            collected = now - timedelta(hours=5 * i)
+            data = {
+                "collected_at": collected.isoformat(),
+                "accounts": [
+                    {
+                        "provider": "claude",
+                        "account": "u@x.com",
+                        "windows": [
+                            {
+                                "label": "Claude Code 5-hour",
+                                "remaining_percent": 95.0,
+                                "window_minutes": 300,
+                                # Fixed schedule: a full window between resets.
+                                "resets_at": (now + timedelta(hours=1) - timedelta(hours=5 * i)).isoformat(),
+                            }
+                        ],
+                    }
+                ],
+            }
+            (tmp_path / f"s{i}.json").write_text(json.dumps(data), encoding="utf-8")
+
+        current = Snapshot(collected_at=now, accounts=[])
+        wasted = chronic_waste_summary(current=current, retention_days=90)
+        assert len(wasted) == 1
+        assert wasted[0]["sample_count"] == 3
+
+
+def test_reset_cycle_grouping_thresholds():
+    from aiuse.analysis.history import _group_into_reset_cycles
+
+    def dated(*iso: str):
+        return {stamp: (100.0, None) for stamp in iso}
+
+    # A sliding 5h reset drifting a few minutes per poll is one cycle.
+    sliding = dated(*[f"2026-08-14T15:{25 + i}:00+00:00" for i in range(8)])
+    assert len(_group_into_reset_cycles(sliding, 300)) == 1
+
+    # Resets a full window apart are distinct cycles.
+    fixed_5h = dated(
+        "2026-08-14T05:00:00+00:00",
+        "2026-08-14T10:00:00+00:00",
+        "2026-08-14T15:00:00+00:00",
+    )
+    assert len(_group_into_reset_cycles(fixed_5h, 300)) == 3
+
+    weekly = dated(
+        "2026-08-07T09:00:00+00:00",
+        "2026-08-14T09:00:00+00:00",
+        "2026-08-21T09:00:00+00:00",
+    )
+    assert len(_group_into_reset_cycles(weekly, 10080)) == 3
+    # The same three timestamps are one cycle for a monthly window.
+    assert len(_group_into_reset_cycles(weekly, 43800)) == 1
+
+
+def test_reset_cycles_fall_back_to_collection_time_without_a_reset():
+    """No resets_at at all: separate cycles by when we saw them."""
+    from aiuse.analysis.history import _group_into_reset_cycles
+
+    base = datetime(2026, 8, 14, 12, 0, tzinfo=timezone.utc)
+    daily = {f"unknown:{i}": (80.0, base - timedelta(days=i)) for i in range(4)}
+    assert len(_group_into_reset_cycles(daily, 300)) == 4
+
+    minutes_apart = {f"unknown:{i}": (80.0, base - timedelta(minutes=i)) for i in range(4)}
+    assert len(_group_into_reset_cycles(minutes_apart, 300)) == 1
+
+
+def test_chronic_waste_uses_a_time_window_not_a_file_count(tmp_path: Path):
+    """The old `history[:7]` slice meant "last 9 minutes" at a 90s cadence."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        # 12 snapshots, one per day: all but the oldest few are inside 7 days.
+        for i in range(12):
+            collected = now - timedelta(days=i)
+            data = {
+                "collected_at": collected.isoformat(),
+                "accounts": [
+                    {
+                        "provider": "claude",
+                        "account": "u@x.com",
+                        "windows": [
+                            {
+                                "label": "Claude Code 5-hour",
+                                "remaining_percent": 90.0,
+                                "window_minutes": 300,
+                                "resets_at": (collected + timedelta(hours=1)).isoformat(),
+                            }
+                        ],
+                    }
+                ],
+            }
+            (tmp_path / f"s{i:02d}.json").write_text(json.dumps(data), encoding="utf-8")
+
+        current = Snapshot(collected_at=now, accounts=[])
+        wasted = chronic_waste_summary(current=current, retention_days=90)
+        assert len(wasted) == 1
+        # 7-day lookback over daily snapshots: 8 cycles (day 0 through day 7),
+        # not the 7 files the old slice happened to take.
+        assert wasted[0]["sample_count"] == 8

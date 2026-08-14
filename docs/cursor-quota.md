@@ -1,8 +1,9 @@
 # Cursor quota reliability
 
-Cursor's agent CLI is `cursor-agent` — every report line for this provider
-carries that name (as `Cursor (cursor-agent)`, see `PROVIDER_DISPLAY_NAMES`
-in `models.py`) so `grep -i cursor-agent` finds it.
+Cursor's agent CLI is `cursor-agent`. Every report line for this provider is
+named `cursor` (see `PROVIDER_DISPLAY_NAMES` in `models.py`), so `grep -i
+cursor` finds it — the display names are the CLI handles themselves rather
+than a longer vendor name carrying the handle in parentheses.
 
 **Symptom:** `ai` showed three identical “Cursor monthly quota (1/2/3)” bars,
 invented separate dollar-at-risk for each, and raised **CONSERVE** on quota (3)

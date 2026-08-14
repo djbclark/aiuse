@@ -1298,7 +1298,7 @@ def test_history_alert_uses_the_same_provider_name_as_live_rows(monkeypatch):
     assert history_alerts, "expected the chronic-waste row to survive (no weekly parent here)"
 
     names = {provider_display_name(a.provider) for a in alerts}
-    assert names == {"Google AI / Antigravity (agy)"}, names
+    assert names == {"agy"}, names
 
     alert = history_alerts[0]
     # Identity is borrowed from the live row, not left anonymous.

@@ -574,3 +574,65 @@ def test_parse_cursor_included_auto_other_models_and_ondemand():
     assert len(other) == 1
     assert other[0].kind == "conserve"
     assert all(a.kind != "prepaid" for a in alerts)
+
+
+def test_antigravity_unnamed_slots_get_the_same_pool_names_as_titled_windows():
+    """CodexBar reports antigravity two ways; both must land on one identity.
+
+    With `extraRateWindows` the windows arrive titled ("Gemini 5-hour"). With
+    only primary/secondary they used to arrive as "quota 1/2 (name not supplied
+    by CodexBar)", which forked the same subscription: pool splitting saw no
+    Gemini/Claude-GPT pools and history keyed a second, unmatchable series.
+    """
+    from datetime import timedelta
+
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    row = {
+        "provider": "antigravity",
+        "source": "cli",
+        "account": "user@example.com",
+        "usage": {
+            # No windowMinutes and no titles — the shape that used to break.
+            "primary": {"usedPercent": 1.0, "resetsAt": (now + timedelta(hours=4)).isoformat()},
+            "secondary": {"usedPercent": 0.0, "resetsAt": (now + timedelta(hours=5)).isoformat()},
+        },
+    }
+    acc = _from_row(row)
+    assert acc is not None
+    labels = [w.label for w in acc.windows]
+    assert labels == ["Gemini 5-hour", "Claude/GPT 5-hour"]
+
+
+def test_antigravity_named_and_unnamed_shapes_split_into_the_same_pools():
+    from datetime import timedelta
+
+    from aiuse.analysis.pace import independent_pool_key, partition_independent_pools
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    unnamed = _from_row(
+        {
+            "provider": "antigravity",
+            "source": "cli",
+            "account": "user@example.com",
+            "usage": {
+                "primary": {"usedPercent": 1.0, "resetsAt": (now + timedelta(hours=4)).isoformat()},
+                "secondary": {"usedPercent": 0.0, "resetsAt": (now + timedelta(hours=5)).isoformat()},
+            },
+        }
+    )
+    assert unnamed is not None
+    # Two hard-separated pools, exactly as the titled shape produces.
+    assert [independent_pool_key(w.label) for w in unnamed.windows] == ["gemini", "claude_gpt"]
+    assert len(partition_independent_pools(unnamed.windows)) == 2
+
+
+def test_antigravity_slot_label_falls_back_when_reset_is_absent():
+    """No duration and no reset: keep the pool name, drop the invented suffix."""
+    from aiuse.collectors.codexbar import _slot_label
+
+    assert _slot_label("antigravity", 1, {}) == "Gemini"
+    # A slot beyond the known pools keeps the generic fallback.
+    assert "quota 3" in _slot_label("antigravity", 3, {})

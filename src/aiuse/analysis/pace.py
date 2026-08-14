@@ -164,6 +164,22 @@ def independent_pool_key(label: str | None) -> str | None:
     return None
 
 
+# Short human names for the pool slugs above. Lives here rather than in a
+# renderer so the table and the chat format name a pool the same way.
+POOL_SCOPE_LABELS = {
+    "gemini": "gemini",
+    "claude_gpt": "claude/gpt",
+    "cursor_other_models": "other models",
+}
+
+
+def pool_scope_label(pool_id: str | None) -> str | None:
+    """Display name for an independent pool, or None for the residual pool."""
+    if not pool_id:
+        return None
+    return POOL_SCOPE_LABELS.get(pool_id, pool_id)
+
+
 def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWindow]]:
     """Group windows into hard-separated allotment pools.
 

@@ -15,6 +15,7 @@ from aiuse.models import (
     classify_window_minutes,
     keep_copilot_report_window,
     parse_dt,
+    utcnow,
 )
 from aiuse.models import coerce_float as _f
 from aiuse.models import coerce_int as _int_or_none
@@ -451,10 +452,56 @@ def _window(label: str, block: dict[str, Any]) -> QuotaWindow | None:
     )
 
 
+def _block_window_kind(block: dict[str, Any]) -> str | None:
+    """Duration bucket for a CodexBar slot, from its length or its reset distance.
+
+    CodexBar frequently omits ``windowMinutes`` (every antigravity slot does),
+    so fall back to how far out the reset is. Only used to compose a label —
+    getting the *pool* right matters far more than the suffix.
+    """
+    kind = classify_window_minutes(_int_or_none(block.get("windowMinutes") or block.get("window_minutes")))
+    if kind is not None:
+        return kind
+    resets = parse_dt(block.get("resetsAt") or block.get("resets_at"))
+    if resets is None:
+        return None
+    days = (resets - utcnow()).total_seconds() / 86400.0
+    if days <= 0.5:
+        return "5h"
+    if days <= 8.0:
+        return "weekly"
+    if days <= 45.0:
+        return "monthly"
+    return None
+
+
+# Providers whose numbered slots map to *named, hard-separated pools* rather
+# than to one fixed label each. The pool name is the stable part; the duration
+# suffix is composed per observation.
+#
+# Antigravity: CodexBar reports Gemini and Claude/GPT as two independent pools.
+# When it populates `extraRateWindows` those windows arrive already titled
+# ("Gemini 5-hour", "Claude/GPT weekly"); when it only fills primary/secondary
+# they arrived here unnamed, which forked the same subscription into a "quota
+# 1/2" identity that history and pool-splitting could not match to the titled
+# one. Slot→pool order confirmed against snapshot history: every observed
+# `quota 1` reset timestamp also appears as a `Gemini 5-hour` reset and none as
+# a Claude/GPT one; slot 2 is Claude/GPT by elimination (there are only two).
+_SLOT_POOL_PREFIXES: dict[str, tuple[str, ...]] = {
+    "antigravity": ("Gemini", "Claude/GPT"),
+}
+
+_KIND_SUFFIX = {"5h": " 5-hour", "weekly": " weekly", "monthly": " monthly"}
+
+
 def _slot_label(provider: str, index: int, block: dict[str, Any]) -> str:
     mapped = _SLOT_LABELS.get(provider)
     if mapped:
         return mapped[index - 1]
+
+    pools = _SLOT_POOL_PREFIXES.get(provider)
+    if pools and index <= len(pools):
+        return f"{pools[index - 1]}{_KIND_SUFFIX.get(_block_window_kind(block) or '', '')}"
 
     minutes = _int_or_none(block.get("windowMinutes") or block.get("window_minutes"))
     provider_name = {

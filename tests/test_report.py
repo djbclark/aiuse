@@ -16,6 +16,7 @@ from aiuse.models import (
     utcnow,
 )
 from aiuse.report import (
+    _BAND_TAG,
     ACTION_PLAN_MAX_LINES,
     ACTION_PLAN_WIDTH,
     _action_plan_line,
@@ -26,10 +27,14 @@ from aiuse.report import (
     _strip_ansi,
     _Style,
     _throttled_waste_line,
+    render_clock_matrix,
     render_priority_ladder,
     render_report,
     render_status_line,
 )
+
+# Every band tag that can start a table row, e.g. {"error", "empty", "mid", ...}.
+_BAND_TAGS = {tag.strip() for tag, _color in _BAND_TAG.values()}
 
 
 @pytest.mark.parametrize(
@@ -116,7 +121,7 @@ def test_ladder_classifies_every_unalerted_remaining_capacity_band(remaining: fl
     text = render_priority_ladder([], snapshot=snapshot, color=False)
 
     assert text.split()[0] == expected_band
-    assert "Grok · djbclark@gmail.com · Grok usage limit:" in text
+    assert "grok · djbclark@gmail.com · Grok usage limit:" in text
     expected_remaining = "<1%" if 0.0 < remaining < 1.0 else f"{remaining:.0f}%"
     assert f"{expected_remaining} left" in text
     if remaining <= 0.0:
@@ -162,14 +167,14 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     text = render_priority_ladder([alert], snapshot=snapshot, color=False)
 
     lines = text.splitlines()
-    go_line = next(line for line in lines if "OpenCode Go" in line)
+    go_line = next(line for line in lines if "oc-go" in line)
     assert go_line.startswith("empty")
     assert "0% left" in go_line
     assert "resets" in go_line
     # Empty tag must not also claim pace / upcoming lockout.
     assert " pace " not in go_line
     assert "~lockout" not in go_line
-    zen_line = next(line for line in lines if "OpenCode Zen" in line)
+    zen_line = next(line for line in lines if "oc-zen" in line)
     assert zen_line.startswith("empty")
     assert "balance $-0.04" in zen_line
     assert "no expiry" in zen_line
@@ -317,11 +322,13 @@ def test_per_provider_accounts_are_sorted_by_display_name():
         AccountUsage(provider="claude", source="cswap", error="unavailable"),
     ]
 
+    # Order follows the *display* name, not the canonical provider id, so
+    # antigravity leads: its display name is "agy".
     assert [account.provider for account in _sorted_accounts(accounts)] == [
+        "antigravity",
         "claude",
         "codex",
         "copilot",
-        "antigravity",
     ]
 
 
@@ -725,13 +732,13 @@ def test_brief_action_plan_caps_lines_per_provider():
     ]
     body = _render_brief_action_plan(alerts, _Style(False), width=80, max_lines=40)
     plain = [_strip_ansi(line) for line in body]
-    claude_alert_lines = [line for line in plain if "Claude" in line and "window-" in line]
+    claude_alert_lines = [line for line in plain if "claude" in line and "window-" in line]
     assert len(claude_alert_lines) == BRIEF_MAX_LINES_PER_PROVIDER
     assert any("more" in line for line in plain)
-    assert any("Codex" in line for line in plain)
+    assert any("codex" in line for line in plain)
 
 
-def test_default_report_is_priority_ladder():
+def test_default_report_is_clock_matrix():
     from aiuse.report import render_stderr_meta
 
     now = utcnow()
@@ -779,14 +786,20 @@ def test_default_report_is_priority_ladder():
     assert "Detail: ai --full" not in text
     assert "\n\n" not in text
     lines = text.splitlines()
-    assert lines[0].startswith("error")
-    assert "session expired" in lines[0]
-    assert text.index("error") < text.index("empty")
-    assert text.index("empty") < text.index("use")
-    assert lines[-1].startswith("use")
+    # Header first, then one tagged row per account/pool, then any legend.
+    # No account here has independent pools, so SCOPE earns no column.
+    assert lines[0].split() == ["SERVICE", "ACCT", "5H", "WEEK", "MONTH", "NEXT", "$", "UNUSED"]
+    rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
+    assert rows[0].startswith("error")
+    assert "session expired" in rows[0]
+    # Order by row tag, not by raw substring position — the header note
+    # ("% used …") contains "use" and would satisfy a naive text.index check.
+    tags = [row[:5].strip() for row in rows]
+    assert tags.index("error") < tags.index("empty") < tags.index("use")
+    assert rows[-1].startswith("use")
     # Every account appears (broken as error; codex via burn alert)
-    assert "Grok" in text or "grok" in text.lower()
-    assert "Codex" in text
+    assert "grok" in text.lower()
+    assert "codex" in text
     meta = render_stderr_meta(snap, [empty, burn], color=False)
     assert "Collected at" in meta
     assert "tokscale: boom" in meta
@@ -1111,8 +1124,13 @@ def test_brief_report_omits_usage_and_tips():
     assert "## Per-provider usage" not in text
     assert "## Cross-checks" not in text
     assert "## Tips" not in text
-    assert text.startswith("mid")
-    assert "Codex" in text
+    lines = text.splitlines()
+    assert lines[0].split()[0] == "SERVICE"
+    assert "% used" in lines[1]  # the convention note under the header
+    assert lines[2].startswith("mid")
+    assert "codex" in text
+    # Percentages are consumption, not headroom: 90% left prints as 10%.
+    assert "10%" in lines[2]
 
 
 def test_glance_respects_custom_width():
@@ -1186,3 +1204,150 @@ def test_throttled_monthly_waste_stays_near_plan_scale_for_realistic_value():
         waking_hours_per_day=waking,
     )
     assert f"~${monthly_waste:.2f}/month" in line
+
+
+def _matrix_snapshot():
+    """One account per shape the table has to handle."""
+    from aiuse.models import BillingKind
+
+    now = utcnow()
+    return Snapshot(
+        collected_at=now,
+        accounts=[
+            # Nested windows on two clocks, one account.
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code 5-hour",
+                        used_percent=75.0,
+                        remaining_percent=25.0,
+                        resets_at=now + timedelta(hours=4),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Claude Code weekly",
+                        used_percent=3.0,
+                        remaining_percent=97.0,
+                        resets_at=now + timedelta(days=7),
+                        window_minutes=10080,
+                    ),
+                ],
+            ),
+            # Two hard-separated pools under one account.
+            AccountUsage(
+                provider="antigravity",
+                source="codexbar",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Gemini weekly",
+                        used_percent=12.0,
+                        remaining_percent=88.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT weekly",
+                        used_percent=0.0,
+                        remaining_percent=100.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                ],
+            ),
+            AccountUsage(
+                provider="openrouter",
+                source="codexbar",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=4.30,
+            ),
+            AccountUsage(provider="grok", source="codexbar", error="session expired"),
+        ],
+    )
+
+
+def test_clock_matrix_puts_each_window_under_its_own_clock():
+    text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
+    rows = {line.split()[1]: line for line in text.splitlines() if line[:5].strip() in _BAND_TAGS}
+
+    # Claude reports both clocks; the monthly cell is empty, not fabricated.
+    claude = rows["claude"].split()
+    assert claude[4:7] == ["75%", "3%", "—"]
+
+
+def test_clock_matrix_shows_used_not_remaining():
+    """0% must mean untouched and 100% exhausted — the inverse of the old ladder."""
+    text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
+    claude = next(line for line in text.splitlines() if " claude " in line)
+    assert "75%" in claude and "25%" not in claude  # 25% left renders as 75% used
+    assert "3%" in claude and "97%" not in claude
+
+
+def test_clock_matrix_splits_independent_pools_into_their_own_rows():
+    text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
+    agy = [line for line in text.splitlines() if " agy " in line]
+    assert len(agy) == 2
+    scopes = sorted(line.split()[3] for line in agy)
+    assert scopes == ["claude/gpt", "gemini"]
+
+
+def test_clock_matrix_keeps_non_window_accounts_as_notes():
+    text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
+    assert "balance $4.30 (no expiry)" in text
+    assert "session expired" in text
+
+
+def test_clock_matrix_sheds_columns_before_truncating_numbers():
+    snap = _matrix_snapshot()
+    wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
+    narrow = render_clock_matrix([], snapshot=snap, color=False, width=52)
+
+    assert "$ UNUSED" in wide
+    assert "$ UNUSED" not in narrow
+    # The clock columns are the point of the table and survive the squeeze.
+    for header in ("5H", "WEEK", "MONTH"):
+        assert header in narrow
+    assert all(len(_strip_ansi(line)) <= 52 for line in narrow.splitlines())
+
+
+def test_clock_matrix_shortens_emails_to_their_domain():
+    text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
+    assert "gmail" in text
+    assert "me@gmail.com" not in text
+
+
+def test_clock_matrix_keeps_full_account_when_short_names_collide():
+    from aiuse.models import BillingKind
+
+    now = utcnow()
+    windows = [
+        QuotaWindow(
+            label="Claude Code weekly",
+            used_percent=10.0,
+            remaining_percent=90.0,
+            resets_at=now + timedelta(days=3),
+            window_minutes=10080,
+        )
+    ]
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account=who,
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=list(windows),
+            )
+            for who in ("a@gmail.com", "b@gmail.com")
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False)
+    # Both would shorten to "gmail", so neither may.
+    assert "a@gmail.com" in text
+    assert "b@gmail.com" in text

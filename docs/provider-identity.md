@@ -36,8 +36,8 @@ holds.
 It deliberately collapses onto the config's spelling. Feeding its output into
 `provider_display_name()` produced a real defect: history-derived rows rendered
 as `Gemini (agy)` while the live rows for the same subscription rendered as
-`Google AI / Antigravity (agy)`, and OpenCode Go history rendered as the
-title-case fallback `Opencode`. It also silently broke
+the then-current `Google AI / Antigravity (agy)` (today both render `agy`),
+and OpenCode Go history rendered as the title-case fallback `Opencode`. It also silently broke
 `merge_learned_flexibility()`, which looked up `antigravity:5h` in a table
 keyed `gemini:5h` and therefore never matched.
 

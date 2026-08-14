@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from aiuse.analysis.pace import independent_pool_key
+from aiuse.analysis.pace import independent_pool_key, pool_scope_label
 from aiuse.models import (
     AccountUsage,
     BillingKind,
@@ -113,14 +113,40 @@ def _projected_exhaustion_before_reset(
     pace: PaceProfile | None,
     resets_at: datetime | None,
 ) -> bool:
-    """Whether the pace data projects exhaustion before the window resets."""
+    """Whether the pace data projects exhaustion before the window resets.
+
+    ``projected_exhaust_at`` alone is not sufficient evidence. It is set even
+    for a window already at 0% (where it lands in the past) and for one being
+    consumed slower than sustainably, so trusting it unguarded produced claims
+    that contradicted their own numbers — "Pace: `0.00×` normal — projected to
+    exhaust before reset". Burning below 1.0× cannot exhaust a window by its
+    own reset, so require the ratio to support the claim. The plain report
+    guards the same forecast differently (see ``_forecast_fragment``), which is
+    why the two outputs used to disagree about the same alert.
+    """
     if pace is None:
+        return False
+    if pace.pace_ratio is None or pace.pace_ratio < 1.0:
         return False
     if pace.projected_used_fraction is not None and pace.projected_used_fraction >= 1.0:
         return True
-    if pace.projected_exhaust_at is not None and resets_at is not None and pace.projected_exhaust_at < resets_at:
-        return True
-    return False
+    return pace.projected_exhaust_at is not None and resets_at is not None and pace.projected_exhaust_at < resets_at
+
+
+def _projection_disagrees_with_ratio(pace: PaceProfile | None) -> bool:
+    """Projection says exhaustion, the ratio beside it says otherwise.
+
+    ``projected_used_fraction`` is blended with learned history burn rates
+    while ``pace_ratio`` reports the current window, so the two legitimately
+    diverge — a window idle right now whose history says it always burns out.
+    Reporting the projection *as if the printed ratio implied it* is what
+    produced "Pace: `0.00×` normal — projected to exhaust before reset".
+    """
+    if pace is None or pace.pace_ratio is None:
+        return False
+    if pace.pace_ratio >= 1.0:
+        return False
+    return pace.projected_used_fraction is not None and pace.projected_used_fraction >= 1.0
 
 
 def pace_interpretation(
@@ -140,6 +166,14 @@ def pace_interpretation(
         if pace.has_overage:
             phrase += " and overage may create real spending"
         return f"Pace: {ratio_s} — {phrase}"
+
+    if _projection_disagrees_with_ratio(pace):
+        # Name the source, so the sentence does not read as a contradiction of
+        # the ratio printed right beside it.
+        phrase = "but history projects exhaustion before reset"
+        if pace.has_overage:
+            phrase += " and overage may create real spending"
+        return f"Pace: {ratio_s} right now — {phrase}"
 
     if pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= 0.20:
         return f"Pace: {ratio_s} — likely unused capacity at reset"
@@ -344,6 +378,90 @@ class _WindowRow:
 
 
 # ---------------------------------------------------------------------------
+# Pool grouping: one entry per account, or per independent pool within it
+# ---------------------------------------------------------------------------
+
+
+class _PoolEntry:
+    """The windows of one account that share a single allotment pool.
+
+    This is the unit the report renders, and it is deliberately the same unit
+    the usage table renders as one row: an account, or one hard-separated pool
+    within it (Antigravity Gemini vs Claude/GPT, Cursor Included+Auto vs Other
+    Models). Rendering one entry per *window* instead made chat disagree with
+    the table about how many things there even are — four agy entries against
+    two table rows.
+    """
+
+    __slots__ = ("provider", "account", "pool_id", "rows")
+
+    def __init__(
+        self,
+        provider: str,
+        account: str | None,
+        pool_id: str,
+        rows: list[_WindowRow],
+    ) -> None:
+        self.provider = provider
+        self.account = account
+        self.pool_id = pool_id
+        self.rows = rows
+
+    @property
+    def scope(self) -> str | None:
+        """Pool name, or None for the residual (single-pool) group."""
+        return pool_scope_label(self.pool_id)
+
+    @property
+    def emoji(self) -> str:
+        """Worst status among the pool's windows.
+
+        A pool whose weekly budget is exhausted reads as exhausted even while
+        its 5-hour window shows headroom — the shorter window is carved out of
+        the longer one, so the bad news governs.
+        """
+        worst = self.rows[0].emoji
+        for row in self.rows[1:]:
+            worst = _worst_emoji(worst, row.emoji)
+        return worst
+
+    @property
+    def heading(self) -> str:
+        """Bold heading line: **provider · account · pool**."""
+        parts = [provider_display_name(self.provider)]
+        if self.account:
+            parts.append(self.account)
+        scope = self.scope
+        if scope:
+            parts.append(scope)
+        return f"**{' · '.join(parts)}**"
+
+    def sort_key(self) -> tuple[Any, ...]:
+        """Order by the entry's most severe window, so the worst float up."""
+        return min(row.sort_key() for row in self.rows)
+
+
+def _group_rows_into_pools(rows: list[_WindowRow]) -> list[_PoolEntry]:
+    """Collapse per-window rows into one entry per account/pool."""
+    entries: dict[tuple[str, str | None, str], _PoolEntry] = {}
+    order: list[tuple[str, str | None, str]] = []
+    for row in rows:
+        key = (row.provider, row.account, independent_pool_key(row.window.label) or "")
+        entry = entries.get(key)
+        if entry is None:
+            entry = _PoolEntry(row.provider, row.account, key[2], [])
+            entries[key] = entry
+            order.append(key)
+        entry.rows.append(row)
+
+    result = [entries[key] for key in order]
+    for entry in result:
+        # Shortest clock first, matching the table's 5H → WEEK → MONTH columns.
+        entry.rows.sort(key=lambda r: (_duration_sort_key(r.window), r.window.label.casefold()))
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Governing-window detection
 # ---------------------------------------------------------------------------
 
@@ -351,38 +469,22 @@ class _WindowRow:
 def _apply_governing_warnings(rows: list[_WindowRow]) -> None:
     """Annotate exhausted governing windows whose siblings still show capacity.
 
-    Groups rows by (provider, account), finds the longest-duration window in
-    each group, and adds the governing-budget warning if it is exhausted while
-    shorter siblings have remaining capacity.
+    Within each account/pool, finds the longest-duration window and adds the
+    governing-budget warning if it is exhausted while shorter siblings still
+    report capacity.
     """
-    # Group rows by (provider, account).
-    groups: dict[tuple[str, str | None], list[_WindowRow]] = {}
-    for row in rows:
-        key = (row.provider, row.account)
-        groups.setdefault(key, []).append(row)
-
-    for group_rows in groups.values():
-        if len(group_rows) < 2:
+    for entry in _group_rows_into_pools(rows):
+        pool_rows = entry.rows
+        if len(pool_rows) < 2:
             continue
-
-        # Partition into independent pools if applicable (e.g. Antigravity
-        # Gemini vs Claude/GPT, Cursor Included vs Other Models).
-        pools: dict[str | None, list[_WindowRow]] = {}
-        for row in group_rows:
-            pool_key = independent_pool_key(row.window.label)
-            pools.setdefault(pool_key, []).append(row)
-
-        for pool_rows in pools.values():
-            if len(pool_rows) < 2:
-                continue
-            # Find the longest-duration window (governing candidate).
-            governing = max(pool_rows, key=lambda r: r.window.window_minutes or 0)
-            if governing.remaining > 0:
-                continue  # Governing is not exhausted; no warning needed.
-            siblings_with_capacity = [r for r in pool_rows if r is not governing and r.remaining > 0]
-            if siblings_with_capacity:
-                sibs_str = _format_english_list([f"'{r.window.label}'" for r in siblings_with_capacity])
-                governing.governing_warning = f"The shorter {sibs_str} windows may still show open capacity, but they draw from this same exhausted '{governing.window.label}' budget."
+        # Find the longest-duration window (governing candidate).
+        governing = max(pool_rows, key=lambda r: r.window.window_minutes or 0)
+        if governing.remaining > 0:
+            continue  # Governing is not exhausted; no warning needed.
+        siblings_with_capacity = [r for r in pool_rows if r is not governing and r.remaining > 0]
+        if siblings_with_capacity:
+            sibs_str = _format_english_list([f"'{r.window.label}'" for r in siblings_with_capacity])
+            governing.governing_warning = f"The shorter {sibs_str} windows may still show open capacity, but they draw from this same exhausted '{governing.window.label}' budget."
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +604,10 @@ def _build_action_items(
     5. Medium-urgency burn candidates.
     """
     items: list[str] = []
-    seen_pools: set[tuple[str, str | None]] = set()
+    # Keyed by independent pool, not merely by account: agy's Gemini and
+    # Claude/GPT budgets are separate things to act on, and the usage table
+    # already treats them as separate rows.
+    seen_pools: set[tuple[str, str | None, str]] = set()
 
     if routing_context is not None and sub_rows is not None:
         primary_prov = routing_context.primary_provider
@@ -534,7 +639,6 @@ def _build_action_items(
     for a in alerts:
         if a.kind == "prepaid":
             continue
-        pool_key = (a.provider, a.account)
         urgency_high = a.urgency.name in ("CRITICAL", "HIGH")
         urgency_med = a.urgency.name == "MEDIUM"
 
@@ -555,17 +659,26 @@ def _build_action_items(
         for a in bucket:
             if len(items) >= MAX_ACTION_ITEMS:
                 break
-            pool_key = (a.provider, a.account)
-            # Deduplicate by provider+account (keep most urgent per pool).
+            pool_id = independent_pool_key(a.window_label) or ""
+            pool_key = (a.provider, a.account, pool_id)
+            # Deduplicate per pool (keep the most urgent alert in each).
             if pool_key in seen_pools:
                 continue
             seen_pools.add(pool_key)
 
             name = provider_display_name(a.provider)
+            scope = pool_scope_label(pool_id)
             acct = f" · {a.account}" if a.account else ""
+            if scope:
+                acct += f" · {scope}"
             rem = _format_remaining(a.remaining_percent)
 
             if a.kind == "conserve":
+                # Nothing left to conserve — the plain report tags these `empty`
+                # rather than advising pace, and this must say the same thing.
+                if a.remaining_percent < 1:
+                    items.append(f"{name}{acct} is exhausted")
+                    continue
                 pace_s = ""
                 if a.pace and a.pace.pace_ratio is not None:
                     pace_s = f" and pace is `{a.pace.pace_ratio:.2f}×` normal"
@@ -619,6 +732,51 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     return lines
 
 
+def _row_notes(row: _WindowRow) -> list[str]:
+    """Continuation lines attached to a single window."""
+    notes: list[str] = []
+    if row.pace_line:
+        notes.append(row.pace_line)
+    if row.remaining <= 0 and not row.pace_line and not row.governing_warning:
+        notes.append("Exhausted")
+    if row.governing_warning:
+        notes.append(row.governing_warning)
+    return notes
+
+
+def _window_line_label(row: _WindowRow, scope: str | None) -> str:
+    """Window label with a redundant pool prefix removed.
+
+    Inside a ``gemini`` entry the label "Gemini 5-hour" only needs to say
+    "5-hour" — the heading already carries the pool.
+    """
+    label = row.window.label
+    if not scope:
+        return label
+    if label.casefold().startswith(scope.casefold()):
+        trimmed = label[len(scope) :].strip(" ·-—")
+        if trimmed:
+            return trimmed
+    return label
+
+
+def _render_pool_entry(entry: _PoolEntry) -> list[str]:
+    """Render one account/pool. Single-window pools stay in the compact form."""
+    if len(entry.rows) == 1:
+        row = entry.rows[0]
+        lines = [f"{row.emoji} {row.heading}", f"   ↳ {row.status_line}"]
+        lines.extend(f"   ↳ {note}" for note in _row_notes(row))
+        return lines
+
+    lines = [f"{entry.emoji} {entry.heading}"]
+    for row in entry.rows:
+        lines.append(f"   ↳ {_window_line_label(row, entry.scope)} — {row.status_line}")
+        # Deeper indent so a pace line is unambiguously about the window above
+        # it rather than the entry as a whole.
+        lines.extend(f"     · {note}" for note in _row_notes(row))
+    return lines
+
+
 def _prepaid_sort_key(account: AccountUsage) -> tuple[Any, ...]:
     """Sort prepaid rows: negative/zero first, then lowest positive, then highest."""
     bal = account.balance_usd
@@ -632,6 +790,20 @@ def _prepaid_sort_key(account: AccountUsage) -> tuple[Any, ...]:
 # ---------------------------------------------------------------------------
 # Main renderer
 # ---------------------------------------------------------------------------
+
+
+def _has_reportable_usage(account: AccountUsage) -> bool:
+    """Whether an account carries anything this report can render.
+
+    Mirrors ``report._account_has_usage`` so the two formats agree on which
+    accounts count as having data at all.
+    """
+    return (
+        bool(account.windows)
+        or account.balance_usd is not None
+        or account.credits_remaining is not None
+        or account.usage_credits is not None
+    )
 
 
 def _render_routing(routing: RoutingContext) -> str:
@@ -673,14 +845,21 @@ def render_chat_report(
     sub_accounts: list[AccountUsage] = []
     prepaid_accounts: list[AccountUsage] = []
     error_accounts: list[AccountUsage] = []
+    no_data_accounts: list[AccountUsage] = []
 
     for account in snapshot.accounts:
         if account.error:
             error_accounts.append(account)
         elif account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API):
             prepaid_accounts.append(account)
-        else:
+        elif _has_reportable_usage(account):
             sub_accounts.append(account)
+        else:
+            # Collected cleanly but produced nothing — no windows, no balance.
+            # These used to fall into ``sub_accounts``, contribute no rows, and
+            # disappear from the report entirely, so chat silently disagreed
+            # with the usage table about which services exist.
+            no_data_accounts.append(account)
 
     # --- Build subscription window rows ---
     sub_rows: list[_WindowRow] = []
@@ -696,18 +875,13 @@ def render_chat_report(
     # Sort subscription rows.
     sub_rows.sort(key=lambda r: r.sort_key())
 
-    # --- Render subscription windows ---
-    if sub_rows:
+    # --- Render subscription windows, one entry per account/pool ---
+    pool_entries = _group_rows_into_pools(sub_rows)
+    pool_entries.sort(key=lambda e: e.sort_key())
+    if pool_entries:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
-        for row in sub_rows:
-            lines.append(f"{row.emoji} {row.heading}")
-            lines.append(f"   ↳ {row.status_line}")
-            if row.pace_line:
-                lines.append(f"   ↳ {row.pace_line}")
-            if row.remaining <= 0 and not row.pace_line and not row.governing_warning:
-                lines.append("   ↳ Exhausted")
-            if row.governing_warning:
-                lines.append(f"   ↳ {row.governing_warning}")
+        for entry in pool_entries:
+            lines.extend(_render_pool_entry(entry))
         sections.append("\n".join(lines))
 
     # --- Render prepaid/API balances ---
@@ -727,7 +901,7 @@ def render_chat_report(
         sections.append("\n".join(lines))
 
     # --- Errors ---
-    if error_accounts or snapshot.collector_errors:
+    if error_accounts or no_data_accounts or snapshot.collector_errors:
         lines = ["⚠️ **ERRORS**"]
         for err in snapshot.collector_errors:
             lines.append(f"   ↳ {err}")
@@ -735,6 +909,10 @@ def render_chat_report(
             name = provider_display_name(acc.provider)
             who = acc.account or "default"
             lines.append(f"   ↳ {name} ({who}): {acc.error}")
+        for acc in no_data_accounts:
+            name = provider_display_name(acc.provider)
+            who = acc.account or "default"
+            lines.append(f"   ↳ {name} ({who}): no usage data")
         sections.append("\n".join(lines))
 
     if not sections[1:]:  # Only header, no data.

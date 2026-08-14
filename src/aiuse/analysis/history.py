@@ -107,16 +107,6 @@ def load_recent_snapshots(
     return snapshots
 
 
-def _account_window_key(account: dict[str, Any], window: dict[str, Any]) -> str:
-    provider = canonical_provider(str(account.get("provider") or ""))
-    # `.get("account", "")` is not enough: snapshots store an explicit null for
-    # anonymous rows, and str(None) would key them under the literal "none".
-    acct = str(account.get("account") or "").lower()
-    label = str(window.get("label") or "").lower()
-    resets = window.get("resets_at") or ""
-    return f"{provider}|{acct}|{label}|{resets}"
-
-
 def window_series_key(provider: str, label: str | None, window_minutes: Any) -> str:
     """Source-independent identity for one recurring quota window.
 
@@ -355,7 +345,7 @@ def chronic_waste_summary(
     # and their windows must not average together.
     wasted: dict[tuple[str, str], dict[str, Any]] = {}
 
-    for prev_data in history[:7]:
+    for prev_data in _within_lookback(history, _DEFAULT_LOOKBACK_DAYS):
         ts_str = prev_data.get("collected_at", "")
         try:
             prev_time = datetime.fromisoformat(ts_str)
@@ -390,19 +380,24 @@ def chronic_waste_summary(
                         "provider": provider,
                         "account": account,
                         "label": label,
-                        "by_reset": {},  # resets_at -> remaining (most recent wins)
+                        "window_minutes": int(window_minutes),
+                        # resets_at -> (remaining, collected_at); most recent wins
+                        "by_reset": {},
                     },
                 )
                 # history is newest-first; keep first sample per resets_at
                 if resets_key not in bucket["by_reset"]:
-                    bucket["by_reset"][resets_key] = float(prev_remaining)
+                    bucket["by_reset"][resets_key] = (float(prev_remaining), prev_time)
 
     result: list[dict[str, Any]] = []
     for (key, _acct_key), data in wasted.items():
-        by_reset: dict[str, float] = data["by_reset"]
-        if len(by_reset) < 2:
+        by_reset: dict[str, tuple[float, datetime | None]] = data["by_reset"]
+        cycles = _group_into_reset_cycles(by_reset, data["window_minutes"])
+        if len(cycles) < 2:
             continue
-        samples = list(by_reset.values())
+        # One figure per cycle, so a window sampled 50 times in one cycle does
+        # not outvote a cycle we happened to observe once.
+        samples = [sum(values) / len(values) for values in cycles]
         avg = sum(samples) / len(samples)
         # Report the live row's identity when this series still exists, so a
         # history line names the same account and label as the live lines above it.
@@ -419,6 +414,89 @@ def chronic_waste_summary(
         )
     result.sort(key=lambda x: (-x["avg_remaining_pct"], x["window_key"], account_key(x["account"])))
     return result
+
+
+def _within_lookback(history: list[dict[str, Any]], days: int) -> list[dict[str, Any]]:
+    """Snapshots collected within ``days`` of the newest one.
+
+    Replaces a fixed ``history[:7]`` slice, which was a count of *files* and so
+    meant "the last 9 minutes" at a 90-second collection cadence and "the last
+    week" at a daily one. Anchored to the newest snapshot rather than to now so
+    a stale history directory still yields a usable window.
+    """
+    if not history:
+        return []
+    # Scan for the newest rather than trusting position: load_recent_snapshots
+    # sorts by *filename*, which is newest-first only because real snapshots are
+    # named by ISO timestamp.
+    stamps = [stamp for stamp in (_collected_at(data) for data in history) if stamp is not None]
+    if not stamps:
+        return history
+    cutoff = max(stamps) - timedelta(days=days)
+    kept: list[dict[str, Any]] = []
+    for data in history:
+        stamp = _collected_at(data)
+        if stamp is None or stamp >= cutoff:
+            kept.append(data)
+    return kept
+
+
+def _collected_at(data: dict[str, Any]) -> datetime | None:
+    try:
+        stamp = datetime.fromisoformat(str(data.get("collected_at") or ""))
+    except ValueError:
+        return None
+    return stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+
+
+def _group_into_reset_cycles(
+    by_reset: dict[str, tuple[float, datetime | None]],
+    window_minutes: int,
+) -> list[list[float]]:
+    """Cluster observations into distinct reset cycles.
+
+    Keying on the raw ``resets_at`` string counted *collections*, not cycles:
+    most providers report a sliding reset recomputed on every poll, so seven
+    snapshots ten minutes apart produced seven distinct timestamps and the
+    report claimed "over 7 cycles" for a 5-hour window.
+
+    Each observation is anchored to its reset time, or to when it was collected
+    when the provider reports no reset at all. Two observations belong to the
+    same cycle when their anchors sit closer together than half a window:
+    within one cycle a sliding reset drifts only by the gap between polls, while
+    genuine consecutive cycles are a full window apart. Half a window separates
+    those cleanly at any realistic polling cadence.
+    """
+    anchored: list[tuple[datetime, float]] = []
+    unanchored: list[float] = []
+    for raw, (remaining, collected) in by_reset.items():
+        stamp: datetime | None = None
+        if not raw.startswith("unknown:"):
+            try:
+                parsed = datetime.fromisoformat(raw)
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                stamp = parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+        if stamp is None:
+            stamp = collected
+        if stamp is None:
+            unanchored.append(remaining)
+            continue
+        anchored.append((stamp, remaining))
+
+    cycles: list[list[float]] = []
+    threshold = timedelta(minutes=max(1, window_minutes) / 2.0)
+    previous: datetime | None = None
+    for stamp, remaining in sorted(anchored, key=lambda item: item[0]):
+        if previous is None or stamp - previous > threshold:
+            cycles.append([])
+        cycles[-1].append(remaining)
+        previous = stamp
+    # No timestamp of any kind: these cannot be told apart, so at most one cycle.
+    if unanchored:
+        cycles.append(unanchored)
+    return cycles
 
 
 def _remaining_from_used(used: Any) -> float | None:

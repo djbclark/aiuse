@@ -68,7 +68,7 @@ config & setup:
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
   aiuse -q / --quiet          no progress on stderr (JSON stdout stays clean either way)
-  aiuse --brief               alias of default priority-ladder report
+  aiuse --brief               alias of the default usage table
   aiuse --full                long pretty report (per-provider, tips, detailed plan)
   aiuse --no-tui              classic plain-text report (skip Rich styling)
   aiuse --print-completion bash|zsh   shell completion script to stdout

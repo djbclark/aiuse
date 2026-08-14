@@ -531,7 +531,7 @@ class TestActionItems:
         row = _WindowRow("codex", "user@example.com", weekly, None)
         items = _build_action_items([], routing_context=routing, sub_rows=[row])
         assert len(items) >= 1
-        assert "Keep Codex as primary" in items[0]
+        assert "Keep codex as primary" in items[0]
         assert "49%" in items[0]
 
     def test_prepaid_excluded(self):
@@ -736,3 +736,386 @@ class TestMonthlyPacingNote:
         row = _WindowRow("claude", None, weekly, None)
         note = _monthly_pacing_note([row], [])
         assert note is None
+
+
+def _cross_format_snapshot():
+    from datetime import timedelta
+
+    from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, utcnow
+
+    now = utcnow()
+    return Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code weekly",
+                        used_percent=75.0,
+                        remaining_percent=25.0,
+                        resets_at=now + timedelta(days=3),
+                        window_minutes=10080,
+                    )
+                ],
+            )
+        ],
+    )
+
+
+def test_all_three_formats_report_the_same_percentage():
+    """`aiuse`, `--for-chat` and `--json` must not disagree about one window.
+
+    The table prints consumption, chat prints headroom and the JSON carries
+    both. They are three views of one number, so pin them together — this is
+    the assertion that catches one format being changed without the others.
+    """
+    import json as _json
+
+    from aiuse.chat_format import render_chat_report
+    from aiuse.report import render_clock_matrix
+
+    snap = _cross_format_snapshot()
+    alerts = []
+
+    table = render_clock_matrix(alerts, snapshot=snap, color=False, width=120)
+    chat = render_chat_report(snap, alerts)
+    payload = _json.loads(_json.dumps(snap.to_dict()))
+
+    window = payload["accounts"][0]["windows"][0]
+    assert window["used_percent"] == 75.0
+    assert window["remaining_percent"] == 25.0
+
+    # Table states consumption and labels the convention.
+    assert "75%" in table
+    assert "% used" in table
+    # Chat states headroom and labels its own.
+    assert "25% left" in chat
+
+
+def test_json_alerts_expose_both_percentage_conventions():
+    """A JSON consumer must not have to guess which convention it is reading."""
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="claude",
+        account="me@gmail.com",
+        window_label="Claude Code weekly",
+        remaining_percent=25.0,
+        days_until_reset=3.0,
+        plan=None,
+        message="burn",
+        source="cswap",
+        score=50.0,
+        kind="burn",
+    )
+    d = alert.to_dict()
+    assert d["remaining_percent"] == 25.0
+    assert d["used_percent"] == 75.0
+    assert d["used_percent"] + d["remaining_percent"] == 100.0
+
+
+def test_pace_below_sustainable_is_never_projected_to_exhaust():
+    """Regression: "`0.00×` normal — projected to exhaust before reset".
+
+    `projected_exhaust_at` is set even for windows being consumed slower than
+    sustainably, so the phrase contradicted the ratio printed beside it.
+    """
+    from datetime import timedelta
+
+    from aiuse.chat_format import pace_interpretation
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    resets = now + timedelta(days=6)
+    for ratio in (0.0, 0.6, 0.99):
+        pace = PaceProfile(
+            elapsed_fraction=0.1,
+            used_fraction=0.0,
+            pace_ratio=ratio,
+            projected_used_fraction=0.05,
+            projected_waste_fraction=0.9,
+            projected_waste_usd=None,
+            projected_exhaust_at=now + timedelta(hours=1),
+        )
+        line = pace_interpretation(pace, resets)
+        assert line is not None
+        assert "projected to exhaust" not in line, f"ratio {ratio}: {line}"
+
+    # At or above sustainable pace the warning is still allowed through.
+    fast = PaceProfile(
+        elapsed_fraction=0.1,
+        used_fraction=0.5,
+        pace_ratio=3.0,
+        projected_used_fraction=0.9,
+        projected_waste_fraction=0.0,
+        projected_waste_usd=None,
+        projected_exhaust_at=now + timedelta(hours=1),
+    )
+    assert "projected to exhaust" in (pace_interpretation(fast, resets) or "")
+
+
+def test_exhausted_window_is_not_described_as_conserve():
+    """0% left has nothing to conserve — say the same thing the table's `empty` tag does."""
+    from aiuse.chat_format import _build_action_items
+
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="codex",
+        account="me@gmail.com",
+        window_label="Codex weekly quota (2)",
+        remaining_percent=0.0,
+        days_until_reset=5.9,
+        plan=None,
+        message="exhausted",
+        source="codexbar",
+        score=90.0,
+        kind="conserve",
+    )
+    items = _build_action_items([alert])
+    assert items
+    assert any("exhausted" in item for item in items)
+    assert not any("Conserve" in item for item in items)
+
+
+def test_history_driven_projection_names_its_source():
+    """When projection and ratio disagree, say which one is talking.
+
+    `projected_used_fraction` blends learned history burn rates; `pace_ratio`
+    describes the current window. A window idle right now can legitimately be
+    projected to exhaust, but the sentence must not read as though the printed
+    ratio implied it.
+    """
+    from datetime import timedelta
+
+    from aiuse.chat_format import pace_interpretation
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    pace = PaceProfile(
+        elapsed_fraction=0.1,
+        used_fraction=0.0,
+        pace_ratio=0.0,
+        projected_used_fraction=1.0,  # history says it always burns out
+        projected_waste_fraction=0.0,
+        projected_waste_usd=None,
+        projected_exhaust_at=now + timedelta(days=1),
+        learned_sample_count=10,
+    )
+    line = pace_interpretation(pace, now + timedelta(days=6))
+    assert line is not None
+    assert "0.00×" in line
+    assert "history projects exhaustion" in line
+    # The bare claim, which would contradict the 0.00× beside it, is gone.
+    assert "normal — projected to exhaust" not in line
+
+
+# -----------------------------------------------------------------------
+# Pool grouping: one chat entry per account/pool, matching the usage table
+# -----------------------------------------------------------------------
+
+
+def _antigravity_snapshot():
+    """One agy account with both pools on both clocks — four windows."""
+    return Snapshot(
+        collected_at=NOW,
+        accounts=[
+            _account(
+                provider="antigravity",
+                account="me@gmail.com",
+                windows=[
+                    _window("Gemini 5-hour", remaining=72.0, resets_hours=4, window_minutes=300),
+                    _window("Gemini weekly", remaining=82.0, resets_hours=140, window_minutes=10080),
+                    _window("Claude/GPT 5-hour", remaining=100.0, resets_hours=5, window_minutes=300),
+                    _window("Claude/GPT weekly", remaining=100.0, resets_hours=140, window_minutes=10080),
+                ],
+            )
+        ],
+    )
+
+
+class TestPoolGrouping:
+    """``--for-chat`` renders one entry per account/pool, not per window."""
+
+    def test_independent_pools_render_as_two_entries(self):
+        """agy's four windows collapse to two headings, one per pool.
+
+        This is the disagreement the grouping exists to remove: the usage
+        table showed two rows for agy while chat showed four entries.
+        """
+        output = render_chat_report(_antigravity_snapshot(), [])
+        headings = [ln for ln in output.splitlines() if ln.startswith(("🟢", "🟡", "🟠", "🔴"))]
+        assert len(headings) == 2
+        assert any("gemini" in h for h in headings)
+        assert any("claude/gpt" in h for h in headings)
+
+    def test_entry_count_matches_table_row_count(self):
+        """The two formats must agree on how many things there are."""
+        from aiuse.report import render_clock_matrix
+
+        snap = _antigravity_snapshot()
+        chat = render_chat_report(snap, [])
+        table = render_clock_matrix([], snapshot=snap, color=False, width=120)
+
+        chat_entries = len([ln for ln in chat.splitlines() if ln.startswith(("🟢", "🟡", "🟠", "🔴"))])
+        table_rows = len([ln for ln in table.splitlines() if "agy" in ln])
+        assert chat_entries == table_rows == 2
+
+    def test_pool_windows_are_listed_shortest_clock_first(self):
+        """Mirrors the table's 5H → WEEK → MONTH column order."""
+        output = render_chat_report(_antigravity_snapshot(), [])
+        assert output.index("5-hour — `72% left") < output.index("weekly — `82% left")
+
+    def test_pool_prefix_is_stripped_from_window_labels(self):
+        """The heading already says ``gemini``; the line need not repeat it."""
+        output = render_chat_report(_antigravity_snapshot(), [])
+        assert "   ↳ 5-hour — `72% left" in output
+        assert "Gemini 5-hour —" not in output
+
+    def test_single_window_pool_keeps_the_compact_form(self):
+        """One window means no sub-list: the label stays in the heading."""
+        snap = Snapshot(
+            collected_at=NOW,
+            accounts=[_account(windows=[_window("Claude Code weekly", remaining=50.0)])],
+        )
+        output = render_chat_report(snap, [])
+        assert "**claude · user@example.com · Claude Code weekly**" in output
+        # No per-window sub-line: the status follows the heading directly.
+        assert "Claude Code weekly — `" not in output
+
+    def test_shared_pool_windows_merge_into_one_entry(self):
+        """A 5-hour carved out of a weekly is one budget, so one entry."""
+        snap = Snapshot(
+            collected_at=NOW,
+            accounts=[
+                _account(
+                    windows=[
+                        _window("Claude Code 5-hour", remaining=0.0, resets_hours=3, window_minutes=300),
+                        _window("Claude Code weekly", remaining=94.0, resets_hours=160, window_minutes=10080),
+                    ]
+                )
+            ],
+        )
+        output = render_chat_report(snap, [])
+        headings = [ln for ln in output.splitlines() if ln.startswith(("🟢", "🟡", "🟠", "🔴"))]
+        assert len(headings) == 1
+        assert "Claude Code 5-hour — `0% left" in output
+        assert "Claude Code weekly — `94% left" in output
+
+    def test_entry_emoji_is_the_worst_of_its_windows(self):
+        """An exhausted 5-hour governs the entry even beside a 94% weekly."""
+        snap = Snapshot(
+            collected_at=NOW,
+            accounts=[
+                _account(
+                    windows=[
+                        _window("Claude Code 5-hour", remaining=0.0, resets_hours=3, window_minutes=300),
+                        _window("Claude Code weekly", remaining=94.0, resets_hours=160, window_minutes=10080),
+                    ]
+                )
+            ],
+        )
+        output = render_chat_report(snap, [])
+        heading = next(ln for ln in output.splitlines() if "**claude" in ln)
+        assert heading.startswith(EMOJI_RED)
+
+    def test_per_window_notes_are_indented_under_their_window(self):
+        """With several windows in one entry, a bare note would be ambiguous."""
+        snap = Snapshot(
+            collected_at=NOW,
+            accounts=[
+                _account(
+                    windows=[
+                        _window("Claude Code 5-hour", remaining=0.0, resets_hours=3, window_minutes=300),
+                        _window("Claude Code weekly", remaining=94.0, resets_hours=160, window_minutes=10080),
+                    ]
+                )
+            ],
+        )
+        output = render_chat_report(snap, [])
+        lines = output.splitlines()
+        idx = next(i for i, ln in enumerate(lines) if ln.startswith("   ↳ Claude Code 5-hour — `0% left"))
+        assert lines[idx + 1] == "     · Exhausted"
+
+
+class TestActionItemsPerPool:
+    """Action items deduplicate per pool, not per account."""
+
+    def test_two_pools_of_one_account_each_get_an_item(self):
+        alerts = [
+            _alert(
+                provider="antigravity",
+                account="me@gmail.com",
+                window_label="Gemini weekly",
+                remaining=82.0,
+                kind="conserve",
+                urgency=Urgency.HIGH,
+            ),
+            _alert(
+                provider="antigravity",
+                account="me@gmail.com",
+                window_label="Claude/GPT weekly",
+                remaining=40.0,
+                kind="conserve",
+                urgency=Urgency.HIGH,
+            ),
+        ]
+        items = _build_action_items(alerts)
+        assert len(items) == 2
+        assert any("gemini" in i for i in items)
+        assert any("claude/gpt" in i for i in items)
+
+    def test_same_pool_twice_still_collapses(self):
+        alerts = [
+            _alert(window_label="Claude Code weekly", kind="conserve", urgency=Urgency.HIGH),
+            _alert(window_label="Claude Code 5-hour", kind="conserve", urgency=Urgency.HIGH),
+        ]
+        assert len(_build_action_items(alerts)) == 1
+
+
+def _empty_account(provider: str = "opencode-go") -> AccountUsage:
+    """Collected cleanly, produced nothing: no windows, no balance, no error."""
+    return AccountUsage(
+        source="test",
+        provider=provider,
+        account=None,
+        billing_kind=BillingKind.UNKNOWN,
+        windows=[],
+    )
+
+
+class TestNoDataAccounts:
+    """An account that collected nothing must not vanish from the report."""
+
+    def test_account_without_windows_is_reported(self):
+        """The usage table shows ``no usage data``; chat used to show nothing."""
+        snap = Snapshot(collected_at=NOW, accounts=[_empty_account()])
+        output = render_chat_report(snap, [])
+        assert "oc-go" in output
+        assert "no usage data" in output
+
+    def test_present_in_both_formats(self):
+        from aiuse.report import render_clock_matrix
+
+        snap = Snapshot(collected_at=NOW, accounts=[_empty_account()])
+        assert "oc-go" in render_chat_report(snap, [])
+        assert "oc-go" in render_clock_matrix([], snapshot=snap, color=False, width=120)
+
+    def test_an_account_with_a_balance_is_not_treated_as_empty(self):
+        """Only a genuinely empty collection lands in the no-data bucket."""
+        snap = Snapshot(
+            collected_at=NOW,
+            accounts=[
+                _account(
+                    provider="deepseek",
+                    account=None,
+                    billing_kind=BillingKind.PREPAID_BALANCE,
+                    balance_usd=8.36,
+                )
+            ],
+        )
+        output = render_chat_report(snap, [])
+        assert "no usage data" not in output
+        assert EMOJI_PREPAID in output

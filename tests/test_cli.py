@@ -242,12 +242,12 @@ def test_brief_mode_skips_usage_section(monkeypatch, capsys):
     assert cli.main(["--brief", "--no-color", "-q", "--no-tui"]) == 2
     out = capsys.readouterr().out
     assert "use" in out
-    assert "Codex" in out
+    assert "codex" in out
     assert "## Per-provider usage" not in out
     assert "## Tips" not in out
 
 
-def test_default_pretty_is_priority_ladder(monkeypatch, capsys):
+def test_default_pretty_is_clock_matrix(monkeypatch, capsys):
     from aiuse.models import AccountUsage, Urgency, UseOrLoseAlert
 
     snap = Snapshot(
@@ -272,7 +272,10 @@ def test_default_pretty_is_priority_ladder(monkeypatch, capsys):
     assert cli.main(["--no-color", "-q", "--no-tui"]) == 2
     captured = capsys.readouterr()
     assert "use" in captured.out
-    assert "Weekly" in captured.out
+    # The window label is gone from the default view by design — the clock
+    # columns carry the period instead, so a weekly window lands under WEEK.
+    assert "WEEK" in captured.out
+    assert "Weekly" not in captured.out
     assert "## Per-provider usage" not in captured.out
     assert "Detail: ai --full" not in captured.out  # quiet suppresses stderr meta
 
@@ -322,7 +325,7 @@ def test_alerts_only_includes_cross_check_warnings(monkeypatch, capsys):
 
     assert cli.main(["--alerts-only", "--no-color"]) == 0
     output = capsys.readouterr().out
-    assert "[cross-check] GitHub Copilot" in output
+    assert "[cross-check] copilot" in output
     assert "user@example.com" in output
     assert "percentages disagree" in output
 

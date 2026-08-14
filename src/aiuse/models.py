@@ -75,20 +75,25 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     # Keyed by *canonical* provider id (see canonical_provider) — never by a
     # config key, or the same vendor prints under two names in one report.
     #
-    # Every display name should contain its vendor CLI's name as a case-insensitive
-    # substring, so `grep -i <cli-name>` finds the right report line. Most vendor
-    # names already do (Claude/claude, Codex/codex, GitHub Copilot/copilot,
-    # Grok/grok, OpenCode/opencode) — antigravity and cursor need an explicit
-    # suffix since their CLI names ("agy", "cursor-agent") aren't substrings of
-    # the plain vendor name.
-    "antigravity": "Google AI / Antigravity (agy)",
-    "claude": "Claude Code",
-    "codex": "Codex",
-    "copilot": "GitHub Copilot",
-    "cursor": "Cursor (cursor-agent)",
-    "grok": "Grok",
-    "opencode-go": "OpenCode Go",
-    "opencode-zen": "OpenCode Zen",
+    # Names are the CLI handle you actually type, lowercase, so a display name
+    # doubles as the thing you'd grep for: `grep -i agy` finds the Antigravity
+    # row because the name *is* "agy". This replaced marketing-length names
+    # ("Google AI / Antigravity (agy)" was 29 columns) that crowded the usage
+    # table off the right edge of the terminal.
+    #
+    # Deliberate exception: the two OpenCode services abbreviate to an `oc-`
+    # family prefix rather than their CLI names, so they sort together and stay
+    # narrow. `grep -i opencode` will NOT match them — grep `oc-` instead.
+    "antigravity": "agy",
+    "claude": "claude",
+    "codex": "codex",
+    "copilot": "copilot",
+    "cursor": "cursor",
+    "deepseek": "deepseek",
+    "grok": "grok",
+    "opencode-go": "oc-go",
+    "opencode-zen": "oc-zen",
+    "openrouter": "openrouter",
 }
 
 # Any provider spelling that may reach us — vendor ids from collectors, external
@@ -324,6 +329,61 @@ class QuotaWindow:
         return d
 
 
+# Label markers for clock inference, longest/most specific first so "5-hour"
+# is not shadowed by a bare "hour" and "weekly" wins over a stray "week" in a
+# vendor's prose.
+_CLOCK_LABEL_MARKERS: tuple[tuple[str, str], ...] = (
+    ("5-hour", "5h"),
+    ("5 hour", "5h"),
+    ("5-hr", "5h"),
+    ("5h", "5h"),
+    ("hourly", "5h"),
+    ("weekly", "weekly"),
+    ("per week", "weekly"),
+    ("monthly", "monthly"),
+    ("per month", "monthly"),
+)
+
+
+def infer_window_clock(window: "QuotaWindow", now: datetime | None = None) -> tuple[str | None, bool]:
+    """Bucket a window onto the 5h / weekly / monthly clock for display.
+
+    Returns ``(clock, inferred)``. ``inferred`` is True when the answer came
+    from a guess rather than a declared duration, so callers can render it
+    visibly less certain.
+
+    Three sources, best first:
+
+    1. ``window_minutes`` — authoritative, but several providers never supply
+       it (antigravity, grok, deepseek and openrouter all report None).
+    2. The label text, for the providers that name the period in prose.
+    3. Time until reset — a genuine guess, and the one lossy step: a *weekly*
+       window observed a few hours before it resets looks exactly like a 5h
+       window from here. Only reached when 1 and 2 are both silent, which in
+       practice means a collector that supplied neither a duration nor a
+       descriptive label (e.g. CodexBar's "quota 1 (name not supplied)").
+    """
+    declared = classify_window_minutes(window.window_minutes)
+    if declared is not None:
+        return declared, False
+
+    text = (window.label or "").casefold()
+    for marker, clock in _CLOCK_LABEL_MARKERS:
+        if marker in text:
+            return clock, False
+
+    days = window.days_until_reset(now)
+    if days is None:
+        return None, False
+    if days <= 0.5:
+        return "5h", True
+    if days <= 8.0:
+        return "weekly", True
+    if days <= 45.0:
+        return "monthly", True
+    return None, False
+
+
 @dataclass
 class UsageCredits:
     """Extra-usage / pay-as-you-go spend against a subscription (e.g. Claude).
@@ -422,6 +482,10 @@ class UseOrLoseAlert:
             "account": self.account,
             "window_label": self.window_label,
             "remaining_percent": self.remaining_percent,
+            # Emitted alongside remaining_percent so a JSON consumer reads the
+            # same number the table prints without re-deriving it, and cannot
+            # mistake one convention for the other.
+            "used_percent": max(0.0, 100.0 - float(self.remaining_percent)),
             "days_until_reset": self.days_until_reset,
             "plan": self.plan,
             "message": self.message,

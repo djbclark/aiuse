@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, TextIO
 
@@ -13,6 +15,7 @@ from aiuse.analysis.history import (
     should_learn_from_history,
 )
 from aiuse.analysis.pace import (
+    POOL_SCOPE_LABELS,
     compute_pace,
     governing_partition,
     independent_pool_key,
@@ -29,6 +32,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     canonical_provider,
     classify_window_minutes,
+    infer_window_clock,
     provider_config_key,
     provider_display_name,
     utcnow,
@@ -48,6 +52,63 @@ URGENCY_ICON = {
 # scrolling back (header of the block + ~22 body lines ≈ 23 lines total).
 ACTION_PLAN_MAX_LINES = 23
 ACTION_PLAN_WIDTH = 80
+
+# Clock columns, in the order they appear in the usage table. There is
+# deliberately no "daily" column: the data model buckets durations into these
+# three only (see models.classify_window_minutes), and a provider's short
+# rate-limit window is the 5h one even when its docs call it a daily cap.
+CLOCK_COLUMNS: tuple[tuple[str, str], ...] = (("5h", "5H"), ("weekly", "WEEK"), ("monthly", "MONTH"))
+# Widest the usage table is allowed to grow, however wide the terminal is.
+# Past this the eye loses the row when scanning left to right.
+TABLE_MAX_WIDTH = 110
+
+
+@dataclass
+class _MatrixRow:
+    """One line of the usage table: a single account, or one pool within it.
+
+    ``clocks`` maps a clock key ("5h" / "weekly" / "monthly") to the cell for
+    that column. ``note`` replaces the whole numeric tail for rows that have no
+    windows to bucket — failed fetches and non-expiring prepaid balances.
+    """
+
+    sort_key: tuple
+    band: int
+    service: str
+    account: str
+    account_full: str | None = None
+    scope: str = "—"
+    clocks: dict[str, _ClockCell] = field(default_factory=dict)
+    next_reset_days: float | None = None
+    next_reset_estimated: bool = False
+    value_usd: float | None = None
+    note: str | None = None
+
+
+@dataclass
+class _ClockCell:
+    """A percentage for one clock column, plus how much to trust it."""
+
+    used_percent: float
+    inferred: bool = False  # clock bucket was guessed, not declared
+    folded: int = 0  # extra windows on this clock, collapsed into this one
+
+
+def terminal_width(default: int = ACTION_PLAN_WIDTH) -> int:
+    """Usable terminal columns, honoring COLUMNS and falling back when piped.
+
+    ``shutil.get_terminal_size`` already prefers ``$COLUMNS`` and falls back to
+    its ``fallback`` argument when stdout is not a tty, which is what we want
+    for pipes and CI capture.
+    """
+    try:
+        cols = shutil.get_terminal_size(fallback=(default, 24)).columns
+    except (OSError, ValueError):
+        return default
+    # A hostile or unset COLUMNS can report 0; keep a floor the table can use.
+    return max(40, cols)
+
+
 # Compact "at a glance" trailer: at most this many alert lines per provider.
 BRIEF_MAX_LINES_PER_PROVIDER = 3
 
@@ -134,8 +195,8 @@ def render_report(
     del brief  # Alias of default; retained so callers need not change overnight.
     s = _Style(use_color(force=color))
     if not full:
-        width = glance_width if glance_width is not None else ACTION_PLAN_WIDTH
-        return render_priority_ladder(alerts, snapshot=snapshot, s=s, width=width)
+        width = glance_width if glance_width is not None else terminal_width()
+        return render_clock_matrix(alerts, snapshot=snapshot, config=config, s=s, width=width)
 
     lines: list[str] = []
     width = ACTION_PLAN_WIDTH
@@ -405,6 +466,100 @@ def _pick_representative_window(windows: list[QuotaWindow]) -> QuotaWindow | Non
     return usable[0]
 
 
+def _short_account(account: str | None) -> str:
+    """Compact an account for the table's ACCT column.
+
+    Emails collapse to the first label of their domain (``djbclark@gmail.com``
+    → ``gmail``), because the local part is almost always identical across a
+    user's accounts and the domain is the part that distinguishes them.
+    Callers must run :func:`_disambiguate_accounts` over a finished row set —
+    two accounts of one provider can share a domain, and a column that prints
+    the same short name twice is worse than a long one.
+    """
+    text = (account or "").strip()
+    if not text or text.casefold() == "default":
+        return "—"
+    if "@" in text:
+        domain = text.split("@", 1)[1]
+        first = domain.split(".")[0].strip()
+        if first:
+            return first
+    return text
+
+
+def _disambiguate_accounts(rows: list[_MatrixRow]) -> None:
+    """Restore full account names wherever a short one is ambiguous.
+
+    Ambiguity is scoped per service: ``gmail`` under two different services is
+    unambiguous to a reader, but two ``gmail`` rows under one service is not.
+    """
+    seen: dict[tuple[str, str], set[str]] = {}
+    for row in rows:
+        seen.setdefault((row.service, row.account), set()).add(row.account_full or "")
+    for row in rows:
+        if len(seen[(row.service, row.account)]) > 1 and row.account_full:
+            row.account = row.account_full
+
+
+def _window_value_usd(
+    window: QuotaWindow,
+    remaining: float,
+    provider: str,
+    plans: dict[str, Any],
+    analysis: dict[str, Any],
+) -> float | None:
+    """Dollar value of the unused part of a window, or None when unpriceable.
+
+    Needs both a configured ``monthly_price`` for the plan and a known window
+    duration, so providers that report neither (grok, the unnamed antigravity
+    quotas) legitimately have no dollar figure.
+    """
+    if not window.window_minutes:
+        return None
+    plan_meta = plans.get(provider_config_key(provider))
+    if not isinstance(plan_meta, dict):
+        return None
+    monthly_price = plan_meta.get("monthly_price")
+    if monthly_price is None:
+        return None
+    value_multipliers = plan_meta.get("value_multiplier")
+    duration_kind = classify_window_minutes(window.window_minutes)
+    window_mult = 1.0
+    if isinstance(value_multipliers, dict) and duration_kind:
+        window_mult = float(value_multipliers.get(duration_kind, 1.0))
+    return round(
+        _compute_value_at_risk(
+            remaining=remaining,
+            window_minutes=window.window_minutes,
+            monthly_price=float(monthly_price),
+            waking_hours_per_day=float(analysis.get("waking_hours_per_day", 16)),
+            value_multiplier=window_mult,
+        ),
+        2,
+    )
+
+
+def _compact_deadline(days: float | None, *, estimated: bool = False) -> str:
+    """Reset distance in the fewest characters that stay unambiguous."""
+    if days is None:
+        return "—"
+    prefix = "~" if estimated else ""
+    if days <= 0:
+        return f"{prefix}now"
+    hours = days * 24.0
+    if hours < 1.0:
+        return f"{prefix}{hours * 60:.0f}m"
+    if hours < 48.0:
+        return f"{prefix}{hours:.0f}h"
+    if days < 10.0:
+        return f"{prefix}{days:.1f}d"
+    return f"{prefix}{days:.0f}d"
+
+
+# Sourced from the analysis layer so the chat format names pools identically.
+_POOL_SCOPE_LABELS = POOL_SCOPE_LABELS
+
+
 def render_status_line(
     snapshot: Snapshot,
     alerts: list[UseOrLoseAlert],
@@ -556,6 +711,375 @@ def render_priority_ladder(
 
     entries.sort(key=lambda item: item[0])
     return "\n".join(_clamp_display_width(line, width) for _key, line in entries)
+
+
+# Which band wins when several alerts describe one pool. Attention-grabbing
+# states outrank quiet ones, so a pool with an exhausted weekly and a healthy
+# 5h still reads as exhausted.
+_BAND_ATTENTION = {
+    _BAND_ERROR: 5,
+    _BAND_EMPTY: 4,
+    _BAND_CONSERVE: 3,
+    _BAND_USE: 2,
+    _BAND_MID: 1,
+    _BAND_NA: 0,
+}
+
+
+def _used_percent(window: QuotaWindow) -> float | None:
+    """Percentage consumed, preferring the reported figure over the inverse."""
+    if window.used_percent is not None:
+        return float(window.used_percent)
+    remaining = window.remaining()
+    return None if remaining is None else max(0.0, 100.0 - float(remaining))
+
+
+def _build_matrix_rows(
+    alerts: list[UseOrLoseAlert],
+    snapshot: Snapshot | None,
+    config: dict[str, Any] | None,
+) -> list[_MatrixRow]:
+    cfg = config or {}
+    raw_plans = cfg.get("plans")
+    raw_analysis = cfg.get("analysis")
+    plans: dict[str, Any] = raw_plans if isinstance(raw_plans, dict) else {}
+    analysis: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
+
+    # Collapse alerts onto the pool they describe, keeping the most
+    # attention-grabbing band and the use-urgency that goes with it.
+    pool_alert: dict[tuple[str, str, str], tuple[int, float]] = {}
+    for alert in alerts:
+        if alert.urgency == Urgency.NONE:
+            continue
+        key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+        band = alert_priority_band(alert)
+        candidate = (band, alert_use_urgency(alert))
+        current = pool_alert.get(key)
+        if current is None or _BAND_ATTENTION[band] > _BAND_ATTENTION[current[0]]:
+            pool_alert[key] = candidate
+
+    rows: list[_MatrixRow] = []
+    covered: set[tuple[str, str, str]] = set()
+    # Accounts with no live windows are deferred: an alert may still describe
+    # them (analysis can raise on data an account row cannot render), and the
+    # alert is the more informative row. Same rule the ladder used.
+    deferred: list[AccountUsage] = []
+
+    for account in _sorted_accounts(snapshot.accounts) if snapshot is not None else []:
+        service = provider_display_name(account.provider)
+        short = _short_account(account.account)
+
+        if account.error or not _account_has_usage(account) or _account_is_non_expiring_prepaid(account):
+            deferred.append(account)
+            continue
+
+        for pool in partition_independent_pools(account.windows) if account.windows else [[]]:
+            pool_id = _pool_id_for_windows(pool) if pool else ""
+            clocks: dict[str, _ClockCell] = {}
+            soonest: float | None = None
+            soonest_estimated = False
+            value: float | None = None
+
+            for window in pool:
+                used = _used_percent(window)
+                if used is None:
+                    continue
+                clock, inferred = infer_window_clock(window)
+                if clock is not None:
+                    cell = clocks.get(clock)
+                    if cell is None:
+                        clocks[clock] = _ClockCell(used_percent=used, inferred=inferred)
+                    else:
+                        # Same clock, same pool (Cursor Included ⊂ Auto): show the
+                        # most-consumed, which is the one that locks out first.
+                        cell.folded += 1
+                        if used > cell.used_percent:
+                            cell.used_percent = used
+                            cell.inferred = inferred
+                days = window.days_until_reset()
+                if days is not None and (soonest is None or days < soonest):
+                    soonest = days
+                    soonest_estimated = not window.reset_time_is_precise()
+                remaining = window.remaining()
+                if remaining is not None:
+                    priced = _window_value_usd(window, remaining, account.provider, plans, analysis)
+                    # Max, not sum: a 5h window is carved out of the weekly
+                    # budget above it, so adding them double-counts the money.
+                    if priced is not None and (value is None or priced > value):
+                        value = priced
+
+            key = _ladder_coverage_key(account.provider, account.account, pool_id)
+            found = pool_alert.get(key)
+            if found is not None:
+                band, urgency = found
+            else:
+                representative = _pick_representative_window(pool) if pool else None
+                band, _lane = _unalerted_window_band(representative)
+                urgency = (
+                    _window_use_urgency(representative) if representative is not None else _account_use_urgency(account)
+                )
+
+            rows.append(
+                _MatrixRow(
+                    sort_key=_ladder_sort_key(_band_sort_lane(band), urgency, account.provider, account.account),
+                    band=band,
+                    service=service,
+                    account=short,
+                    account_full=account.account,
+                    scope=_POOL_SCOPE_LABELS.get(pool_id, "—"),
+                    clocks=clocks,
+                    next_reset_days=soonest,
+                    next_reset_estimated=soonest_estimated,
+                    value_usd=value,
+                )
+            )
+            covered.add(key)
+
+    # Alerts about pools no account row rendered.
+    for alert in alerts:
+        if alert.urgency == Urgency.NONE:
+            continue
+        key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+        if key in covered:
+            continue
+        covered.add(key)
+        rows.append(_row_from_alert(alert))
+
+    for account in deferred:
+        if _ladder_coverage_key(account.provider, account.account, "") in covered:
+            continue
+        service = provider_display_name(account.provider)
+        short = _short_account(account.account)
+        if account.error or not _account_has_usage(account):
+            rows.append(
+                _MatrixRow(
+                    sort_key=_ladder_sort_key(_LANE_ERROR, -1000.0, account.provider, account.account),
+                    band=_BAND_ERROR,
+                    service=service,
+                    account=short,
+                    account_full=account.account,
+                    note=(account.error or "no usage data").strip(),
+                )
+            )
+            continue
+        depleted = account.balance_usd is not None and account.balance_usd <= 0.0
+        if account.balance_usd is not None:
+            note = f"balance ${account.balance_usd:.2f} (no expiry)"
+        elif account.credits_remaining is not None:
+            note = f"credits {account.credits_remaining:g} (no expiry)"
+        else:
+            note = "prepaid API (no expiry)"
+        rows.append(
+            _MatrixRow(
+                sort_key=_ladder_sort_key(
+                    _LANE_EMPTY if depleted else _LANE_NA,
+                    _account_use_urgency(account),
+                    account.provider,
+                    account.account,
+                ),
+                band=_BAND_EMPTY if depleted else _BAND_NA,
+                service=service,
+                account=short,
+                account_full=account.account,
+                note=note,
+            )
+        )
+
+    _disambiguate_accounts(rows)
+    rows.sort(key=lambda r: r.sort_key)
+    return rows
+
+
+def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
+    """A table row built from an alert alone, with no account windows behind it.
+
+    Only ever one clock wide — an alert describes a single window — so these
+    rows are deliberately sparser than an account-derived row.
+    """
+    band = alert_priority_band(alert)
+    service = provider_display_name(alert.provider)
+    row = _MatrixRow(
+        sort_key=_ladder_sort_key(_band_sort_lane(band), alert_use_urgency(alert), alert.provider, alert.account),
+        band=band,
+        service=service,
+        account=_short_account(alert.account),
+        account_full=alert.account,
+        scope=_POOL_SCOPE_LABELS.get(_pool_id_for_label(alert.window_label), "—"),
+    )
+    if alert.kind == "prepaid":
+        row.note = f"{alert.window_label} (no expiry)"
+        return row
+
+    synthetic = QuotaWindow(
+        label=alert.window_label,
+        remaining_percent=alert.remaining_percent,
+        resets_at=None,
+        window_minutes=None,
+    )
+    clock, inferred = infer_window_clock(synthetic)
+    if clock is None and alert.days_until_reset is not None:
+        # No duration and an unhelpful label: fall back to reset distance, the
+        # same last resort infer_window_clock uses when it has a timestamp.
+        days = float(alert.days_until_reset)
+        clock, inferred = ("5h" if days <= 0.5 else "weekly" if days <= 8.0 else "monthly", True)
+    if clock is not None:
+        row.clocks[clock] = _ClockCell(
+            used_percent=max(0.0, 100.0 - float(alert.remaining_percent)),
+            inferred=inferred,
+        )
+    row.next_reset_days = alert.days_until_reset
+    row.next_reset_estimated = alert.deadline_is_estimated
+    if alert.flexibility_profile is not None:
+        row.value_usd = alert.flexibility_profile.value_at_risk_usd
+    return row
+
+
+def _cell_color(s: _Style, used: float) -> Any:
+    """Fuller bucket → hotter color. Neutral about good/bad — the band tag judges."""
+    if used >= 99.0:
+        return s.red
+    if used >= 75.0:
+        return s.yellow
+    if used >= 25.0:
+        return s.cyan
+    return s.green
+
+
+def render_clock_matrix(
+    alerts: list[UseOrLoseAlert],
+    *,
+    snapshot: Snapshot | None = None,
+    config: dict[str, Any] | None = None,
+    s: _Style | None = None,
+    color: bool | None = None,
+    width: int | None = None,
+) -> str:
+    """Stdout body: one row per account/pool, one column per reset clock.
+
+    Every row is measured on the same three clocks, so a column can be read
+    top to bottom. An em-dash means the service has no window on that clock —
+    which is itself the answer to "why does this one only show a weekly?".
+
+    Percentages are **used**, not left: 0% is untouched, 100% is exhausted.
+    """
+    if s is None:
+        s = _Style(use_color(force=color))
+    rows = _build_matrix_rows(alerts, snapshot, config)
+    if not rows:
+        return s.green("use   nothing urgent under current thresholds")
+
+    avail = min(width or terminal_width(), TABLE_MAX_WIDTH)
+
+    w_service = max([len("SERVICE")] + [len(r.service) for r in rows])
+    w_account = max([len("ACCT")] + [len(r.account) for r in rows])
+    w_scope = max([len("SCOPE")] + [len(r.scope) for r in rows])
+    w_clock = 5
+    w_next = max(6, len("NEXT"))
+    w_value = max(7, len("$ UNUSED"))
+
+    # Shed optional columns rather than let a narrow terminal slice a number in
+    # half. The clock columns are the reason the table exists, so they and the
+    # identity columns stay; money, then reset timing, then scope give way. A
+    # scope column carrying real pool names is worth more than the dollar
+    # figure, so it is dropped last.
+    show_value, show_next, show_scope = True, True, any(r.scope != "—" for r in rows)
+
+    def _needed() -> int:
+        total = 5 + 1 + w_service + 1 + w_account
+        if show_scope:
+            total += 1 + w_scope
+        total += len(CLOCK_COLUMNS) * (1 + w_clock)
+        if show_next:
+            total += 1 + w_next
+        if show_value:
+            total += 1 + w_value
+        return total
+
+    for drop in ("value", "next", "scope"):
+        if _needed() <= avail:
+            break
+        if drop == "value":
+            show_value = False
+        elif drop == "next":
+            show_next = False
+        else:
+            show_scope = False
+
+    def _line(tag: str, service: str, account: str, scope: str, tail: list[str]) -> str:
+        cells = [tag, service, account]
+        if show_scope:
+            cells.append(scope)
+        cells.extend(tail)
+        return _clamp_display_width(" ".join(cells).rstrip(), avail)
+
+    lines = [
+        s.dim(
+            _line(
+                f"{'':<5}",
+                f"{'SERVICE':<{w_service}}",
+                f"{'ACCT':<{w_account}}",
+                f"{'SCOPE':<{w_scope}}",
+                [f"{label:>{w_clock}}" for _key, label in CLOCK_COLUMNS]
+                + ([f"{'NEXT':>{w_next}}"] if show_next else [])
+                + ([f"{'$ UNUSED':>{w_value}}"] if show_value else []),
+            )
+        )
+    ]
+    # The clock columns are consumption. Say so once, rather than let a reader
+    # carry over the "% left" convention that `--for-chat` and the JSON
+    # `remaining_percent` field still use.
+    lines.append(s.dim(_clamp_display_width("  % used — 0% untouched, 100% exhausted", avail)))
+
+    any_inferred = False
+    any_folded = False
+    for row in rows:
+        tag_plain, tag_color = _BAND_TAG[row.band]
+        tag = getattr(s, tag_color)(s.bold(f"{tag_plain:<5}"))
+        service = s.bold(f"{row.service:<{w_service}}")
+        account = s.dim(f"{row.account:<{w_account}}")
+        scope = s.dim(f"{row.scope:<{w_scope}}")
+
+        if row.note is not None:
+            lines.append(_line(tag, service, account, scope, [s.dim(row.note)]))
+            continue
+
+        tail: list[str] = []
+        for key, _label in CLOCK_COLUMNS:
+            cell = row.clocks.get(key)
+            if cell is None:
+                tail.append(s.dim(f"{'—':>{w_clock}}"))
+                continue
+            any_inferred = any_inferred or cell.inferred
+            any_folded = any_folded or bool(cell.folded)
+            mark = "+" if cell.folded else ""
+            text = f"{_format_used_percent(cell.used_percent)}{mark}"
+            padded = f"{text:>{w_clock}}"
+            tail.append(s.dim(padded) if cell.inferred else _cell_color(s, cell.used_percent)(padded))
+
+        if show_next:
+            next_text = _compact_deadline(row.next_reset_days, estimated=row.next_reset_estimated)
+            tail.append(s.dim(f"{next_text:>{w_next}}"))
+        if show_value:
+            value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
+            tail.append(f"{value_text:>{w_value}}")
+
+        lines.append(_line(tag, service, account, scope, tail))
+
+    legend: list[str] = []
+    if any_inferred:
+        legend.append("dim % = clock inferred, not reported")
+    if any_folded:
+        legend.append("+ = >1 window on that clock, showing most-used")
+    if legend:
+        lines.append(s.dim(_clamp_display_width("  " + " · ".join(legend), avail)))
+    return "\n".join(lines)
+
+
+def _format_used_percent(used: float) -> str:
+    """Keep a barely-touched window distinct from a genuinely untouched one."""
+    if 0.0 < used < 1.0:
+        return ">0%"
+    return f"{used:.0f}%"
 
 
 def _priority_tag(s: _Style, band: int) -> str:

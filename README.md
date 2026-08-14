@@ -33,28 +33,37 @@ for the actual agent CLI whose quota it tracks:
 ## See it in action
 
 This is real `aiuse` output from synthetic demo accounts, not a screenshot.
-It's the exact priority ladder printed by plain `aiuse`, read **bottom → top**:
-the pools most worth using right now sort to the bottom.
+It's the exact table printed by plain `aiuse`, read **bottom → top**: the
+pools most worth using right now sort to the bottom.
 
 ```diff
-- error Groq · you@example.com · No available fetch strategy for groq.
-- empty OpenCode Go · you@example.com · OpenCode Go weekly quota: 0% left · resets within 4.5 days
-  n/a   Deepseek · you@example.com · balance $4.15 (no expiry)
-  n/a   Openrouter · you@example.com · balance $18.55 (no expiry)
-  slow  Google AI / Antigravity (agy) · you@example.com · Claude/GPT weekly: 22% left · ~lockout Mon 09:19 · pace within 1.2 days
-  mid   Claude Code · you@example.com · Claude Code weekly: 23% left · ok within 3.1 days
-  mid   Cursor (cursor-agent) · you@example.com · Cursor included: 29% left · ok within 3.3 days
-  mid   Codex · you@example.com · Codex weekly quota: 46% left · ok within 2.3 days
-  mid   Grok · you@example.com · Grok usage limit: 94% left · ok within 6.6 days
-  mid   Google AI / Antigravity (agy) · you@example.com · Gemini weekly: 84% left · ok within 4.0 days
-+ use   GitHub Copilot · default · GitHub Copilot premium requests: 42% left · ~42%waste · use within ~1 day
+       SERVICE    ACCT     SCOPE           5H  WEEK MONTH   NEXT $ UNUSED
+- error grok       you      —            No available fetch strategy for grok.
+- empty oc-go      you      —                —  100%     —   4.5d    $0.00
+  n/a   deepseek   you      —            balance $4.15 (no expiry)
+  n/a   openrouter you      —            balance $18.55 (no expiry)
+  slow  agy        you      claude/gpt     61%   78%     —   1.2d    $4.90
+  mid   claude     you      —              12%   77%     —   3.1d    $6.02
+  mid   cursor     you      —                —     —   71%   3.3d   $14.20
+  mid   codex      you      —                —   54%     —   2.3d    $3.31
+  mid   grok       you      —                —    6%     —   6.6d        —
+  mid   agy        you      gemini          4%   16%     —   4.0d    $6.07
++ use   copilot    —        —                —     —   58%    ~1d    $4.20
 ```
+
+Every row is measured on the same three clocks, so a column reads top to
+bottom. An em-dash means that service has no window on that clock at all.
+**Percentages are consumption**: `0%` is untouched, `100%` is exhausted.
 
 Green (`use`) is capacity to burn now before it resets; red is capacity
 already lost (`empty`, including a zero/negative prepaid balance) or a source
 that failed to fetch (`error`); everything else is informational (`n/a`
 positive prepaid balances that never expire, `slow`
 windows you should pace yourself on, `mid` windows on track — nothing to do).
+
+Services are named for the CLI you actually type, so the name doubles as
+something to grep for. The two OpenCode services are the exception — they
+abbreviate to an `oc-` family prefix (`oc-go`, `oc-zen`) to stay narrow.
 
 ## Try it in 60 seconds
 
