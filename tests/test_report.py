@@ -19,6 +19,7 @@ from aiuse.report import (
     _BAND_TAG,
     ACTION_PLAN_MAX_LINES,
     ACTION_PLAN_WIDTH,
+    TABLE_MAX_WIDTH,
     _action_plan_line,
     _human_deadline,
     _physical_line_count,
@@ -692,7 +693,7 @@ def test_brief_action_plan_respects_max_lines():
         )
         for i in range(30)
     ]
-    body = _render_brief_action_plan(alerts, _Style(False), width=80, max_lines=10)
+    body = _render_brief_action_plan(alerts, _Style(False), clamp_width=80, max_lines=10)
     assert _physical_line_count(body) <= 10
     assert any("more" in line for line in body)
 
@@ -730,7 +731,7 @@ def test_brief_action_plan_caps_lines_per_provider():
             kind="burn",
         )
     ]
-    body = _render_brief_action_plan(alerts, _Style(False), width=80, max_lines=40)
+    body = _render_brief_action_plan(alerts, _Style(False), clamp_width=80, max_lines=40)
     plain = [_strip_ansi(line) for line in body]
     claude_alert_lines = [line for line in plain if "claude" in line and "window-" in line]
     assert len(claude_alert_lines) == BRIEF_MAX_LINES_PER_PROVIDER
@@ -1149,10 +1150,65 @@ def test_glance_respects_custom_width():
             kind="burn",
         )
     ]
-    narrow = _render_brief_action_plan(alerts, _Style(False), width=50, max_lines=10)
-    wide = _render_brief_action_plan(alerts, _Style(False), width=120, max_lines=10)
+    narrow = _render_brief_action_plan(alerts, _Style(False), clamp_width=50, max_lines=10)
+    wide = _render_brief_action_plan(alerts, _Style(False), clamp_width=120, max_lines=10)
     assert all(len(_strip_ansi(line)) <= 50 for line in narrow)
     assert any(len(_strip_ansi(line)) > 50 for line in wide)
+
+
+def test_at_a_glance_clamps_to_the_terminal_not_the_rule_width(monkeypatch):
+    """A wide terminal must not have its alert rows cut at the 80-column rule.
+
+    The plain renderer draws its section rules at ACTION_PLAN_WIDTH regardless
+    of terminal size, and used to pass that same 80 down as the truncation
+    width. On a 200-column terminal the at-a-glance rows were therefore cut with
+    "…" for no reason. Reachable whenever the detailed plan exceeds
+    ACTION_PLAN_MAX_LINES, which is what the 12 alerts below force.
+    """
+    now = utcnow()
+    alerts = [
+        UseOrLoseAlert(
+            urgency=Urgency.MEDIUM,
+            provider="codex",
+            # Sized so a row lands between ACTION_PLAN_WIDTH and TABLE_MAX_WIDTH:
+            # long enough that the old 80-column clamp cut it, short enough that
+            # the new one does not.
+            account=f"user{i}@example.com",
+            window_label=f"Codex weekly quota {i}",
+            remaining_percent=70.0 + i,
+            days_until_reset=4.0,
+            plan=None,
+            message="x",
+            source="codexbar",
+            score=float(30 - i),
+            kind="burn",
+        )
+        for i in range(12)
+    ]
+
+    def _glance_rows(columns: str) -> list[str]:
+        monkeypatch.setenv("COLUMNS", columns)
+        text = render_report(
+            Snapshot(collected_at=now, accounts=[]),
+            alerts,
+            config={},
+            color=False,
+            full=True,
+        )
+        start = text.index("## Action plan — at a glance")
+        return [line for line in text[start:].splitlines() if line.startswith("  ") and "·" in line]
+
+    wide_rows = _glance_rows("200")
+    assert wide_rows, "expected the at-a-glance block to be reached"
+    # Nothing truncated, and rows genuinely exceed the 80-column rule width.
+    assert not any(row.endswith("…") for row in wide_rows)
+    assert any(len(row) > ACTION_PLAN_WIDTH for row in wide_rows)
+    # Still bounded — a very wide terminal does not mean unbounded rows.
+    assert all(len(row) <= TABLE_MAX_WIDTH for row in wide_rows)
+
+    # A narrow terminal still clamps, so the block keeps fitting its viewport.
+    narrow_rows = _glance_rows("60")
+    assert all(len(row) <= 60 for row in narrow_rows)
 
 
 def test_render_cross_checks_use_soft_labels():

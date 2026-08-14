@@ -503,13 +503,16 @@ def _slot_label(provider: str, index: int, block: dict[str, Any]) -> str:
     if pools and index <= len(pools):
         return f"{pools[index - 1]}{_KIND_SUFFIX.get(_block_window_kind(block) or '', '')}"
 
-    minutes = _int_or_none(block.get("windowMinutes") or block.get("window_minutes"))
     provider_name = {
         "codex": "Codex",
         "opencodego": "OpenCode Go",
         "antigravity": "Google AI / Antigravity",
+        "deepseek": "DeepSeek",
+        "openrouter": "OpenRouter",
     }.get(provider, provider.replace("-", " ").title())
-    kind = classify_window_minutes(minutes)
+    # Reset distance, not just a declared duration, so a slot that reports only
+    # `resetsAt` still gets named by its period instead of falling through.
+    kind = _block_window_kind(block)
     # Always include index on the fallback path so two same-duration unnamed
     # slots never share a label and get collapsed later.
     if kind == "5h":
@@ -518,7 +521,19 @@ def _slot_label(provider: str, index: int, block: dict[str, Any]) -> str:
         return f"{provider_name} weekly quota ({index})"
     if kind == "monthly":
         return f"{provider_name} monthly quota ({index})"
-    return f"{provider_name} quota {index} (name not supplied by CodexBar)"
+
+    # A prepaid provider with neither a duration nor a reset is not reporting a
+    # recurring window at all — it is reporting credit. "quota N (name not
+    # supplied by CodexBar)" both misdescribed that and blamed CodexBar for
+    # withholding a name that never existed. deepseek and openrouter arrive
+    # here every collection, carrying a balance in `reset_description` and a
+    # meaningless 0%-used. Gated on PREPAID_HINTS rather than on the missing
+    # reset alone, because a *subscription* slot can also arrive empty (an
+    # antigravity pool CodexBar knows about but has no data for this run), and
+    # calling that "prepaid balance" would be a worse lie than the old label.
+    if provider.lower() in PREPAID_HINTS and not parse_dt(block.get("resetsAt") or block.get("resets_at")):
+        return f"{provider_name} prepaid balance"
+    return f"{provider_name} quota {index}"
 
 
 def _billing_kind(

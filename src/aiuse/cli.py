@@ -407,7 +407,11 @@ def _main_inner(argv: list[str] | None = None) -> int:
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
     if should_persist_snapshots(analysis_cfg):
         try:
-            snapshot_path = save_snapshot(snapshot, alerts)
+            snapshot_path = save_snapshot(
+                snapshot,
+                alerts,
+                retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
+            )
             _progress(f"Saved snapshot to {snapshot_path}")
         except OSError as exc:
             # Errors still surface even in quiet mode

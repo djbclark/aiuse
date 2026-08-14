@@ -23,3 +23,23 @@ def isolate_snapshot_dir(tmp_path, monkeypatch):
     this only guarantees the default is never the real one.
     """
     monkeypatch.setattr(history, "snapshot_dir", lambda: tmp_path / "snapshots")
+
+
+# The width the suite renders at unless a test says otherwise. Wide enough that
+# the table's TABLE_MAX_WIDTH cap is the binding constraint rather than the
+# terminal, which is the configuration most assertions were written against.
+DEFAULT_TEST_COLUMNS = "120"
+
+
+@pytest.fixture(autouse=True)
+def deterministic_terminal_width(monkeypatch):
+    """Pin ``$COLUMNS`` so renderer output does not depend on the dev's terminal.
+
+    ``report.terminal_width()`` goes through ``shutil.get_terminal_size``, which
+    prefers ``$COLUMNS``. Until now nothing set it, so the suite passed only
+    because it happened to be unset in CI and in most shells — every width
+    assertion was silently reading whatever window the developer had open, and a
+    run inside a narrow pane could fail tests that have nothing to do with the
+    change under test. Pin it once here rather than in each affected test.
+    """
+    monkeypatch.setenv("COLUMNS", DEFAULT_TEST_COLUMNS)

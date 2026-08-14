@@ -546,6 +546,66 @@ def test_window_series_key_is_stable_across_collector_label_variants():
     assert window_series_key("antigravity", "Gemini weekly", 10080) != codexbar
 
 
+def test_effective_window_minutes_prefers_declared_then_label():
+    """A labelled window resolves a duration; an unnamed one deliberately does not."""
+    from aiuse.models import effective_window_minutes
+
+    # Declared always wins, even when the label disagrees.
+    assert effective_window_minutes("Gemini weekly", 300) == 300
+    # CodexBar's bare slot shape supplies no windowMinutes, only a composed label.
+    assert effective_window_minutes("Gemini 5-hour", None) == 300
+    assert effective_window_minutes("Claude/GPT weekly", None) == 10080
+    assert effective_window_minutes("Cursor monthly", None) == 43200
+    # The pre-fix generic fallback names no period, so it stays unresolved rather
+    # than being guessed at from a reset distance.
+    assert effective_window_minutes("Google AI / Antigravity quota 1 (name not supplied by CodexBar)", None) is None
+    assert effective_window_minutes(None, None) is None
+
+
+def test_bare_slot_shape_joins_the_titled_series_not_a_forked_one(tmp_path: Path):
+    """CodexBar's two payload shapes describe one allotment — one series, not two.
+
+    The titled `extraRateWindows` shape carries `windowMinutes`; the bare
+    primary/secondary slot shape carries none. Keying on the raw value forked
+    them into `antigravity:gemini:5h` and `antigravity:gemini:?`, so every
+    bare-shape observation was silently dropped by chronic-waste detection
+    (which requires a non-null duration under 360 minutes).
+    """
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        for i in range(3):
+            data = {
+                "collected_at": (now - timedelta(hours=6 * i)).isoformat(),
+                "accounts": [
+                    {
+                        "source": "codexbar",
+                        "provider": "antigravity",
+                        "account": "user@example.com",
+                        "windows": [
+                            {
+                                "label": "Gemini 5-hour",
+                                "remaining_percent": 95.0,
+                                # The bare slot shape: no windowMinutes at all.
+                                "window_minutes": None,
+                                "resets_at": (now - timedelta(hours=6 * i) + timedelta(hours=4)).isoformat(),
+                            }
+                        ],
+                    }
+                ],
+            }
+            (tmp_path / f"bare{i}.json").write_text(json.dumps(data), encoding="utf-8")
+
+        rows = chronic_waste_summary(
+            current=_antigravity_live_snapshot(now, now + timedelta(hours=4)),
+            retention_days=90,
+        )
+
+        assert len(rows) == 1
+        # The same key the titled shape produces — not `antigravity:gemini:?`.
+        assert rows[0]["window_key"] == "antigravity:gemini:5h"
+        assert rows[0]["sample_count"] == 3
+
+
 def test_chronic_waste_reports_live_account_and_label(tmp_path: Path):
     """A history row written by an anonymous collector adopts the live identity."""
     with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):

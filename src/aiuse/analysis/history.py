@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.analysis.pace import independent_pool_key
-from aiuse.models import Snapshot, canonical_provider, utcnow
+from aiuse.models import Snapshot, canonical_provider, effective_window_minutes, utcnow
 
 _DEFAULT_SNAPSHOT_DIR = "~/.cache/aiuse/snapshots"
 _DEFAULT_RETENTION_DAYS = 90
@@ -21,7 +21,74 @@ def snapshot_dir() -> Path:
     return Path(os.path.expanduser(_DEFAULT_SNAPSHOT_DIR))
 
 
-def save_snapshot(snapshot: Snapshot, alerts: list[Any]) -> Path:
+_SNAPSHOT_TS_FORMAT = "%Y-%m-%dT%H%M%S.%fZ"
+# The colon-separated spelling older versions wrote. Still ours, so still prunable.
+_LEGACY_SNAPSHOT_TS_FORMATS = ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _snapshot_file_time(name: str) -> datetime | None:
+    """The collection time encoded in a snapshot filename, or None if unreadable.
+
+    Reading the name rather than the file is the point: pruning must not cost a
+    parse of every JSON in the directory, which is the very expense it exists to
+    bound. Names that do not match the format this module writes return None and
+    are never deleted — an unrecognized file in the cache is not ours to remove.
+    """
+    stem = name[:-5] if name.endswith(".json") else name
+    # Same-second collisions get a `-1`, `-2`, ... suffix; strip it before parsing.
+    base, _, suffix = stem.rpartition("-")
+    if base and suffix.isdigit():
+        stem = base
+    for fmt in (_SNAPSHOT_TS_FORMAT, *_LEGACY_SNAPSHOT_TS_FORMATS):
+        try:
+            return datetime.strptime(stem, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def prune_snapshots(retention_days: int = _DEFAULT_RETENTION_DAYS, *, keep: Path | None = None) -> int:
+    """Delete snapshots older than ``retention_days``. Returns the count removed.
+
+    Retention was enforced only on the read side: ``load_recent_snapshots``
+    skipped old files but nothing ever removed them, so the directory grew
+    without bound (observed: ~380 files/day, and every one of them re-read and
+    JSON-parsed by the ``max_count=10_000`` callers on each ``--full`` run).
+
+    Deliberately conservative — this deletes the operator's only copy of their
+    usage history:
+
+    * ``retention_days <= 0`` disables pruning rather than deleting everything,
+      so a mistyped config cannot wipe the corpus.
+    * ``latest.json``, the file just written, and any name this module did not
+      produce are never candidates.
+    * Failures are swallowed by the caller; losing a prune is harmless, losing
+      the snapshot it was pruning for is not.
+    """
+    if retention_days <= 0:
+        return 0
+    directory = snapshot_dir()
+    if not directory.is_dir():
+        return 0
+    cutoff = utcnow() - timedelta(days=retention_days)
+    removed = 0
+    for entry in directory.iterdir():
+        if not entry.is_file() or entry.suffix.lower() != ".json" or entry.name == "latest.json":
+            continue
+        if keep is not None and entry == keep:
+            continue
+        collected = _snapshot_file_time(entry.name)
+        if collected is None or collected >= cutoff:
+            continue
+        try:
+            entry.unlink()
+        except OSError:
+            continue
+        removed += 1
+    return removed
+
+
+def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int = _DEFAULT_RETENTION_DAYS) -> Path:
     path = snapshot_dir()
     path.mkdir(parents=True, exist_ok=True)
     path.chmod(0o700)
@@ -70,6 +137,13 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any]) -> Path:
         if tmp_filepath.exists():
             tmp_filepath.unlink()
         raise
+
+    # After the write, never before it: a prune that fails must not cost the
+    # caller the snapshot it just collected.
+    try:
+        prune_snapshots(retention_days, keep=filepath)
+    except OSError:
+        pass
 
     return filepath
 
@@ -141,7 +215,11 @@ def live_window_index(snapshot: Snapshot) -> dict[str, list[dict[str, Any]]]:
     index: dict[str, list[dict[str, Any]]] = {}
     for account in snapshot.accounts:
         for window in account.windows:
-            key = window_series_key(account.provider, window.label, window.window_minutes)
+            key = window_series_key(
+                account.provider,
+                window.label,
+                effective_window_minutes(window.label, window.window_minutes),
+            )
             entries = index.setdefault(key, [])
             existing = next((e for e in entries if account_key(e["account"]) == account_key(account.account)), None)
             if existing is None:
@@ -266,7 +344,7 @@ def compute_learned_burn_rates(
 
                 if burn_rate is None:
                     continue
-                window_minutes = prev_window.get("window_minutes")
+                window_minutes = effective_window_minutes(prev_window.get("label"), prev_window.get("window_minutes"))
                 duration_key = _duration_key(window_minutes)
                 if duration_key:
                     pk = f"{provider}:{duration_key}"
@@ -357,7 +435,8 @@ def chronic_waste_summary(
         for prev_account in prev_data.get("accounts") or []:
             provider = canonical_provider(str(prev_account.get("provider") or ""))
             for prev_window in prev_account.get("windows") or []:
-                window_minutes = prev_window.get("window_minutes")
+                label = str(prev_window.get("label") or "")
+                window_minutes = effective_window_minutes(label, prev_window.get("window_minutes"))
                 if not window_minutes or window_minutes > 360:
                     continue
                 prev_remaining = prev_window.get("remaining_percent")
@@ -366,7 +445,6 @@ def chronic_waste_summary(
                 if prev_remaining is None:
                     continue
 
-                label = str(prev_window.get("label") or "")
                 key = window_series_key(provider, label, window_minutes)
                 # An anonymous row adopts the live account when that is
                 # unambiguous, so one subscription seen by two collectors stays
@@ -682,11 +760,11 @@ def late_cycle_remaining_summary(
                     rem_f = float(remaining)
                 except (TypeError, ValueError):
                     continue
-                duration_key = _duration_key(prev_window.get("window_minutes"))
+                minutes = effective_window_minutes(prev_window.get("label"), prev_window.get("window_minutes"))
+                duration_key = _duration_key(minutes)
                 if not duration_key:
                     continue
                 resets_raw = prev_window.get("resets_at")
-                minutes = prev_window.get("window_minutes")
                 if not resets_raw or not minutes:
                     continue
                 try:

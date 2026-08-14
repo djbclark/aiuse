@@ -344,6 +344,52 @@ _CLOCK_LABEL_MARKERS: tuple[tuple[str, str], ...] = (
     ("per month", "monthly"),
 )
 
+# One nominal duration per clock, for the reverse direction: turning a bucket
+# back into minutes. Deliberately the canonical length of the period, not the
+# bucket boundary, so a value derived here compares equal to a real declared
+# duration (CodexBar's titled antigravity windows really do report 300/10080).
+WINDOW_CLOCK_MINUTES: dict[str, int] = {"5h": 300, "weekly": 10080, "monthly": 43200}
+
+
+def clock_from_label(label: str | None) -> str | None:
+    """The 5h / weekly / monthly bucket a window's *label text* names, if any.
+
+    Not a guess: this only fires when the source spelled the period out, which
+    is why ``infer_window_clock`` treats it as a declared answer rather than an
+    inferred one.
+    """
+    text = (label or "").casefold()
+    for marker, clock in _CLOCK_LABEL_MARKERS:
+        if marker in text:
+            return clock
+    return None
+
+
+def effective_window_minutes(label: str | None, window_minutes: Any) -> int | None:
+    """A window's duration in minutes: declared if the source gave one, else
+    whatever its label spells out.
+
+    Exists because a window's *identity* must not depend on which shape the
+    collector happened to receive. CodexBar reports antigravity's pools two
+    ways: a titled ``extraRateWindows`` payload carrying ``windowMinutes``, and
+    a bare primary/secondary slot payload carrying none. Both describe the same
+    recurring allotment, but keying history on the raw ``window_minutes`` forks
+    them into ``antigravity:gemini:5h`` and ``antigravity:gemini:?`` — two
+    series that never match each other, so the bare-shape observations fed
+    neither burn-rate learning nor chronic-waste detection.
+
+    Only the two *non-guessing* tiers of ``infer_window_clock`` are used. The
+    third (distance to reset) is deliberately excluded: a weekly window seen a
+    few hours before it resets is indistinguishable from a 5h one, and writing
+    that guess into a duration would silently corrupt the very history this
+    unifies. A row that names no period stays ``None`` and stays excluded.
+    """
+    declared = coerce_int(window_minutes)
+    if declared is not None:
+        return declared
+    clock = clock_from_label(label)
+    return WINDOW_CLOCK_MINUTES.get(clock) if clock else None
+
 
 def infer_window_clock(window: "QuotaWindow", now: datetime | None = None) -> tuple[str | None, bool]:
     """Bucket a window onto the 5h / weekly / monthly clock for display.
@@ -367,10 +413,9 @@ def infer_window_clock(window: "QuotaWindow", now: datetime | None = None) -> tu
     if declared is not None:
         return declared, False
 
-    text = (window.label or "").casefold()
-    for marker, clock in _CLOCK_LABEL_MARKERS:
-        if marker in text:
-            return clock, False
+    named = clock_from_label(window.label)
+    if named is not None:
+        return named, False
 
     days = window.days_until_reset(now)
     if days is None:

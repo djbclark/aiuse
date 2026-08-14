@@ -1279,7 +1279,14 @@ def _render_action_plan_section(
 
     # Too tall for one screen: full detail, then a compact plan the viewport
     # can hold without scrolling back.
-    brief_body = _render_brief_action_plan(alerts, s, width=width, max_lines=ACTION_PLAN_MAX_LINES - 2)
+    brief_body = _render_brief_action_plan(
+        alerts,
+        s,
+        # The real viewport, not the 80-column rule width above — bounded the
+        # same way the usage table bounds itself.
+        clamp_width=min(terminal_width(), TABLE_MAX_WIDTH),
+        max_lines=ACTION_PLAN_MAX_LINES - 2,
+    )
     out: list[str] = [
         s.bold("## Action plan (detailed)"),
         s.dim("-" * width),
@@ -1393,7 +1400,7 @@ def _render_brief_action_plan(
     alerts: list[UseOrLoseAlert],
     s: _Style,
     *,
-    width: int,
+    clamp_width: int,
     max_lines: int,
     max_lines_per_provider: int = BRIEF_MAX_LINES_PER_PROVIDER,
 ) -> list[str]:
@@ -1403,6 +1410,12 @@ def _render_brief_action_plan(
     Fits in ``max_lines`` physical rows (callers reserve title + rule outside).
     At most ``max_lines_per_provider`` alert lines are kept per provider (highest
     score first within each section), so one busy service cannot dominate.
+
+    ``clamp_width`` is the width alert rows are *truncated* to — how much room
+    the caller actually has, which is not the same number as the width it draws
+    its section rules at. The plain renderer draws 80-column rules regardless of
+    terminal size; passing that same 80 in here silently cut alert text on a
+    wide terminal, so the two are separate parameters now.
     """
     action = [a for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE)]
     conserve = sorted(
@@ -1458,7 +1471,7 @@ def _render_brief_action_plan(
             omitted += remaining
             lines.append(s.dim(f"  … +{omitted} more (see detailed plan above)"))
             break
-        lines.append(_clamp_display_width(row, width))
+        lines.append(_clamp_display_width(row, clamp_width))
         used += row_h
     else:
         if omitted:

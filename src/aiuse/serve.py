@@ -169,7 +169,11 @@ class _ServeState:
         analysis_cfg = self.config.get("analysis") if isinstance(self.config.get("analysis"), dict) else {}
         if should_persist_snapshots(analysis_cfg):
             try:
-                save_snapshot(snapshot, alerts)
+                save_snapshot(
+                    snapshot,
+                    alerts,
+                    retention_days=int((analysis_cfg or {}).get("snapshot_retention_days") or 90),
+                )
             except OSError:
                 pass
         suggestion = suggestion_to_dict(pick_suggestion(alerts))

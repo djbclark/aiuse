@@ -189,7 +189,9 @@ def build_report_sections(
                 )
             )
 
-    glance = _render_brief_action_plan(alerts, s, width=width, max_lines=ACTION_PLAN_MAX_LINES - 2)
+    # Here the rule width and the usable width are the same thing: the panel
+    # already spans the console, so `width` is a truthful clamp.
+    glance = _render_brief_action_plan(alerts, s, clamp_width=width, max_lines=ACTION_PLAN_MAX_LINES - 2)
     sections.append(
         ReportSection(
             title="Action plan — at a glance",

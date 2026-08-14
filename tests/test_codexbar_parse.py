@@ -634,5 +634,39 @@ def test_antigravity_slot_label_falls_back_when_reset_is_absent():
     from aiuse.collectors.codexbar import _slot_label
 
     assert _slot_label("antigravity", 1, {}) == "Gemini"
-    # A slot beyond the known pools keeps the generic fallback.
-    assert "quota 3" in _slot_label("antigravity", 3, {})
+    # A slot beyond the known pools keeps the generic fallback. Antigravity is a
+    # subscription, so an empty slot is unnamed data — never a "prepaid balance".
+    assert _slot_label("antigravity", 3, {}) == "Google AI / Antigravity quota 3"
+
+
+def test_prepaid_providers_report_a_balance_not_an_unnamed_quota():
+    """deepseek/openrouter send credit, not a window — say so, and stop blaming CodexBar.
+
+    These arrive every collection with no windowMinutes, no resetsAt, a balance
+    in `reset_description` and a meaningless used=0/remaining=100, and used to
+    render as `Deepseek quota 1 (name not supplied by CodexBar)` in `ai --json`.
+    """
+    from aiuse.collectors.codexbar import _slot_label
+
+    assert _slot_label("deepseek", 1, {}) == "DeepSeek prepaid balance"
+    assert _slot_label("openrouter", 1, {}) == "OpenRouter prepaid balance"
+    # The old label is gone entirely, for every provider.
+    assert "name not supplied" not in _slot_label("deepseek", 1, {})
+    assert "name not supplied" not in _slot_label("somevendor", 2, {})
+
+    # A prepaid provider that *does* report a real recurring window is still
+    # named by its period — the balance wording is only for the no-window case.
+    assert _slot_label("deepseek", 1, {"windowMinutes": 300}) == "DeepSeek 5-hour quota (1)"
+
+
+def test_slot_label_names_a_window_by_its_reset_when_duration_is_missing():
+    """CodexBar routinely omits windowMinutes; the reset distance still names the period."""
+    from datetime import timedelta
+
+    from aiuse.collectors.codexbar import _slot_label
+    from aiuse.models import utcnow
+
+    in_three_hours = (utcnow() + timedelta(hours=3)).isoformat()
+    in_five_days = (utcnow() + timedelta(days=5)).isoformat()
+    assert _slot_label("somevendor", 1, {"resetsAt": in_three_hours}) == "Somevendor 5-hour quota (1)"
+    assert _slot_label("somevendor", 1, {"resetsAt": in_five_days}) == "Somevendor weekly quota (1)"

@@ -207,7 +207,8 @@ Cross-check disagreements alone do **not** change the exit code.
 | `provider`              | string            |                                                               |
 | `account`               | string \| null    |                                                               |
 | `window_label`          | string            |                                                               |
-| `remaining_percent`     | number            |                                                               |
+| `remaining_percent`     | number            | share of the window still available                           |
+| `used_percent`          | number \| null    | share already consumed; null when the source reports neither  |
 | `days_until_reset`      | number \| null    |                                                               |
 | `deadline_is_estimated` | bool              | true when the source supplied a reset date without a time     |
 | `plan`                  | string \| null    |                                                               |
