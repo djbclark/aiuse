@@ -1083,6 +1083,10 @@ def render_clock_matrix(
     fmt_note = s.dim("Note: ") + s.red("100% means 100% Used")
     legend_items.append((plain_note, fmt_note))
 
+    plain_ai_note = "AI: Use `aiuse --json` for machine-readable output"
+    fmt_ai_note = s.dim(plain_ai_note)
+    legend_items.append((plain_ai_note, fmt_ai_note))
+
     table_width = _needed()
     for plain_text, fmt_text in legend_items:
         margin_size = max(4, (table_width - len(plain_text)) // 2)

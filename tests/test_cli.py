@@ -360,7 +360,15 @@ def test_json_keeps_nested_live_envelope(monkeypatch, capsys):
     assert cli.main(["--json", "-q"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert set(payload) == {"schema_version", "contract_url", "alerts", "suggestion", "history", "snapshot"}
+    assert set(payload) == {
+        "schema_version",
+        "contract_url",
+        "contract_command",
+        "alerts",
+        "suggestion",
+        "history",
+        "snapshot",
+    }
     assert payload["schema_version"] == "1.0"
     assert payload["snapshot"]["accounts"] == []
 

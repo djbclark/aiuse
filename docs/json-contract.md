@@ -15,6 +15,7 @@ Default `aiuse --json` stdout:
 {
   "schema_version": "1.0",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+  "contract_command": "aiuse schema",
 
   // New in 3.0.12+ for on-disk snapshots:
   "complete": true,
@@ -60,6 +61,9 @@ natively; no flag is needed when reading those files directly.
 
 ```json
 {
+  "schema_version": "1.0",
+  "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+  "contract_command": "aiuse schema",
   "alerts": [ ... ],
   "cross_check_warnings": [ ... ],
   "suggestion": { ... } | null

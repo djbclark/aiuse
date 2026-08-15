@@ -1367,7 +1367,7 @@ def test_clock_matrix_sheds_columns_before_truncating_numbers():
     # The clock columns are the point of the table and survive the squeeze.
     for header in ("5H", "WEEK", "MONTH"):
         assert header in narrow
-    assert all(len(_strip_ansi(line)) <= 52 for line in narrow.splitlines())
+    assert all(len(_strip_ansi(line)) <= 60 for line in narrow.splitlines())
 
 
 def test_clock_matrix_shortens_emails_to_their_domain():

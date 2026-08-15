@@ -52,6 +52,7 @@ pools most worth using right now sort to the bottom.
   mid   agy        gmail gemini        4%   16%    <-     4h    $5.80
 + use   copilot    —     —             ->   58%    <-   ~34h        —
                       Note: 100% means 100% Used
+          AI: Use `aiuse --json` for machine-readable output
 ```
 
 <!-- readme-demo:end -->

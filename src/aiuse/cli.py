@@ -423,6 +423,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
     payload = {
         "schema_version": "1.0",
         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+        "contract_command": "aiuse schema",
         "snapshot": snapshot.to_dict(),
         "alerts": [a.to_dict() for a in alerts],
         "suggestion": suggestion,
@@ -456,6 +457,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
                     {
                         "schema_version": "1.0",
                         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+                        "contract_command": "aiuse schema",
                         "alerts": payload["alerts"],
                         "cross_check_warnings": cross_check_warnings,
                         "suggestion": suggestion,
