@@ -791,7 +791,7 @@ def test_all_three_formats_report_the_same_percentage():
 
     # Table states consumption and labels the convention.
     assert "75%" in table
-    assert "% used" in table
+    assert "Note: 100% means 100% Used" in table
     # Chat states headroom and labels its own.
     assert "25% left" in chat
 

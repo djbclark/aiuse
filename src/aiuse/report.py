@@ -1029,8 +1029,6 @@ def render_clock_matrix(
     # The clock columns are consumption. Say so once, rather than let a reader
     # carry over the "% left" convention that `--for-chat` and the JSON
     # `remaining_percent` field still use.
-    lines.append(s.dim(_clamp_display_width("  % used — 0% untouched, 100% exhausted", avail)))
-
     any_inferred = False
     any_folded = False
     for row in rows:
@@ -1045,10 +1043,17 @@ def render_clock_matrix(
             continue
 
         tail: list[str] = []
-        for key, _label in CLOCK_COLUMNS:
+        present_indices = [idx for idx, (k, _) in enumerate(CLOCK_COLUMNS) if row.clocks.get(k) is not None]
+        for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
             if cell is None:
-                tail.append(s.dim(f"{'—':>{w_clock}}"))
+                if not present_indices or min(present_indices) < idx < max(present_indices):
+                    missing_char = "—"
+                elif idx < min(present_indices):
+                    missing_char = "->"
+                else:
+                    missing_char = "<-"
+                tail.append(s.dim(f"{missing_char:>{w_clock}}"))
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
@@ -1066,13 +1071,23 @@ def render_clock_matrix(
 
         lines.append(_line(tag, service, account, scope, tail))
 
-    legend: list[str] = []
+    legend_items: list[tuple[str, str]] = []
     if any_inferred:
-        legend.append("dim % = clock inferred, not reported")
+        legend_items.append(("dim % = clock inferred, not reported", s.dim("dim % = clock inferred, not reported")))
     if any_folded:
-        legend.append("+ = >1 window on that clock, showing most-used")
-    if legend:
-        lines.append(s.dim(_clamp_display_width("  " + " · ".join(legend), avail)))
+        legend_items.append(
+            ("+ = >1 window on that clock, showing most-used", s.dim("+ = >1 window on that clock, showing most-used"))
+        )
+
+    plain_note = "Note: 100% means 100% Used"
+    fmt_note = s.dim("Note: ") + s.red("100% means 100% Used")
+    legend_items.append((plain_note, fmt_note))
+
+    table_width = _needed()
+    for plain_text, fmt_text in legend_items:
+        margin_size = max(4, (table_width - len(plain_text)) // 2)
+        lines.append(" " * margin_size + fmt_text + " " * margin_size)
+
     return "\n".join(lines)
 
 

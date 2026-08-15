@@ -1127,11 +1127,10 @@ def test_brief_report_omits_usage_and_tips():
     assert "## Tips" not in text
     lines = text.splitlines()
     assert lines[0].split()[0] == "SERVICE"
-    assert "% used" in lines[1]  # the convention note under the header
-    assert lines[2].startswith("mid")
+    assert lines[1].startswith("mid")
     assert "codex" in text
     # Percentages are consumption, not headroom: 90% left prints as 10%.
-    assert "10%" in lines[2]
+    assert "10%" in lines[1]
 
 
 def test_glance_respects_custom_width():
@@ -1333,7 +1332,7 @@ def test_clock_matrix_puts_each_window_under_its_own_clock():
 
     # Claude reports both clocks; the monthly cell is empty, not fabricated.
     claude = rows["claude"].split()
-    assert claude[4:7] == ["75%", "3%", "—"]
+    assert claude[4:7] == ["75%", "3%", "<-"]
 
 
 def test_clock_matrix_shows_used_not_remaining():
