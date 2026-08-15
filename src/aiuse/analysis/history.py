@@ -229,11 +229,14 @@ def live_window_index(snapshot: Snapshot) -> dict[str, list[dict[str, Any]]]:
                         "account": account.account,
                         "label": window.label,
                         "resets_at": window.resets_at,
+                        "remaining_percent": window.remaining(),
                     }
                 )
                 continue
             if existing.get("resets_at") is None and window.resets_at is not None:
                 existing["resets_at"] = window.resets_at
+            if existing.get("remaining_percent") is None and window.remaining() is not None:
+                existing["remaining_percent"] = window.remaining()
     return index
 
 

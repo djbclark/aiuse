@@ -242,7 +242,8 @@ def _usable_usage_payload(outcome: Any) -> bool:
             continue
         usage = row.get("usage")
         if isinstance(usage, dict) and usage:
-            return True
+            if any(isinstance(usage.get(k), dict) for k in ("primary", "secondary", "tertiary")):
+                return True
     return False
 
 

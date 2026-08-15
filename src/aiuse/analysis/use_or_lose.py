@@ -586,6 +586,9 @@ def analyze_use_or_lose(
             avg_remaining = wasted["avg_remaining_pct"]
             samples = wasted["sample_count"]
             live_entry = resolve_live_window(live_windows, series_key, account) or {}
+            live_rem = live_entry.get("remaining_percent")
+            if live_rem is not None and live_rem <= 0.0:
+                continue  # Depleted pools natively use the empty tag; history alerts would improperly mask it.
             live_resets_at = live_entry.get("resets_at")
             days = (live_resets_at - utcnow()).total_seconds() / 86400.0 if live_resets_at is not None else None
             alerts.append(
