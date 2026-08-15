@@ -41,16 +41,17 @@ pools most worth using right now sort to the bottom.
 ```diff
         SERVICE    ACCT  SCOPE         5H  WEEK MONTH   NEXT $ UNUSED
 - error oc-zen     gmail —          No available fetch strategy for opencode-zen.
-- empty oc-go      gmail —              —  100%     —   4.5d        —
+- empty oc-go      gmail —             ->  100%    <-   4.5d        —
   n/a   deepseek   gmail —          balance $4.15 (no expiry)
   n/a   openrouter gmail —          balance $18.55 (no expiry)
-  slow  agy        gmail claude/gpt     —   78%     —    29h        —
-  mid   claude     gmail —            12%   77%     —     3h    $1.59
-  mid   cursor     gmail —              —     —   71%   3.3d    $5.80
-  mid   codex      gmail —              —   54%     —   2.3d    $3.17
-  mid   grok       gmail —              —    6%     —   6.6d        —
-  mid   agy        gmail gemini        4%   16%     —     4h    $5.80
-+ use   copilot    —     —              —   58%     —   ~34h        —
+  slow  agy        gmail claude/gpt    ->   78%    <-    29h        —
+  mid   claude     gmail —            12%   77%    <-     3h    $1.59
+  mid   cursor     gmail —             ->    ->   71%   3.3d    $5.80
+  mid   codex      gmail —             ->   54%    <-   2.3d    $3.17
+  mid   grok       gmail —             ->    6%    <-   6.6d        —
+  mid   agy        gmail gemini        4%   16%    <-     4h    $5.80
++ use   copilot    —     —             ->   58%    <-   ~34h        —
+                      Note: 100% means 100% Used
 ```
 
 <!-- readme-demo:end -->
