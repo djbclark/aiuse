@@ -1,6 +1,7 @@
 """CLI collectors for live provider quotas."""
 
 from .caut import collect_caut
+from .cline import collect_cline
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .opencode_zen import collect_opencode_zen
@@ -12,6 +13,7 @@ from .tokscale import collect_tokscale
 
 __all__ = [
     "collect_caut",
+    "collect_cline",
     "collect_codexbar",
     "collect_cswap",
     "collect_openusage_ai",
