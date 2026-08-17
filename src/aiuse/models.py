@@ -91,6 +91,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "cursor": "cursor",
     "deepseek": "deepseek",
     "grok": "grok",
+    "clinepass": "clinepass",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
     "openrouter": "openrouter",
@@ -461,7 +462,7 @@ class UsageCredits:
 class AccountUsage:
     """Normalized usage for one provider account."""
 
-    source: str  # cswap | codexbar | caut | openusage_ai | openusage_sh | tokscale
+    source: str  # cswap | codexbar | caut | openusage_ai | openusage_sh | tokscale | clinepass
     provider: str
     account: str | None = None
     plan: str | None = None
