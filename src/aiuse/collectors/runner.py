@@ -22,6 +22,7 @@ from aiuse.models import (
 
 from .base import which
 from .caut import collect_caut
+from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .hermes import collect_hermes
@@ -41,6 +42,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "opencode_zen",
     "openrouter",
     "tokscale",
+    "clinepass",
     "hermes",
 )
 
@@ -60,6 +62,7 @@ SOURCE_LABELS: dict[str, str] = {
     "opencode_zen": "OpenCode Zen (native)",
     "openrouter": "OpenRouter (native)",
     "tokscale": "tokscale",
+    "clinepass": "ClinePass (native)",
     "hermes": "Hermes (local)",
 }
 
@@ -131,6 +134,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
+    if _enabled(collectors_cfg, "clinepass"):
+        jobs.append(("clinepass", partial(collect_clinepass, timeout=timeout_for(config, "clinepass"))))
     if _enabled(collectors_cfg, "hermes"):
         jobs.append(("hermes", partial(collect_hermes, timeout=timeout_for(config, "hermes"))))
 
@@ -788,7 +793,16 @@ def _source_name(source: str) -> str:
 
 
 # Re-export for docs / install scripts that want a single inventory.
-ALL_DATA_SOURCES: tuple[str, ...] = ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes")
+ALL_DATA_SOURCES: tuple[str, ...] = (
+    "cswap",
+    "codexbar",
+    "caut",
+    "openusage_ai",
+    "openusage_sh",
+    "tokscale",
+    "clinepass",
+    "hermes",
+)
 
 
 def collector_tools_present() -> dict[str, bool]:

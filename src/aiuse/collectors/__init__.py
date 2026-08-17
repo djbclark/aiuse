@@ -1,6 +1,7 @@
 """CLI collectors for live provider quotas."""
 
 from .caut import collect_caut
+from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .hermes import collect_hermes
@@ -13,6 +14,7 @@ from .tokscale import collect_tokscale
 
 __all__ = [
     "collect_caut",
+    "collect_clinepass",
     "collect_hermes",
     "collect_codexbar",
     "collect_cswap",
