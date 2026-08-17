@@ -22,9 +22,9 @@ from aiuse.models import (
 
 from .base import which
 from .caut import collect_caut
-from .cline import collect_cline
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
+from .hermes import collect_hermes
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
@@ -41,14 +41,14 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "opencode_zen",
     "openrouter",
     "tokscale",
-    "cline",
+    "hermes",
 )
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
-    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "cline"),
+    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
-    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "cline"),
+    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes"),
 }
 
 SOURCE_LABELS: dict[str, str] = {
@@ -60,7 +60,7 @@ SOURCE_LABELS: dict[str, str] = {
     "opencode_zen": "OpenCode Zen (native)",
     "openrouter": "OpenRouter (native)",
     "tokscale": "tokscale",
-    "cline": "Cline (local)",
+    "hermes": "Hermes (local)",
 }
 
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
@@ -131,8 +131,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
-    if _enabled(collectors_cfg, "cline"):
-        jobs.append(("cline", partial(collect_cline, timeout=timeout_for(config, "cline"))))
+    if _enabled(collectors_cfg, "hermes"):
+        jobs.append(("hermes", partial(collect_hermes, timeout=timeout_for(config, "hermes"))))
 
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
@@ -788,7 +788,7 @@ def _source_name(source: str) -> str:
 
 
 # Re-export for docs / install scripts that want a single inventory.
-ALL_DATA_SOURCES: tuple[str, ...] = ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "cline")
+ALL_DATA_SOURCES: tuple[str, ...] = ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes")
 
 
 def collector_tools_present() -> dict[str, bool]:
@@ -800,5 +800,5 @@ def collector_tools_present() -> dict[str, bool]:
         "openusage_ai": which("openusage") is not None,
         "openusage_sh": which("openusage-sh") is not None,
         "tokscale": which("tokscale") is not None,
-        "cline": True,
+        "hermes": True,
     }

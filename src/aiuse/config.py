@@ -156,7 +156,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Opt-in at runtime via AIUSE_OPENCODE_ZEN_COOKIE; never stores a credential in TOML.
         "opencode_zen": {"enabled": True},
         "tokscale": {"enabled": True},
-        "cline": {"enabled": True},
+        "hermes": {"enabled": True},
     },
     # Source-specific local account ids can be mapped to the account label used
     # by other collectors.  Normally this stays empty: runner.py automatically
@@ -180,11 +180,11 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "openusage_sh",
         "opencode_zen",
         "tokscale",
-        "cline",
+        "hermes",
     }
 )
 KNOWN_COLLECTOR_KEYS = frozenset(
-    {"cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "opencode_zen", "tokscale", "cline"}
+    {"cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "opencode_zen", "tokscale", "hermes"}
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
     {
@@ -532,7 +532,7 @@ def _default_toml_text() -> str:
         "# openusage_ai = 45\n"
         "# openusage_sh = 45\n"
         "# tokscale = 45\n"
-        "# cline = 45\n"
+        "# hermes = 45\n"
         "\n"
         "# CLI `--timeout` / `-t` overrides every tool for that run.\n"
         "# Install tools: packaging/install-deps.sh\n"
