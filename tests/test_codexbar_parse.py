@@ -6,7 +6,7 @@ import threading
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.codexbar import _from_row, _normalize_providers, _parse_enabled_providers, _query_providers
-from aiuse.models import BillingKind
+from aiuse.models import BillingKind, QuotaWindow, infer_window_clock
 
 
 def test_parse_clinepass_named_windows():
@@ -28,6 +28,34 @@ def test_parse_clinepass_named_windows():
         "ClinePass monthly",
     ]
     assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
+
+
+def test_parse_devin_daily_and_weekly_windows():
+    acc = _from_row(
+        {
+            "provider": "devin",
+            "source": "web",
+            "usage": {
+                "primary": {
+                    "usedPercent": 0,
+                    "windowMinutes": 1440,
+                    "resetsAt": "2026-08-20T08:00:00Z",
+                    "resetDescription": "Daily",
+                },
+                "secondary": {
+                    "usedPercent": 0,
+                    "windowMinutes": 10080,
+                    "resetsAt": "2026-08-23T08:00:00Z",
+                    "resetDescription": "Weekly",
+                },
+            },
+        }
+    )
+    assert [window.label for window in acc.windows] == ["Devin daily", "Devin weekly"]
+    assert acc.plan is None
+    assert infer_window_clock(acc.windows[0]) == ("5h", False)
+    assert infer_window_clock(acc.windows[1]) == ("weekly", False)
+    assert infer_window_clock(QuotaWindow(label="Devin daily")) == ("5h", False)
 
 
 def test_parse_zai_named_windows_drops_synthetic_account():

@@ -80,6 +80,12 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
         "z.ai weekly",
         "z.ai session",
     ),
+    # Devin self-serve: included daily + weekly quota (Free/Pro/Max).
+    "devin": (
+        "Devin daily",
+        "Devin weekly",
+        "Devin quota 3",
+    ),
     "grok": ("Grok usage limit", "Grok quota 2", "Grok quota 3"),
     "warp": ("Warp credits", "Warp quota 2", "Warp quota 3"),
     "elevenlabs": (

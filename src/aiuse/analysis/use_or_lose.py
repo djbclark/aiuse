@@ -670,7 +670,7 @@ def _is_short_window(window: QuotaWindow) -> bool:
     low = window.label.lower().strip()
     if low in SHORT_WINDOW_LABELS:
         return True
-    if "5-hour" in low or "5 hour" in low or "5h" in low:
+    if "5-hour" in low or "5 hour" in low or "5h" in low or "daily" in low:
         return True
     return False
 

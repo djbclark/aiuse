@@ -54,6 +54,9 @@ def coerce_int(value: Any) -> int | None:
 # raw `windowMinutes` value into a human quota kind, and by the analysis layer
 # that decides whether a window is a short rate-limit (not "monthly waste").
 WINDOW_5H_MAX_MINUTES = 360
+# Daily included caps (Devin = 1440) are not a 5h window for analysis, but
+# they occupy the table's short (5H) clock. See infer_window_clock.
+WINDOW_DAILY_MAX_MINUTES = 1440
 WINDOW_WEEKLY_MAX_MINUTES = 10080
 WINDOW_MONTHLY_MAX_MINUTES = 44640
 
@@ -93,6 +96,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "grok": "grok",
     "clinepass": "clinepass",
     "zai": "zai",
+    "devin": "devin",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
     "openrouter": "openrouter",
@@ -338,6 +342,7 @@ _CLOCK_LABEL_MARKERS: tuple[tuple[str, str], ...] = (
     ("5-hour", "5h"),
     ("5 hour", "5h"),
     ("five hour", "5h"),
+    ("daily", "5h"),
     ("5-hr", "5h"),
     ("5h", "5h"),
     ("hourly", "5h"),
@@ -412,11 +417,19 @@ def infer_window_clock(window: "QuotaWindow", now: datetime | None = None) -> tu
        practice means a collector that supplied neither a duration nor a
        descriptive label (e.g. CodexBar's "quota 1 (name not supplied)").
     """
+    named = clock_from_label(window.label) or clock_from_label(window.reset_description)
     declared = classify_window_minutes(window.window_minutes)
+    # A calendar-day cap (Devin daily = 1440) classifies as weekly, but the
+    # usage table has no Daily column — it belongs on the short 5H clock.
+    if (
+        named == "5h"
+        and declared == "weekly"
+        and window.window_minutes is not None
+        and window.window_minutes <= WINDOW_DAILY_MAX_MINUTES
+    ):
+        return "5h", False
     if declared is not None:
         return declared, False
-
-    named = clock_from_label(window.label)
     if named is not None:
         return named, False
 

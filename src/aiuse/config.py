@@ -72,6 +72,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "clinepass": {"shared_allotment": True},
             # z.ai coding plan: 5h credits ⊂ weekly credits (Lite 2k / 10k).
             "zai": {"shared_allotment": True},
+            # Devin self-serve: daily ⊂ weekly included quota.
+            "devin": {"shared_allotment": True},
             "grok": {"weekly": {"flexibility": 0.5, "refill_capacity_unit": "requests", "refill_capacity": 100}},
         },
         # Advisory only: probe local LLM ports when cloud quotas look empty.
@@ -142,6 +144,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "z.ai Lite",
             "notes": "GLM coding plan: 5h and weekly credit windows (shared allotment).",
             "monthly_price": 18,
+        },
+        "devin": {
+            "name": "Devin",
+            "notes": (
+                "Free/Pro/Max: included daily + weekly quota. Free has no list "
+                "price; set monthly_price if on Pro ($20) or Max ($200)."
+            ),
         },
         "deepseek": {
             "name": "DeepSeek (prepaid API)",
