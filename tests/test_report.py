@@ -1357,6 +1357,38 @@ def test_clock_matrix_keeps_non_window_accounts_as_notes():
     assert "session expired" in text
 
 
+def test_clock_matrix_labels_expired_opencode_go_subscription():
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="opencode_go",
+                provider="opencode-go",
+                plan="expired",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="OpenCode Go",
+                        remaining_percent=0.0,
+                        reset_description="subscription expired",
+                    )
+                ],
+            )
+        ],
+    )
+    matrix = render_clock_matrix([], snapshot=snap, color=False)
+    go_line = next(line for line in matrix.splitlines() if "oc-go" in line)
+    assert go_line.startswith("empty")
+    assert "subscription expired" in go_line
+    assert "98%" not in go_line
+    assert "2%" not in go_line
+
+    ladder = render_priority_ladder([], snapshot=snap, color=False)
+    assert "subscription expired" in ladder
+    assert ladder.startswith("empty")
+    assert "0% left" not in ladder
+
+
 def test_clock_matrix_sheds_columns_before_truncating_numbers():
     snap = _matrix_snapshot()
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)

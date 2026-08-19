@@ -105,6 +105,31 @@ def test_cross_check_warns_when_percentages_disagree():
     assert "percentage points" in warn.message
 
 
+def test_opencode_go_native_expired_beats_codexbar_local_estimate():
+    native = AccountUsage(
+        source="opencode_go",
+        provider="opencode-go",
+        plan="expired",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="OpenCode Go", remaining_percent=0.0, reset_description="subscription expired")],
+        notes=["OpenCode Go has no active subscription (expired or not renewed)."],
+    )
+    local = _account("codexbar", "opencode-go")
+    local.notes = [
+        "Live data fetched by CodexBar via local.",
+        "OpenCode Go local estimate (SQLite costs vs fixed caps) — may diverge "
+        "from the official Go limit; prefer CodexBar web when available.",
+    ]
+    local.windows[0].label = "OpenCode Go monthly quota (3)"
+    local.windows[0].used_percent = 1.9
+    local.windows[0].remaining_percent = 98.1
+
+    accounts, checks = _select_and_cross_check([local, native], cswap_authoritative=True)
+    assert [(account.source, account.plan) for account in accounts] == [("opencode_go", "expired")]
+    warn = next(check for check in checks if check.status == "warning")
+    assert "local cost estimate" in warn.message.casefold()
+
+
 def test_opencode_cross_check_names_local_estimate_when_openusage_disagrees():
     """CodexBar web monthly 0% vs OpenUsage estimated ~19% — prefer web billing."""
     codexbar = _account("codexbar", "opencode-go")
@@ -268,6 +293,7 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_zen", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_go", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_clinepass", lambda **_k: [])
 
     start = time.monotonic()
@@ -298,7 +324,7 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_zen", lambda **_k: [])
-    monkeypatch.setattr("aiuse.collectors.runner.collect_clinepass", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_go", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_clinepass", lambda **_k: [])
     snapshot = run_collectors({})
 

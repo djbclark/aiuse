@@ -155,6 +155,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "openusage_sh": {"enabled": True},
         # Opt-in at runtime via AIUSE_OPENCODE_ZEN_COOKIE; never stores a credential in TOML.
         "opencode_zen": {"enabled": True},
+        # Same console cookie as Zen; detects a lapsed Go plan the local $cap path cannot.
+        "opencode_go": {"enabled": True},
         "tokscale": {"enabled": True},
         "hermes": {"enabled": True},
     },
@@ -179,12 +181,23 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "openusage_ai",
         "openusage_sh",
         "opencode_zen",
+        "opencode_go",
         "tokscale",
         "hermes",
     }
 )
 KNOWN_COLLECTOR_KEYS = frozenset(
-    {"cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "opencode_zen", "tokscale", "hermes"}
+    {
+        "cswap",
+        "codexbar",
+        "caut",
+        "openusage_ai",
+        "openusage_sh",
+        "opencode_zen",
+        "opencode_go",
+        "tokscale",
+        "hermes",
+    }
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
     {

@@ -5,6 +5,7 @@ from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .hermes import collect_hermes
+from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
@@ -20,6 +21,7 @@ __all__ = [
     "collect_cswap",
     "collect_openusage_ai",
     "collect_openusage_sh",
+    "collect_opencode_go",
     "collect_opencode_zen",
     "collect_openrouter",
     "collect_tokscale",

@@ -34,6 +34,11 @@
 # The cookie is never stored in this file.
 # enabled = true
 
+[collectors.opencode_go]
+# Same console cookie as Zen. Reads the official /go page so a lapsed plan
+# shows empty / subscription expired instead of CodexBar's local leftover %.
+# enabled = true
+
 # Usually unnecessary: aiuse automatically unifies a provider when every live
 # source reports exactly one named account.  For a genuinely multi-account
 # provider, map a source-local id to the account label used elsewhere.

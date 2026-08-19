@@ -469,6 +469,21 @@ def test_opencodego_falls_back_to_auto_when_web_errors(monkeypatch):
     assert any("local estimate" in note for note in account.notes)
 
 
+def test_opencodego_local_plus_web_source_is_still_a_local_estimate():
+    from aiuse.collectors.codexbar import _from_row
+
+    account = _from_row(
+        {
+            "provider": "opencodego",
+            "source": "local+web",
+            "usage": {
+                "tertiary": {"usedPercent": 1.9, "windowMinutes": 43200, "resetsAt": "2099-02-01T00:00:00Z"},
+            },
+        }
+    )
+    assert any("local estimate" in note for note in account.notes)
+
+
 def test_usable_usage_payload_rejects_error_only_rows():
     from aiuse.collectors.base import CollectorError
     from aiuse.collectors.codexbar import _usable_usage_payload

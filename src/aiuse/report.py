@@ -854,6 +854,12 @@ def _build_matrix_rows(
                     _window_use_urgency(representative) if representative is not None else _account_use_urgency(account)
                 )
 
+            note = None
+            if not clocks:
+                for window in pool:
+                    if window.reset_description:
+                        note = window.reset_description
+                        break
             rows.append(
                 _MatrixRow(
                     sort_key=_ladder_sort_key(_band_sort_lane(band), urgency, account.provider, account.account),
@@ -866,6 +872,7 @@ def _build_matrix_rows(
                     next_reset_days=soonest,
                     next_reset_estimated=soonest_estimated,
                     value_usd=value,
+                    note=note,
                 )
             )
             covered.add(key)
@@ -1232,6 +1239,14 @@ def _priority_account_line(
     if window is None:
         window = _pick_representative_window(account.windows)
     if window is not None:
+        if (
+            band == _BAND_EMPTY
+            and window.resets_at is None
+            and window.reset_description
+            and "expired" in window.reset_description.casefold()
+        ):
+            body = f"{name} · {who} · {window.reset_description}"
+            return f"{_priority_tag(s, band)} {body}"
         rem = window.remaining() or 0.0
         when = _human_deadline(window.days_until_reset(), estimated=not window.reset_time_is_precise())
         # Empty capacity is not "ok" — only show reset timing.

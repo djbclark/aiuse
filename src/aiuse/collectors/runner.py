@@ -26,6 +26,7 @@ from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .hermes import collect_hermes
+from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
@@ -39,6 +40,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "caut",
     "openusage_ai",
     "openusage_sh",
+    "opencode_go",
     "opencode_zen",
     "openrouter",
     "tokscale",
@@ -51,6 +53,8 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
     "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes"),
+    # Native /go page sees an expired plan; CodexBar local $caps cannot.
+    "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
 }
 
 SOURCE_LABELS: dict[str, str] = {
@@ -59,6 +63,7 @@ SOURCE_LABELS: dict[str, str] = {
     "caut": "caut",
     "openusage_ai": "OpenUsage.ai",
     "openusage_sh": "OpenUsage.sh",
+    "opencode_go": "OpenCode Go (native)",
     "opencode_zen": "OpenCode Zen (native)",
     "openrouter": "OpenRouter (native)",
     "tokscale": "tokscale",
@@ -127,6 +132,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         )
     if _enabled(collectors_cfg, "openusage_sh"):
         jobs.append(("openusage_sh", partial(collect_openusage_sh, timeout=timeout_for(config, "openusage_sh"))))
+    if _enabled(collectors_cfg, "opencode_go"):
+        jobs.append(("opencode_go", partial(collect_opencode_go, timeout=timeout_for(config, "opencode_go"))))
     if _enabled(collectors_cfg, "opencode_zen"):
         jobs.append(("opencode_zen", partial(collect_opencode_zen, timeout=timeout_for(config, "opencode_zen"))))
     if _enabled(collectors_cfg, "openrouter"):
@@ -252,10 +259,12 @@ def _pick_primary_source(
                 return source
         return "cswap" if by_source.get("cswap") else None
 
-    for source in priority:
-        rows = by_source.get(source) or []
-        if any(_has_live_data(a) for a in rows):
-            return source
+    live_sources = [
+        source for source in priority if any(_has_live_data(account) for account in by_source.get(source, []))
+    ]
+    if live_sources:
+        authoritative = [source for source in live_sources if not _source_is_local_estimate(by_source[source])]
+        return (authoritative or live_sources)[0]
     for source in priority:
         if by_source.get(source):
             return source
@@ -681,6 +690,12 @@ def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
             f"measurement{'s' if matched_count != 1 else ''} within tolerance."
         ),
     )
+
+
+def _source_is_local_estimate(rows: Sequence[AccountUsage]) -> bool:
+    """True when every live row from this source is a local cost/$cap heuristic."""
+    live = [account for account in rows if _has_live_data(account)]
+    return bool(live) and all(_looks_like_local_quota_estimate(account) for account in live)
 
 
 def _looks_like_local_quota_estimate(account: AccountUsage) -> bool:

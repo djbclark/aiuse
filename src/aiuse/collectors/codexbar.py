@@ -315,7 +315,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     balance_usd = None
     credits_remaining = None
     notes: list[str] = [f"Live data fetched by CodexBar via {source_tag}."]
-    if provider == "opencodego" and source_tag == "local":
+    if provider == "opencodego" and "local" in source_tag.casefold():
         notes.append(
             "OpenCode Go local estimate (SQLite costs vs fixed caps) — may diverge "
             "from the official Go limit; prefer CodexBar web when available."
