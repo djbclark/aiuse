@@ -39,20 +39,21 @@ pools most worth using right now sort to the bottom.
 <!-- readme-demo:start -->
 
 ```diff
-        SERVICE    ACCT  SCOPE         5H  WEEK MONTH   NEXT $ UNUSED
+        SERVICE    ACCT  SCOPE         5H       WEEK       MONTH      $ UNUSED
 - error oc-zen     gmail —          No available fetch strategy for opencode-zen.
-- empty oc-go      gmail —             ->  100%    <-   4.5d        —
+- empty oc-go      gmail —                  ->  100%/4d12h         <-        —
   n/a   deepseek   gmail —          balance $4.15 (no expiry)
   n/a   openrouter gmail —          balance $18.55 (no expiry)
-  slow  agy        gmail claude/gpt    ->   78%    <-    29h        —
-  mid   claude     gmail —            12%   77%    <-     3h    $1.59
-  mid   cursor     gmail —             ->    ->   71%   3.3d    $5.80
-  mid   codex      gmail —             ->   54%    <-   2.3d    $3.17
-  mid   grok       gmail —             ->    6%    <-   6.6d        —
-  mid   agy        gmail gemini        4%   16%    <-     4h    $5.80
-+ use   copilot    —     —             ->   58%    <-   ~34h        —
-                      Note: 100% means 100% Used
-          AI: Use `aiuse --json` for machine-readable output
+  slow  agy        gmail claude/gpt         ->   78%/1d5h          <-        —
+  mid   claude     gmail —            12%/3h7m   77%/3d2h          <-    $1.59
+  mid   cursor     gmail —                  ->          ->   71%/3d7h    $5.80
+  mid   codex      gmail —                  ->   54%/2d7h          <-    $3.17
+  mid   grok       gmail —                  ->    6%/6d14h         <-        —
+  mid   agy        gmail gemini        4%/4h5m   16%/4d            <-    $5.80
++ use   copilot    —     —                  ->   58%/~1d           <-        —
+             2d14h = until this clock resets · bold = largest unit
+                           Note: 100% means 100% Used
+               AI: Use `aiuse --json` for machine-readable output
 ```
 
 <!-- readme-demo:end -->
@@ -360,7 +361,7 @@ This tool:
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from — but genuinely **independent pools are never merged into that governing window**: Cursor's Included+Auto pool and its separate Other Models pool are scored on their own, so an exhausted Other Models pool raises its own alert instead of being masked by a healthy Included.
 5. Qualifies **Conserve** alerts with **overage awareness**: if the account has a real or config-confirmed overage/extra-usage wallet (Claude's usage credits, Cursor's on-demand balance, or a manually confirmed OpenCode Go overage state), the message says so — the real risk there is unplanned $ spend, not lockout, which is a different situation from a genuinely hard ceiling.
-6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH), percentages **used** (depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
+6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH), percentages **used** with that clock's reset after a slash (`75%/4h`, `89%/2d14h`; depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
 7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout …`, projected waste %) appear on table/status lines when pace can project them.
 8. Cross-checks **all live sources** pairwise; Claude multi-account stays canonical in cswap.
 9. Optional surfaces: `aiuse suggest` (single burn winner), `aiuse status` / `prompt` (one-liner), and `aiuse serve` (loopback ranking API for agents). Snapshot history can blend into pace when enabled.

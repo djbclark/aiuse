@@ -15,13 +15,13 @@ Default `aiuse` prints **one row per account/pool** and **one column per reset
 clock**, so a column reads top to bottom as a like-for-like comparison:
 
 ```text
-      SERVICE    ACCT     SCOPE           5H  WEEK MONTH   NEXT $ UNUSED
-  % used — 0% untouched, 100% exhausted
+      SERVICE    ACCT     SCOPE           5H       WEEK      MONTH $ UNUSED
 error oc-go      —        —            no usage data
-empty codex      gmail    —                —  100%     —   5.7d    $0.00
-slow  agy        gmail    gemini          0%   23%     —     5h    $5.31
-mid   cursor     gmail    other models     —     —    0%    19d   $20.00
-use   claude     mit      —              25%   60%     —     5h    $2.76
+empty codex      gmail    —                —   100%/5d         —    $0.00
+slow  agy        gmail    gemini      0%/2h27m   23%/22h        —    $5.31
+mid   cursor     gmail    other models     —        —     0%/19d   $20.00
+use   claude     mit      —             25%/now  60%/2d14h      —    $2.76
+  2d14h = until this clock resets · bold = largest unit
   dim % = clock inferred, not reported · + = >1 window on that clock, showing most-used
 ```
 
@@ -30,6 +30,14 @@ service has no window on that clock, which is itself the answer to "why does
 this one only show a weekly?". That question is what the matrix exists to
 answer: the previous ladder showed each row on whichever window happened to
 govern it, so every row was measured on a different clock.
+
+When a clock has a reset timestamp the cell is `used%/duration` for **that**
+clock (`25%/now`, `60%/2d14h`), not a row-level "soonest" deadline. There is
+no `NEXT` column. Duration is at most two integer units, zeros dropped,
+concatenated (`2h27m`, `2d14h`); minutes only under one day, seconds only
+under one minute; never a calendar month (`27d`, not `0.9m`). A clock with
+no timestamp stays a bare percent (`0%`, not `0%/—`). The largest unit is
+**bold** when color is on.
 
 **Percentages are `used`, not left.** 0% is untouched, 100% is exhausted. The
 header prints that legend every run rather than relying on the reader to
@@ -67,11 +75,20 @@ Collection time, capacity blurb, and `Detail: ai --full` go to **stderr**
 ### Width adaptation
 
 `render_clock_matrix` sizes itself to `min(terminal_width(), TABLE_MAX_WIDTH)`
-(110). A narrow terminal **sheds whole columns** rather than slicing a number in
-half, in this order: `$ UNUSED`, then `NEXT`, then `SCOPE`. The clock columns and
-the identity columns never drop — they are the reason the table exists. `SCOPE`
-gives way last of the optional three, because real pool names ("gemini",
-"other models") are worth more than the dollar figure.
+(110). A narrow terminal **sheds optional detail** rather than slicing a number
+in half, in this order:
+
+1. `$ UNUSED`
+2. Duration compact to its largest unit (`2h27m` → `2h`)
+3. `SCOPE` designed short tokens (`gemini` → `gem`, `claude/gpt` → `c/gpt`,
+   `other models` → `oth`) — not a blind character slice
+4. Drop `SCOPE` only if no service still needs it to tell two rows apart
+5. Drop `ACCT` only if no service still needs it
+6. Fold the leftover disambiguator into `SERVICE` (`agy/gem`, `claude/mit`)
+
+The clock columns themselves never drop — they are the reason the table
+exists. `SCOPE` is also omitted entirely when no account has independent
+pools; `ACCT` is omitted when every row's account is `—`.
 
 `terminal_width()` honors `$COLUMNS` and falls back to `ACTION_PLAN_WIDTH` when
 stdout is not a tty. Tests pin `$COLUMNS` in `tests/conftest.py`; without that

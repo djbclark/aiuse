@@ -21,7 +21,11 @@ from aiuse.report import (
     ACTION_PLAN_WIDTH,
     TABLE_MAX_WIDTH,
     _action_plan_line,
+    _advance_matrix_layout,
+    _build_matrix_rows,
+    _format_reset_span,
     _human_deadline,
+    _MatrixLayout,
     _physical_line_count,
     _render_brief_action_plan,
     _sorted_accounts,
@@ -789,7 +793,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["SERVICE", "ACCT", "5H", "WEEK", "MONTH", "NEXT", "$", "UNUSED"]
+    assert lines[0].split() == ["SERVICE", "ACCT", "5H", "WEEK", "MONTH", "$", "UNUSED"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -1332,7 +1336,7 @@ def test_clock_matrix_puts_each_window_under_its_own_clock():
 
     # Claude reports both clocks; the monthly cell is empty, not fabricated.
     claude = rows["claude"].split()
-    assert claude[4:7] == ["75%", "3%", "<-"]
+    assert claude[4:7] == ["75%/4h", "3%/7d", "<-"]
 
 
 def test_clock_matrix_shows_used_not_remaining():
@@ -1396,6 +1400,7 @@ def test_clock_matrix_sheds_columns_before_truncating_numbers():
 
     assert "$ UNUSED" in wide
     assert "$ UNUSED" not in narrow
+    assert "NEXT" not in wide
     # The clock columns are the point of the table and survive the squeeze.
     for header in ("5H", "WEEK", "MONTH"):
         assert header in narrow
@@ -1438,6 +1443,276 @@ def test_clock_matrix_keeps_full_account_when_short_names_collide():
     # Both would shorten to "gmail", so neither may.
     assert "a@gmail.com" in text
     assert "b@gmail.com" in text
+
+
+@pytest.mark.parametrize(
+    ("days", "kwargs", "expected"),
+    [
+        (None, {}, None),
+        (0.0, {}, "now"),
+        (-0.1, {}, "now"),
+        (45 / 86400, {}, "45s"),
+        (6 / 1440, {}, "6m"),
+        ((3 * 60 + 43) / 1440, {}, "3h43m"),
+        (3 / 24, {}, "3h"),
+        (14 / 24, {}, "14h"),
+        (1 + 15 / 24, {}, "1d15h"),
+        (2 + 14 / 24, {}, "2d14h"),
+        (4 + 4 / 24, {}, "4d4h"),
+        (27 + 4 / 24, {}, "27d4h"),
+        (27.0, {}, "27d"),
+        (12.2, {"estimated": True}, "~12d"),
+        (0.4, {"estimated": True}, "~10h"),
+        ((3 * 60 + 43) / 1440, {"compact": True}, "3h"),
+        (2 + 14 / 24, {"compact": True}, "2d"),
+        (4 / 24, {}, "4h"),
+    ],
+)
+def test_format_reset_span_option_b(days, kwargs, expected):
+    span = _format_reset_span(days, **kwargs)
+    assert (None if span is None else span.plain()) == expected
+
+
+def test_format_reset_span_omits_minutes_once_days_are_showing():
+    # 1d 0h 30m rounds to the hour and then drops the zero hour.
+    span = _format_reset_span(1 + 30 / 1440)
+    assert span is not None
+    assert span.plain() == "1d"
+
+
+def test_clock_matrix_puts_reset_after_slash_not_in_next_column():
+    now = utcnow()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code 5-hour",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(hours=3, minutes=43),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Claude Code weekly",
+                        used_percent=16.0,
+                        remaining_percent=84.0,
+                        resets_at=now + timedelta(days=2, hours=14),
+                        window_minutes=10080,
+                    ),
+                ],
+            )
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=120)
+    assert "NEXT" not in text
+    assert "10%/3h43m" in text
+    assert "16%/2d14h" in text
+
+
+def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
+    now = utcnow()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="zai",
+                source="codexbar",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="z.ai 5-hour",
+                        used_percent=0.0,
+                        remaining_percent=100.0,
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="z.ai weekly",
+                        used_percent=0.0,
+                        remaining_percent=100.0,
+                        resets_at=now + timedelta(days=6, hours=20),
+                        window_minutes=10080,
+                    ),
+                ],
+            )
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=120)
+    zai = next(line for line in text.splitlines() if " zai " in line)
+    assert "0%/6d20h" in zai
+    # The 5h cell is a bare percent, not 0%/—.
+    assert "0%/—" not in zai
+    tokens = zai.split()
+    assert "0%" in tokens
+
+
+def test_clock_matrix_compacts_deadline_before_dropping_identity():
+    now = utcnow()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code 5-hour",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(hours=3, minutes=43),
+                        window_minutes=300,
+                    )
+                ],
+            )
+        ],
+    )
+    wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
+    mid = render_clock_matrix([], snapshot=snap, color=False, width=40)
+    assert "10%/3h43m" in wide
+    assert "10%/3h" in mid
+    assert "3h43m" not in mid
+    assert "claude" in mid
+    assert "gmail" in mid
+
+
+def test_clock_matrix_shortens_then_folds_colliding_identity():
+    now = utcnow()
+    windows_5h = QuotaWindow(
+        label="Gemini 5-hour",
+        used_percent=4.0,
+        remaining_percent=96.0,
+        resets_at=now + timedelta(hours=2),
+        window_minutes=300,
+    )
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="antigravity",
+                source="codexbar",
+                account="a@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    windows_5h,
+                    QuotaWindow(
+                        label="Gemini weekly",
+                        used_percent=12.0,
+                        remaining_percent=88.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT 5-hour",
+                        used_percent=100.0,
+                        remaining_percent=0.0,
+                        resets_at=now + timedelta(hours=2),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT weekly",
+                        used_percent=82.0,
+                        remaining_percent=18.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                ],
+            ),
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="x@mit.edu",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code weekly",
+                        used_percent=89.0,
+                        remaining_percent=11.0,
+                        resets_at=now + timedelta(days=2),
+                        window_minutes=10080,
+                    )
+                ],
+            ),
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="y@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Claude Code weekly",
+                        used_percent=94.0,
+                        remaining_percent=6.0,
+                        resets_at=now + timedelta(days=1, hours=15),
+                        window_minutes=10080,
+                    )
+                ],
+            ),
+        ],
+    )
+    wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
+    short = render_clock_matrix([], snapshot=snap, color=False, width=48)
+    folded = render_clock_matrix([], snapshot=snap, color=False, width=40)
+
+    assert "claude/gpt" in wide
+    assert "gemini" in wide
+    assert "c/gpt" in short
+    assert "gem" in short
+    assert "claude/gpt" not in short
+    # Last resort folds the leftover disambiguator into SERVICE.
+    assert "agy/gem" in folded or "agy/c/gpt" in folded
+    assert "claude/mit" in folded or "claude/gmail" in folded
+    header = folded.splitlines()[0]
+    assert "SCOPE" not in header.split()
+    assert "ACCT" not in header.split()
+
+
+def test_advance_matrix_layout_skips_identity_still_needed_for_uniqueness():
+    now = utcnow()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="antigravity",
+                source="codexbar",
+                account="a@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Gemini weekly",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                    QuotaWindow(
+                        label="Claude/GPT weekly",
+                        used_percent=20.0,
+                        remaining_percent=80.0,
+                        resets_at=now + timedelta(days=6),
+                        window_minutes=10080,
+                    ),
+                ],
+            )
+        ],
+    )
+    built = _build_matrix_rows([], snap, {})
+    layout = _MatrixLayout(show_value=False, compact_deadline=True, short_scope=True, show_scope=True)
+    # Unique account can go; SCOPE still distinguishes the two agy rows.
+    assert _advance_matrix_layout(layout, built) is True
+    assert not layout.show_account
+    assert layout.show_scope
+    assert not layout.fold_identity
+    # Next step folds rather than dropping the still-needed SCOPE column.
+    assert _advance_matrix_layout(layout, built) is True
+    assert layout.fold_identity
+    assert not layout.show_scope
 
 
 # ---------------------------------------------------------------------------

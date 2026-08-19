@@ -62,6 +62,15 @@ CLOCK_COLUMNS: tuple[tuple[str, str], ...] = (("5h", "5H"), ("weekly", "WEEK"), 
 # Past this the eye loses the row when scanning left to right.
 TABLE_MAX_WIDTH = 110
 
+# Designed SCOPE abbreviations for the first identity-squish stage. Blind
+# truncation ("gemin", "gmai") is worse than the full word; only these tokens
+# are used, and only when width requires it.
+_SCOPE_SHORT = {
+    "gemini": "gem",
+    "claude/gpt": "c/gpt",
+    "other models": "oth",
+}
+
 
 @dataclass
 class _MatrixRow:
@@ -79,8 +88,6 @@ class _MatrixRow:
     account_full: str | None = None
     scope: str = "—"
     clocks: dict[str, _ClockCell] = field(default_factory=dict)
-    next_reset_days: float | None = None
-    next_reset_estimated: bool = False
     value_usd: float | None = None
     note: str | None = None
 
@@ -92,6 +99,36 @@ class _ClockCell:
     used_percent: float
     inferred: bool = False  # clock bucket was guessed, not declared
     folded: int = 0  # extra windows on this clock, collapsed into this one
+    days_until_reset: float | None = None
+    reset_estimated: bool = False
+
+
+@dataclass(frozen=True)
+class _ResetSpan:
+    """A reset distance split so the largest unit can be highlighted.
+
+    ``plain()`` is ``prefix + head + tail`` with no separator: ``2d14h``,
+    ``2h27m``, ``6m``, ``~12d``, ``now``.
+    """
+
+    prefix: str = ""
+    head: str = ""
+    tail: str = ""
+
+    def plain(self) -> str:
+        return f"{self.prefix}{self.head}{self.tail}"
+
+
+@dataclass
+class _MatrixLayout:
+    """Which optional pieces of the clock matrix the current width can afford."""
+
+    show_value: bool = True
+    compact_deadline: bool = False
+    short_scope: bool = False
+    show_scope: bool = True
+    show_account: bool = True
+    fold_identity: bool = False
 
 
 def terminal_width(default: int = ACTION_PLAN_WIDTH) -> int:
@@ -570,21 +607,193 @@ def _window_value_usd(
     )
 
 
-def _compact_deadline(days: float | None, *, estimated: bool = False) -> str:
-    """Reset distance in the fewest characters that stay unambiguous."""
+def _format_reset_span(
+    days: float | None,
+    *,
+    estimated: bool = False,
+    compact: bool = False,
+) -> _ResetSpan | None:
+    """Two-unit reset distance, or None when the clock has no timestamp.
+
+    Integers only, no calendar months. At most two components; every zero is
+    dropped. Minutes appear only when the remainder is under one day; seconds
+    only when it is under one minute. ``compact`` keeps the largest unit alone.
+    Date-only stamps (``estimated``) render as ``~And`` / ``~Nh``.
+    """
     if days is None:
-        return "—"
-    prefix = "~" if estimated else ""
+        return None
     if days <= 0:
-        return f"{prefix}now"
-    hours = days * 24.0
-    if hours < 1.0:
-        return f"{prefix}{hours * 60:.0f}m"
-    if hours < 48.0:
-        return f"{prefix}{hours:.0f}h"
-    if days < 10.0:
-        return f"{prefix}{days:.1f}d"
-    return f"{prefix}{days:.0f}d"
+        return _ResetSpan(head="now")
+
+    prefix = "~" if estimated else ""
+    if estimated:
+        if days < 1:
+            hours = max(1, int(round(days * 24.0)))
+            return _ResetSpan(prefix=prefix, head=f"{hours}h")
+        return _ResetSpan(prefix=prefix, head=f"{max(1, int(round(days)))}d")
+
+    total_sec = days * 86400.0
+    if total_sec < 60:
+        return _ResetSpan(head=f"{max(1, int(round(total_sec)))}s")
+
+    if total_sec < 86400:
+        total_min = int(round(total_sec / 60.0))
+        if total_min >= 24 * 60:
+            return _ResetSpan(head="1d")
+        hours, minutes = divmod(total_min, 60)
+        if compact:
+            return _ResetSpan(head=f"{hours}h" if hours else f"{minutes}m")
+        if hours and minutes:
+            return _ResetSpan(head=f"{hours}h", tail=f"{minutes}m")
+        if hours:
+            return _ResetSpan(head=f"{hours}h")
+        return _ResetSpan(head=f"{minutes}m")
+
+    total_hr = int(round(total_sec / 3600.0))
+    day_count, hours = divmod(total_hr, 24)
+    if day_count == 0:
+        if compact:
+            return _ResetSpan(head=f"{hours}h" if hours else "1d")
+        if hours:
+            return _ResetSpan(head=f"{hours}h")
+        return _ResetSpan(head="1d")
+    if compact:
+        return _ResetSpan(head=f"{day_count}d")
+    if hours:
+        return _ResetSpan(head=f"{day_count}d", tail=f"{hours}h")
+    return _ResetSpan(head=f"{day_count}d")
+
+
+def _style_reset_span(s: _Style, span: _ResetSpan) -> str:
+    """Dim the decoration; bold the largest unit so a column still scans."""
+    return s.dim(span.prefix) + s.bold(span.head) + s.dim(span.tail)
+
+
+def _scope_display(scope: str, *, short: bool) -> str:
+    if not short or scope == "—":
+        return scope
+    return _SCOPE_SHORT.get(scope, scope)
+
+
+def _services_needing_scope(rows: list[_MatrixRow]) -> set[str]:
+    by_service: dict[str, set[str]] = {}
+    for row in rows:
+        by_service.setdefault(row.service, set()).add(row.scope)
+    return {service for service, scopes in by_service.items() if len(scopes) > 1}
+
+
+def _services_needing_account(rows: list[_MatrixRow]) -> set[str]:
+    by_service: dict[str, set[str]] = {}
+    for row in rows:
+        by_service.setdefault(row.service, set()).add(row.account)
+    return {service for service, accounts in by_service.items() if len(accounts) > 1}
+
+
+def _advance_matrix_layout(layout: _MatrixLayout, rows: list[_MatrixRow]) -> bool:
+    """Apply the next width-squish stage. False when nothing remains to drop."""
+    if layout.show_value:
+        layout.show_value = False
+        return True
+    if not layout.compact_deadline:
+        layout.compact_deadline = True
+        return True
+    if layout.show_scope and not layout.short_scope:
+        layout.short_scope = True
+        return True
+    if layout.show_scope and not _services_needing_scope(rows):
+        layout.show_scope = False
+        return True
+    if layout.show_account and not _services_needing_account(rows):
+        layout.show_account = False
+        return True
+    if not layout.fold_identity and (
+        (layout.show_scope and _services_needing_scope(rows))
+        or (layout.show_account and _services_needing_account(rows))
+    ):
+        layout.fold_identity = True
+        layout.show_scope = False
+        layout.show_account = False
+        return True
+    return False
+
+
+def _row_identity(
+    row: _MatrixRow,
+    layout: _MatrixLayout,
+    *,
+    scope_needed: set[str],
+    account_needed: set[str],
+) -> tuple[str, str, str]:
+    """Service / account / scope labels for one row under ``layout``."""
+    scope = _scope_display(row.scope, short=layout.short_scope or layout.fold_identity)
+    if not layout.fold_identity:
+        return row.service, row.account, scope
+    parts = [row.service]
+    if row.service in account_needed and row.account != "—":
+        parts.append(row.account)
+    if row.service in scope_needed and row.scope != "—":
+        parts.append(scope)
+    return "/".join(parts), "—", "—"
+
+
+def _clock_percent_text(cell: _ClockCell) -> str:
+    mark = "+" if cell.folded else ""
+    return f"{_format_used_percent(cell.used_percent)}{mark}"
+
+
+def _clock_plain(cell: _ClockCell, *, compact: bool) -> str:
+    percent = _clock_percent_text(cell)
+    span = _format_reset_span(cell.days_until_reset, estimated=cell.reset_estimated, compact=compact)
+    return f"{percent}/{span.plain()}" if span is not None else percent
+
+
+def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
+    identities = [
+        _row_identity(
+            row,
+            layout,
+            scope_needed=_services_needing_scope(rows),
+            account_needed=_services_needing_account(rows),
+        )
+        for row in rows
+    ]
+    w_service = max([len("SERVICE")] + [len(service) for service, _acct, _scope in identities])
+    total = 5 + 1 + w_service
+    if layout.show_account:
+        w_account = max([len("ACCT")] + [len(account) for _svc, account, _scope in identities])
+        total += 1 + w_account
+    if layout.show_scope:
+        w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
+        total += 1 + w_scope
+    w_pct, w_spans = _clock_column_widths(rows, layout)
+    for w_span in w_spans:
+        total += 1 + (w_pct + ((1 + w_span) if w_span else 0))
+    if layout.show_value:
+        total += 1 + max(7, len("$ UNUSED"))
+    return total
+
+
+def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple[int, list[int]]:
+    w_pct = 5
+    w_spans = [0] * len(CLOCK_COLUMNS)
+    for row in rows:
+        if row.note is not None:
+            continue
+        for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
+            cell = row.clocks.get(key)
+            if cell is None:
+                continue
+            w_pct = max(w_pct, len(_clock_percent_text(cell)))
+            span = _format_reset_span(
+                cell.days_until_reset,
+                estimated=cell.reset_estimated,
+                compact=layout.compact_deadline,
+            )
+            if span is not None:
+                w_spans[idx] = max(w_spans[idx], len(span.plain()))
+    for idx, (_key, label) in enumerate(CLOCK_COLUMNS):
+        w_pct = max(w_pct, len(label))
+    return w_pct, w_spans
 
 
 # Sourced from the analysis layer so the chat format names pools identically.
@@ -799,6 +1008,7 @@ def _build_matrix_rows(
     # them (analysis can raise on data an account row cannot render), and the
     # alert is the more informative row. Same rule the ladder used.
     deferred: list[AccountUsage] = []
+    now = utcnow()
 
     for account in _sorted_accounts(snapshot.accounts) if snapshot is not None else []:
         service = provider_display_name(account.provider)
@@ -811,8 +1021,6 @@ def _build_matrix_rows(
         for pool in partition_independent_pools(account.windows) if account.windows else [[]]:
             pool_id = _pool_id_for_windows(pool) if pool else ""
             clocks: dict[str, _ClockCell] = {}
-            soonest: float | None = None
-            soonest_estimated = False
             value: float | None = None
 
             for window in pool:
@@ -820,10 +1028,17 @@ def _build_matrix_rows(
                 if used is None:
                     continue
                 clock, inferred = infer_window_clock(window)
+                days = window.days_until_reset(now)
+                estimated = not window.reset_time_is_precise()
                 if clock is not None:
                     cell = clocks.get(clock)
                     if cell is None:
-                        clocks[clock] = _ClockCell(used_percent=used, inferred=inferred)
+                        clocks[clock] = _ClockCell(
+                            used_percent=used,
+                            inferred=inferred,
+                            days_until_reset=days,
+                            reset_estimated=estimated,
+                        )
                     else:
                         # Same clock, same pool (Cursor Included ⊂ Auto): show the
                         # most-consumed, which is the one that locks out first.
@@ -831,10 +1046,8 @@ def _build_matrix_rows(
                         if used > cell.used_percent:
                             cell.used_percent = used
                             cell.inferred = inferred
-                days = window.days_until_reset()
-                if days is not None and (soonest is None or days < soonest):
-                    soonest = days
-                    soonest_estimated = not window.reset_time_is_precise()
+                            cell.days_until_reset = days
+                            cell.reset_estimated = estimated
                 remaining = window.remaining()
                 if remaining is not None:
                     priced = _window_value_usd(window, remaining, account.provider, plans, analysis)
@@ -869,8 +1082,6 @@ def _build_matrix_rows(
                     account_full=account.account,
                     scope=_POOL_SCOPE_LABELS.get(pool_id, "—"),
                     clocks=clocks,
-                    next_reset_days=soonest,
-                    next_reset_estimated=soonest_estimated,
                     value_usd=value,
                     note=note,
                 )
@@ -968,9 +1179,9 @@ def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
         row.clocks[clock] = _ClockCell(
             used_percent=max(0.0, 100.0 - float(alert.remaining_percent)),
             inferred=inferred,
+            days_until_reset=alert.days_until_reset,
+            reset_estimated=alert.deadline_is_estimated,
         )
-    row.next_reset_days = alert.days_until_reset
-    row.next_reset_estimated = alert.deadline_is_estimated
     if alert.flexibility_profile is not None:
         row.value_usd = alert.flexibility_profile.value_at_risk_usd
     return row
@@ -1003,6 +1214,8 @@ def render_clock_matrix(
     which is itself the answer to "why does this one only show a weekly?".
 
     Percentages are **used**, not left: 0% is untouched, 100% is exhausted.
+    When a clock has a reset timestamp the cell is ``75%/4h`` / ``89%/2d14h``
+    — used percent, then that clock's own remaining time.
     """
     if s is None:
         s = _Style(use_color(force=color))
@@ -1011,48 +1224,38 @@ def render_clock_matrix(
         return s.green("use   nothing urgent under current thresholds")
 
     avail = min(width or terminal_width(), TABLE_MAX_WIDTH)
+    layout = _MatrixLayout(
+        show_scope=any(row.scope != "—" for row in rows),
+        show_account=any(row.account != "—" for row in rows),
+    )
+    while _matrix_needed_width(rows, layout) > avail:
+        if not _advance_matrix_layout(layout, rows):
+            break
 
-    w_service = max([len("SERVICE")] + [len(r.service) for r in rows])
-    w_account = max([len("ACCT")] + [len(r.account) for r in rows])
-    w_scope = max([len("SCOPE")] + [len(r.scope) for r in rows])
-    w_clock = 5
-    w_next = max(6, len("NEXT"))
+    scope_needed = _services_needing_scope(rows)
+    account_needed = _services_needing_account(rows)
+    identities = [_row_identity(row, layout, scope_needed=scope_needed, account_needed=account_needed) for row in rows]
+    w_service = max([len("SERVICE")] + [len(service) for service, _acct, _scope in identities])
+    w_account = max([len("ACCT")] + [len(account) for _svc, account, _scope in identities])
+    w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
+    w_pct, w_spans = _clock_column_widths(rows, layout)
+    w_clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
     w_value = max(7, len("$ UNUSED"))
 
-    # Shed optional columns rather than let a narrow terminal slice a number in
-    # half. The clock columns are the reason the table exists, so they and the
-    # identity columns stay; money, then reset timing, then scope give way. A
-    # scope column carrying real pool names is worth more than the dollar
-    # figure, so it is dropped last.
-    show_value, show_next, show_scope = True, True, any(r.scope != "—" for r in rows)
-
-    def _needed() -> int:
-        total = 5 + 1 + w_service + 1 + w_account
-        if show_scope:
-            total += 1 + w_scope
-        total += len(CLOCK_COLUMNS) * (1 + w_clock)
-        if show_next:
-            total += 1 + w_next
-        if show_value:
-            total += 1 + w_value
-        return total
-
-    for drop in ("value", "next", "scope"):
-        if _needed() <= avail:
-            break
-        if drop == "value":
-            show_value = False
-        elif drop == "next":
-            show_next = False
-        else:
-            show_scope = False
-
     def _line(tag: str, service: str, account: str, scope: str, tail: list[str]) -> str:
-        cells = [tag, service, account]
-        if show_scope:
+        cells = [tag, service]
+        if layout.show_account:
+            cells.append(account)
+        if layout.show_scope:
             cells.append(scope)
         cells.extend(tail)
         return _clamp_display_width(" ".join(cells).rstrip(), avail)
+
+    header_clocks = []
+    for (_key, label), w_clock, w_span in zip(CLOCK_COLUMNS, w_clocks, w_spans, strict=True):
+        header_clocks.append(f"{label:>{w_pct}}" + (" " * (1 + w_span) if w_span else ""))
+        if len(header_clocks[-1]) < w_clock:
+            header_clocks[-1] = f"{header_clocks[-1]:<{w_clock}}"
 
     lines = [
         s.dim(
@@ -1061,24 +1264,21 @@ def render_clock_matrix(
                 f"{'SERVICE':<{w_service}}",
                 f"{'ACCT':<{w_account}}",
                 f"{'SCOPE':<{w_scope}}",
-                [f"{label:>{w_clock}}" for _key, label in CLOCK_COLUMNS]
-                + ([f"{'NEXT':>{w_next}}"] if show_next else [])
-                + ([f"{'$ UNUSED':>{w_value}}"] if show_value else []),
+                header_clocks + ([f"{'$ UNUSED':>{w_value}}"] if layout.show_value else []),
             )
         )
     ]
-    # The clock columns are consumption. Say so once, rather than let a reader
-    # carry over the "% left" convention that `--for-chat` and the JSON
-    # `remaining_percent` field still use.
     any_inferred = False
     any_folded = False
-    zebra_width = _needed()  # table width for background padding
+    any_deadline = False
+    zebra_width = _matrix_needed_width(rows, layout)
     for row_idx, row in enumerate(rows):
         tag_plain, tag_color = _BAND_TAG[row.band]
         tag = getattr(s, tag_color)(s.bold(f"{tag_plain:<5}"))
-        service = s.bold(f"{row.service:<{w_service}}")
-        account = s.dim(f"{row.account:<{w_account}}")
-        scope = s.dim(f"{row.scope:<{w_scope}}")
+        service_text, account_text, scope_text = identities[row_idx]
+        service = s.bold(f"{service_text:<{w_service}}")
+        account = s.dim(f"{account_text:<{w_account}}")
+        scope = s.dim(f"{scope_text:<{w_scope}}")
 
         if row.note is not None:
             line = _line(tag, service, account, scope, [s.dim(row.note)])
@@ -1089,6 +1289,7 @@ def render_clock_matrix(
         present_indices = [idx for idx, (k, _) in enumerate(CLOCK_COLUMNS) if row.clocks.get(k) is not None]
         for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
+            w_clock = w_clocks[idx]
             if cell is None:
                 if not present_indices or min(present_indices) < idx < max(present_indices):
                     missing_char = "—"
@@ -1100,15 +1301,28 @@ def render_clock_matrix(
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
-            mark = "+" if cell.folded else ""
-            text = f"{_format_used_percent(cell.used_percent)}{mark}"
-            padded = f"{text:>{w_clock}}"
-            tail.append(s.dim(padded) if cell.inferred else _cell_color(s, cell.used_percent)(padded))
+            percent = _clock_percent_text(cell)
+            span = _format_reset_span(
+                cell.days_until_reset,
+                estimated=cell.reset_estimated,
+                compact=layout.compact_deadline,
+            )
+            colored = (
+                s.dim(f"{percent:>{w_pct}}")
+                if cell.inferred
+                else _cell_color(s, cell.used_percent)(f"{percent:>{w_pct}}")
+            )
+            if span is None:
+                tail.append(colored + (" " * (w_clock - w_pct)))
+                continue
+            any_deadline = True
+            styled = colored + s.dim("/") + _style_reset_span(s, span)
+            pad = w_clock - (w_pct + 1 + len(span.plain()))
+            if pad > 0:
+                styled += " " * pad
+            tail.append(styled)
 
-        if show_next:
-            next_text = _compact_deadline(row.next_reset_days, estimated=row.next_reset_estimated)
-            tail.append(s.dim(f"{next_text:>{w_next}}"))
-        if show_value:
+        if layout.show_value:
             value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
             tail.append(f"{value_text:>{w_value}}")
 
@@ -1116,6 +1330,13 @@ def render_clock_matrix(
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
 
     legend_items: list[tuple[str, str]] = []
+    if any_deadline:
+        legend_items.append(
+            (
+                "2d14h = until this clock resets · bold = largest unit",
+                s.dim("2d14h = until this clock resets · bold = largest unit"),
+            )
+        )
     if any_inferred:
         legend_items.append(("dim % = clock inferred, not reported", s.dim("dim % = clock inferred, not reported")))
     if any_folded:
@@ -1131,10 +1352,14 @@ def render_clock_matrix(
     fmt_ai_note = s.dim(plain_ai_note)
     legend_items.append((plain_ai_note, fmt_ai_note))
 
-    table_width = _needed()
+    table_width = zebra_width
     for plain_text, fmt_text in legend_items:
-        margin_size = max(4, (table_width - len(plain_text)) // 2)
-        lines.append(" " * margin_size + fmt_text + " " * margin_size)
+        visible = len(_strip_ansi(fmt_text))
+        if visible >= avail:
+            lines.append(_clamp_display_width(fmt_text, avail))
+            continue
+        margin_size = max(0, (min(table_width, avail) - visible) // 2)
+        lines.append(_clamp_display_width(" " * margin_size + fmt_text, avail))
 
     return "\n".join(lines)
 
