@@ -113,6 +113,7 @@ install steps, CLI flags, and config. Install helpers:
 | `README.md`                                                                                                  | Project overview: install, usage, CLI flags, config, output format.                          | First, for "what does this tool do / how do I run it."                                                 |
 | `AGENTS.md` (this file)                                                                                      | Agent orientation, doc map, persistence policy, **active priorities**.                       | First, for "where is everything / what next."                                                          |
 | `docs/handoffs/`                                                                                             | Per-session Tier 2 handoffs (DAG-linked front matter). **Newest file is the resume point.**  | First stop after this file when resuming.                                                              |
+| `docs/ralph-orchestrator-phase1-pilot.md`                                                                    | PRD for the parked ralph-orchestrator Phase 1 pilot (beads `aiuse-juk`).                     | When resuming the ralph/judge.sh pilot.                                                                |
 | `docs/handoff.md`                                                                                            | Archive: one accreting file, releases 2.1.16–3.0.12. Superseded by `docs/handoffs/`.         | Per-release forensics (workflow run IDs, tap SHAs) not recorded anywhere else.                         |
 | `docs/fix-implementation-plan.md`                                                                            | Review-derived task list (Steps 1–32 + Phase 7 optional 33–35). **1–32 and 34 done.**        | Historical scope / remaining optional steps only.                                                      |
 | `docs/json-contract.md`                                                                                      | Stable `aiuse --json` fields and exit codes for scripts.                                     | Cron / automation consumers.                                                                           |
@@ -130,6 +131,7 @@ install steps, CLI flags, and config. Install helpers:
 | `docs/cursor-quota.md`                                                                                       | Cursor Included/Auto/Other Models + on-demand vs CodexBar slots.                             | When Cursor % or CONSERVE disagrees with the Cursor usage UI.                                          |
 | `docs/antigravity-pools.md`                                                                                  | Antigravity Gemini vs Claude/GPT independent pools (score + ladder rows).                    | When Antigravity is listed only once or pools look merged.                                             |
 | `docs/pretty-display.md`                                                                                     | Rich vs Textual for long scrollback-safe reports.                                            | When changing pretty/TTY display.                                                                      |
+| `docs/watch-mode.md`                                                                                         | Design: opt-in full-screen `aiuse watch` monitor (q/esc quit, default 10m).                  | When implementing or refining the watch feature.                                                       |
 | `docs/packaging.md`                                                                                          | pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow.                            | When releasing or changing install UX.                                                                 |
 | `docs/competitive-landscape.md`                                                                              | Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; post-#2–#9 positioning.          | Positioning / “what pool next?” / remaining gaps.                                                      |
 | `docs/next-options.md`                                                                                       | Recommended next actions + effort map for remaining gaps; open issue index.                  | Open-ended “what next?” / whether to chase a competitive gap.                                          |
@@ -187,6 +189,7 @@ install steps, CLI flags, and config. Install helpers:
   Do not cut a “ship everywhere” release for routine doc/collector work.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
+
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -237,12 +240,15 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
 
 **Critical rules:**
+
 - Explicit user or orchestrator instructions override this Beads block.
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
+
 <!-- END BEADS INTEGRATION -->
 
 <!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
+
 ## Beads Issue Tracker
 
 Use Beads (`bd`) for durable task tracking in repositories that include it. Use the `beads` skill at `.agents/skills/beads/SKILL.md` (project install) or `~/.agents/skills/beads/SKILL.md` (global install) for Beads workflow guidance, then use the `bd` CLI for issue operations.

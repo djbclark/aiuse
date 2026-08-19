@@ -41,6 +41,7 @@ project's guides by the job they help you do; most people only need one or two.
 ## Product and implementation background
 
 - [`pretty-display.md`](pretty-display.md) — terminal rendering choices.
+- [`watch-mode.md`](watch-mode.md) — design for opt-in `aiuse watch` (Issue #14).
 - [`competitive-landscape.md`](competitive-landscape.md) — product positioning and comparable tools.
 - [`next-options.md`](next-options.md) — optional future work and issue map.
 - [`consumption-flexibility-plan.md`](consumption-flexibility-plan.md) — original scoring-design background.
@@ -49,6 +50,7 @@ project's guides by the job they help you do; most people only need one or two.
 
 - [`../AGENTS.md`](../AGENTS.md) — repository orientation and current priorities.
 - [`handoffs/`](handoffs/) — per-session handoffs; the newest file is the resume point.
+- [`ralph-orchestrator-phase1-pilot.md`](ralph-orchestrator-phase1-pilot.md) — parked Phase 1 ralph-orchestrator PRD (`aiuse-juk`).
 - [`handoff.md`](handoff.md) — archive of releases 2.1.16–3.0.12, superseded by `handoffs/`.
 - [`fix-implementation-plan.md`](fix-implementation-plan.md) — completed review-derived implementation plan.
 - [`quota-algorithm-audit-2026-08-01.md`](quota-algorithm-audit-2026-08-01.md) — pending implementation plan for issues #19–#22 (Cursor pool split, overage awareness, dual-debit investigation), with a full verified vendor-quota-structure appendix.

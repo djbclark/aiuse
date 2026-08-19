@@ -57,6 +57,9 @@ dolt-pprof/
 # Corrupt backup directories (created by bd doctor --fix recovery)
 *.corrupt.backup/
 
+# Local activity audit (appends on every bd update; not issue state)
+interactions.jsonl
+
 # Backup data (auto-exported JSONL, local-only)
 backup/
 

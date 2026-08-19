@@ -131,6 +131,18 @@ region and redraw inside it — at odds with "dump every line into scrollback."
 | Textual (inline or full-screen)                               | Strongest      | No — viewport + redraw          |
 | Plain `print`                                                 | None           | Yes                             |
 
+## Watch mode exception (opt-in full-screen)
+
+The "no Textual / no `Layout`" rule above is scoped to the **default stdout
+report**, which must live in terminal scrollback. `aiuse watch` (Issue #14,
+refined 2026-08-18 — see [`watch-mode.md`](watch-mode.md)) is an **opt-in,
+explicitly invoked full-screen monitor** that takes over the alternate screen,
+redraws the clock matrix on an interval, and exits on `q` / `Esc` / `Ctrl-C`.
+Scrollback preservation is irrelevant inside an alternate-screen app, so the
+viewport prohibition does not apply. Default library choice: Rich
+`Live(screen=True)` (zero new deps, reuses `render_clock_matrix`); Textual is
+reserved for if / when interactivity (selection, switch) is added.
+
 ## Implementation
 
 - Gate: `aiuse.tui.should_use_tui` (TTY, not `--json` / `--alerts-only` / `--no-tui`)
