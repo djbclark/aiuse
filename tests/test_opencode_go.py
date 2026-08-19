@@ -21,6 +21,16 @@ weeklyUsage:{usagePercent:4,resetInSec:172800},
 monthlyUsage:{usagePercent:1.9,resetInSec:1209600}
 """
 
+# Live 2026-08-19 after a renew: usage objects are back, subscription fields stay null.
+_HYDRATED_ACTIVE_PAGE = """
+monthlyLimit:80,monthlyUsage:0,timeMonthlyUsageUpdated:$R[30]=new Date("2026-08-19T17:18:05.000Z"),
+reloadError:null,timeReloadError:null,subscription:null,subscriptionID:null,subscriptionPlan:null,
+timeSubscriptionBooked:null,timeSubscriptionSelected:null,lite:null,liteSubscriptionID:null,
+rollingUsage:$R[34]={status:"ok",resetInSec:18000,usagePercent:0},
+weeklyUsage:$R[35]={status:"ok",resetInSec:369506,usagePercent:0},
+monthlyUsage:$R[36]={status:"ok",resetInSec:2678323,usagePercent:0}
+"""
+
 
 def test_collect_opencode_go_is_quiet_until_cookie_is_supplied():
     assert collect_opencode_go(environ={}) == []
@@ -46,6 +56,21 @@ def test_scalar_monthly_usage_is_not_a_quota_window():
     account = _account_from_go_page(_INACTIVE_PAGE)
     assert account is not None
     assert all("monthly" not in (window.label or "").casefold() for window in account.windows)
+
+
+def test_hydrated_windows_are_active_even_when_subscription_fields_are_null():
+    """A just-renewed /go page keeps subscription:null but restores usage objects."""
+    account = _account_from_go_page(_HYDRATED_ACTIVE_PAGE)
+    assert account is not None
+    assert account.plan != "expired"
+    assert [window.label for window in account.windows] == [
+        "OpenCode Go 5-hour",
+        "OpenCode Go weekly",
+        "OpenCode Go monthly",
+    ]
+    assert [window.used_percent for window in account.windows] == [0.0, 0.0, 0.0]
+    assert all(window.resets_at is not None for window in account.windows)
+    assert all((window.remaining() or 0) == 100.0 for window in account.windows)
 
 
 def test_active_subscription_parses_shared_windows():

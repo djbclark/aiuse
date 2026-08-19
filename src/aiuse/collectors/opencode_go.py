@@ -2,8 +2,11 @@
 
 CodexBar's local path sums SQLite costs against hardcoded $12/$30/$60 caps and
 cannot see that a Go plan has lapsed. This collector reuses the same OpenCode
-console cookie as the Zen collector and reads ``/workspace/<id>/go``. A page
-that reports ``subscription: null`` is empty / expired, not 0% used.
+console cookie as the Zen collector and reads ``/workspace/<id>/go``.
+
+A lapsed plan has no ``rollingUsage`` / ``weeklyUsage`` / ``monthlyUsage``
+objects. After a renew those objects come back (often still with
+``subscription: null``) — treat the window objects as the live allotment.
 """
 
 from __future__ import annotations
@@ -71,15 +74,16 @@ def collect_opencode_go(
     if not pages:
         raise CollectorError(errors[0] if errors else "OpenCode Go: workspace page unavailable")
 
-    saw_active = False
+    expired = False
     for text in pages:
-        if _subscription_inactive(text):
-            continue
-        saw_active = True
         account = _account_from_go_page(text)
-        if account is not None:
-            return [account]
-    if not saw_active:
+        if account is None:
+            continue
+        if account.plan == "expired":
+            expired = True
+            continue
+        return [account]
+    if expired:
         return [_expired_account()]
     return []
 
@@ -135,20 +139,20 @@ def _host_is_opencode(url: str) -> bool:
 
 
 def _account_from_go_page(text: str) -> AccountUsage | None:
-    if _subscription_inactive(text):
-        return _expired_account()
     windows = _windows_from_go_page(text)
-    if not windows:
-        return None
-    return AccountUsage(
-        source="opencode_go",
-        provider="opencode-go",
-        plan=_subscription_plan(text),
-        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
-        windows=windows,
-        notes=["Live data fetched directly from the OpenCode Go workspace page."],
-        raw={"subscription_active": True},
-    )
+    if windows:
+        return AccountUsage(
+            source="opencode_go",
+            provider="opencode-go",
+            plan=_subscription_plan(text) or "go",
+            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            windows=windows,
+            notes=["Live data fetched directly from the OpenCode Go workspace page."],
+            raw={"subscription_active": True},
+        )
+    if _subscription_inactive(text) or not text.strip():
+        return _expired_account()
+    return None
 
 
 def _expired_account() -> AccountUsage:
@@ -210,8 +214,16 @@ def _windows_from_go_page(text: str) -> list[QuotaWindow]:
 
 
 def _named_usage_window(text: str, key: str) -> tuple[float, int | None] | None:
-    """Parse ``{key:{usagePercent, resetInSec}}`` — not a scalar ``monthlyUsage:0``."""
-    percent = _extract_float(rf"{re.escape(key)}\s*[:=]\s*\{{[^}}]*?usagePercent\s*:\s*([0-9]+(?:\.[0-9]+)?)", text)
+    """Parse a usage object, including Solid ``$R[n]=`` wrappers.
+
+    Matches ``rollingUsage:{usagePercent:12}`` and the live page form
+    ``rollingUsage:$R[34]={status:"ok",resetInSec:18000,usagePercent:0}``.
+    Does not treat a scalar ``monthlyUsage:0`` as a window.
+    """
+    percent = _extract_float(
+        rf"{re.escape(key)}[^}}]*?usagePercent\s*:\s*([0-9]+(?:\.[0-9]+)?)",
+        text,
+    )
     if percent is None:
         percent = _extract_float(
             rf""""{re.escape(key)}"\s*:\s*\{{[^}}]*?"usagePercent"\s*:\s*([0-9]+(?:\.[0-9]+)?)""",
@@ -219,9 +231,9 @@ def _named_usage_window(text: str, key: str) -> tuple[float, int | None] | None:
         )
     if percent is None:
         return None
-    if 0.0 <= percent <= 1.0:
+    if 0.0 < percent <= 1.0:
         percent *= 100.0
-    reset_in = _extract_int(rf"{re.escape(key)}\s*[:=]\s*\{{[^}}]*?resetInSec\s*:\s*([0-9]+)", text)
+    reset_in = _extract_int(rf"{re.escape(key)}[^}}]*?resetInSec\s*:\s*([0-9]+)", text)
     if reset_in is None:
         reset_in = _extract_int(rf""""{re.escape(key)}"\s*:\s*\{{[^}}]*?"resetInSec"\s*:\s*([0-9]+)""", text)
     return percent, reset_in

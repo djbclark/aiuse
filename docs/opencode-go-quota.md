@@ -38,16 +38,18 @@ Zen balance).
 
 A lapsed Go plan is a different failure from “monthly spent”:
 
-| Signal                                          | Monthly spent                                                                             | Subscription expired / not renewed                                                        |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Official `/workspace/<id>/go` page              | `rollingUsage` / `weeklyUsage` / `monthlyUsage` objects with percents; monthly ~100% used | `subscription: null`, `subscriptionID: null`, `subscriptionPlan: null`; no `rollingUsage` |
-| OpenCode TUI                                    | _Go limit reached_ / _monthly usage limit reached_                                        | _Insufficient balance_                                                                    |
-| CodexBar `--source web`                         | Windows matching the page                                                                 | Parse fails (“missing usage fields”) and Auto falls back to local                         |
-| CodexBar `--source local` / OpenUsage estimated | May still show leftover $ vs $12/$30/$60 caps                                             | Same leftover % — **looks usable**                                                        |
+| Signal                                          | Monthly spent                                                                             | Subscription expired / not renewed                                |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Official `/workspace/<id>/go` page              | `rollingUsage` / `weeklyUsage` / `monthlyUsage` objects with percents; monthly ~100% used | No usage-window objects (`subscription` may also be null)         |
+| OpenCode TUI                                    | _Go limit reached_ / _monthly usage limit reached_                                        | _Insufficient balance_                                            |
+| CodexBar `--source web`                         | Windows matching the page                                                                 | Parse fails (“missing usage fields”) and Auto falls back to local |
+| CodexBar `--source local` / OpenUsage estimated | May still show leftover $ vs $12/$30/$60 caps                                             | Same leftover % — **looks usable**                                |
 
-`aiuse` treats the official page’s null subscription as **empty**, labeled
-`subscription expired`. The native `opencode_go` collector uses the same
-OpenCode console cookie as Zen (`OPENCODE_ZEN_COOKIE` / `AIUSE_OPENCODE_ZEN_COOKIE`)
+`aiuse` treats a `/go` page **without usage-window objects** as **empty**,
+labeled `subscription expired`. After a renew those objects return (often still
+with `subscription: null` and wrapped as `$R[n]={…}`); that is a live plan,
+not an expiry. The native `opencode_go` collector uses the same OpenCode
+console cookie as Zen (`OPENCODE_ZEN_COOKIE` / `AIUSE_OPENCODE_ZEN_COOKIE`)
 and is preferred over CodexBar/OpenUsage local estimates for `opencode-go`.
 
 ## Ground truth (official OpenCode usage page)
@@ -93,8 +95,8 @@ same fixed dollar caps CodexBar local uses (`$12` / `$30` / `$60`).
 ## What `aiuse` does
 
 1. Native `opencode_go` collector reads the official workspace `/go` page with
-   the OpenCode console cookie. A null `subscription` is empty / expired, not
-   0% used.
+   the OpenCode console cookie. Missing usage-window objects is empty / expired;
+   those objects (even with `subscription: null`) are the live allotment.
 2. For CodexBar provider `opencodego`, query with `--source web` first.
 3. If web fails (no cookies / API error), fall back to CodexBar auto/local and
    annotate that the local estimate may diverge from the official limit.
@@ -138,3 +140,9 @@ When the subscription has expired / not renewed, expect:
 - Brief table: `empty oc-go … subscription expired`
 - JSON: `plan` is `expired`, monthly/5h/weekly clocks are absent, `remaining_percent` is 0
 - CodexBar local leftover % may still appear in a cross-check; trust the native page
+
+After a renew (operator, 2026-08-19), expect:
+
+- Brief table: `mid oc-go … 0% 0% 0%` (fresh allotment; next reset is the 5h bar)
+- Official page still has `subscription: null`; live proof is the returned `rollingUsage` / `weeklyUsage` / `monthlyUsage` objects
+- Native and CodexBar percentages should agree; do not keep the expired label
