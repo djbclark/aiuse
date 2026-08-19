@@ -68,6 +68,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             # Included+Auto share one governing pool (Included); API is a
             # separate independent pool (analysis/pace.py independent_pool_key()).
             "cursor": {"shared_allotment": True},
+            # ClinePass: 5h ⊂ weekly ⊂ monthly subscription limits.
+            "clinepass": {"shared_allotment": True},
+            # z.ai coding plan: 5h credits ⊂ weekly credits (Lite 2k / 10k).
+            "zai": {"shared_allotment": True},
             "grok": {"weekly": {"flexibility": 0.5, "refill_capacity_unit": "requests", "refill_capacity": 100}},
         },
         # Advisory only: probe local LLM ports when cloud quotas look empty.
@@ -128,6 +132,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "OpenCode Go",
             "notes": "Has 5h / weekly / monthly windows when subscribed.",
             "monthly_price": 10,
+        },
+        "clinepass": {
+            "name": "ClinePass",
+            "notes": "5h / weekly / monthly subscription limits; unused is lost.",
+            "monthly_price": 10,
+        },
+        "zai": {
+            "name": "z.ai Lite",
+            "notes": "GLM coding plan: 5h and weekly credit windows (shared allotment).",
+            "monthly_price": 18,
         },
         "deepseek": {
             "name": "DeepSeek (prepaid API)",

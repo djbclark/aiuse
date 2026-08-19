@@ -60,21 +60,19 @@ def collect_clinepass(
     for item in limits_data:
         if not isinstance(item, dict):
             continue
-        limit_type = item.get("type", "unknown")
-        label = f"ClinePass {limit_type.replace('_', ' ').title()}"
-
         # Cline returns 'percentUsed'
         percent_used = item.get("percentUsed")
         if percent_used is None:
             continue
-
-        resets_at = parse_dt(item.get("resetsAt"))
-
+        used = float(percent_used)
+        label, minutes = _clinepass_window(str(item.get("type") or "unknown"))
         windows.append(
             QuotaWindow(
                 label=label,
-                used_percent=float(percent_used),
-                resets_at=resets_at,
+                used_percent=used,
+                remaining_percent=max(0.0, 100.0 - used),
+                resets_at=parse_dt(item.get("resetsAt")),
+                window_minutes=minutes,
             )
         )
 
@@ -97,6 +95,20 @@ def collect_clinepass(
             notes=["Live data fetched directly from ClinePass API."],
         )
     ]
+
+
+_CLINEPASS_WINDOWS: dict[str, tuple[str, int]] = {
+    "five_hour": ("ClinePass 5-hour", 300),
+    "weekly": ("ClinePass weekly", 10080),
+    "monthly": ("ClinePass monthly", 43200),
+}
+
+
+def _clinepass_window(limit_type: str) -> tuple[str, int | None]:
+    mapped = _CLINEPASS_WINDOWS.get(limit_type)
+    if mapped:
+        return mapped
+    return f"ClinePass {limit_type.replace('_', ' ')}", None
 
 
 def _resolve_api_key(env: Mapping[str, str], timeout: float) -> str | None:

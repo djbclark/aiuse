@@ -92,6 +92,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "deepseek": "deepseek",
     "grok": "grok",
     "clinepass": "clinepass",
+    "zai": "zai",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
     "openrouter": "openrouter",
@@ -336,6 +337,7 @@ class QuotaWindow:
 _CLOCK_LABEL_MARKERS: tuple[tuple[str, str], ...] = (
     ("5-hour", "5h"),
     ("5 hour", "5h"),
+    ("five hour", "5h"),
     ("5-hr", "5h"),
     ("5h", "5h"),
     ("hourly", "5h"),

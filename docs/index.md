@@ -31,6 +31,8 @@ project's guides by the job they help you do; most people only need one or two.
 - [`opencode-zen-balance.md`](opencode-zen-balance.md) — Zen-balance source audit, SecretSpec setup, and Chrome credential refresh.
 - [`source-coverage.md`](source-coverage.md) — which services currently have multiple live client sources and which do not.
 - [`cursor-quota.md`](cursor-quota.md) — Cursor Included, Auto, Other Models, and on-demand pools.
+- [`clinepass-quota.md`](clinepass-quota.md) — ClinePass 5h / weekly / monthly shared allotment.
+- [`zai-quota.md`](zai-quota.md) — z.ai GLM coding-plan 5h / weekly credits.
 - [`antigravity-pools.md`](antigravity-pools.md) — independent Gemini and Claude/GPT pools.
 - [`tokscale-per-provider-investigation.md`](tokscale-per-provider-investigation.md) — current tokscale per-provider limitation.
 - [`claude-local-usage.md`](claude-local-usage.md) — why local Claude activity is distinct from subscription quota.

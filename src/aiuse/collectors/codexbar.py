@@ -67,6 +67,19 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
         "Cursor Auto",
         "Cursor other models",
     ),
+    # ClinePass: official 5h / weekly / monthly subscription limits (nested).
+    "clinepass": (
+        "ClinePass 5-hour",
+        "ClinePass weekly",
+        "ClinePass monthly",
+    ),
+    # z.ai coding plan: TOKENS_LIMIT (5h) then TIME_LIMIT (weekly); a second
+    # shorter token window is the session slot when the API sends two.
+    "zai": (
+        "z.ai 5-hour",
+        "z.ai weekly",
+        "z.ai session",
+    ),
     "grok": ("Grok usage limit", "Grok quota 2", "Grok quota 3"),
     "warp": ("Warp credits", "Warp quota 2", "Warp quota 3"),
     "elevenlabs": (
@@ -247,6 +260,18 @@ def _usable_usage_payload(outcome: Any) -> bool:
     return False
 
 
+def _display_account(value: Any) -> str | None:
+    """Drop CodexBar's synthetic API-key account labels (not a real identity)."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("-codexbar-api-key"):
+        return None
+    return text
+
+
 def _from_row(row: dict[str, Any]) -> AccountUsage:
     provider = str(row.get("provider") or "unknown").lower()
     source_tag = str(row.get("source") or "unknown mechanism")
@@ -266,7 +291,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
     identity_value = usage.get("identity")
     identity: dict[str, Any] = identity_value if isinstance(identity_value, dict) else {}
-    account = row.get("account") or usage.get("accountEmail") or identity.get("accountEmail")
+    account = _display_account(row.get("account") or usage.get("accountEmail") or identity.get("accountEmail"))
     plan = usage.get("loginMethod") or identity.get("loginMethod")
 
     windows: list[QuotaWindow] = []
@@ -507,6 +532,8 @@ def _slot_label(provider: str, index: int, block: dict[str, Any]) -> str:
     provider_name = {
         "codex": "Codex",
         "opencodego": "OpenCode Go",
+        "zai": "z.ai",
+        "clinepass": "ClinePass",
         "antigravity": "Google AI / Antigravity",
         "deepseek": "DeepSeek",
         "openrouter": "OpenRouter",

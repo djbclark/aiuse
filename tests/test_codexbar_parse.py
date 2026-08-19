@@ -9,6 +9,50 @@ from aiuse.collectors.codexbar import _from_row, _normalize_providers, _parse_en
 from aiuse.models import BillingKind
 
 
+def test_parse_clinepass_named_windows():
+    acc = _from_row(
+        {
+            "provider": "clinepass",
+            "source": "api",
+            "usage": {
+                "loginMethod": "API key",
+                "primary": {"usedPercent": 4, "windowMinutes": 300, "resetsAt": "2026-08-19T22:00:00Z"},
+                "secondary": {"usedPercent": 32, "windowMinutes": 10080, "resetsAt": "2026-08-23T22:00:00Z"},
+                "tertiary": {"usedPercent": 16, "windowMinutes": 43200, "resetsAt": "2026-09-15T22:00:00Z"},
+            },
+        }
+    )
+    assert [window.label for window in acc.windows] == [
+        "ClinePass 5-hour",
+        "ClinePass weekly",
+        "ClinePass monthly",
+    ]
+    assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
+
+
+def test_parse_zai_named_windows_drops_synthetic_account():
+    acc = _from_row(
+        {
+            "provider": "zai",
+            "source": "api",
+            "account": "zai-codexbar-api-key",
+            "usage": {
+                "loginMethod": "lite",
+                "primary": {"usedPercent": 0, "windowMinutes": 300, "resetDescription": "5-hour"},
+                "secondary": {
+                    "usedPercent": 0,
+                    "windowMinutes": 10080,
+                    "resetsAt": "2026-08-26T14:56:01Z",
+                    "resetDescription": "1 week window",
+                },
+            },
+        }
+    )
+    assert acc.account is None
+    assert acc.plan == "lite"
+    assert [window.label for window in acc.windows] == ["z.ai 5-hour", "z.ai weekly"]
+
+
 def test_parse_copilot_style():
     row = {
         "provider": "copilot",
