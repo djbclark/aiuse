@@ -15,6 +15,9 @@ _aiuse() {
     '--status[one-line status for prompts (also: aiuse status / prompt)]'
     '--suggest[single best burn pool (also: aiuse suggest)]'
     '--serve[loopback HTTP API for agents (also: aiuse serve)]'
+    '--watch[full-screen quota board (also: aiuse watch)]'
+    '(-i --interval)'{-i,--interval}'[watch refresh interval]:interval'
+    '--once[watch: one frame then exit]'
     '--port[serve port]:port'
     '--max-age[serve cache max age seconds]:seconds'
     '--print-completion[print shell completion]:shell:(bash zsh)'
@@ -40,6 +43,7 @@ _aiuse() {
     'prompt:synonym of status'
     'suggest:single best burn pool next'
     'serve:loopback HTTP API for agents'
+    'watch:full-screen quota board (q/esc quit)'
   )
   _arguments -s -S $opts
 }

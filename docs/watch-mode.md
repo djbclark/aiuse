@@ -1,7 +1,8 @@
 # Watch mode: opt-in full-screen monitor
 
 **Date:** 2026-08-18
-**Status:** Design (refines [Issue #14](https://github.com/djbclark/aiuse/issues/14)); not yet implemented.
+**Status:** Implemented on `main` after 3.0.23 (refines [Issue #14](https://github.com/djbclark/aiuse/issues/14)).
+Library: **Rich `Live(screen=True)`** (2026-08-19).
 **Related:** [`pretty-display.md`](pretty-display.md), [`collector-concurrency.md`](collector-concurrency.md), [`companion-stack.md`](companion-stack.md), [`scheduling.md`](scheduling.md), [Issue #14](https://github.com/djbclark/aiuse/issues/14)
 
 ## Summary
@@ -79,12 +80,11 @@ see [`collector-concurrency.md`](collector-concurrency.md)). Rules:
 | **Rich `Live(screen=True)` + non-blocking stdin reader** | **None** (rich is already a dep) | Good | Reuses `render_clock_matrix` directly as the Live renderable; `q`/`esc` via a tiny `termios` / `select` key poller in a thread. ~50–100 LoC for the loop. Honest fit for a _non-interactive_ board. |
 | **Textual app**                                          | textual (new dep tree)           | Best | Matches `cswap watch` exactly (its `WatchScreen` uses `Binding("escape,q", "back")`); built-in timers + resize + alt-screen. Heavier; only worth it if interactivity grows later.                   |
 
-**Recommendation:** start with **Rich `Live`** — zero new dependencies, reuses the
-existing renderer, and the feature is deliberately non-interactive (so Textual's
-binding/widget machinery is overkill). Revisit Textual only if a later issue
-adds menus / selection to the watch board. Record the choice in
-[`pretty-display.md`](pretty-display.md) (the no-Textual rule there is scoped to
-the _default stdout report_; an opt-in full-screen surface is exempt).
+**Chosen (2026-08-19):** **Rich `Live(screen=True)`**. Zero new dependencies,
+reuses `render_clock_matrix`, and the feature is deliberately non-interactive.
+Revisit Textual only if a later issue adds menus / selection. The no-Textual
+rule in [`pretty-display.md`](pretty-display.md) stays scoped to the default
+stdout report.
 
 ## Display policy
 

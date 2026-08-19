@@ -3,6 +3,10 @@
 Stable machine-readable fields for scripts and cron. Prefer these keys over
 pretty text parsing.
 
+`aiuse watch` does **not** emit this contract. It is an alternate-screen UI
+(exit 0 on quit). Scripts that want JSON should use `aiuse --json` or
+`aiuse serve`.
+
 **Related:** exit codes in [README](../README.md#exit-codes); collector timing in
 [collector-concurrency.md](collector-concurrency.md); scheduled runs in
 [scheduling.md](scheduling.md).

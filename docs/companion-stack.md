@@ -11,6 +11,7 @@ quota monitor. Pair it with tools that already own **ambient** % bars.
 | **Rank / burn**           | **`aiuse`**                                                                              | Ordered ladder of expiring allotments; `aiuse suggest` for a single winner |
 | **Multi-account Claude**  | [cswap](https://github.com/realiti4/claude-swap)                                         | Canonical Claude Code rows for every configured email                      |
 | **Hourly history**        | LaunchAgent (`docs/scheduling.md`)                                                       | Persist snapshots + optional `learn_from_history`                          |
+| **In-terminal board**     | **`aiuse watch`**                                                                        | Opt-in full-screen matrix; compose with CodexBar / OpenUsage for a menubar |
 
 Install data sources: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
 or site `just install-aiuse-deps`.

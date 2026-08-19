@@ -62,3 +62,7 @@ launchctl bootout "gui/$uid/com.djbclark.aiuse"
 
 Prefer LaunchAgent on macOS (sleep/wake and `RunAtLoad` behave better than cron).
 Ensure cron’s `PATH` includes Homebrew and `~/.local/bin`.
+
+`aiuse watch` is not a scheduler. If `analysis.persist_snapshots` is on, each
+watch refresh also writes a History snapshot — denser than hourly, only while
+the board is open. See [`watch-mode.md`](watch-mode.md).

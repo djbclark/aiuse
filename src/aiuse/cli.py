@@ -64,6 +64,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
+  aiuse watch                 full-screen quota board (q/esc quit; default 10m)
   aiuse schema                print the machine-readable JSON contract (markdown) for AI agents
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
@@ -142,6 +143,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--serve",
         action="store_true",
         help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--watch",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "-i",
+        "--interval",
+        default="600",
+        metavar="SECONDS",
+        help="aiuse watch refresh interval (seconds, or 90s / 10m / 1h; default 600)",
+    )
+    p.add_argument(
+        "--once",
+        action="store_true",
+        help="aiuse watch: collect and print one frame, then exit",
     )
     p.add_argument(
         "--port",
@@ -312,6 +330,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--serve", *raw[1:]]
     if head == "schema":
         return ["--schema", *raw[1:]]
+    if head == "watch":
+        return ["--watch", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -377,6 +397,9 @@ def _main_inner(argv: list[str] | None = None) -> int:
         )
     config = load_config(args.config)
     _apply_cli_overrides(config, args)
+
+    if getattr(args, "watch", False):
+        return _run_watch(args, config)
 
     as_json = bool(args.json) or args.format == "json"
     as_chat = args.format == "chat"
@@ -834,11 +857,50 @@ def diagnose(
     lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
+    lines.append("  aiuse watch               # full-screen board (q/esc quit; default 10m)")
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
     lines.append("  aiuse -t 45               # force all tool timeouts for one run")
     lines.append("  aiuse --help              # full flag list + setup epilog")
     lines.append("  docs/json-contract.md  # stable JSON fields for scripts")
     return exit_code, lines
+
+
+def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
+    """Dispatch ``aiuse watch`` after argparse + config load."""
+    from aiuse.watch import WatchError, parse_interval, run_watch
+
+    as_json = bool(args.json) or args.format == "json"
+    as_chat = args.format == "chat"
+    if as_json or as_chat or args.alerts_only or args.flatten:
+        print(
+            "aiuse watch cannot be combined with --json / --for-chat / --alerts-only / --flatten",
+            file=sys.stderr,
+        )
+        return EXIT_ALERTS
+    if args.no_tui:
+        print("aiuse watch requires the styled board; --no-tui is incompatible", file=sys.stderr)
+        return EXIT_ALERTS
+    try:
+        interval = parse_interval(args.interval)
+    except WatchError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ALERTS
+    if interval < 30 and not args.once:
+        print(
+            f"warning: watch interval {interval:g}s is below 30s; collectors may not keep up",
+            file=sys.stderr,
+        )
+    missing = check_dependencies(config)
+    if missing:
+        print(f"Error: Required collector tools are missing from PATH: {', '.join(missing)}", file=sys.stderr)
+        return EXIT_FAILURE
+    return run_watch(
+        config,
+        interval=interval,
+        once=bool(args.once),
+        quiet=bool(args.quiet),
+        no_color=bool(args.no_color),
+    )
 
 
 def _run_trust(trust_argv: list[str], *, config_path: str | None) -> int:

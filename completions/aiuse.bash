@@ -16,7 +16,8 @@ _aiuse_completions() {
     --format --json --no-color --no-tui -q --quiet --alerts-only --brief --full
     --no-tokscale --no-cswap --no-codexbar
     --providers --min-remaining --max-days --save --traditional-summary
-    doctor status prompt suggest serve
+    -i --interval --once
+    doctor status prompt suggest serve watch
   "
 
   case "${prev}" in
