@@ -116,6 +116,11 @@ BRIEF_MAX_LINES_PER_PROVIDER = 3
 class _Style:
     """ANSI colors when stdout is a TTY and color is not disabled."""
 
+    # Zebra-stripe background: 256-color dark gray (visible on dark terminals,
+    # subtle enough on light ones).  Reset-bg is \033[49m so we only undo the
+    # background without clobbering other attributes.
+    _ZEBRA_BG = "48;5;236"
+
     def __init__(self, enabled: bool) -> None:
         self.enabled = enabled
 
@@ -144,6 +149,31 @@ class _Style:
 
     def magenta(self, t: str) -> str:
         return self._wrap("35", t)
+
+    def zebra_bg(self, text: str, width: int = 0) -> str:
+        """Wrap *text* in a subtle dark-gray background for zebra striping.
+
+        Embedded ``\\033[0m`` resets (from nested ``_wrap`` calls) are replaced
+        with ``\\033[0;48;5;236m`` so the background persists through styled
+        spans.  A final ``\\033[49m`` (BG-only reset) closes the stripe.
+
+        When *width* > 0 the visible line is right-padded with spaces so the
+        background color extends edge-to-edge across the table.
+
+        Falls back to plain text when color is disabled — rows remain perfectly
+        readable without any visual cue since the data itself is unmodified.
+        """
+        if not self.enabled:
+            return text
+        bg_on = f"\033[{self._ZEBRA_BG}m"
+        # Replace full resets inside the line with reset + re-apply BG so
+        # styled cells (bold, red, dim …) do not punch holes in the stripe.
+        inner = text.replace("\033[0m", f"\033[0;{self._ZEBRA_BG}m")
+        if width > 0:
+            plain_len = len(_strip_ansi(inner))
+            if plain_len < width:
+                inner += " " * (width - plain_len)
+        return f"{bg_on}{inner}\033[49m"
 
     def urgency(self, level: Urgency, text: str) -> str:
         if level == Urgency.CRITICAL:
@@ -711,7 +741,11 @@ def render_priority_ladder(
         return s.green("use   nothing urgent under current thresholds")
 
     entries.sort(key=lambda item: item[0])
-    return "\n".join(_clamp_display_width(line, width) for _key, line in entries)
+    out: list[str] = []
+    for idx, (_key, line) in enumerate(entries):
+        clamped = _clamp_display_width(line, width)
+        out.append(s.zebra_bg(clamped, width) if idx % 2 else clamped)
+    return "\n".join(out)
 
 
 # Which band wins when several alerts describe one pool. Attention-grabbing
@@ -1031,7 +1065,8 @@ def render_clock_matrix(
     # `remaining_percent` field still use.
     any_inferred = False
     any_folded = False
-    for row in rows:
+    zebra_width = _needed()  # table width for background padding
+    for row_idx, row in enumerate(rows):
         tag_plain, tag_color = _BAND_TAG[row.band]
         tag = getattr(s, tag_color)(s.bold(f"{tag_plain:<5}"))
         service = s.bold(f"{row.service:<{w_service}}")
@@ -1039,7 +1074,8 @@ def render_clock_matrix(
         scope = s.dim(f"{row.scope:<{w_scope}}")
 
         if row.note is not None:
-            lines.append(_line(tag, service, account, scope, [s.dim(row.note)]))
+            line = _line(tag, service, account, scope, [s.dim(row.note)])
+            lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             continue
 
         tail: list[str] = []
@@ -1069,7 +1105,8 @@ def render_clock_matrix(
             value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
             tail.append(f"{value_text:>{w_value}}")
 
-        lines.append(_line(tag, service, account, scope, tail))
+        line = _line(tag, service, account, scope, tail)
+        lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
 
     legend_items: list[tuple[str, str]] = []
     if any_inferred:

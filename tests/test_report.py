@@ -1406,3 +1406,109 @@ def test_clock_matrix_keeps_full_account_when_short_names_collide():
     # Both would shorten to "gmail", so neither may.
     assert "a@gmail.com" in text
     assert "b@gmail.com" in text
+
+
+# ---------------------------------------------------------------------------
+# Zebra striping
+# ---------------------------------------------------------------------------
+
+
+class TestZebraStriping:
+    """Alternating row backgrounds in the clock matrix and priority ladder."""
+
+    def test_zebra_bg_adds_background_when_color_enabled(self):
+        sty = _Style(enabled=True)
+        line = "hello world"
+        result = sty.zebra_bg(line)
+        # Should contain the 256-color dark-gray BG escape and a BG-reset.
+        assert "\033[48;5;236m" in result
+        assert "\033[49m" in result
+        # Original text must be present.
+        assert "hello world" in result
+
+    def test_zebra_bg_noop_when_color_disabled(self):
+        sty = _Style(enabled=False)
+        line = "hello world"
+        assert sty.zebra_bg(line) == line
+
+    def test_zebra_bg_pads_to_width(self):
+        sty = _Style(enabled=True)
+        line = "short"
+        result = sty.zebra_bg(line, width=20)
+        plain = _strip_ansi(result)
+        # The visible content should be padded with spaces to reach width.
+        assert len(plain) >= 20
+
+    def test_zebra_bg_preserves_embedded_styles(self):
+        """Embedded \\033[0m resets must not punch holes in the stripe."""
+        sty = _Style(enabled=True)
+        inner = sty.bold("HELLO")  # contains \033[1m...\033[0m
+        result = sty.zebra_bg(inner)
+        # The full-reset inside should have been replaced with reset+re-bg.
+        assert "\033[0;48;5;236m" in result
+
+    def test_clock_matrix_zebra_stripes_with_color(self):
+        """When color=True, alternating data rows get background escapes."""
+        text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=True, width=120)
+        data_lines = [
+            line for line in text.splitlines() if any(tag.strip() in _strip_ansi(line)[:6] for tag in _BAND_TAGS)
+        ]
+        assert len(data_lines) >= 2, "need ≥2 data rows for zebra test"
+        # Odd-indexed rows (0-based: indices 1, 3, …) should have the BG code.
+        for idx, line in enumerate(data_lines):
+            if idx % 2:
+                assert "\033[48;5;236m" in line, f"row {idx} should be striped"
+            else:
+                assert "\033[48;5;236m" not in line, f"row {idx} should NOT be striped"
+
+    def test_clock_matrix_no_zebra_without_color(self):
+        """When color=False, no ANSI escapes at all (clean pipe output)."""
+        text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False, width=120)
+        assert "\033[" not in text
+
+    def test_priority_ladder_zebra_stripes_with_color(self):
+        """Priority ladder alternating rows get background escapes."""
+        alerts = [
+            UseOrLoseAlert(
+                provider="claude",
+                account="a@gmail.com",
+                window_label=f"Claude Code weekly {i}",
+                remaining_percent=50.0 + i * 10,
+                score=30.0 - i * 5,
+                days_until_reset=5.0,
+                kind="burn",
+                urgency=Urgency.MEDIUM,
+                plan="Max",
+                message="burn it",
+                source="cswap",
+            )
+            for i in range(4)
+        ]
+        text = render_priority_ladder(alerts, color=True, width=100)
+        lines = text.splitlines()
+        assert len(lines) >= 2
+        for idx, line in enumerate(lines):
+            if idx % 2:
+                assert "\033[48;5;236m" in line, f"ladder row {idx} should be striped"
+            else:
+                assert "\033[48;5;236m" not in line, f"ladder row {idx} should NOT be striped"
+
+    def test_priority_ladder_no_zebra_without_color(self):
+        """Priority ladder with color=False produces no ANSI escapes."""
+        alerts = [
+            UseOrLoseAlert(
+                provider="claude",
+                account="default",
+                window_label="Claude Code weekly",
+                remaining_percent=50.0,
+                score=30.0,
+                days_until_reset=5.0,
+                kind="burn",
+                urgency=Urgency.MEDIUM,
+                plan="Max",
+                message="burn it",
+                source="cswap",
+            )
+        ]
+        text = render_priority_ladder(alerts, color=False, width=100)
+        assert "\033[" not in text
