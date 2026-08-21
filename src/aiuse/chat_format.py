@@ -706,26 +706,50 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     name = provider_display_name(account.provider)
     acct_part = f" · {account.account}" if account.account else ""
 
+    uc = account.usage_credits
+    spend_up = (
+        account.billing_kind == BillingKind.PAYG_API
+        and uc is not None
+        and uc.used is not None
+        and account.balance_usd is None
+    )
+    if spend_up:
+        used = float(uc.used or 0.0)
+        if uc.limit is not None:
+            lines.append(
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: "
+                f"`spent ${used:.2f} of ${float(uc.limit):.2f} (counts up · PAYG)`"
+            )
+        else:
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `spent ${used:.2f} (counts up · PAYG)`")
+        return lines
+
     if account.balance_usd is not None:
         bal = account.balance_usd
         if bal < 0:
             lines.append(
-                f"{EMOJI_PREPAID} **{name}{acct_part}**: `Balance: -${abs(bal):.2f}` · no expiry (Negative balance reported)"
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `Balance: -${abs(bal):.2f} remaining` · "
+                "counts down · no expiry (Negative balance reported)"
             )
         elif bal == 0:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty` (prepaid remaining)")
         else:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `Balance: ${bal:.2f}` · no expiry")
+            lines.append(
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `Balance: ${bal:.2f} remaining` · counts down · no expiry"
+            )
     elif account.credits_remaining is not None:
         creds = account.credits_remaining
         if creds < 0:
             lines.append(
-                f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits remaining` · no expiry (Negative balance reported)"
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits remaining` · "
+                "counts down · no expiry (Negative balance reported)"
             )
         elif creds == 0:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty` (prepaid remaining)")
         else:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits remaining` · no expiry")
+            lines.append(
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits remaining` · counts down · no expiry"
+            )
     else:
         lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: API balance · no expiry")
 

@@ -24,7 +24,26 @@ revision = \"1.0\"
 [profiles.default]
 OPENCODE_ZEN_COOKIE = { description = \"OpenCode console-session Cookie header for direct Zen balance collection; the Zen API key alone cannot read this balance.\", required = false }
 OPENROUTER_MANAGEMENT_KEY = { description = \"OpenRouter management key for fetching account-level prepaid credit balances.\", required = false }
+MUSE_COOKIE = { description = \"Meta Model API (dev.meta.ai) Cookie header for Muse free-credit balance via GraphQL; refresh with aiuse credential refresh muse --from chrome.\", required = false }
+MUSE_API_KEY = { description = \"Optional Muse / Meta Model API Bearer key (same as muse login providers.meta.api_key).\", required = false }
 """
+
+# Keys that older manifests may lack; ensure_manifest appends any missing lines.
+_OPTIONAL_SECRET_LINES = {
+    "OPENROUTER_MANAGEMENT_KEY": (
+        'OPENROUTER_MANAGEMENT_KEY = { description = "OpenRouter management key for fetching '
+        'account-level prepaid credit balances.", required = false }\n'
+    ),
+    "MUSE_COOKIE": (
+        'MUSE_COOKIE = { description = "Meta Model API (dev.meta.ai) Cookie header for Muse '
+        'free-credit balance via GraphQL; refresh with aiuse credential refresh muse --from chrome.", '
+        "required = false }\n"
+    ),
+    "MUSE_API_KEY": (
+        'MUSE_API_KEY = { description = "Optional Muse / Meta Model API Bearer key '
+        '(same as muse login providers.meta.api_key).", required = false }\n'
+    ),
+}
 
 
 def default_manifest_path() -> Path:
@@ -47,10 +66,17 @@ def resolve_manifest_path(environ: Mapping[str, str] | None = None) -> Path:
 
 
 def ensure_manifest(path: Path) -> None:
-    """Create an aiuse declaration manifest once, without replacing anything."""
+    """Create or upgrade an aiuse declaration manifest without removing keys."""
     if path.exists():
         if not path.is_file():
             raise OSError(f"SecretSpec manifest path is not a file: {path}")
+        text = path.read_text(encoding="utf-8")
+        missing = [line for name, line in _OPTIONAL_SECRET_LINES.items() if name not in text]
+        if missing:
+            addition = "".join(missing)
+            if not text.endswith("\n"):
+                addition = "\n" + addition
+            path.write_text(text + addition, encoding="utf-8")
         return
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:

@@ -1357,7 +1357,7 @@ def test_clock_matrix_splits_independent_pools_into_their_own_rows():
 
 def test_clock_matrix_keeps_non_window_accounts_as_notes():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
-    assert "balance $4.30 (no expiry)" in text
+    assert "balance $4.30 remaining (counts down · no expiry)" in text
     assert "session expired" in text
 
 

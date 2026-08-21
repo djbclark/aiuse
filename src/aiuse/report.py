@@ -438,6 +438,41 @@ def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
     return account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
 
 
+def _account_is_spend_up_payg(account: AccountUsage) -> bool:
+    """PAYG meter that counts *up* from $0 (Muse), not prepaid remaining."""
+    uc = account.usage_credits
+    return (
+        account.billing_kind == BillingKind.PAYG_API
+        and uc is not None
+        and uc.used is not None
+        and account.balance_usd is None
+    )
+
+
+def _api_inventory_note(account: AccountUsage) -> str:
+    """Ladder/matrix note for prepaid remaining vs spend-up PAYG."""
+    if _account_is_spend_up_payg(account):
+        uc = account.usage_credits
+        assert uc is not None and uc.used is not None
+        used = float(uc.used)
+        if uc.limit is not None:
+            limit = float(uc.limit)
+            return f"spent ${used:.2f} of ${limit:.2f} (counts up · PAYG)"
+        return f"spent ${used:.2f} (counts up · PAYG)"
+    if account.balance_usd is not None:
+        return f"balance ${account.balance_usd:.2f} remaining (counts down · no expiry)"
+    if account.credits_remaining is not None:
+        return f"credits {account.credits_remaining:g} remaining (counts down · no expiry)"
+    return "prepaid API (no expiry)"
+
+
+def _account_prepaid_is_depleted(account: AccountUsage) -> bool:
+    """Empty band only for prepaid wallets at/under $0 — not for spend-up PAYG."""
+    if _account_is_spend_up_payg(account):
+        return False
+    return account.balance_usd is not None and account.balance_usd <= 0.0
+
+
 def _window_use_urgency(window: QuotaWindow) -> float:
     """Mild mid urgency for an on-pace window (remaining + reset)."""
     rem = float(window.remaining() or 0.0)
@@ -908,7 +943,8 @@ def render_priority_ladder(
             # A rolling prepaid balance is inventory only while there is money
             # to spend.  Zero or a negative balance is nevertheless exhausted
             # capacity and belongs with other empty services, not neutral n/a.
-            depleted = account.balance_usd is not None and account.balance_usd <= 0.0
+            # Spend-up PAYG (Muse) is never "empty" at $0 spent.
+            depleted = _account_prepaid_is_depleted(account)
             band = _BAND_EMPTY if depleted else _BAND_NA
             entries.append(
                 (
@@ -1117,13 +1153,8 @@ def _build_matrix_rows(
                 )
             )
             continue
-        depleted = account.balance_usd is not None and account.balance_usd <= 0.0
-        if account.balance_usd is not None:
-            note = f"balance ${account.balance_usd:.2f} (no expiry)"
-        elif account.credits_remaining is not None:
-            note = f"credits {account.credits_remaining:g} (no expiry)"
-        else:
-            note = "prepaid API (no expiry)"
+        depleted = _account_prepaid_is_depleted(account)
+        note = _api_inventory_note(account)
         rows.append(
             _MatrixRow(
                 sort_key=_ladder_sort_key(
@@ -1454,14 +1485,9 @@ def _priority_account_line(
     """One mid/ok line for a live account/pool that did not raise a burn/conserve alert."""
     who = account.account or "default"
     name = s.bold(provider_display_name(account.provider))
-    # Prepaid / pay-as-you-go: show balance inventory, never fake window % urgency.
+    # Prepaid remaining vs spend-up PAYG: never fake window % urgency.
     if _account_is_non_expiring_prepaid(account):
-        if account.balance_usd is not None:
-            body = f"{name} · {who} · balance ${account.balance_usd:.2f} (no expiry)"
-        elif account.credits_remaining is not None:
-            body = f"{name} · {who} · credits {account.credits_remaining:g} (no expiry)"
-        else:
-            body = f"{name} · {who} · prepaid API (no expiry)"
+        body = f"{name} · {who} · {_api_inventory_note(account)}"
         return f"{_priority_tag(s, band)} {body}"
     if window is None:
         window = _pick_representative_window(account.windows)
@@ -2084,9 +2110,15 @@ def _render_account(
         lines.append(s.red(f"  ERROR: {acc.error}"))
 
     if acc.usage_credits is not None:
-        lines.extend(_usage_credits_lines(acc.usage_credits, s))
+        if _account_is_spend_up_payg(acc):
+            used = float(acc.usage_credits.used or 0.0)
+            lines.append(f"  spent (counts up · PAYG): {s.green(f'${used:.2f}')}")
+            if acc.usage_credits.limit is not None or acc.usage_credits.remaining is not None:
+                lines.extend(_usage_credits_lines(acc.usage_credits, s))
+        else:
+            lines.extend(_usage_credits_lines(acc.usage_credits, s))
     elif acc.balance_usd is not None:
-        lines.append(f"  balance: {s.green(f'${acc.balance_usd:.2f}')}")
+        lines.append(f"  balance remaining (counts down): {s.green(f'${acc.balance_usd:.2f}')}")
     if acc.credits_remaining is not None and acc.usage_credits is None and acc.balance_usd is None:
         lines.append(f"  credits remaining: {acc.credits_remaining}")
 

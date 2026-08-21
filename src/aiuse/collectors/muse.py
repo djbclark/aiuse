@@ -13,8 +13,9 @@ If one transport is absent or fails, the other is tried. Absent both → [] . 40
 credential present surfaces as AccountUsage(error=…) only after both transports fail.
 
 As of 2026-08, api.meta.ai exposes /models and /status for the LLM| key but no billing
-path (all candidates 404). When the key validates and cookie balance is unavailable,
-we still emit a visible muse row so login is not silent.
+path (all candidates 404). Cookie path uses LLMDCBillingBannerContainerQuery plus
+LLMDCHomeContentUsageSummaryQuery: Muse's UI "balance" is MTD PAYG spend (counts up),
+not prepaid remaining.
 """
 
 from __future__ import annotations
@@ -57,10 +58,17 @@ _MODELS_URL = f"{_API_BASE}/models"
 _COOKIE_ENV = "AIUSE_MUSE_COOKIE"
 _COOKIE_SECRET = "MUSE_COOKIE"
 _TEAM_ENV = "AIUSE_MUSE_TEAM_ID"
+_DEV_HOME_URL = "https://dev.meta.ai/"
 _DEV_USAGE_URL = "https://dev.meta.ai/usage"
 _GRAPHQL_URL = "https://dev.meta.ai/api/graphql/"
-_BILLING_DOC_ID = "9128374650192834"
-_BILLING_FRIENDLY = "MuseDevBillingBalanceQuery"
+# Live Relay persisted query (LLMDCBillingBannerContainerQuery). Meta rotates these;
+# free_money_* amounts use PECurrency DEFAULT_AMOUNT_OFFSET=100 (cents for USD).
+_BILLING_DOC_ID = "28281552291474266"
+_BILLING_FRIENDLY = "LLMDCBillingBannerContainerQuery"
+# Home usage summary (LAST_90_DAYS spend_cost_metrics) — Muse UI "balance" is spend that counts up.
+_SPEND_DOC_ID = "28692949813640152"
+_SPEND_FRIENDLY = "LLMDCHomeContentUsageSummaryQuery"
+_PE_AMOUNT_OFFSET = 100.0
 
 
 def collect_muse(
@@ -234,30 +242,63 @@ def _collect_via_cookie(
     *,
     account: str | None = None,
 ) -> list[AccountUsage]:
-    # Allow explicit team_id override for headless/CI
+    # Prefer explicit team_id (env / operator URL). Bare /usage without team_id redirects to auth.
     team_id = str(env.get(_TEAM_ENV) or "").strip()
-    html: str | None = None
-    lsd: str | None = None
-    dtsg: str | None = None
-    if not team_id or True:  # always fetch HTML to get LSD/DTSG even if team_id overridden
-        html = _fetch_dev_usage_html(cookie, timeout)
-        if not team_id:
-            team_id = _extract_team_id(html) or ""
-        lsd = _extract_lsd(html)
-        dtsg = _extract_dtsg(html)
+    html = _fetch_dev_session_html(cookie, timeout, team_id=team_id or None)
+    if not team_id:
+        team_id = _extract_team_id(html) or ""
+    lsd = _extract_lsd(html)
+    dtsg = _extract_dtsg(html)
     if not team_id:
         raise CollectorError(
-            "Muse cookie: team_id not found in dev.meta.ai HTML; set AIUSE_MUSE_TEAM_ID or re-run `aiuse credential refresh muse --from chrome`"
+            "Muse cookie: team_id not found in dev.meta.ai HTML; set AIUSE_MUSE_TEAM_ID "
+            "(from the team_id= query param on https://dev.meta.ai/usage) or re-run "
+            "`aiuse credential refresh muse --from chrome`"
         )
     if not dtsg:
-        # Some sessions render DTSG async; try LSD as fallback; if still empty, fail with hint
         dtsg = lsd or ""
     if not dtsg:
         raise CollectorError(
-            "Muse cookie: fb_dtsg not found in dev.meta.ai HTML; sign in to dev.meta.ai in Chrome and re-run `aiuse credential refresh muse --from chrome`"
+            "Muse cookie: fb_dtsg not found in dev.meta.ai HTML; sign in to "
+            "https://dev.meta.ai/usage in Chrome and re-run `aiuse credential refresh muse --from chrome`"
         )
-    data = _post_billing_graphql(cookie, lsd or "", dtsg, team_id, timeout)
-    accounts = _accounts_from_billing_graphql(data, _GRAPHQL_URL)
+    data = _post_muse_graphql(
+        cookie,
+        lsd or "",
+        dtsg,
+        team_id,
+        timeout,
+        doc_id=_BILLING_DOC_ID,
+        friendly=_BILLING_FRIENDLY,
+        variables={"team_id": team_id},
+    )
+    spend_usd: float | None = None
+    spend_raw: Any = None
+    try:
+        spend_raw = _post_muse_graphql(
+            cookie,
+            lsd or "",
+            dtsg,
+            team_id,
+            timeout,
+            doc_id=_SPEND_DOC_ID,
+            friendly=_SPEND_FRIENDLY,
+            variables={
+                "team_id": team_id,
+                "team_id_is_null": False,
+                "__relay_internal__pv__Usage_ShouldIncludeCostMetricsrelayprovider": True,
+                "__relay_internal__pv__Usage_ShouldIncludeBatchMetricsrelayprovider": False,
+            },
+        )
+        spend_usd = _mtd_total_spend_usd(spend_raw)
+    except CollectorError:
+        spend_usd = None
+    accounts = _accounts_from_muse_cookie_payloads(
+        data,
+        spend_usd=spend_usd,
+        spend_raw=spend_raw,
+        url=_GRAPHQL_URL,
+    )
     if account:
         for row in accounts:
             if not row.account:
@@ -265,28 +306,74 @@ def _collect_via_cookie(
     return accounts
 
 
-def _fetch_dev_usage_html(cookie: str, timeout: float) -> str:
-    try:
-        resp = requests.get(
-            _DEV_USAGE_URL,
-            timeout=timeout,
-            headers={
-                "Cookie": cookie,
-                "User-Agent": _USER_AGENT,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
-        )
-        if resp.status_code in (401, 403):
-            raise CollectorError(
-                f"Muse cookie rejected by dev.meta.ai (HTTP {resp.status_code}); re-run `aiuse credential refresh muse --from chrome`"
+def _fetch_dev_session_html(cookie: str, timeout: float, *, team_id: str | None = None) -> str:
+    """Load a logged-in Model API HTML shell (LSD/DTSG + optional team_id scrape)."""
+    urls: list[str] = []
+    if team_id:
+        urls.append(f"{_DEV_USAGE_URL}/?team_id={team_id}")
+        urls.append(f"{_DEV_HOME_URL}?team_id={team_id}")
+    urls.extend([_DEV_HOME_URL, f"{_DEV_USAGE_URL}/"])
+    last_error: CollectorError | None = None
+    for url in urls:
+        try:
+            resp = requests.get(
+                url,
+                timeout=timeout,
+                allow_redirects=True,
+                headers={
+                    "Cookie": cookie,
+                    "User-Agent": _USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                },
             )
-        resp.raise_for_status()
-        return resp.text
-    except requests.RequestException as exc:
-        raise CollectorError(f"Muse cookie: failed to fetch dev.meta.ai/usage: {exc.__class__.__name__}") from exc
+            if resp.status_code in (401, 403):
+                raise CollectorError(
+                    f"Muse cookie rejected by dev.meta.ai (HTTP {resp.status_code}); "
+                    "re-run `aiuse credential refresh muse --from chrome`"
+                )
+            resp.raise_for_status()
+            text = resp.text
+            # auth.meta.com login waterfall is not usable
+            if "auth.meta.com" in (resp.url or ""):
+                last_error = CollectorError(
+                    "Muse cookie: dev.meta.ai returned a login/error shell; open "
+                    "https://dev.meta.ai/usage in Chrome so llm_sess is present, then re-run "
+                    "`aiuse credential refresh muse --from chrome`"
+                )
+                continue
+            if _extract_dtsg(text) or _extract_lsd(text):
+                return text
+            # Tiny Error shells without tokens are not usable
+            if len(text) < 5000:
+                last_error = CollectorError(
+                    "Muse cookie: dev.meta.ai returned a login/error shell; open "
+                    "https://dev.meta.ai/usage in Chrome so llm_sess is present, then re-run "
+                    "`aiuse credential refresh muse --from chrome`"
+                )
+                continue
+            last_error = CollectorError(
+                "Muse cookie: fetched HTML without fb_dtsg/LSD; re-run `aiuse credential refresh muse --from chrome`"
+            )
+        except CollectorError as exc:
+            last_error = exc
+        except requests.RequestException as exc:
+            last_error = CollectorError(f"Muse cookie: failed to fetch {url}: {exc.__class__.__name__}")
+    if last_error is not None:
+        raise last_error
+    raise CollectorError("Muse cookie: failed to fetch a usable dev.meta.ai session page")
 
 
-def _post_billing_graphql(cookie: str, lsd: str, dtsg: str, team_id: str, timeout: float) -> Any:
+def _post_muse_graphql(
+    cookie: str,
+    lsd: str,
+    dtsg: str,
+    team_id: str,
+    timeout: float,
+    *,
+    doc_id: str,
+    friendly: str,
+    variables: dict[str, Any],
+) -> Any:
     headers = {
         "Cookie": cookie,
         "User-Agent": _USER_AGENT,
@@ -294,73 +381,208 @@ def _post_billing_graphql(cookie: str, lsd: str, dtsg: str, team_id: str, timeou
         "Accept": "*/*",
         "Origin": "https://dev.meta.ai",
         "Referer": f"https://dev.meta.ai/usage/?team_id={team_id}",
-        "X-FB-Friendly-Name": _BILLING_FRIENDLY,
+        "X-FB-Friendly-Name": friendly,
+        "X-ASBD-ID": "359341",
     }
     if lsd:
         headers["X-FB-LSD"] = lsd
-    # X-ASBD-ID is static for this app (359341 seen in trace); include if available
-    headers["X-ASBD-ID"] = "359341"
     data = {
         "fb_dtsg": dtsg,
-        "doc_id": _BILLING_DOC_ID,
-        "variables": json.dumps({"team_id": team_id}),
+        "lsd": lsd,
+        "doc_id": doc_id,
+        "variables": json.dumps(variables),
     }
     try:
         resp = requests.post(_GRAPHQL_URL, headers=headers, data=data, timeout=timeout)
         if resp.status_code in (401, 403):
             raise CollectorError(
-                f"Muse cookie rejected by dev.meta.ai GraphQL (HTTP {resp.status_code}); re-run `aiuse credential refresh muse --from chrome`"
+                f"Muse cookie rejected by dev.meta.ai GraphQL (HTTP {resp.status_code}); "
+                "re-run `aiuse credential refresh muse --from chrome`"
             )
         resp.raise_for_status()
-        # GraphQL returns JSON even on logical errors
         try:
             payload = resp.json()
         except ValueError as exc:
-            # HTML login shell means cookie expired
-            if "<!DOCTYPE html" in resp.text:
+            if "<!DOCTYPE html" in resp.text or resp.text.lstrip().startswith("<"):
                 raise CollectorError(
-                    "Muse cookie: dev.meta.ai returned HTML (session expired); re-run `aiuse credential refresh muse --from chrome`"
+                    "Muse cookie: dev.meta.ai returned HTML (session expired); "
+                    "re-run `aiuse credential refresh muse --from chrome`"
                 ) from exc
             raise CollectorError("Muse cookie: dev.meta.ai GraphQL returned invalid JSON") from exc
         if isinstance(payload, dict) and payload.get("errors"):
-            raise CollectorError(
-                f"Muse cookie: dev.meta.ai GraphQL error: {payload['errors'][0].get('message') or payload['errors']}"
-            )
+            err0 = payload["errors"][0] if payload["errors"] else {}
+            msg = err0.get("message") if isinstance(err0, dict) else payload["errors"]
+            raise CollectorError(f"Muse cookie: dev.meta.ai GraphQL error: {msg}")
         return payload
     except requests.RequestException as exc:
         raise CollectorError(f"Muse cookie: dev.meta.ai GraphQL request failed: {exc.__class__.__name__}") from exc
 
 
-def _accounts_from_billing_graphql(data: Any, url: str) -> list[AccountUsage]:
+def _pe_currency_usd(obj: Any) -> float | None:
+    """Convert Meta CurrencyAmount / amount_with_offset (cents) to USD dollars."""
+    if obj is None:
+        return None
+    raw: Any = obj
+    if isinstance(obj, dict):
+        raw = obj.get("amount_with_offset", obj.get("amount"))
+    if isinstance(raw, (int, float)):
+        return float(raw) / _PE_AMOUNT_OFFSET
+    if isinstance(raw, str):
+        try:
+            return float(raw) / _PE_AMOUNT_OFFSET
+        except ValueError:
+            return None
+    return None
+
+
+def _mtd_total_spend_usd(payload: Any) -> float | None:
+    """Sum TOTAL spend_cost_metrics for the current calendar month (USD)."""
+    if not isinstance(payload, dict):
+        return None
+    team = payload.get("data", {}).get("team") if isinstance(payload.get("data"), dict) else None
+    if not isinstance(team, dict):
+        return None
+    metrics = team.get("spend_cost_metrics")
+    if not isinstance(metrics, list):
+        return None
+    total_series: dict[str, Any] | None = None
+    for series in metrics:
+        if isinstance(series, dict) and series.get("type") == "TOTAL":
+            total_series = series
+            break
+    if total_series is None:
+        points: list[Any] = []
+        for series in metrics:
+            if isinstance(series, dict):
+                points.extend(series.get("categorical_data") or [])
+    else:
+        points = list(total_series.get("categorical_data") or [])
+    if not points:
+        return None
+    from datetime import date
+
+    prefix = date.today().strftime("%Y-%m")
+    mtd = 0.0
+    found = False
+    for pt in points:
+        if not isinstance(pt, dict):
+            continue
+        cat = str(pt.get("category") or "")
+        if not cat.startswith(prefix):
+            continue
+        amt = _pe_currency_usd(pt.get("value"))
+        if amt is None:
+            continue
+        mtd += amt
+        found = True
+    return mtd if found else 0.0
+
+
+def _accounts_from_muse_cookie_payloads(
+    data: Any,
+    *,
+    spend_usd: float | None,
+    spend_raw: Any,
+    url: str,
+) -> list[AccountUsage]:
+    """Map banner (+ optional MTD spend) into Muse row.
+
+    Muse's dashboard "balance" is cumulative PAYG spend (counts up from $0).
+    DeepSeek / oc-zen ``balance_usd`` is prepaid remaining (counts down to $0).
+    Prefer spend as ``usage_credits.used`` with no ``balance_usd`` so the report
+    can label it ``spent $X (counts up)`` instead of ``balance $X remaining``.
+    """
     if not isinstance(data, dict):
         raise CollectorError(f"Muse cookie: unexpected GraphQL response at {url}")
-    # Expected: data.team.billing_info {balance, credit_limit, remaining_budget} each {amount}
     team = data.get("data", {}).get("team") if isinstance(data.get("data"), dict) else None
     if not isinstance(team, dict):
-        # Also try top-level team
         team = data.get("team") if isinstance(data.get("team"), dict) else None
     if not isinstance(team, dict):
         raise CollectorError(f"Muse cookie: GraphQL response missing data.team at {url}")
+
+    remaining = _pe_currency_usd(team.get("free_money_remaining_currency_amount"))
+    granted = _pe_currency_usd(team.get("free_money_granted_currency_amount"))
+    has_card = team.get("has_usable_payment_method") is True
+
     billing = team.get("billing_info")
     if not isinstance(billing, dict):
-        # Try alternative keys
         for k in ("billingInfo", "billing", "balance_info"):
             if isinstance(team.get(k), dict):
                 billing = team[k]
                 break
-    if not isinstance(billing, dict):
-        raise CollectorError(f"Muse cookie: GraphQL response missing billing_info at {url}")
+    if isinstance(billing, dict) and "free_money_remaining_currency_amount" not in team:
+        return _accounts_from_legacy_billing_info(billing, data, url)
 
+    if remaining is None and "free_money_remaining_currency_amount" not in team and not isinstance(billing, dict):
+        raise CollectorError(f"Muse cookie: GraphQL team missing free_money_remaining_currency_amount at {url}")
+
+    free_remaining = 0.0 if remaining is None else remaining
+    notes = [
+        "Live data fetched directly from Muse (dev.meta.ai GraphQL).",
+        f"Endpoint: {url} banner={_BILLING_DOC_ID} spend={_SPEND_DOC_ID}.",
+        "Muse dashboard balance is cumulative PAYG spend (counts up from $0), "
+        "not prepaid remaining (DeepSeek / oc-zen count down to $0).",
+    ]
+    if granted is not None:
+        notes.append(f"Muse free credits granted: ${granted:.2f}.")
+    if free_remaining > 0:
+        notes.append(f"Muse free credits remaining: ${free_remaining:.2f}.")
+    if has_card:
+        notes.append("Payment method on file (pay-as-you-go).")
+
+    raw: dict[str, Any] = {"banner": data}
+    if spend_raw is not None:
+        raw["spend"] = spend_raw
+
+    if spend_usd is not None:
+        notes.append(f"Muse spend this month: ${spend_usd:.2f} (counts up).")
+        return [
+            AccountUsage(
+                source="muse",
+                provider="muse",
+                billing_kind=BillingKind.PAYG_API,
+                balance_usd=None,
+                usage_credits=UsageCredits(used=spend_usd, currency="USD"),
+                notes=notes,
+                raw=raw,
+            )
+        ]
+
+    if free_remaining > 0:
+        notes.append(f"Muse free credits remaining: ${free_remaining:.2f} (counts down).")
+        return [
+            AccountUsage(
+                source="muse",
+                provider="muse",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=free_remaining,
+                notes=notes,
+                raw=raw,
+            )
+        ]
+
+    raise CollectorError(
+        "Muse cookie: could not read MTD spend and free credits are empty; "
+        "re-run `aiuse credential refresh muse --from chrome`"
+    )
+
+
+def _accounts_from_legacy_billing_info(billing: dict[str, Any], data: Any, url: str) -> list[AccountUsage]:
     def amt(obj: Any) -> float | None:
         if isinstance(obj, dict):
-            v = obj.get("amount")
+            v = obj.get("amount", obj.get("amount_with_offset"))
             if isinstance(v, (int, float)):
+                if "amount_with_offset" in obj and "amount" not in obj:
+                    return float(v) / _PE_AMOUNT_OFFSET
                 return float(v)
             if isinstance(v, str):
                 try:
-                    return float(v)
+                    n = float(v)
                 except ValueError:
                     return None
+                if "amount_with_offset" in obj and "amount" not in obj:
+                    return n / _PE_AMOUNT_OFFSET
+                return n
         if isinstance(obj, (int, float)):
             return float(obj)
         if isinstance(obj, str):
@@ -372,40 +594,23 @@ def _accounts_from_billing_graphql(data: Any, url: str) -> list[AccountUsage]:
 
     balance = amt(billing.get("balance"))
     credit_limit = amt(billing.get("credit_limit")) or amt(billing.get("creditLimit")) or amt(billing.get("limit"))
-    remaining = (
-        amt(billing.get("remaining_budget")) or amt(billing.get("remainingBudget")) or amt(billing.get("remaining"))
-    )
-    # Fallbacks for amount_with_offset style nested value
-    if (
-        balance is None
-        and isinstance(billing.get("balance"), dict)
-        and isinstance(billing["balance"].get("value"), dict)
-    ):
-        balance = amt(billing["balance"]["value"].get("amount_with_offset"))
-    # If only credit_limit + remaining, derive balance as remaining
-    if remaining is None and balance is not None and credit_limit is not None:
-        remaining = balance  # some APIs use balance as remaining
-    if remaining is None and credit_limit is not None and balance is not None:
-        remaining = max(0.0, credit_limit - balance)  # if balance is spend
-    # Prefer remaining_budget as balance_usd
-    balance_usd = remaining if remaining is not None else balance
+    rem = amt(billing.get("remaining_budget")) or amt(billing.get("remainingBudget")) or amt(billing.get("remaining"))
+    balance_usd = rem if rem is not None else balance
     if balance_usd is None and credit_limit is not None:
         balance_usd = credit_limit
-
-    if balance_usd is None and credit_limit is None and remaining is None:
+    if balance_usd is None and credit_limit is None and rem is None:
         raise CollectorError(f"Muse cookie: billing_info had no recognizable amount at {url}: {billing}")
-
     notes = [
         "Live data fetched directly from Muse (dev.meta.ai GraphQL).",
         f"Endpoint: {url} doc_id {_BILLING_DOC_ID}",
     ]
-    if credit_limit is not None and remaining is not None:
-        used = max(0.0, credit_limit - remaining)
-        notes.append(f"Muse spend: ${used:.2f} of ${credit_limit:.2f} (remaining ${remaining:.2f}).")
+    if credit_limit is not None and rem is not None:
+        used = max(0.0, credit_limit - rem)
+        notes.append(f"Muse spend: ${used:.2f} of ${credit_limit:.2f} (remaining ${rem:.2f}).")
         credits = UsageCredits(
             used=used,
             limit=credit_limit,
-            remaining=remaining,
+            remaining=rem,
             currency="USD",
             used_percent=(used / credit_limit * 100.0 if credit_limit else None),
         )
@@ -414,25 +619,30 @@ def _accounts_from_billing_graphql(data: Any, url: str) -> list[AccountUsage]:
                 source="muse",
                 provider="muse",
                 billing_kind=BillingKind.PAYG_API,
-                balance_usd=remaining,
+                balance_usd=None,
                 usage_credits=credits,
                 notes=notes,
                 raw=data,
             )
         ]
-    if balance_usd is not None:
-        notes.append(f"Muse balance: ${balance_usd:.2f} remaining.")
-        return [
-            AccountUsage(
-                source="muse",
-                provider="muse",
-                billing_kind=BillingKind.PREPAID_BALANCE if credit_limit is None else BillingKind.PAYG_API,
-                balance_usd=float(balance_usd),
-                notes=notes,
-                raw=data,
-            )
-        ]
-    raise CollectorError(f"Muse cookie: could not map billing_info to balance at {url}")
+    if balance_usd is None:
+        raise CollectorError(f"Muse cookie: billing_info had no recognizable amount at {url}: {billing}")
+    notes.append(f"Muse balance: ${float(balance_usd):.2f} remaining (counts down).")
+    return [
+        AccountUsage(
+            source="muse",
+            provider="muse",
+            billing_kind=BillingKind.PREPAID_BALANCE if credit_limit is None else BillingKind.PAYG_API,
+            balance_usd=float(balance_usd),
+            notes=notes,
+            raw=data,
+        )
+    ]
+
+
+def _accounts_from_billing_graphql(data: Any, url: str) -> list[AccountUsage]:
+    """Back-compat wrapper; prefer ``_accounts_from_muse_cookie_payloads``."""
+    return _accounts_from_muse_cookie_payloads(data, spend_usd=None, spend_raw=None, url=url)
 
 
 def _extract_lsd(html: str) -> str | None:

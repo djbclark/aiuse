@@ -35,7 +35,7 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
 **File:** `src/aiuse/collectors/muse.py` — dual-auth native with mutual failover (Bearer preferred, cookie fallback).
 
 - **Bearer path (stable):** `AIUSE_MUSE_API_KEY` → `META_API_KEY` → `secretspec get MUSE_API_KEY/META_API_KEY`; probes `https://api.meta.ai/v1` candidates ` /usage → /billing/usage → /me/usage → /credits → /billing` (first 200 wins). `AIUSE_MUSE_API_URL` override pins the path.
-- **Cookie path (browser):** `AIUSE_MUSE_COOKIE` or `secretspec get MUSE_COOKIE` (from `aiuse credential refresh muse --from chrome`); `GET https://dev.meta.ai/usage` to scrape `LSD` + `fb_dtsg` (`DTSGInitialData`) + `team_id` (`active_team_id` / `?team_id=`), then `POST https://dev.meta.ai/api/graphql/` `doc_id 9128374650192834` (`MuseDevBillingBalanceQuery` variables `{"team_id":…}`) → `billing_info {balance, credit_limit, remaining_budget}`. Override `AIUSE_MUSE_TEAM_ID` if auto-scrape fails.
+- **Cookie path (browser):** `AIUSE_MUSE_COOKIE` or `secretspec get MUSE_COOKIE` (from `aiuse credential refresh muse --from chrome`). Needs Chrome `llm_sess` on `.dev.meta.ai`. Fetches usage/home HTML for `LSD`/`fb_dtsg`, then GraphQL `LLMDCBillingBannerContainerQuery` + `LLMDCHomeContentUsageSummaryQuery`. **Muse’s dashboard “balance” is month-to-date PAYG spend (counts up from $0)** — shown as `spent $X.XX (counts up · PAYG)`, not prepaid remaining. DeepSeek / oc-zen use `balance $X.XX remaining (counts down · no expiry)`. Set `AIUSE_MUSE_TEAM_ID` from the usage URL when needed.
 - **Failover:** Bearer tried first; on 401/403/404/timeout it falls through to cookie, and vice-versa. Absent both → `[]`.
 - **Display:** `PREPAID_BALANCE` / `PAYG_API` → `n/a` band like `deepseek`/`openrouter`/`opencode-zen`: `balance $X.XX (no expiry)` with `balance_usd` (for `credit_limit/remaining_budget` also `usage_credits`).
 - **Timeout:** `timeouts.muse` (or `default`/`force`), same as every other collector (`runner.py` + `config.py` `KNOWN_*` sets).
@@ -52,11 +52,13 @@ aiuse --json -q | jq '.snapshot.accounts[] | select(.provider=="muse")'
 AIUSE_MUSE_API_KEY=sk_test AIUSE_MUSE_API_URL=https://api.meta.ai/v1/usage aiuse --json -q | jq '.snapshot.accounts[] | select(.provider=="muse")'
 
 # Cookie (browser) — refresh then live-collect; mutual failover
-aiuse credential refresh muse --from chrome --dry-run   # validates dev.meta.ai cookie + GraphQL billing_info
+# team_id comes from the usage URL, e.g. .../usage/?team_id=1483959756871752
+export AIUSE_MUSE_TEAM_ID=1483959756871752
+aiuse credential refresh muse --from chrome --dry-run   # needs llm_sess; hits banner GraphQL
 aiuse credential refresh muse --from chrome --yes       # saves MUSE_COOKIE via secretspec
-AIUSE_MUSE_COOKIE='llm_sess=...' aiuse --json -q | jq '.snapshot.accounts[] | select(.provider=="muse")'
-# balance $X.XX (no expiry) in n/a band, like deepseek / opencode-zen
-AIUSE_MUSE_COOKIE='llm_sess=...' AIUSE_MUSE_TEAM_ID=123 aiuse --json -q | jq '.snapshot.accounts[] | select(.provider=="muse")'
+AIUSE_MUSE_COOKIE='llm_sess=...' AIUSE_MUSE_TEAM_ID="$AIUSE_MUSE_TEAM_ID" aiuse --json -q \
+  | jq '.snapshot.accounts[] | select(.provider=="muse")'
+# balance $X.XX free credits (n/a band); $0.00 when null free money + card on file
 
 # Diagnostics
 aiuse --json -q | jq '.snapshot.collector_errors | map(select(contains("muse")))'

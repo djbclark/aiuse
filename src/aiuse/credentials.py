@@ -201,6 +201,7 @@ def _chrome_cookie_header_for_muse(profile: str) -> str:
     # Read all muse-related hosts and merge, like the collector does
     pairs: list[str] = []
     seen: set[tuple[str, str]] = set()
+    names: set[str] = set()
     for host in _MUSE_HOSTS:
         try:
             jar = browser_cookie3.chrome(cookie_file=str(cookie_file), domain_name=host)
@@ -217,28 +218,36 @@ def _chrome_cookie_header_for_muse(profile: str) -> str:
             pair = (item.name, value)
             if pair not in seen:
                 seen.add(pair)
+                names.add(item.name)
                 pairs.append(f"{item.name}={value}")
     if not pairs:
         raise CredentialError("no Muse cookies were found; sign in to dev.meta.ai in the selected Chrome profile")
+    # Model API auth is llm_sess on .dev.meta.ai (not Facebook c_user/xs).
+    if "llm_sess" not in names:
+        raise CredentialError(
+            "Chrome is missing the Muse session cookie (llm_sess). "
+            "In this Chrome profile open https://dev.meta.ai/usage until the usage "
+            "dashboard loads, then re-run `aiuse credential refresh muse --from chrome`."
+        )
     return "; ".join(pairs)
 
 
 def _validate_muse_cookie(cookie: str, *, timeout: float) -> None:
     """Prove the Muse cookie reaches the billing GraphQL route."""
     # Import lazily to avoid circular import at module load
-    from aiuse.collectors.muse import _collect_via_cookie
+    from aiuse.collectors.muse import _TEAM_ENV, _collect_via_cookie
 
-    # Try cookie collection with a permissive env that may include team_id override
     env: dict[str, str] = {}
-    # If collection can find team_id via HTML scrape it will succeed; otherwise it will
-    # raise with actionable hint about AIUSE_MUSE_TEAM_ID
+    team = str(os.environ.get(_TEAM_ENV) or "").strip()
+    if team:
+        env[_TEAM_ENV] = team
     try:
         accounts = _collect_via_cookie(cookie, env, timeout)
     except Exception as exc:
         raise CredentialError(str(exc)) from exc
     if not accounts:
         raise CredentialError("Muse did not return billing info for this session")
-    # Basic sanity: must have balance
+    # Basic sanity: must have balance (including $0.00 free credits)
     if accounts[0].balance_usd is None and accounts[0].usage_credits is None:
         raise CredentialError("Muse did not return a balance for this session")
 

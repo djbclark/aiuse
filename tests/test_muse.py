@@ -318,3 +318,172 @@ def test_collect_muse_ignores_auth_json_when_environ_override(tmp_path, monkeypa
     )
     monkeypatch.setenv("MUSE_AUTH_PATH", str(auth_path))
     assert collect_muse(environ={}) == []
+
+
+def test_accounts_from_billing_banner_graphql_free_credits_without_spend():
+    from aiuse.collectors.muse import _accounts_from_billing_graphql
+
+    payload = {
+        "data": {
+            "team": {
+                "id": "1483959756871752",
+                "free_money_remaining_currency_amount": {
+                    "amount_with_offset": "1850",
+                    "currency": "USD",
+                },
+                "free_money_granted_currency_amount": {
+                    "amount_with_offset": "2000",
+                    "currency": "USD",
+                },
+                "has_usable_payment_method": False,
+            }
+        }
+    }
+    accounts = _accounts_from_billing_graphql(payload, "https://dev.meta.ai/api/graphql/")
+    assert len(accounts) == 1
+    assert accounts[0].balance_usd == 18.50
+    assert accounts[0].billing_kind == BillingKind.PREPAID_BALANCE
+    assert any("18.50" in n for n in accounts[0].notes)
+
+
+def test_accounts_from_muse_cookie_prefers_mtd_spend_over_free_credits():
+    from datetime import date
+
+    from aiuse.collectors.muse import _accounts_from_muse_cookie_payloads
+
+    day = date.today().isoformat()
+    banner = {
+        "data": {
+            "team": {
+                "id": "1",
+                "free_money_remaining_currency_amount": None,
+                "has_usable_payment_method": True,
+            }
+        }
+    }
+    spend = {
+        "data": {
+            "team": {
+                "spend_cost_metrics": [
+                    {
+                        "type": "TOTAL",
+                        "categorical_data": [
+                            {"category": day, "value": {"amount_with_offset": "30", "currency": "USD"}},
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+    accounts = _accounts_from_muse_cookie_payloads(
+        banner,
+        spend_usd=0.30,
+        spend_raw=spend,
+        url="https://dev.meta.ai/api/graphql/",
+    )
+    assert accounts[0].balance_usd is None
+    assert accounts[0].usage_credits is not None
+    assert accounts[0].usage_credits.used == 0.30
+    assert accounts[0].billing_kind == BillingKind.PAYG_API
+    assert any("counts up" in n for n in accounts[0].notes)
+
+
+def test_accounts_from_billing_banner_graphql_null_free_money_needs_spend_or_raises():
+    import pytest
+
+    from aiuse.collectors.base import CollectorError
+    from aiuse.collectors.muse import _accounts_from_billing_graphql
+
+    payload = {
+        "data": {
+            "team": {
+                "id": "1",
+                "free_money_remaining_currency_amount": None,
+                "free_money_granted_currency_amount": None,
+                "has_usable_payment_method": True,
+            }
+        }
+    }
+    with pytest.raises(CollectorError, match="MTD spend"):
+        _accounts_from_billing_graphql(payload, "https://dev.meta.ai/api/graphql/")
+
+
+def test_collect_via_cookie_uses_team_id_and_spend_query(monkeypatch):
+    from datetime import date
+
+    from aiuse.collectors import muse as muse_mod
+
+    html = '["DTSGInitialData",[],{"token":"NAfTEST:14:1"}],["LSD",[],{"token":"LSDTOKEN"}]'
+    posted: list[dict[str, object]] = []
+    day = date.today().isoformat()
+
+    class FakeGet:
+        status_code = 200
+        url = "https://dev.meta.ai/usage/?team_id=1483959756871752"
+        text = html
+
+        def raise_for_status(self):
+            pass
+
+    class FakePost:
+        status_code = 200
+        text = "{}"
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._payload
+
+    banner = {
+        "data": {
+            "team": {
+                "id": "1483959756871752",
+                "free_money_remaining_currency_amount": None,
+                "has_usable_payment_method": True,
+            }
+        }
+    }
+    spend = {
+        "data": {
+            "team": {
+                "spend_cost_metrics": [
+                    {
+                        "type": "TOTAL",
+                        "categorical_data": [
+                            {"category": day, "value": {"amount_with_offset": "30", "currency": "USD"}},
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+
+    def fake_get(url, timeout, allow_redirects=True, headers=None):
+        assert "team_id=1483959756871752" in url
+        return FakeGet()
+
+    def fake_post(url, headers=None, data=None, timeout=None):
+        posted.append({"url": url, "data": data, "headers": headers})
+        doc = (data or {}).get("doc_id")
+        if doc == muse_mod._BILLING_DOC_ID:
+            return FakePost(banner)
+        return FakePost(spend)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+    accounts = muse_mod._collect_via_cookie(
+        "llm_sess=abc",
+        {"AIUSE_MUSE_TEAM_ID": "1483959756871752"},
+        5.0,
+    )
+    assert accounts[0].balance_usd is None
+    assert accounts[0].usage_credits is not None
+    assert accounts[0].usage_credits.used == 0.30
+    assert {p["data"]["doc_id"] for p in posted} == {
+        muse_mod._BILLING_DOC_ID,
+        muse_mod._SPEND_DOC_ID,
+    }
