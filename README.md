@@ -441,6 +441,8 @@ Pace knobs (in `config.toml` under `[analysis.pace]`):
 
 Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true` (Claude/Gemini default) scores only the longest window per account.
 
+Lapsed subscriptions: `analysis.lapsed_accounts` maps `"provider/account"` to a reason (e.g. `"claude/me@mit.edu" = "not renewed"`). A not-renewed plan keeps serving stale collector cache that looks like usable quota; the entry makes that account show as `empty` instead of on-pace.
+
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.

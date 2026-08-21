@@ -411,3 +411,68 @@ def test_errored_cswap_with_matching_codexbar_email_gets_specific_warning():
     assert any("could not read canonical usage" in m for m in messages)
     assert any("do not replace" in m.lower() or "do not substitute" in m.lower() for m in messages)
     assert not any("reporting inconsistency" in m.lower() for m in messages)
+
+
+def _stale_claude_slot(account: str) -> AccountUsage:
+    """A not-renewed slot the way cswap serves it: stale lastGood windows."""
+    return AccountUsage(
+        source="cswap",
+        provider="claude",
+        account=account,
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(label="Claude Code 5-hour", used_percent=5.0, resets_at=None),
+            QuotaWindow(label="Claude Code weekly", used_percent=89.0, remaining_percent=11.0),
+        ],
+        notes=["cswap slot 1"],
+    )
+
+
+def test_lapsed_accounts_rule_empties_only_the_declared_account():
+    from aiuse.collectors.runner import _apply_lapsed_accounts
+
+    mit = _stale_claude_slot("djbclark@mit.edu")
+    gmail = _stale_claude_slot("djbclark@gmail.com")
+    config = {"analysis": {"lapsed_accounts": {"claude/djbclark@mit.edu": "not renewed 2026-08"}}}
+
+    _apply_lapsed_accounts([mit, gmail], config)
+
+    assert mit.plan == "expired"
+    assert mit.error is None
+    assert len(mit.windows) == 1
+    assert mit.windows[0].remaining_percent == 0.0
+    assert mit.windows[0].resets_at is None
+    assert "not renewed 2026-08" in (mit.windows[0].reset_description or "")
+    assert any("lapsed_accounts" in note for note in mit.notes)
+
+    assert gmail.plan is None
+    assert len(gmail.windows) == 2
+    assert gmail.windows[1].remaining_percent == 11.0
+
+
+def test_lapsed_accounts_true_value_uses_default_description():
+    from aiuse.collectors.runner import _apply_lapsed_accounts
+
+    mit = _stale_claude_slot("djbclark@mit.edu")
+    _apply_lapsed_accounts([mit], {"analysis": {"lapsed_accounts": {"claude/djbclark@mit.edu": True}}})
+
+    assert mit.windows[0].reset_description == "subscription not renewed"
+
+
+def test_lapsed_accounts_matches_provider_aliases_and_case_insensitive_account():
+    from aiuse.collectors.runner import _apply_lapsed_accounts
+
+    row = _stale_claude_slot("DJBclark@MIT.edu")
+    _apply_lapsed_accounts([row], {"analysis": {"lapsed_accounts": {"claude/djbclark@mit.edu": "gone"}}})
+
+    assert row.plan == "expired"
+
+
+def test_lapsed_accounts_ignores_other_providers():
+    from aiuse.collectors.runner import _apply_lapsed_accounts
+
+    codex = _account("codexbar", "codex")
+    _apply_lapsed_accounts([codex], {"analysis": {"lapsed_accounts": {"claude/someone@mit.edu": "gone"}}})
+
+    assert codex.plan is None
+    assert len(codex.windows) == 1

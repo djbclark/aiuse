@@ -95,7 +95,9 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "deepseek": "deepseek",
     "grok": "grok",
     "clinepass": "clinepass",
-    "zai": "zai",
+    # The GLM coding plan is what powers Crush here, so the row says which
+    # assistant to spend it on; canonical id stays "zai".
+    "zai": "zai/crush",
     "devin": "devin",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",

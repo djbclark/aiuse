@@ -1393,6 +1393,37 @@ def test_clock_matrix_labels_expired_opencode_go_subscription():
     assert "0% left" not in ladder
 
 
+def test_clock_matrix_labels_config_lapsed_subscription():
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="cswap",
+                provider="claude",
+                account="me@mit.edu",
+                plan="expired",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="claude subscription",
+                        remaining_percent=0.0,
+                        reset_description="subscription not renewed (not renewed 2026-08)",
+                    )
+                ],
+            )
+        ],
+    )
+    matrix = render_clock_matrix([], snapshot=snap, color=False)
+    claude_line = next(line for line in matrix.splitlines() if "claude" in line)
+    assert claude_line.startswith("empty")
+    assert "subscription not renewed" in claude_line
+
+    ladder = render_priority_ladder([], snapshot=snap, color=False)
+    assert "subscription not renewed" in ladder
+    assert ladder.startswith("empty")
+    assert "0% left" not in ladder
+
+
 def test_clock_matrix_sheds_columns_before_truncating_numbers():
     snap = _matrix_snapshot()
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
@@ -1543,7 +1574,7 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
         ],
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    zai = next(line for line in text.splitlines() if " zai " in line)
+    zai = next(line for line in text.splitlines() if " zai/crush " in line)
     assert "0%/6d20h" in zai
     # The 5h cell is a bare percent, not 0%/—.
     assert "0%/—" not in zai

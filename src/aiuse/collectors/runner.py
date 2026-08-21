@@ -160,7 +160,56 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         cswap_authoritative=_enabled(collectors_cfg, "cswap"),
         account_aliases=config.get("account_aliases"),
     )
+    _apply_lapsed_accounts(snapshot.accounts, config)
     return snapshot
+
+
+def _apply_lapsed_accounts(accounts: list[AccountUsage], config: dict[str, Any] | None) -> None:
+    """Render operator-declared dead subscriptions as empty, not on-pace.
+
+    A not-renewed plan keeps serving stale collector cache — cswap ``lastGood``
+    windows whose resets are still ahead — that looks like usable quota, but no
+    collector can see renewal state. ``analysis.lapsed_accounts`` maps
+    ``"provider/account"`` to a reason (or ``true``); matching accounts get a
+    single empty subscription window mirroring the expired-plan shape
+    (collectors/opencode_go.py), so every surface (ladder, matrix, JSON,
+    history) treats them as depleted instead of learning phantom quota.
+    """
+    analysis = (config or {}).get("analysis")
+    lapsed = analysis.get("lapsed_accounts") if isinstance(analysis, dict) else None
+    if not isinstance(lapsed, dict) or not lapsed:
+        return
+    rules: list[tuple[str, str, str]] = []
+    for key, value in lapsed.items():
+        provider, _, account_part = str(key).partition("/")
+        provider = canonical_provider(provider.strip())
+        reason = value.strip() if isinstance(value, str) and value.strip() else ""
+        if provider:
+            rules.append((provider, account_part.strip().casefold(), reason))
+    for account in accounts:
+        for provider, account_part, reason in rules:
+            if canonical_provider(account.provider) != provider:
+                continue
+            if account_part and (account.account or "").strip().casefold() != account_part:
+                continue
+            description = reason or "subscription not renewed"
+            if reason and not any(marker in reason.casefold() for marker in ("expired", "not renewed", "lapsed")):
+                description = f"subscription not renewed ({reason})"
+            account.plan = "expired"
+            account.windows = [
+                QuotaWindow(
+                    label=f"{provider_display_name(provider)} subscription",
+                    used_percent=None,
+                    remaining_percent=0.0,
+                    reset_description=description,
+                )
+            ]
+            account.balance_usd = None
+            account.usage_credits = None
+            account.credits_remaining = None
+            account.error = None
+            account.notes.append(f"analysis.lapsed_accounts marks this account empty: {description}.")
+            break
 
 
 def _enabled(collectors_cfg: dict[str, Any], name: str) -> bool:

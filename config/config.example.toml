@@ -50,6 +50,13 @@
 # persist_snapshots = true
 # learn_from_history = "auto" # true | false | auto
 
+# Operator-declared dead subscriptions: "provider/account" = reason (or true).
+# A not-renewed plan keeps serving stale collector cache that looks like usable
+# quota; aiuse cannot see renewal state, so declare it here and the account
+# shows as empty instead of on-pace.
+# [analysis.lapsed_accounts]
+# "claude/me@mit.edu" = "not renewed 2026-08"
+
 [analysis.pace]
 # waste_alert_fraction = 0.30
 # min_elapsed_fraction = 0.15

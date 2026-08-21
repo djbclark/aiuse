@@ -25,7 +25,9 @@ price used for value-at-risk is **$18/mo** (promos exist).
 - Plan label comes from the API (`lite` on this machine).
 - CodexBar’s synthetic `zai-codexbar-api-key` account name is dropped; ACCT
   is `—` unless a real identity is present.
-- Display id is `zai`.
+- Display id is `zai/crush` (canonical provider id stays `zai`): the GLM
+  coding plan is what powers Crush on this machine, so the row names the
+  assistant the quota is for.
 
 MCP monthly time markers that CodexBar sometimes attaches as a 1-minute
 `TIME_LIMIT` are not a third burn pool we invent — they stay on the weekly

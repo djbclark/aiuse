@@ -1468,7 +1468,7 @@ def _priority_account_line(
             band == _BAND_EMPTY
             and window.resets_at is None
             and window.reset_description
-            and "expired" in window.reset_description.casefold()
+            and any(marker in window.reset_description.casefold() for marker in ("expired", "not renewed", "lapsed"))
         ):
             body = f"{name} · {who} · {window.reset_description}"
             return f"{_priority_tag(s, band)} {body}"

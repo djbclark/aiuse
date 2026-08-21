@@ -87,6 +87,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 {"name": "LM Studio", "host": "127.0.0.1", "port": 1234},
             ],
         },
+        # Operator-declared dead subscriptions ("provider/account" -> reason).
+        # A not-renewed plan keeps serving stale collector cache (cswap lastGood
+        # windows with resets still ahead) that looks like usable quota; only
+        # the operator knows renewal state, so it is declared here and the
+        # account renders as empty instead of on-pace.
+        "lapsed_accounts": {},
     },
     "plans": {
         "codex": {
@@ -403,6 +409,15 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                         f"warning: analysis.provider_overrides key {name!r} is dead — "
                         f"use {canon!r} (see provider_config_key aliases)"
                     )
+        lapsed = analysis.get("lapsed_accounts")
+        if lapsed is not None and not isinstance(lapsed, dict):
+            issues.append("error: analysis.lapsed_accounts must be a 'provider/account' -> reason mapping")
+        elif isinstance(lapsed, dict):
+            for key, value in lapsed.items():
+                if not str(key).strip() or "/" not in str(key) or not str(key).split("/", 1)[1].strip():
+                    issues.append(f"error: analysis.lapsed_accounts key {key!r} needs a 'provider/account' shape")
+                if not (value is True or (isinstance(value, str) and value.strip())):
+                    issues.append(f"error: analysis.lapsed_accounts.{key} needs a reason string or true")
 
     plans = cfg.get("plans")
     if plans is not None and not isinstance(plans, dict):
