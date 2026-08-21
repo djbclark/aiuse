@@ -3,6 +3,7 @@
 .ruff_cache/
 .venv/
 venv/
+.worktrees/
 .env
 .env.*
 !.env.example
