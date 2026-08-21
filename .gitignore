@@ -25,3 +25,4 @@ htmlcov/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+.aider*

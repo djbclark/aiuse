@@ -26,6 +26,7 @@ from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .hermes import collect_hermes
+from .muse import collect_muse
 from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
@@ -46,6 +47,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "tokscale",
     "clinepass",
     "hermes",
+    "muse",
 )
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
@@ -69,6 +71,7 @@ SOURCE_LABELS: dict[str, str] = {
     "tokscale": "tokscale",
     "clinepass": "ClinePass (native)",
     "hermes": "Hermes (local)",
+    "muse": "Muse (native)",
 }
 
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
@@ -145,6 +148,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("clinepass", partial(collect_clinepass, timeout=timeout_for(config, "clinepass"))))
     if _enabled(collectors_cfg, "hermes"):
         jobs.append(("hermes", partial(collect_hermes, timeout=timeout_for(config, "hermes"))))
+    if _enabled(collectors_cfg, "muse"):
+        jobs.append(("muse", partial(collect_muse, timeout=timeout_for(config, "muse"))))
 
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:

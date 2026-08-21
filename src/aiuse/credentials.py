@@ -31,6 +31,9 @@ from aiuse.secretspec import default_manifest_path, ensure_manifest
 _OPENCODE_ZEN = "opencode-zen"
 _OPENCODE_HOST = "opencode.ai"
 _OPENCODE_COOKIE_SECRET = "OPENCODE_ZEN_COOKIE"
+_MUSE = "muse"
+_MUSE_HOSTS = ("dev.meta.ai", "meta.ai", "facebook.com", "auth.meta.com")
+_MUSE_COOKIE_SECRET = "MUSE_COOKIE"
 _CHROME_ROOT = Path.home() / "Library/Application Support/Google/Chrome"
 _DEFAULT_TIMEOUT_S = 10.0
 
@@ -47,7 +50,7 @@ def run_credential_command(argv: list[str]) -> int:
     )
     subparsers = parser.add_subparsers(dest="action", required=True)
     refresh = subparsers.add_parser("refresh", help="read and validate a browser credential before saving it")
-    refresh.add_argument("provider", choices=(_OPENCODE_ZEN,))
+    refresh.add_argument("provider", choices=(_OPENCODE_ZEN, _MUSE))
     refresh.add_argument("--from", dest="source", choices=("chrome",), default="chrome")
     refresh.add_argument("--profile", default="Default", help="Chrome profile directory (default: Default)")
     refresh.add_argument("--dry-run", action="store_true", help="validate only; do not replace SecretSpec")
@@ -63,6 +66,8 @@ def run_credential_command(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if args.action != "refresh":  # pragma: no cover - argparse makes this unreachable
         return 2
+    if args.provider == _MUSE:
+        return _refresh_muse(args)
     return _refresh_opencode_zen(args)
 
 
@@ -150,6 +155,158 @@ def _validate_opencode_zen_cookie(cookie: str, *, timeout: float) -> None:
     raw = _fetch_server(_BILLING_SERVER_ID, [workspace], cookie, timeout)
     if _parse_billing_balance(raw) is None:
         raise CredentialError("OpenCode did not return a Zen balance for this session")
+
+
+def _refresh_muse(args: argparse.Namespace) -> int:
+    try:
+        if args.timeout <= 0:
+            raise CredentialError("timeout must be positive")
+        cookie = _chrome_cookie_header_for_muse(str(args.profile))
+        _validate_muse_cookie(cookie, timeout=float(args.timeout))
+    except CredentialError as exc:
+        print(f"credential refresh failed: {exc}", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        print("Validated Muse browser session; SecretSpec was not changed.")
+        return 0
+    if not args.yes:
+        answer = input("Validated Muse session. Replace MUSE_COOKIE in SecretSpec? [y/N] ")
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("SecretSpec was not changed.")
+            return 0
+    try:
+        manifest = Path(args.secretspec_file).expanduser()
+        ensure_manifest(manifest)
+        _save_with_secretspec_for_muse(cookie, manifest=manifest, timeout=float(args.timeout))
+    except CredentialError as exc:
+        print(f"credential refresh failed: {exc}", file=sys.stderr)
+        return 1
+    print("Validated Muse browser session and saved it to SecretSpec.")
+    return 0
+
+
+def _chrome_cookie_header_for_muse(profile: str) -> str:
+    if not profile or Path(profile).name != profile or profile in {".", ".."}:
+        raise CredentialError("Chrome profile must be a profile directory name, such as Default or Profile 1")
+    try:
+        import browser_cookie3
+    except ImportError as exc:
+        raise CredentialError(
+            "browser-cookie3 is not installed; install the optional chrome-refresh extra first"
+        ) from exc
+    cookie_file = _chrome_cookie_file(profile)
+    if not cookie_file.is_file():
+        raise CredentialError(f"Chrome cookie database not found for profile {profile!r}")
+    # Read all muse-related hosts and merge, like the collector does
+    pairs: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for host in _MUSE_HOSTS:
+        try:
+            jar = browser_cookie3.chrome(cookie_file=str(cookie_file), domain_name=host)
+        except Exception as exc:
+            raise CredentialError(f"could not read the selected Chrome profile ({exc.__class__.__name__})") from exc
+        for item in jar:
+            domain = item.domain.lstrip(".").lower()
+            # Keep only muse/meta/facebook cookies that the collector would send
+            if not any(domain == h or domain.endswith(f".{h}") for h in _MUSE_HOSTS):
+                continue
+            value = item.value or ""
+            if any(char in value for char in "\r\n;") or any(char in item.name for char in "\r\n;="):
+                continue
+            pair = (item.name, value)
+            if pair not in seen:
+                seen.add(pair)
+                pairs.append(f"{item.name}={value}")
+    if not pairs:
+        raise CredentialError("no Muse cookies were found; sign in to dev.meta.ai in the selected Chrome profile")
+    return "; ".join(pairs)
+
+
+def _validate_muse_cookie(cookie: str, *, timeout: float) -> None:
+    """Prove the Muse cookie reaches the billing GraphQL route."""
+    # Import lazily to avoid circular import at module load
+    from aiuse.collectors.muse import _collect_via_cookie
+
+    # Try cookie collection with a permissive env that may include team_id override
+    env: dict[str, str] = {}
+    # If collection can find team_id via HTML scrape it will succeed; otherwise it will
+    # raise with actionable hint about AIUSE_MUSE_TEAM_ID
+    try:
+        accounts = _collect_via_cookie(cookie, env, timeout)
+    except Exception as exc:
+        raise CredentialError(str(exc)) from exc
+    if not accounts:
+        raise CredentialError("Muse did not return billing info for this session")
+    # Basic sanity: must have balance
+    if accounts[0].balance_usd is None and accounts[0].usage_credits is None:
+        raise CredentialError("Muse did not return a balance for this session")
+
+
+def _save_with_secretspec_for_muse(secret: str, *, manifest: Path, timeout: float) -> None:
+    executable = shutil.which("secretspec")
+    if executable is None:
+        raise CredentialError("secretspec is not on PATH")
+    if not manifest.is_file():
+        raise CredentialError(f"SecretSpec manifest does not exist: {manifest}")
+    if os.name == "nt":
+        raise CredentialError("interactive SecretSpec saving is not supported on Windows")
+    master, slave = pty.openpty()
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(
+            [
+                executable,
+                "set",
+                "--file",
+                str(manifest),
+                "--reason",
+                "aiuse validated Muse browser session",
+                _MUSE_COOKIE_SECRET,
+            ],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise CredentialError(f"could not start SecretSpec ({exc.__class__.__name__})") from exc
+    finally:
+        os.close(slave)
+    sent = False
+    prompt = b""
+    deadline = time.monotonic() + timeout
+    try:
+        while process.poll() is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.terminate()
+                raise CredentialError("SecretSpec did not finish before the timeout")
+            ready, _, _ = select.select([master], [], [], min(remaining, 0.25))
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master, 1024)
+            except OSError as exc:
+                if exc.errno == errno.EIO:
+                    continue
+                raise CredentialError(f"could not communicate with SecretSpec ({exc.__class__.__name__})") from exc
+            prompt = (prompt + chunk)[-4096:]
+            if not sent and b"Enter value" in prompt:
+                os.write(master, secret.encode() + b"\n")
+                sent = True
+                prompt = b""
+        if process.returncode != 0 or not sent:
+            raise CredentialError("SecretSpec did not save the validated browser session")
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        os.close(master)
 
 
 def _save_with_secretspec(secret: str, *, manifest: Path, timeout: float) -> None:

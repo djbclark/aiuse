@@ -280,6 +280,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip OpenUsage.sh collector",
     )
     p.add_argument(
+        "--no-muse",
+        action="store_true",
+        help="Skip Muse collector",
+    )
+    p.add_argument(
         "--providers",
         help=(
             "CodexBar providers: 'enabled' (default), 'all', or a comma-separated list queried one provider at a time"
@@ -953,6 +958,8 @@ def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> No
         collectors["openusage_ai"] = {"enabled": False}
     if getattr(args, "no_openusage_sh", False):
         collectors["openusage_sh"] = {"enabled": False}
+    if getattr(args, "no_muse", False):
+        collectors["muse"] = {"enabled": False}
     if args.providers:
         collectors.setdefault("codexbar", {})["providers"] = args.providers
     analysis = config.setdefault("analysis", {})

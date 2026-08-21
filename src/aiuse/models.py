@@ -102,6 +102,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
     "openrouter": "openrouter",
+    "muse": "muse",
 }
 
 # Any provider spelling that may reach us — vendor ids from collectors, external
@@ -122,6 +123,10 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "opencodego": "opencode-go",
     "opencode": "opencode-go",
     "gemini": "antigravity",
+    "meta": "muse",
+    "muse-spark": "muse",
+    "muse-code": "muse",
+    "metamuse": "muse",
 }
 
 # Map canonical collector provider keys to config plan/override keys.

@@ -166,6 +166,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "OpenRouter (prepaid)",
             "notes": "API credits usually roll until spent (not use-or-lose).",
         },
+        "muse": {
+            "name": "Muse Spark / Muse Code",
+            "notes": "Pay-as-you-go via Meta Model API ($1.25/$4.25 per 1M; contributor $0.10/$4.25). Rate limits 3k/4M tokens/min (contributor 60/2.1M). No subscription windows.",
+        },
     },
     "collectors": {
         "cswap": {"enabled": True},
@@ -188,6 +192,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "opencode_go": {"enabled": True},
         "tokscale": {"enabled": True},
         "hermes": {"enabled": True},
+        "muse": {"enabled": True},
     },
     # Source-specific local account ids can be mapped to the account label used
     # by other collectors.  Normally this stays empty: runner.py automatically
@@ -213,6 +218,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "opencode_go",
         "tokscale",
         "hermes",
+        "muse",
     }
 )
 KNOWN_COLLECTOR_KEYS = frozenset(
@@ -226,6 +232,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "opencode_go",
         "tokscale",
         "hermes",
+        "muse",
     }
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(

@@ -10,6 +10,7 @@
 # openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
 # openusage_sh = 45  # OpenUsage.sh terminal dashboard
 # opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
+# muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
 # tokscale = 45
 
 [collectors.caut]
@@ -37,6 +38,14 @@
 [collectors.opencode_go]
 # Same console cookie as Zen. Reads the official /go page so a lapsed plan
 # shows empty / subscription expired instead of CodexBar's local leftover %.
+# enabled = true
+
+[collectors.muse]
+# Dual-auth with automatic failover. Bearer is preferred (stable):
+#   AIUSE_MUSE_API_KEY or META_API_KEY (or: muse login / muse auth set)
+# Cookie fallback: browser session from dev.meta.ai — refresh via:
+#   aiuse credential refresh muse --from chrome --profile Default
+# The cookie is never stored in this file; team_id auto-scraped or AIUSE_MUSE_TEAM_ID.
 # enabled = true
 
 # Usually unnecessary: aiuse automatically unifies a provider when every live
