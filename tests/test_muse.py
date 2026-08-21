@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -213,3 +214,107 @@ def test_collect_muse_raises_on_unrecognizable_payload(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse())
     with pytest.raises(CollectorError):
         collect_muse(environ={"AIUSE_MUSE_API_KEY": "sk-test", "AIUSE_MUSE_API_URL": "https://api.meta.ai/v1/usage"})
+
+
+def test_collect_muse_reads_cli_auth_json(tmp_path, monkeypatch):
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "providers": {
+                    "meta": {
+                        "api_key": "LLM|from-cli",
+                        "user_email": "muse-user@example.com",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    calls: list[str] = []
+
+    class Fake404:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise requests.HTTPError("404")
+
+        def json(self):
+            return {}
+
+    class FakeModels:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"object": "list", "data": []}
+
+    def fake_get(url, timeout, headers):
+        calls.append(url)
+        assert headers["Authorization"] == "Bearer LLM|from-cli"
+        if url.endswith("/models"):
+            return FakeModels()
+        return Fake404()
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    # Live-mode (environ=None) so auth.json is consulted; point it at the fixture.
+    monkeypatch.setenv("MUSE_AUTH_PATH", str(auth_path))
+    monkeypatch.delenv("AIUSE_MUSE_API_KEY", raising=False)
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    monkeypatch.setattr("aiuse.collectors.muse.shutil.which", lambda _name: None)
+
+    accounts = collect_muse(timeout=5)
+    assert len(accounts) == 1
+    assert accounts[0].provider == "muse"
+    assert accounts[0].account == "muse-user@example.com"
+    assert accounts[0].balance_usd is None
+    assert accounts[0].billing_kind == BillingKind.PAYG_API
+    assert any("billing endpoint" in n for n in accounts[0].notes)
+    assert "LLM|from-cli" not in str(accounts[0])
+    assert any(u.endswith("/models") for u in calls)
+
+
+def test_collect_muse_soft_inventory_when_billing_paths_404(monkeypatch):
+    class Fake404:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise requests.HTTPError("404")
+
+        def json(self):
+            return {}
+
+    class FakeModels:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"object": "list", "data": []}
+
+    def fake_get(url, timeout, headers):
+        if url.endswith("/models"):
+            return FakeModels()
+        return Fake404()
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    accounts = collect_muse(environ={"META_API_KEY": "sk-test"})
+    assert len(accounts) == 1
+    assert accounts[0].balance_usd is None
+    assert "prepaid" in accounts[0].billing_kind.value or accounts[0].billing_kind == BillingKind.PAYG_API
+    assert any("credential refresh muse" in n for n in accounts[0].notes)
+
+
+def test_collect_muse_ignores_auth_json_when_environ_override(tmp_path, monkeypatch):
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(
+        json.dumps({"providers": {"meta": {"api_key": "LLM|should-not-use"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MUSE_AUTH_PATH", str(auth_path))
+    assert collect_muse(environ={}) == []

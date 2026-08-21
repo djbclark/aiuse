@@ -20,6 +20,7 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
 
 - **Provider id:** `muse` (canonical). Aliases `meta`, `muse-spark`, `muse-code`, `metamuse` → `muse` via `PROVIDER_ID_ALIASES`. Display name is `muse` (grep-able — `grep -i muse`).
 - **Without a key:** no `muse` row at all (like `openrouter` when `AIUSE_OPENROUTER_MANAGEMENT_KEY` is absent). Correctness: absent credential → `[]`, not an error.
+- **With `muse login` only:** reads `~/.config/muse/auth.json` (`providers.meta.api_key`). Meta’s Model API currently has no billing route (candidates 404); when `/models` accepts the key, `aiuse` still shows a `muse` inventory row and points at Chrome cookie refresh for a dollar balance.
 - **With a key, balance shape** (`{"data":{"total_credits":…,"total_usage":…}}` or `{"balance":…}`): one `n/a` row `balance $X.XX (pay-as-you-go)`, `billing_kind=PREPAID_BALANCE` or `PAYG_API`, `balance_usd` set.
   ```
   n/a   muse     —  —  balance $18.25 (pay-as-you-go)

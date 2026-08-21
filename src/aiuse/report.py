@@ -513,6 +513,8 @@ def _account_has_usage(account: AccountUsage) -> bool:
         or account.balance_usd is not None
         or account.credits_remaining is not None
         or account.usage_credits is not None
+        # Authenticated prepaid/PAYG with no meter yet (e.g. Muse key OK, billing API 404).
+        or account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
     )
 
 

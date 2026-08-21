@@ -3,13 +3,18 @@
 Muse Code bills pay-as-you-go through https://dev.meta.ai / https://api.meta.ai/v1 .
 There are two live transports with mutual failover:
 
-  1. Bearer (AIUSE_MUSE_API_KEY / META_API_KEY / secretspec MUSE_API_KEY) → https://api.meta.ai/v1/*
+  1. Bearer (AIUSE_MUSE_API_KEY / META_API_KEY / secretspec / ~/.config/muse/auth.json
+     from `muse login`) → https://api.meta.ai/v1/*
   2. Cookie (AIUSE_MUSE_COOKIE / secretspec MUSE_COOKIE from `aiuse credential refresh muse --from chrome`)
      → GET https://dev.meta.ai/usage (scrape LSD + fb_dtsg + team_id) → POST https://dev.meta.ai/api/graphql/
        doc_id 9128374650192834 (MuseDevBillingBalanceQuery) → billing_info {balance, credit_limit, remaining_budget}
 
 If one transport is absent or fails, the other is tried. Absent both → [] . 401/403 with a
 credential present surfaces as AccountUsage(error=…) only after both transports fail.
+
+As of 2026-08, api.meta.ai exposes /models and /status for the LLM| key but no billing
+path (all candidates 404). When the key validates and cookie balance is unavailable,
+we still emit a visible muse row so login is not silent.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -44,6 +50,8 @@ _KEY_SECRET_FALLBACK = "META_API_KEY"
 _SECRETSPEC_TIMEOUT = 5.0
 _USER_AGENT = "aiuse Muse collector"
 _URL_ENV = "AIUSE_MUSE_API_URL"
+_AUTH_PATH_ENV = "MUSE_AUTH_PATH"
+_MODELS_URL = f"{_API_BASE}/models"
 
 # Cookie transport
 _COOKIE_ENV = "AIUSE_MUSE_COOKIE"
@@ -62,31 +70,28 @@ def collect_muse(
 ) -> list[AccountUsage]:
     """Return the native Muse source via Bearer or cookie, with mutual failover."""
     env = os.environ if environ is None else environ
-    allow_secretspec = environ is None
-    key = _resolve_key(env, timeout, allow_secretspec=allow_secretspec)
-    cookie = _resolve_cookie(env, timeout, allow_secretspec=allow_secretspec)
+    allow_local = environ is None
+    key, account = _resolve_key_and_account(env, timeout, allow_local=allow_local)
+    cookie = _resolve_cookie(env, timeout, allow_secretspec=allow_local)
 
     if not key and not cookie:
         return []
 
     errors: list[str] = []
+    soft_from_key: list[AccountUsage] | None = None
     # Try Bearer first (stable, no JS scrape)
     if key:
         try:
-            accounts = _collect_via_api_key(key, env, timeout)
+            accounts = _collect_via_api_key(key, env, timeout, account=account)
             if accounts:
-                return accounts
+                # Soft inventory (key OK, no billing JSON) yields to cookie when present.
+                if cookie and _is_soft_inventory_row(accounts[0]):
+                    soft_from_key = accounts
+                else:
+                    return accounts
         except CollectorError as exc:
             msg = str(exc)
             errors.append(msg)
-            # If 404 / shape mismatch we can still try cookie
-            # 401/403 also falls through to cookie before surfacing
-            if "401" not in msg and "403" not in msg:
-                # Still try cookie as failover
-                pass
-            else:
-                # Keep error for final surfacing if cookie also fails
-                pass
             # If cookie absent, surface the Bearer error appropriately
             if not cookie:
                 if "401" in msg or "403" in msg:
@@ -95,6 +100,7 @@ def collect_muse(
                         AccountUsage(
                             source="muse",
                             provider="muse",
+                            account=account,
                             error=msg,
                             billing_kind=BillingKind.PAYG_API,
                             notes=[msg],
@@ -104,12 +110,18 @@ def collect_muse(
 
     if cookie:
         try:
-            return _collect_via_cookie(cookie, env, timeout)
+            return _collect_via_cookie(cookie, env, timeout, account=account)
         except CollectorError as exc:
             msg = str(exc)
             errors.append(msg)
-            # If we had a key error already, prefer to surface cookie error if more actionable?
-            # If key was 401 and cookie also fails, surface cookie error + hint to refresh
+            if soft_from_key is not None:
+                # Prefer visible key-authenticated inventory over a cookie scrape failure.
+                row = soft_from_key[0]
+                row.notes = [
+                    *row.notes,
+                    f"Cookie balance unavailable: {msg}",
+                ]
+                return soft_from_key
             if key:
                 # Both failed
                 raise CollectorError("; ".join(errors)) from exc
@@ -119,6 +131,7 @@ def collect_muse(
                     AccountUsage(
                         source="muse",
                         provider="muse",
+                        account=account,
                         error=msg,
                         billing_kind=BillingKind.PAYG_API,
                         notes=[msg],
@@ -126,18 +139,38 @@ def collect_muse(
                 ]
             raise
 
+    if soft_from_key is not None:
+        return soft_from_key
+
     # One transport was tried and failed with non-401 without fallback
     if errors:
         raise CollectorError(errors[-1])
     return []
 
 
-def _collect_via_api_key(key: str, env: Mapping[str, str], timeout: float) -> list[AccountUsage]:
+def _is_soft_inventory_row(account: AccountUsage) -> bool:
+    return (
+        account.balance_usd is None
+        and account.credits_remaining is None
+        and not account.windows
+        and account.usage_credits is None
+        and not account.error
+    )
+
+
+def _collect_via_api_key(
+    key: str,
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    account: str | None = None,
+) -> list[AccountUsage]:
     override_url = str(env.get(_URL_ENV) or "").strip()
     if override_url:
         data = _fetch_json(override_url, key, timeout)
-        return _account_from_payload(data, override_url)
+        return _account_from_payload(data, override_url, account=account)
     last_error: CollectorError | None = None
+    saw_only_404 = True
     for path in _CANDIDATE_PATHS:
         url = _API_BASE + path
         try:
@@ -146,20 +179,61 @@ def _collect_via_api_key(key: str, env: Mapping[str, str], timeout: float) -> li
             if "401" in str(exc) or "403" in str(exc):
                 raise
             last_error = exc
-            if "404" in str(exc) or "missing" in str(exc).lower() or "invalid json" in str(exc).lower():
-                continue
+            if "404" not in str(exc):
+                saw_only_404 = False
             continue
         try:
-            return _account_from_payload(data, url)
+            return _account_from_payload(data, url, account=account)
         except CollectorError as exc:
             last_error = exc
+            saw_only_404 = False
             continue
+    if saw_only_404 and _api_key_validates(key, timeout):
+        return [_soft_inventory_account(account=account)]
     if last_error is not None:
         raise last_error
     raise CollectorError("Muse API: no candidate endpoint returned usable JSON")
 
 
-def _collect_via_cookie(cookie: str, env: Mapping[str, str], timeout: float) -> list[AccountUsage]:
+def _api_key_validates(key: str, timeout: float) -> bool:
+    """True when /models accepts the Bearer key (billing may still be unavailable)."""
+    try:
+        response = requests.get(
+            _MODELS_URL,
+            timeout=timeout,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "User-Agent": _USER_AGENT,
+                "Accept": "application/json",
+                "x-api-version": "1.0.0",
+            },
+        )
+    except requests.RequestException:
+        return False
+    return response.status_code == 200
+
+
+def _soft_inventory_account(*, account: str | None) -> AccountUsage:
+    return AccountUsage(
+        source="muse",
+        provider="muse",
+        account=account,
+        billing_kind=BillingKind.PAYG_API,
+        notes=[
+            "Muse API key accepted (/models); Meta does not expose a billing endpoint on api.meta.ai yet.",
+            "For live balance: sign into https://dev.meta.ai in Chrome, then run "
+            "`aiuse credential refresh muse --from chrome`.",
+        ],
+    )
+
+
+def _collect_via_cookie(
+    cookie: str,
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    account: str | None = None,
+) -> list[AccountUsage]:
     # Allow explicit team_id override for headless/CI
     team_id = str(env.get(_TEAM_ENV) or "").strip()
     html: str | None = None
@@ -183,7 +257,12 @@ def _collect_via_cookie(cookie: str, env: Mapping[str, str], timeout: float) -> 
             "Muse cookie: fb_dtsg not found in dev.meta.ai HTML; sign in to dev.meta.ai in Chrome and re-run `aiuse credential refresh muse --from chrome`"
         )
     data = _post_billing_graphql(cookie, lsd or "", dtsg, team_id, timeout)
-    return _accounts_from_billing_graphql(data, _GRAPHQL_URL)
+    accounts = _accounts_from_billing_graphql(data, _GRAPHQL_URL)
+    if account:
+        for row in accounts:
+            if not row.account:
+                row.account = account
+    return accounts
 
 
 def _fetch_dev_usage_html(cookie: str, timeout: float) -> str:
@@ -412,6 +491,7 @@ def _fetch_json(url: str, key: str, timeout: float) -> object:
                 "Authorization": f"Bearer {key}",
                 "User-Agent": _USER_AGENT,
                 "Accept": "application/json",
+                "x-api-version": "1.0.0",
             },
         )
         if response.status_code in (401, 403):
@@ -433,7 +513,7 @@ def _fetch_json(url: str, key: str, timeout: float) -> object:
         raise CollectorError(f"Muse API request failed at {url}: {exc.__class__.__name__}") from exc
 
 
-def _account_from_payload(data: object, url: str) -> list[AccountUsage]:
+def _account_from_payload(data: object, url: str, *, account: str | None = None) -> list[AccountUsage]:
     if not isinstance(data, dict):
         raise CollectorError(f"Muse API response is not an object at {url}")
 
@@ -445,6 +525,7 @@ def _account_from_payload(data: object, url: str) -> list[AccountUsage]:
             AccountUsage(
                 source="muse",
                 provider="muse",
+                account=account,
                 billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
                 windows=windows,
                 notes=[
@@ -471,6 +552,7 @@ def _account_from_payload(data: object, url: str) -> list[AccountUsage]:
             AccountUsage(
                 source="muse",
                 provider="muse",
+                account=account,
                 billing_kind=BillingKind.PREPAID_BALANCE
                 if windows == [] and balance is not None
                 else BillingKind.PAYG_API,
@@ -497,6 +579,7 @@ def _account_from_payload(data: object, url: str) -> list[AccountUsage]:
             AccountUsage(
                 source="muse",
                 provider="muse",
+                account=account,
                 billing_kind=BillingKind.PAYG_API,
                 balance_usd=balance,
                 usage_credits=credits,
@@ -640,26 +723,43 @@ def _windows_from_payload(data: dict) -> list[QuotaWindow]:
     return windows
 
 
-def _resolve_key(env: Mapping[str, str], timeout: float, *, allow_secretspec: bool = True) -> str | None:
-    """Return an explicit Model API key or a SecretSpec value without exposing either."""
+def _resolve_key_and_account(
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    allow_local: bool = True,
+) -> tuple[str | None, str | None]:
+    """Return (api_key, account_email) without exposing the key.
+
+    Precedence: AIUSE_MUSE_API_KEY → META_API_KEY → SecretSpec → ~/.config/muse/auth.json
+    (from `muse login` / `muse auth set`). Local file/SecretSpec reads are skipped when
+    ``allow_local`` is False (tests that pass an explicit environ).
+    """
     explicit = str(env.get(_KEY_ENV_PRIMARY) or "").strip()
     if explicit:
-        return explicit
+        return explicit, None
     fallback = str(env.get(_KEY_ENV_FALLBACK) or "").strip()
     if fallback:
-        return fallback
-    if not allow_secretspec:
-        return None
+        return fallback, None
+    if not allow_local:
+        return None, None
+
+    from_spec = _resolve_key_via_secretspec(env, timeout)
+    if from_spec:
+        return from_spec, None
+
+    return _read_muse_cli_auth(env)
+
+
+def _resolve_key_via_secretspec(env: Mapping[str, str], timeout: float) -> str | None:
     executable = shutil.which("secretspec")
     if executable is None:
         # Also try sudo-secretspec (used by clinepass on some hosts)
         executable = shutil.which("sudo-secretspec")
         if executable is None:
             return None
-        # sudo-secretspec has different argv shape; handle below
         return _resolve_via_sudo_secretspec(executable, timeout)
     manifest = str(resolve_manifest_path(env))
-    # Try primary secret name, then fallback
     for secret_name in (_KEY_SECRET_PRIMARY, _KEY_SECRET_FALLBACK):
         try:
             result = subprocess.run(
@@ -686,6 +786,37 @@ def _resolve_key(env: Mapping[str, str], timeout: float, *, allow_secretspec: bo
             if key:
                 return key
     return None
+
+
+def _muse_cli_auth_path(env: Mapping[str, str]) -> Path:
+    override = str(env.get(_AUTH_PATH_ENV) or "").strip()
+    if override:
+        return Path(override).expanduser()
+    xdg = str(env.get("XDG_CONFIG_HOME") or "").strip()
+    if xdg:
+        return Path(xdg).expanduser() / "muse" / "auth.json"
+    return Path.home() / ".config" / "muse" / "auth.json"
+
+
+def _read_muse_cli_auth(env: Mapping[str, str]) -> tuple[str | None, str | None]:
+    """Load providers.meta.api_key (+ email) from the Muse CLI auth file."""
+    path = _muse_cli_auth_path(env)
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return None, None
+    meta = providers.get("meta")
+    if not isinstance(meta, dict):
+        return None, None
+    key = str(meta.get("api_key") or "").strip()
+    email = str(meta.get("user_email") or "").strip() or None
+    return (key or None), email
 
 
 def _resolve_via_sudo_secretspec(executable: str, timeout: float) -> str | None:
