@@ -181,8 +181,10 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     assert "~lockout" not in go_line
     zen_line = next(line for line in lines if "oc-zen" in line)
     assert zen_line.startswith("empty")
-    assert "balance $-0.04" in zen_line
-    assert "no expiry" in zen_line
+    assert "$-0.04" in zen_line
+    assert "counts down" in zen_line
+    assert "balance" not in zen_line
+    assert "no expiry" not in zen_line
 
 
 def test_ladder_empty_conserve_skips_pace_and_lockout_forecast():
@@ -1044,8 +1046,10 @@ def test_deepseek_prepaid_has_no_use_urgency():
     text = render_priority_ladder([empty, slow], snapshot=snap, color=False)
     deep_line = next(line for line in text.splitlines() if "eepseek" in line)
     assert deep_line.startswith("n/a")
-    assert "no expiry" in deep_line
-    assert "balance $4.99" in deep_line
+    assert "$4.99" in deep_line
+    assert "counts down" in deep_line
+    assert "balance" not in deep_line
+    assert "no expiry" not in deep_line
     assert "100%" not in deep_line
     assert "use before" not in deep_line.casefold()
     # Lane order: empty → n/a → slow → mid
@@ -1058,7 +1062,7 @@ def test_deepseek_prepaid_has_no_use_urgency():
         urgency=Urgency.INFO,
         provider="openrouter",
         account="default",
-        window_label="balance $18.90",
+        window_label="$18.90",
         remaining_percent=0.0,
         days_until_reset=None,
         plan=None,
@@ -1070,7 +1074,8 @@ def test_deepseek_prepaid_has_no_use_urgency():
     assert alert_use_urgency(large) == 0.0
     prepaid_text = render_priority_ladder([large], color=False)
     assert prepaid_text.startswith("n/a")
-    assert "no expiry" in prepaid_text
+    assert "$18.90" in prepaid_text
+    assert "no expiry" not in prepaid_text
     assert "use before" not in prepaid_text.casefold()
     assert "100%" not in prepaid_text
 
@@ -1357,7 +1362,7 @@ def test_clock_matrix_splits_independent_pools_into_their_own_rows():
 
 def test_clock_matrix_keeps_non_window_accounts_as_notes():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
-    assert "balance $4.30 remaining (counts down · no expiry)" in text
+    assert "$4.30 (counts down)" in text
     assert "session expired" in text
 
 

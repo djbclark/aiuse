@@ -23,7 +23,7 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
 - **With `muse login` only:** reads `~/.config/muse/auth.json` (`providers.meta.api_key`). Meta’s Model API currently has no billing route (candidates 404); when `/models` accepts the key, `aiuse` still shows a `muse` inventory row and points at Chrome cookie refresh for a dollar balance.
 - **With a key, balance shape** (`{"data":{"total_credits":…,"total_usage":…}}` or `{"balance":…}`): one `n/a` row `balance $X.XX (pay-as-you-go)`, `billing_kind=PREPAID_BALANCE` or `PAYG_API`, `balance_usd` set.
   ```
-  n/a   muse     —  —  balance $18.25 (pay-as-you-go)
+  n/a   muse     —  —  spent $18.25 (counts up)
   ```
 - **With a key, spend shape** (`{"spend":…,"limit":…}` / `{"remaining":…}`): `PAYG_API` with `usage_credits` (`used`/`limit`/`remaining` + `balance_usd = remaining`).
 - **With a key, windows shape** (`{"limits":[{"type":"five_hour","percentUsed":12,"resetsAt":"…"}]}` or `{"windows":…}`): real burn windows `Muse 5-hour` / `Muse weekly` / `Muse monthly` / `Muse daily` with `SUBSCRIPTION_WINDOW`. Only present if Meta ships subscription credits.
@@ -35,9 +35,9 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
 **File:** `src/aiuse/collectors/muse.py` — dual-auth native with mutual failover (Bearer preferred, cookie fallback).
 
 - **Bearer path (stable):** `AIUSE_MUSE_API_KEY` → `META_API_KEY` → `secretspec get MUSE_API_KEY/META_API_KEY`; probes `https://api.meta.ai/v1` candidates ` /usage → /billing/usage → /me/usage → /credits → /billing` (first 200 wins). `AIUSE_MUSE_API_URL` override pins the path.
-- **Cookie path (browser):** `AIUSE_MUSE_COOKIE` or `secretspec get MUSE_COOKIE` (from `aiuse credential refresh muse --from chrome`). Needs Chrome `llm_sess` on `.dev.meta.ai`. Fetches usage/home HTML for `LSD`/`fb_dtsg`, then GraphQL `LLMDCBillingBannerContainerQuery` + `LLMDCHomeContentUsageSummaryQuery`. **Muse’s dashboard “balance” is month-to-date PAYG spend (counts up from $0)** — shown as `spent $X.XX (counts up · PAYG)`, not prepaid remaining. DeepSeek / oc-zen use `balance $X.XX remaining (counts down · no expiry)`. Set `AIUSE_MUSE_TEAM_ID` from the usage URL when needed.
+- **Cookie path (browser):** `AIUSE_MUSE_COOKIE` or `secretspec get MUSE_COOKIE` (from `aiuse credential refresh muse --from chrome`). Needs Chrome `llm_sess` on `.dev.meta.ai`. Fetches usage/home HTML for `LSD`/`fb_dtsg`, then GraphQL `LLMDCBillingBannerContainerQuery` + `LLMDCHomeContentUsageSummaryQuery`. **Muse’s dashboard “balance” is month-to-date spend (counts up from $0)** — shown as `spent $X.XX (counts up)`. DeepSeek / oc-zen show `$X.XX (counts down)`. Set `AIUSE_MUSE_TEAM_ID` from the usage URL when needed.
 - **Failover:** Bearer tried first; on 401/403/404/timeout it falls through to cookie, and vice-versa. Absent both → `[]`.
-- **Display:** `PREPAID_BALANCE` / `PAYG_API` → `n/a` band like `deepseek`/`openrouter`/`opencode-zen`: `balance $X.XX (no expiry)` with `balance_usd` (for `credit_limit/remaining_budget` also `usage_credits`).
+- **Display:** `PREPAID_BALANCE` / `PAYG_API` → `n/a` band like `deepseek`/`openrouter`/`opencode-zen`: `$X.XX (counts down)` or Muse `spent $X.XX (counts up)`.
 - **Timeout:** `timeouts.muse` (or `default`/`force`), same as every other collector (`runner.py` + `config.py` `KNOWN_*` sets).
 - **Failure contract:** timeout / 5xx / non-JSON → `CollectorError` (→ `snapshot.collector_errors`); 401/403 after both transports → `AccountUsage(error=…)`; no credential → `[]`.
 

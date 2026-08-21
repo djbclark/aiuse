@@ -141,7 +141,8 @@ def test_prepaid_is_info_only():
     assert alerts[0].urgency == Urgency.INFO
     assert alerts[0].kind == "prepaid"
     assert alerts[0].score == 0.0
-    assert "balance $18.90" in alerts[0].window_label
+    assert "$18.90" in alerts[0].window_label
+    assert "balance" not in alerts[0].window_label
 
 
 def test_deepseek_prepaid_under_threshold_is_not_alerted():

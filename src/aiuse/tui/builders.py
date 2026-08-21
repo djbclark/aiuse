@@ -216,7 +216,7 @@ def alert_headline(alert: UseOrLoseAlert) -> str:
     icon = URGENCY_ICON.get(alert.urgency, "   ").strip() or "·"
     who = alert.account or "default"
     if alert.kind == "prepaid":
-        return f"{icon} {provider_display_name(alert.provider)} · {who} · {alert.window_label} (no expiry)"
+        return f"{icon} {provider_display_name(alert.provider)} · {who} · {alert.window_label}"
     when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     verb = "pace" if alert.kind == "conserve" else "use"
     return (

@@ -450,20 +450,20 @@ def _account_is_spend_up_payg(account: AccountUsage) -> bool:
 
 
 def _api_inventory_note(account: AccountUsage) -> str:
-    """Ladder/matrix note for prepaid remaining vs spend-up PAYG."""
+    """Ladder/matrix note for prepaid count-down vs spend-up meters."""
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits
         assert uc is not None and uc.used is not None
         used = float(uc.used)
         if uc.limit is not None:
             limit = float(uc.limit)
-            return f"spent ${used:.2f} of ${limit:.2f} (counts up · PAYG)"
-        return f"spent ${used:.2f} (counts up · PAYG)"
+            return f"spent ${used:.2f} of ${limit:.2f} (counts up)"
+        return f"spent ${used:.2f} (counts up)"
     if account.balance_usd is not None:
-        return f"balance ${account.balance_usd:.2f} remaining (counts down · no expiry)"
+        return f"${account.balance_usd:.2f} (counts down)"
     if account.credits_remaining is not None:
-        return f"credits {account.credits_remaining:g} remaining (counts down · no expiry)"
-    return "prepaid API (no expiry)"
+        return f"{account.credits_remaining:g} credits (counts down)"
+    return "API"
 
 
 def _account_prepaid_is_depleted(account: AccountUsage) -> bool:
@@ -1193,7 +1193,7 @@ def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
         scope=_POOL_SCOPE_LABELS.get(_pool_id_for_label(alert.window_label), "—"),
     )
     if alert.kind == "prepaid":
-        row.note = f"{alert.window_label} (no expiry)"
+        row.note = f"{alert.window_label}"
         return row
 
     synthetic = QuotaWindow(
@@ -1444,7 +1444,7 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     name = s.bold(provider_display_name(alert.provider))
     if alert.kind == "prepaid":
         # Inventory only — no "use before reset" language for non-expiring tokens.
-        body = f"{name} · {who} · {alert.window_label} (no expiry)"
+        body = f"{name} · {who} · {alert.window_label}"
         return f"{_priority_tag(s, band)} {body}"
     # Chronic-underuse alerts summarize earlier cycles rather than one live
     # account/window.  A fresh Claude 5-hour window can legitimately have no
@@ -1506,9 +1506,9 @@ def _priority_account_line(
         status = "resets" if band == _BAND_EMPTY else "ok"
         body = f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · {status} {when}"
     elif account.balance_usd is not None:
-        body = f"{name} · {who} · balance ${account.balance_usd:.2f}"
+        body = f"{name} · {who} · ${account.balance_usd:.2f} (counts down)"
     elif account.credits_remaining is not None:
-        body = f"{name} · {who} · credits {account.credits_remaining:g}"
+        body = f"{name} · {who} · {account.credits_remaining:g} credits (counts down)"
     else:
         body = f"{name} · {who} · on pace"
     return f"{_priority_tag(s, band)} {body}"
@@ -2112,15 +2112,15 @@ def _render_account(
     if acc.usage_credits is not None:
         if _account_is_spend_up_payg(acc):
             used = float(acc.usage_credits.used or 0.0)
-            lines.append(f"  spent (counts up · PAYG): {s.green(f'${used:.2f}')}")
+            lines.append(f"  spent (counts up): {s.green(f'${used:.2f}')}")
             if acc.usage_credits.limit is not None or acc.usage_credits.remaining is not None:
                 lines.extend(_usage_credits_lines(acc.usage_credits, s))
         else:
             lines.extend(_usage_credits_lines(acc.usage_credits, s))
     elif acc.balance_usd is not None:
-        lines.append(f"  balance remaining (counts down): {s.green(f'${acc.balance_usd:.2f}')}")
+        lines.append(f"  (counts down): {s.green(f'${acc.balance_usd:.2f}')}")
     if acc.credits_remaining is not None and acc.usage_credits is None and acc.balance_usd is None:
-        lines.append(f"  credits remaining: {acc.credits_remaining}")
+        lines.append(f"  credits (counts down): {acc.credits_remaining}")
 
     for w in acc.windows:
         rem = w.remaining()

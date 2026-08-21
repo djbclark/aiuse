@@ -42,8 +42,8 @@ pools most worth using right now sort to the bottom.
         SERVICE    ACCT  SCOPE         5H       WEEK       MONTH      $ UNUSED
 - error oc-zen     gmail —          No available fetch strategy for opencode-zen.
 - empty oc-go      gmail —                  ->  100%/4d12h         <-        —
-  n/a   deepseek   gmail —          balance $4.15 (no expiry)
-  n/a   openrouter gmail —          balance $18.55 (no expiry)
+  n/a   deepseek   gmail —          $4.15 (counts down)
+  n/a   openrouter gmail —          $18.55 (counts down)
   slow  agy        gmail claude/gpt         ->   78%/1d5h          <-        —
   mid   claude     gmail —            12%/3h7m   77%/3d2h          <-    $1.59
   mid   cursor     gmail —                  ->          ->   71%/3d7h    $5.80

@@ -581,7 +581,8 @@ class TestRenderChatReport:
         output = render_chat_report(snap, [])
         assert "PREPAID" in output
         assert "$4.03" in output
-        assert "no expiry" in output
+        assert "counts down" in output
+        assert "no expiry" not in output
         assert EMOJI_PREPAID in output
 
     def test_negative_prepaid_warning(self):
@@ -593,10 +594,10 @@ class TestRenderChatReport:
         )
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
-        assert "no expiry" in output
-        assert "(Negative balance reported)" in output
-        assert "-$0.04" in output
-        assert "Balance: -$0.04" in output
+        assert "counts down" in output
+        assert "no expiry" not in output
+        assert "negative reported" in output
+        assert "$-0.04" in output
 
     def test_zero_prepaid_balance(self):
         acc = _account(

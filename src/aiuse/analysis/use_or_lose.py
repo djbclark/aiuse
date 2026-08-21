@@ -275,7 +275,7 @@ def analyze_use_or_lose(
                         urgency=Urgency.INFO,
                         provider=account.provider,
                         account=account.account,
-                        window_label=f"balance ${account.balance_usd:.2f}",
+                        window_label=f"${account.balance_usd:.2f}",
                         remaining_percent=0.0,
                         days_until_reset=None,
                         plan=account.plan,
