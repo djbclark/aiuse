@@ -361,6 +361,9 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         balance_usd = _f(openrouter.get("balance"))
         total = _f(openrouter.get("totalCredits"))
         used = _f(openrouter.get("totalUsage"))
+        # Some CodexBar builds omit `balance` but still ship funded/spent totals.
+        if balance_usd is None and total is not None and used is not None:
+            balance_usd = max(0.0, total - used)
         if total is not None and used is not None:
             notes.append(f"OpenRouter prepaid credits: ${total:.2f} funded, ${used:.2f} spent.")
 
@@ -406,7 +409,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     for window in windows:
         description = (window.reset_description or "") + " " + str(window.raw.get("resetDescription") or "")
         if "$" in description and balance_usd is None:
-            match = re.search(r"\$([0-9]+(?:\.[0-9]+)?)", description)
+            match = re.search(r"\$(-?[0-9]+(?:\.[0-9]+)?)", description)
             if match and re.match(r"\s*/", description[match.end() :]):
                 match = None
             if match:
@@ -415,6 +418,18 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                 # because a "$" figure appears in a description string.
                 if billing == BillingKind.UNKNOWN and not any(window.resets_at is not None for window in windows):
                     billing = BillingKind.PREPAID_BALANCE
+
+    # OpenRouter often puts the wallet only in loginMethod (`Balance: $2.51`) when
+    # `openRouterUsage` is absent — same display path DeepSeek gets from
+    # reset_description. Without this, the ladder falls back to "prepaid API".
+    if balance_usd is None and isinstance(plan, str) and "$" in plan:
+        match = re.search(r"\$(-?[0-9]+(?:\.[0-9]+)?)", plan)
+        if match and re.match(r"\s*/", plan[match.end() :]):
+            match = None
+        if match:
+            balance_usd = float(match.group(1))
+            if billing == BillingKind.UNKNOWN and not any(window.resets_at is not None for window in windows):
+                billing = BillingKind.PREPAID_BALANCE
 
     return AccountUsage(
         source="codexbar",

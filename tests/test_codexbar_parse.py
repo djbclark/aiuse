@@ -141,6 +141,37 @@ def test_parse_openrouter_prepaid():
     assert acc.balance_usd > 18
 
 
+def test_parse_openrouter_balance_from_login_method_alone():
+    """CodexBar API often ships only `Balance: $N` in loginMethod — no openRouterUsage."""
+    row = {
+        "provider": "openrouter",
+        "source": "api",
+        "usage": {
+            "loginMethod": "Balance: $2.51",
+            "primary": {"usedPercent": 0},
+        },
+    }
+    acc = _from_row(row)
+    assert acc.billing_kind == BillingKind.PREPAID_BALANCE
+    assert acc.balance_usd == 2.51
+    assert acc.plan == "Balance: $2.51"
+
+
+def test_parse_openrouter_balance_from_credits_minus_usage():
+    row = {
+        "provider": "openrouter",
+        "source": "api",
+        "usage": {
+            "openRouterUsage": {
+                "totalCredits": 20,
+                "totalUsage": 1.5,
+            },
+        },
+    }
+    acc = _from_row(row)
+    assert acc.balance_usd == 18.5
+
+
 def test_parse_named_extra_rate_windows_without_generic_duplicates():
     row = {
         "provider": "antigravity",
