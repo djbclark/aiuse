@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "aiuse"
-version = "3.0.32"
+version = "3.0.33"
 source = { editable = "." }
 dependencies = [{ name = "pyyaml" }, { name = "requests" }, { name = "rich" }]
 
