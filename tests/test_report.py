@@ -795,7 +795,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["SERVICE", "ACCT", "5H", "WEEK", "MONTH", "$", "UNUSED"]
+    assert lines[0].split() == ["##", "SERVICE", "ACCT", "5H", "WEEK", "MONTH", "$", "UNUSED"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -848,6 +848,248 @@ def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
     assert text.index("Zzz") > text.index("Aaa")
     assert text.strip().splitlines()[-1].startswith("use")
     assert "Zzz" in text.strip().splitlines()[-1]
+
+
+def test_priority_ladder_empty_queue_puts_soonest_known_refill_last():
+    def empty(provider: str, days: float | None) -> UseOrLoseAlert:
+        return UseOrLoseAlert(
+            urgency=Urgency.HIGH,
+            provider=provider,
+            account=None,
+            window_label="quota",
+            remaining_percent=0.0,
+            days_until_reset=days,
+            plan=None,
+            message="empty",
+            source="test",
+            score=50.0,
+            kind="conserve",
+        )
+
+    text = render_priority_ladder(
+        [empty("empty_soon", 1.0), empty("empty_unknown", None), empty("empty_far", 7.0)],
+        color=False,
+        width=200,
+    )
+    assert text.index("Empty_Unknown") < text.index("Empty_Far") < text.index("Empty_Soon")
+
+
+def test_priority_ladder_error_queue_is_deterministic_without_fake_urgency():
+    now = utcnow()
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(provider="z_error", source="test", error="failed"),
+            AccountUsage(provider="a_error", source="test", error="failed"),
+        ],
+    )
+    text = render_priority_ladder([], snapshot=snapshot, color=False, width=200)
+    assert text.index("A_Error") < text.index("Z_Error")
+
+
+def test_priority_ladder_na_queue_puts_larger_inventory_last():
+    now = utcnow()
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="inventory_large",
+                source="test",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=20.0,
+            ),
+            AccountUsage(
+                provider="inventory_small",
+                source="test",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=2.0,
+            ),
+        ],
+    )
+    text = render_priority_ladder([], snapshot=snapshot, color=False, width=200)
+    assert text.index("Inventory_Small") < text.index("Inventory_Large")
+
+
+def test_priority_ladder_slow_queue_puts_safest_to_resume_last():
+    now = utcnow()
+
+    def slow(provider: str, score: float, exhaust_days: float) -> UseOrLoseAlert:
+        return UseOrLoseAlert(
+            urgency=Urgency.HIGH,
+            provider=provider,
+            account=None,
+            window_label="weekly",
+            remaining_percent=80.0,
+            days_until_reset=7.0,
+            plan=None,
+            message="conserve",
+            source="test",
+            score=score,
+            kind="conserve",
+            pace=PaceProfile(
+                elapsed_fraction=0.2,
+                used_fraction=0.2,
+                pace_ratio=2.0,
+                projected_used_fraction=1.0,
+                projected_waste_fraction=0.0,
+                projected_waste_usd=0.0,
+                projected_exhaust_at=now + timedelta(days=exhaust_days),
+            ),
+        )
+
+    severe = slow("slow_severe", 90.0, 1.0)
+    mild = slow("slow_mild", 50.0, 6.0)
+    text = render_priority_ladder([mild, severe], color=False, width=200)
+    assert text.index("Slow_Severe") < text.index("Slow_Mild")
+
+
+def test_priority_ladder_mid_queue_uses_remaining_capacity_and_deadline():
+    now = utcnow()
+
+    def account(provider: str, remaining: float, days: float) -> AccountUsage:
+        return AccountUsage(
+            provider=provider,
+            source="test",
+            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            windows=[
+                QuotaWindow(
+                    label="weekly",
+                    remaining_percent=remaining,
+                    resets_at=now + timedelta(days=days),
+                    window_minutes=10080,
+                )
+            ],
+        )
+
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[account("mid_soon", 90.0, 2.0), account("mid_far", 90.0, 12.0)],
+    )
+    text = render_priority_ladder([], snapshot=snapshot, color=False, width=200)
+    assert text.index("Mid_Far") < text.index("Mid_Soon")
+
+
+def test_priority_ladder_mid_queue_uses_weekly_signal_without_nested_5h_noise():
+    now = utcnow()
+
+    def window(label: str, remaining: float, days: float, minutes: int) -> QuotaWindow:
+        return QuotaWindow(
+            label=label,
+            remaining_percent=remaining,
+            resets_at=now + timedelta(days=days),
+            window_minutes=minutes,
+        )
+
+    def account(provider: str, windows: list[QuotaWindow]) -> AccountUsage:
+        return AccountUsage(
+            provider=provider,
+            source="test",
+            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            windows=windows,
+        )
+
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[
+            account(
+                "mid_short_noise",
+                [
+                    window("5-hour", 100.0, 0.2, 300),
+                    window("monthly", 50.0, 20.0, 43200),
+                ],
+            ),
+            account("mid_monthly_only", [window("monthly", 80.0, 20.0, 43200)]),
+            account(
+                "mid_weekly_signal",
+                [
+                    window("5-hour", 100.0, 0.2, 300),
+                    window("weekly", 80.0, 2.0, 10080),
+                    window("monthly", 50.0, 20.0, 43200),
+                ],
+            ),
+        ],
+    )
+    text = render_priority_ladder([], snapshot=snapshot, color=False, width=200)
+    assert text.index("Mid_Short_Noise") < text.index("Mid_Monthly_Only") < text.index("Mid_Weekly_Signal")
+
+
+def test_clock_matrix_action_score_covers_all_bands_and_uses_color():
+    now = utcnow()
+
+    def alert(
+        provider: str,
+        *,
+        kind: str,
+        urgency: Urgency,
+        score: float,
+        remaining: float,
+        days: float | None,
+        pace: PaceProfile | None = None,
+    ) -> UseOrLoseAlert:
+        return UseOrLoseAlert(
+            urgency=urgency,
+            provider=provider,
+            account=None,
+            window_label="weekly",
+            remaining_percent=remaining,
+            days_until_reset=days,
+            plan=None,
+            message=kind,
+            source="test",
+            score=score,
+            kind=kind,
+            pace=pace,
+        )
+
+    alerts = [
+        alert("empty_score", kind="conserve", urgency=Urgency.HIGH, score=100.0, remaining=0.0, days=2.0),
+        alert(
+            "slow_score",
+            kind="conserve",
+            urgency=Urgency.HIGH,
+            score=90.0,
+            remaining=80.0,
+            days=7.0,
+            pace=PaceProfile(
+                elapsed_fraction=0.2,
+                used_fraction=0.2,
+                pace_ratio=2.0,
+                projected_used_fraction=1.0,
+                projected_waste_fraction=0.0,
+                projected_waste_usd=0.0,
+                projected_exhaust_at=now + timedelta(days=1.0),
+            ),
+        ),
+        alert("mid_score", kind="burn", urgency=Urgency.LOW, score=50.0, remaining=60.0, days=12.0),
+        alert("use_score", kind="burn", urgency=Urgency.HIGH, score=100.0, remaining=100.0, days=1.0),
+    ]
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(provider="error_score", source="test", error="failed"),
+            AccountUsage(
+                provider="na_score",
+                source="test",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=5.0,
+            ),
+        ],
+    )
+
+    plain = render_clock_matrix(alerts, snapshot=snapshot, color=False, width=200)
+    assert plain.splitlines()[0].split()[0] == "##"
+    scores = {
+        parts[0]: parts[1] for line in plain.splitlines() if line[:5].strip() in _BAND_TAGS and (parts := line.split())
+    }
+    assert scores["error"] == "??"
+    assert scores["empty"] == "0"
+    assert scores["n/a"] == "--"
+    assert 1 <= int(scores["slow"]) <= 32
+    assert 33 <= int(scores["mid"]) <= 65
+    assert scores["use"] == "99"
+
+    colored = render_clock_matrix(alerts, snapshot=snapshot, color=True, width=200)
+    assert "\033[32m\033[1m99" in colored
 
 
 def test_priority_ladder_includes_on_pace_providers():
@@ -1135,7 +1377,7 @@ def test_brief_report_omits_usage_and_tips():
     assert "## Cross-checks" not in text
     assert "## Tips" not in text
     lines = text.splitlines()
-    assert lines[0].split()[0] == "SERVICE"
+    assert lines[0].split()[0] == "##"
     assert lines[1].startswith("mid")
     assert "codex" in text
     # Percentages are consumption, not headroom: 90% left prints as 10%.
@@ -1337,11 +1579,11 @@ def _matrix_snapshot():
 
 def test_clock_matrix_puts_each_window_under_its_own_clock():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
-    rows = {line.split()[1]: line for line in text.splitlines() if line[:5].strip() in _BAND_TAGS}
+    rows = {line.split()[2]: line for line in text.splitlines() if line[:5].strip() in _BAND_TAGS}
 
     # Claude reports both clocks; the monthly cell is empty, not fabricated.
     claude = rows["claude"].split()
-    assert claude[4:7] == ["75%/4h", "3%/7d", "<-"]
+    assert claude[5:8] == ["75%/4h", "3%/7d", "<-"]
 
 
 def test_clock_matrix_shows_used_not_remaining():
@@ -1356,7 +1598,7 @@ def test_clock_matrix_splits_independent_pools_into_their_own_rows():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
     agy = [line for line in text.splitlines() if " agy " in line]
     assert len(agy) == 2
-    scopes = sorted(line.split()[3] for line in agy)
+    scopes = sorted(line.split()[4] for line in agy)
     assert scopes == ["claude/gpt", "gemini"]
 
 
@@ -1610,7 +1852,7 @@ def test_clock_matrix_compacts_deadline_before_dropping_identity():
         ],
     )
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    mid = render_clock_matrix([], snapshot=snap, color=False, width=40)
+    mid = render_clock_matrix([], snapshot=snap, color=False, width=43)
     assert "10%/3h43m" in wide
     assert "10%/3h" in mid
     assert "3h43m" not in mid

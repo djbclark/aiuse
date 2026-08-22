@@ -15,15 +15,22 @@ Default `aiuse` prints **one row per account/pool** and **one column per reset
 clock**, so a column reads top to bottom as a like-for-like comparison:
 
 ```text
-      SERVICE    ACCT     SCOPE           5H       WEEK      MONTH $ UNUSED
-error oc-go      —        —            no usage data
-empty codex      gmail    —                —   100%/5d         —    $0.00
-slow  agy        gmail    gemini      0%/2h27m   23%/22h        —    $5.31
-mid   cursor     gmail    other models     —        —     0%/19d   $20.00
-use   claude     mit      —             25%/now  60%/2d14h      —    $2.76
+      ## SERVICE    ACCT     SCOPE           5H       WEEK      MONTH $ UNUSED
+error ?? oc-go      —        —            no usage data
+empty  0 codex      gmail    —                —   100%/5d         —    $0.00
+slow  18 agy        gmail    gemini      0%/2h27m   23%/22h        —    $5.31
+mid   54 cursor     gmail    other models     —        —     0%/19d   $20.00
+use   92 claude     mit      —             25%/now  60%/2d14h      —    $2.76
   2d14h = until this clock resets · bold = largest unit
   dim % = clock inferred, not reported · + = >1 window on that clock, showing most-used
 ```
+
+`##` is a colored **0–99 action score** aligned with the row order: `0` means
+empty and `99` means use as soon as possible. `slow` occupies 1–32, `mid`
+33–65, and `use` 66–99. An error prints `??` because its urgency is unknown;
+non-expiring `n/a` inventory prints `--` because it has no use-or-lose score.
+Those markers avoid falsely calling unavailable data or rolling API credit
+empty.
 
 The clocks are `CLOCK_COLUMNS` — `5H`, `WEEK`, `MONTH`. An **em-dash** means the
 service has no window on that clock, which is itself the answer to "why does
@@ -64,10 +71,26 @@ The leading tag column is unchanged from the ladder (`_BAND_TAG`):
 5. **mid** (cyan) — on pace / advisory / no alert
 6. **use** (green) — important to burn soon
 
-**error / empty / n/a** are fixed lanes near the top; **slow / mid / use** share
-a continuous use-urgency gradient within their lanes (`alert_priority_band` for
-the lane, `alert_use_urgency` within it). Read **bottom → top** to pick what to
-use next.
+The bands are fixed in that order and each is also a deliberate queue. Read
+**bottom → top** within a band:
+
+- **error** has no trustworthy usage signal, so ties stay deterministic by
+  provider/account rather than inventing urgency.
+- **empty** puts a known sooner refill lower; unknown/lapsed capacity stays
+  higher.
+- **n/a** stays explicitly non-urgent, but larger comparable count-down
+  inventory sits lower than smaller inventory; spend-up PAYG remains neutral.
+- **slow** puts the most severe projected early lockout higher and the pool
+  closest to safe use lower.
+- **mid** is a soft recommendation queue: analyzer scores win when present;
+  otherwise remaining capacity plus reset proximity rank healthy pools.
+- **use** mirrors the canonical burn recommendation order (score, remaining
+  capacity, then sooner reset), so the bottom row agrees with what is most
+  worth using next.
+
+These are category-specific scales, not false comparisons between unlike
+states. The matrix uses the same queue keys as the retained priority-ladder
+renderer.
 
 Collection time, capacity blurb, and `Detail: ai --full` go to **stderr**
 (`render_stderr_meta`, suppressed with `-q`), so stdout stays pipeable.

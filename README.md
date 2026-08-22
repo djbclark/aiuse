@@ -39,21 +39,21 @@ pools most worth using right now sort to the bottom.
 <!-- readme-demo:start -->
 
 ```diff
-        SERVICE    ACCT  SCOPE         5H       WEEK       MONTH      $ UNUSED
-- error oc-zen     gmail —          No available fetch strategy for opencode-zen.
-- empty oc-go      gmail —                  ->  100%/4d12h         <-        —
-  n/a   deepseek   gmail —          $4.15 (counts down)
-  n/a   openrouter gmail —          $18.55 (counts down)
-  slow  agy        gmail claude/gpt         ->   78%/1d5h          <-        —
-  mid   claude     gmail —            12%/3h7m   77%/3d2h          <-    $1.59
-  mid   cursor     gmail —                  ->          ->   71%/3d7h    $5.80
-  mid   codex      gmail —                  ->   54%/2d7h          <-    $3.17
-  mid   grok       gmail —                  ->    6%/6d14h         <-        —
-  mid   agy        gmail gemini        4%/4h5m   16%/4d            <-    $5.80
-+ use   copilot    —     —                  ->   58%/~1d           <-        —
-             2d14h = until this clock resets · bold = largest unit
-                           Note: 100% means 100% Used
-               AI: Use `aiuse --json` for machine-readable output
+        ## SERVICE    ACCT  SCOPE         5H       WEEK       MONTH      $ UNUSED
+- error ?? oc-zen     gmail —          No available fetch strategy for opencode-zen.
+- empty  0 oc-go      gmail —                  ->  100%/4d12h         <-        —
+  n/a   -- deepseek   gmail —          $4.15 (counts down)
+  n/a   -- openrouter gmail —          $18.55 (counts down)
+  slow  30 agy        gmail claude/gpt         ->   78%/1d5h          <-        —
+  mid   46 claude     gmail —            12%/3h7m   77%/3d2h          <-    $1.59
+  mid   47 cursor     gmail —                  ->          ->   71%/3d7h    $5.80
+  mid   51 codex      gmail —                  ->   54%/2d7h          <-    $3.17
+  mid   58 agy        gmail gemini        4%/4h5m   16%/4d            <-    $5.80
+  mid   58 grok       gmail —                  ->    6%/6d14h         <-        —
++ use   95 copilot    —     —                  ->   58%/~1d           <-        —
+               2d14h = until this clock resets · bold = largest unit
+                            Note: 100% means 100% Used
+                AI: Use `aiuse --json` for machine-readable output
 ```
 
 <!-- readme-demo:end -->
@@ -61,6 +61,9 @@ pools most worth using right now sort to the bottom.
 Every row is measured on the same three clocks, so a column reads top to
 bottom. An em-dash means that service has no window on that clock at all.
 **Percentages are consumption**: `0%` is untouched, `100%` is exhausted.
+The colored `##` score is the action queue from `0` (empty) to `99` (use as
+soon as possible). `??` means usage could not be fetched; `--` means rolling
+prepaid/PAYG inventory has no use-or-lose urgency.
 
 Green (`use`) is capacity to burn now before it resets; red is capacity
 already lost (`empty`, including a zero/negative prepaid balance) or a source

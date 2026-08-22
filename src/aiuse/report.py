@@ -83,6 +83,7 @@ class _MatrixRow:
 
     sort_key: tuple
     band: int
+    queue_score: int | None
     service: str
     account: str
     account_full: str | None = None
@@ -350,20 +351,15 @@ def render_report(
     return "\n".join(lines)
 
 
-# Ladder display tags. error/empty/n/a are fixed lanes; slow/mid/use share a
-# continuous use-urgency continuum within the active lane.
+# Ladder display tags.  The numeric order is the visual order; each band has
+# its own queue semantics so comparisons never pretend that an error, prepaid
+# wallet, conserve warning, and burn recommendation share one numeric scale.
 _BAND_ERROR = 0  # could not fetch usage
 _BAND_EMPTY = 1  # totally depleted
 _BAND_NA = 2  # non-expiring prepaid / payg — no use-or-lose urgency
 _BAND_CONSERVE = 3  # pace yourself
 _BAND_MID = 4  # on pace / advisory / low urgency
 _BAND_USE = 5  # important to use soon
-
-# Sort lanes (primary key): error → empty → n/a → active continuum
-_LANE_ERROR = 0
-_LANE_EMPTY = 1
-_LANE_NA = 2
-_LANE_ACTIVE = 3
 
 _BAND_TAG = {
     _BAND_ERROR: ("error", "red"),
@@ -376,7 +372,7 @@ _BAND_TAG = {
 
 
 def alert_priority_band(alert: UseOrLoseAlert) -> int:
-    """Display tag; sort uses band lane + ``alert_use_urgency`` within the lane."""
+    """Return the display band used as the primary queue key."""
     rem = alert.remaining_percent
     # Prepaid API balances never expire — inventory only, never empty/use tags.
     if alert.kind == "prepaid":
@@ -404,33 +400,72 @@ def alert_priority_band(alert: UseOrLoseAlert) -> int:
 
 
 def alert_use_urgency(alert: UseOrLoseAlert) -> float:
-    """Higher = more urgent to use *now* (appears lower on the ladder).
+    """Primary within-band priority; higher appears lower in the queue.
 
-    Continuum from “most empty for the longest” (low) to “burn this soon” (high).
-    Display tags stay empty/n/a/slow/mid/use; error/empty/n/a sort by lane first.
+    Kept as a scalar public helper for callers/tests.  Rendering uses the full
+    :func:`_alert_queue_priority` tuple so ties preserve the analyzer's exact
+    recommendation order.
     """
+    return _alert_queue_priority(alert)[0]
+
+
+def _known_reset_priority(days_until_reset: float | None) -> tuple[float, float]:
+    """Known refills sort below unknown ones; sooner refills sort lowest."""
+    if days_until_reset is None:
+        return (0.0, 0.0)
+    return (1.0, -float(days_until_reset))
+
+
+def _conserve_use_readiness(alert: UseOrLoseAlert) -> float:
+    """Higher means closer to safe use; severe early-lockout rows stay high.
+
+    A conserve row is the one active band where the analysis score points in
+    the opposite direction from "use next".  Prefer the actual gap between
+    projected exhaustion and reset; fall back to the inverse alert score.
+    """
+    pace = alert.pace
+    if pace is not None and pace.projected_exhaust_at is not None and alert.days_until_reset is not None:
+        days_to_exhaust = (pace.projected_exhaust_at - utcnow()).total_seconds() / 86400.0
+        lockout_lead = max(0.0, float(alert.days_until_reset) - days_to_exhaust)
+        return max(0.0, 100.0 - lockout_lead * (100.0 / 7.0))
+    return max(0.0, 100.0 - float(alert.score))
+
+
+def _alert_queue_priority(alert: UseOrLoseAlert, band: int | None = None) -> tuple[float, float, float]:
+    """Category-specific queue priority; larger tuples appear lower."""
+    band = alert_priority_band(alert) if band is None else band
     rem = max(0.0, float(alert.remaining_percent))
-    days = float(alert.days_until_reset) if alert.days_until_reset is not None else 30.0
-    score = float(alert.score)
-    days_clamped = min(max(days, 0.0), 60.0)
+    days = float(alert.days_until_reset) if alert.days_until_reset is not None else None
 
-    # Non-expiring prepaid tokens — lane handles placement; value is secondary.
-    if alert.kind == "prepaid":
-        return 0.0
+    if band == _BAND_ERROR:
+        return (0.0, 0.0, 0.0)
+    if band == _BAND_EMPTY:
+        known, sooner = _known_reset_priority(days)
+        return (known, sooner, 0.0)
+    if band == _BAND_NA:
+        value = alert.flexibility_profile.value_at_risk_usd if alert.flexibility_profile is not None else None
+        return (1.0 if value is not None else 0.0, float(value or 0.0), rem)
+    if band == _BAND_CONSERVE:
+        # Most dangerous lockout first; closest-to-safe conserve row last.
+        return (_conserve_use_readiness(alert), -float(alert.score), -rem)
 
-    if alert.kind == "conserve" or (rem <= 1.0 and alert.kind != "burn"):
-        # Emptier + longer until reset → lower (top of list).
-        return 8.0 + rem * 0.25 - days_clamped * 0.55 + score * 0.04
+    # Burn alerts, including low-urgency ``mid`` ones, exactly mirror
+    # ``pick_suggestion``: analyzer score, remaining capacity, sooner reset.
+    return (float(alert.score), rem, -(days if days is not None else 99.0))
 
-    if alert.urgency == Urgency.INFO:
-        return 38.0 + rem * 0.12 - days_clamped * 0.25
 
-    if alert.kind == "burn":
-        # Higher analysis score + sooner reset + remaining to burn → bottom.
-        soon = max(0.0, 1.0 - days_clamped / 14.0)
-        return 55.0 + score * 0.35 + soon * 25.0 + rem * 0.12
-
-    return 42.0 + rem * 0.18 - days_clamped * 0.3
+def _queue_score(band: int, priority: tuple[float, float, float]) -> int | None:
+    """Map a band's queue position onto the visible 0–99 action scale."""
+    if band in (_BAND_ERROR, _BAND_NA):
+        return None
+    if band == _BAND_EMPTY:
+        return 0
+    raw = max(0.0, min(100.0, float(priority[0])))
+    if band == _BAND_CONSERVE:
+        return 1 + round(raw * 31.0 / 100.0)
+    if band == _BAND_MID:
+        return 33 + round(raw * 32.0 / 100.0)
+    return 66 + round(raw * 33.0 / 100.0)
 
 
 def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
@@ -474,16 +509,25 @@ def _account_prepaid_is_depleted(account: AccountUsage) -> bool:
 
 
 def _window_use_urgency(window: QuotaWindow) -> float:
-    """Mild mid urgency for an on-pace window (remaining + reset)."""
+    """Soft 0–100 recommendation score for an unalerted live window.
+
+    Remaining capacity supplies 65% of the score; a known near reset supplies
+    up to 35%.  This is intentionally strong enough to make ``mid`` useful as
+    a queue while remaining subordinate to the analyzer whenever an alert
+    (and therefore a real pace score) exists.
+    """
     rem = float(window.remaining() or 0.0)
     days = window.days_until_reset()
-    days_clamped = min(max(float(days) if days is not None else 30.0, 0.0), 60.0)
-    soon = max(0.0, 1.0 - days_clamped / 14.0)
-    return 42.0 + rem * 0.15 + soon * 12.0
+    if days is None:
+        deadline = 0.0
+    else:
+        days_clamped = max(0.0, float(days))
+        deadline = 35.0 / (1.0 + days_clamped / 7.0)
+    return rem * 0.65 + deadline
 
 
-def _unalerted_window_band(window: QuotaWindow | None) -> tuple[int, int]:
-    """Band/lane for a live window that analysis did not turn into an alert.
+def _unalerted_window_band(window: QuotaWindow | None) -> int:
+    """Band for a live window that analysis did not turn into an alert.
 
     The full remaining-capacity range is deliberately simple here: only zero
     (or a malformed negative value) is empty; positive capacity remains an
@@ -491,12 +535,12 @@ def _unalerted_window_band(window: QuotaWindow | None) -> tuple[int, int]:
     """
     remaining = window.remaining() if window is not None else None
     if remaining is not None and remaining <= 0.0:
-        return _BAND_EMPTY, _LANE_EMPTY
-    return _BAND_MID, _LANE_ACTIVE
+        return _BAND_EMPTY
+    return _BAND_MID
 
 
 def _account_use_urgency(account: AccountUsage) -> float:
-    """On-pace / no-alert accounts: mild mid urgency from remaining + reset."""
+    """On-pace / no-alert accounts: soft queue score from governing window."""
     # CodexBar often encodes prepaid balances as a fake 100%-remaining window
     # with no reset — never treat that as use-or-lose urgency.
     if _account_is_non_expiring_prepaid(account):
@@ -509,20 +553,77 @@ def _account_use_urgency(account: AccountUsage) -> float:
     return 40.0
 
 
-def _band_sort_lane(band: int) -> int:
-    """Primary ladder order: error → empty → n/a → active (slow/mid/use)."""
+def _account_queue_priority(
+    account: AccountUsage, band: int, window: QuotaWindow | None = None
+) -> tuple[float, float, float]:
+    """Category-specific priority for rows without an analysis alert."""
     if band == _BAND_ERROR:
-        return _LANE_ERROR
+        return (0.0, 0.0, 0.0)
     if band == _BAND_EMPTY:
-        return _LANE_EMPTY
+        representative = window or _pick_representative_window(account.windows)
+        days = representative.days_until_reset() if representative is not None else None
+        known, sooner = _known_reset_priority(days)
+        return (known, sooner, 0.0)
     if band == _BAND_NA:
-        return _LANE_NA
-    return _LANE_ACTIVE
+        # Spend-up PAYG is a cost meter, not capacity.  Count-down inventory is
+        # optional capacity: larger comparable balances sit lower in this
+        # explicitly non-urgent lane.
+        if _account_is_spend_up_payg(account):
+            return (0.0, 0.0, 0.0)
+        if account.balance_usd is not None:
+            return (2.0, float(account.balance_usd), 0.0)
+        if account.credits_remaining is not None:
+            return (1.0, float(account.credits_remaining), 0.0)
+        return (0.0, 0.0, 0.0)
+    representative = window or _pick_representative_window(account.windows)
+    score = _window_use_urgency(representative) if representative is not None else _account_use_urgency(account)
+    return (score, 0.0, 0.0)
 
 
-def _ladder_sort_key(lane: int, urgency: float, provider: str, account: str | None) -> tuple:
-    """Lane first, then urgency within the lane; stable by name."""
-    return (lane, urgency, provider.casefold(), (account or "").casefold())
+def _pool_queue_priority(
+    account: AccountUsage,
+    band: int,
+    windows: list[QuotaWindow],
+) -> tuple[float, float, float]:
+    """Queue a no-alert pool using its strongest meaningful reset clock.
+
+    A longest-window-only heuristic hides useful weekly opportunities behind a
+    monthly parent.  Taking every window instead makes ubiquitous nested 5h
+    rate limits dominate.  Pick one representative per clock, ignore 5h when
+    the pool also has weekly/monthly clocks, then take the strongest soft
+    recommendation.  Single-clock short-window providers still rank normally.
+    """
+    if band != _BAND_MID or not windows:
+        return _account_queue_priority(account, band, _pick_representative_window(windows))
+
+    by_clock: dict[str, list[QuotaWindow]] = {}
+    for window in windows:
+        if window.remaining() is None:
+            continue
+        clock, _inferred = infer_window_clock(window)
+        by_clock.setdefault(clock or "unknown", []).append(window)
+    if not by_clock:
+        return _account_queue_priority(account, band)
+
+    clocks = list(by_clock)
+    if "5h" in by_clock and any(clock in by_clock for clock in ("weekly", "monthly")):
+        clocks.remove("5h")
+    scores = [
+        _window_use_urgency(representative)
+        for clock in clocks
+        if (representative := _pick_representative_window(by_clock[clock])) is not None
+    ]
+    return (max(scores) if scores else _account_use_urgency(account), 0.0, 0.0)
+
+
+def _ladder_sort_key(
+    band: int,
+    priority: tuple[float, float, float],
+    provider: str,
+    account: str | None,
+) -> tuple:
+    """Band first, then its own queue priority; stable by identity."""
+    return (band, *priority, provider.casefold(), (account or "").casefold())
 
 
 def _ladder_coverage_key(provider: str, account: str | None, pool_id: str = "") -> tuple[str, str, str]:
@@ -795,7 +896,7 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
         for row in rows
     ]
     w_service = max([len("SERVICE")] + [len(service) for service, _acct, _scope in identities])
-    total = 5 + 1 + w_service
+    total = 5 + 1 + 2 + 1 + w_service  # band + ## + service
     if layout.show_account:
         w_account = max([len("ACCT")] + [len(account) for _svc, account, _scope in identities])
         total += 1 + w_account
@@ -895,11 +996,11 @@ def render_priority_ladder(
     color: bool | None = None,
     width: int = ACTION_PLAN_WIDTH,
 ) -> str:
-    """Stdout body: every provider, sorted by use-urgency (no blank lines).
+    """Stdout body: every provider, with each display band a useful queue.
 
-    Tags (error/empty/n/a/slow/mid/use) label each row. error/empty/n/a are
-    fixed lanes near the top; slow/mid/use share a continuum from conserve to
-    use-soon (bottom). Failed fetches stay at the top as ``error``.
+    The fixed band order is error/empty/n/a/slow/mid/use.  Within a band,
+    rows become more actionable toward the bottom according to that band's
+    semantics (recovery, inventory, safe-to-resume, or use-next priority).
     """
     if s is None:
         s = _Style(use_color(force=color))
@@ -914,8 +1015,8 @@ def render_priority_ladder(
             continue
         band = alert_priority_band(alert)
         key = _ladder_sort_key(
-            _band_sort_lane(band),
-            alert_use_urgency(alert),
+            band,
+            _alert_queue_priority(alert, band),
             alert.provider,
             alert.account,
         )
@@ -930,7 +1031,7 @@ def render_priority_ladder(
                 continue
             entries.append(
                 (
-                    _ladder_sort_key(_LANE_ERROR, -1000.0, account.provider, account.account),
+                    _ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
                     _priority_error_line(account, s),
                 )
             )
@@ -949,8 +1050,8 @@ def render_priority_ladder(
             entries.append(
                 (
                     _ladder_sort_key(
-                        _LANE_EMPTY if depleted else _LANE_NA,
-                        _account_use_urgency(account),
+                        band,
+                        _account_queue_priority(account, band),
                         account.provider,
                         account.account,
                     ),
@@ -969,13 +1070,12 @@ def render_priority_ladder(
             if cov in covered:
                 continue
             window = _pick_representative_window(pool) if pool else None
-            band, lane = _unalerted_window_band(window)
-            urgency = _window_use_urgency(window) if window is not None else _account_use_urgency(account)
+            band = _unalerted_window_band(window)
             entries.append(
                 (
                     _ladder_sort_key(
-                        lane,
-                        urgency,
+                        band,
+                        _pool_queue_priority(account, band, pool),
                         account.provider,
                         account.account,
                     ),
@@ -1029,15 +1129,21 @@ def _build_matrix_rows(
 
     # Collapse alerts onto the pool they describe, keeping the most
     # attention-grabbing band and the use-urgency that goes with it.
-    pool_alert: dict[tuple[str, str, str], tuple[int, float]] = {}
+    pool_alert: dict[tuple[str, str, str], tuple[int, tuple[float, float, float]]] = {}
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
             continue
         key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
         band = alert_priority_band(alert)
-        candidate = (band, alert_use_urgency(alert))
+        candidate = (band, _alert_queue_priority(alert, band))
         current = pool_alert.get(key)
-        if current is None or _BAND_ATTENTION[band] > _BAND_ATTENTION[current[0]]:
+        stronger_same_band = False
+        if current is not None and band == current[0]:
+            # A pool with several conserve signals is governed by the most
+            # restrictive one; every other queue keeps its most actionable
+            # signal.  This affects which score positions the collapsed row.
+            stronger_same_band = candidate[1] < current[1] if band == _BAND_CONSERVE else candidate[1] > current[1]
+        if current is None or _BAND_ATTENTION[band] > _BAND_ATTENTION[current[0]] or stronger_same_band:
             pool_alert[key] = candidate
 
     rows: list[_MatrixRow] = []
@@ -1097,13 +1203,11 @@ def _build_matrix_rows(
             key = _ladder_coverage_key(account.provider, account.account, pool_id)
             found = pool_alert.get(key)
             if found is not None:
-                band, urgency = found
+                band, priority = found
             else:
                 representative = _pick_representative_window(pool) if pool else None
-                band, _lane = _unalerted_window_band(representative)
-                urgency = (
-                    _window_use_urgency(representative) if representative is not None else _account_use_urgency(account)
-                )
+                band = _unalerted_window_band(representative)
+                priority = _pool_queue_priority(account, band, pool)
 
             note = None
             if not clocks:
@@ -1113,8 +1217,9 @@ def _build_matrix_rows(
                         break
             rows.append(
                 _MatrixRow(
-                    sort_key=_ladder_sort_key(_band_sort_lane(band), urgency, account.provider, account.account),
+                    sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
                     band=band,
+                    queue_score=_queue_score(band, priority),
                     service=service,
                     account=short,
                     account_full=account.account,
@@ -1144,8 +1249,9 @@ def _build_matrix_rows(
         if account.error or not _account_has_usage(account):
             rows.append(
                 _MatrixRow(
-                    sort_key=_ladder_sort_key(_LANE_ERROR, -1000.0, account.provider, account.account),
+                    sort_key=_ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
                     band=_BAND_ERROR,
+                    queue_score=None,
                     service=service,
                     account=short,
                     account_full=account.account,
@@ -1154,16 +1260,19 @@ def _build_matrix_rows(
             )
             continue
         depleted = _account_prepaid_is_depleted(account)
+        band = _BAND_EMPTY if depleted else _BAND_NA
+        priority = _account_queue_priority(account, band)
         note = _api_inventory_note(account)
         rows.append(
             _MatrixRow(
                 sort_key=_ladder_sort_key(
-                    _LANE_EMPTY if depleted else _LANE_NA,
-                    _account_use_urgency(account),
+                    band,
+                    priority,
                     account.provider,
                     account.account,
                 ),
-                band=_BAND_EMPTY if depleted else _BAND_NA,
+                band=band,
+                queue_score=_queue_score(band, priority),
                 service=service,
                 account=short,
                 account_full=account.account,
@@ -1183,10 +1292,12 @@ def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
     rows are deliberately sparser than an account-derived row.
     """
     band = alert_priority_band(alert)
+    priority = _alert_queue_priority(alert, band)
     service = provider_display_name(alert.provider)
     row = _MatrixRow(
-        sort_key=_ladder_sort_key(_band_sort_lane(band), alert_use_urgency(alert), alert.provider, alert.account),
+        sort_key=_ladder_sort_key(band, priority, alert.provider, alert.account),
         band=band,
+        queue_score=_queue_score(band, priority),
         service=service,
         account=_short_account(alert.account),
         account_full=alert.account,
@@ -1246,6 +1357,10 @@ def render_clock_matrix(
     top to bottom. An em-dash means the service has no window on that clock —
     which is itself the answer to "why does this one only show a weekly?".
 
+    ``##`` is the colored 0–99 action score: 0 is empty and 99 means use as
+    soon as possible. Errors and non-expiring inventory render ``??`` / ``--``
+    because neither has an honest position on that scale.
+
     Percentages are **used**, not left: 0% is untouched, 100% is exhausted.
     When a clock has a reset timestamp the cell is ``75%/4h`` / ``89%/2d14h``
     — used percent, then that clock's own remaining time.
@@ -1275,8 +1390,8 @@ def render_clock_matrix(
     w_clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
     w_value = max(7, len("$ UNUSED"))
 
-    def _line(tag: str, service: str, account: str, scope: str, tail: list[str]) -> str:
-        cells = [tag, service]
+    def _line(tag: str, score: str, service: str, account: str, scope: str, tail: list[str]) -> str:
+        cells = [tag, score, service]
         if layout.show_account:
             cells.append(account)
         if layout.show_scope:
@@ -1294,6 +1409,7 @@ def render_clock_matrix(
         s.dim(
             _line(
                 f"{'':<5}",
+                "##",
                 f"{'SERVICE':<{w_service}}",
                 f"{'ACCT':<{w_account}}",
                 f"{'SCOPE':<{w_scope}}",
@@ -1308,13 +1424,15 @@ def render_clock_matrix(
     for row_idx, row in enumerate(rows):
         tag_plain, tag_color = _BAND_TAG[row.band]
         tag = getattr(s, tag_color)(s.bold(f"{tag_plain:<5}"))
+        score_plain = "??" if row.band == _BAND_ERROR else "--" if row.queue_score is None else str(row.queue_score)
+        score = getattr(s, tag_color)(s.bold(f"{score_plain:>2}"))
         service_text, account_text, scope_text = identities[row_idx]
         service = s.bold(f"{service_text:<{w_service}}")
         account = s.dim(f"{account_text:<{w_account}}")
         scope = s.dim(f"{scope_text:<{w_scope}}")
 
         if row.note is not None:
-            line = _line(tag, service, account, scope, [s.dim(row.note)])
+            line = _line(tag, score, service, account, scope, [s.dim(row.note)])
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             continue
 
@@ -1359,7 +1477,7 @@ def render_clock_matrix(
             value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
             tail.append(f"{value_text:>{w_value}}")
 
-        line = _line(tag, service, account, scope, tail)
+        line = _line(tag, score, service, account, scope, tail)
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
 
     legend_items: list[tuple[str, str]] = []
