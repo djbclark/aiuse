@@ -133,6 +133,10 @@ def collect_codexbar(
         rows = outcome if isinstance(outcome, list) else [outcome]
         for row in rows:
             if isinstance(row, dict):
+                if provider_arg is not None:
+                    row_provider = str(row.get("provider", "")).strip().lower()
+                    if row_provider and row_provider != provider_arg.lower():
+                        continue
                 accounts.append(_from_row(row))
                 zen = _opencode_zen_from_row(row)
                 if zen is not None:
