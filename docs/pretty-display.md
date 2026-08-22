@@ -18,7 +18,7 @@ clock**, so a column reads top to bottom as a like-for-like comparison:
       ## SERVICE    ACCT     SCOPE           5H       WEEK      MONTH $ UNUSED
 error ?? oc-go      —        —            no usage data
 empty  0 codex      gmail    —                —   100%/5d         —    $0.00
-slow  18 agy        gmail    gemini      0%/2h27m   23%/22h        —    $5.31
+slow  48 agy        gmail    gemini      0%/2h27m   23%/22h        —    $5.31
 mid   54 cursor     gmail    other models     —        —     0%/19d   $20.00
 use   92 claude     mit      —             25%/now  60%/2d14h      —    $2.76
   2d14h = until this clock resets · bold = largest unit
@@ -26,11 +26,14 @@ use   92 claude     mit      —             25%/now  60%/2d14h      —    $2.7
 ```
 
 `##` is a colored **0–99 action score** aligned with the row order: `0` means
-empty and `99` means use as soon as possible. `slow` occupies 1–32, `mid`
-33–65, and `use` 66–99. An error prints `??` because its urgency is unknown;
-non-expiring `n/a` inventory prints `--` because it has no use-or-lose score.
-Those markers avoid falsely calling unavailable data or rolling API credit
-empty.
+empty and `99` means use as soon as possible. Shared semantic thresholds keep
+category transitions contiguous: `slow` is 25–49, `mid` is 50–74, and `use`
+is 75–99. The ranges are not independently stretched. A safe-to-resume `slow`
+row is 49 beside a weakest `mid` at 50; the strongest `mid` is 74 beside a
+weakest active `use` recommendation at 75. An error prints `??` because its
+urgency is unknown; non-expiring `n/a` inventory prints `--` because it has no
+use-or-lose score. Those markers avoid falsely calling unavailable data or
+rolling API credit empty.
 
 The clocks are `CLOCK_COLUMNS` — `5H`, `WEEK`, `MONTH`. An **em-dash** means the
 service has no window on that clock, which is itself the answer to "why does
@@ -83,14 +86,15 @@ The bands are fixed in that order and each is also a deliberate queue. Read
 - **slow** puts the most severe projected early lockout higher and the pool
   closest to safe use lower.
 - **mid** is a soft recommendation queue: analyzer scores win when present;
-  otherwise remaining capacity plus reset proximity rank healthy pools.
+  otherwise remaining capacity multiplied by reset pressure ranks healthy
+  pools, so distant full pools do not outrank near-reset capacity.
 - **use** mirrors the canonical burn recommendation order (score, remaining
   capacity, then sooner reset), so the bottom row agrees with what is most
   worth using next.
 
-These are category-specific scales, not false comparisons between unlike
-states. The matrix uses the same queue keys as the retained priority-ladder
-renderer.
+The score uses shared action-state thresholds, while sorting retains the
+category-specific evidence needed to order unlike states honestly. The matrix
+uses the same queue keys as the retained priority-ladder renderer.
 
 Collection time, capacity blurb, and `Detail: ai --full` go to **stderr**
 (`render_stderr_meta`, suppressed with `-q`), so stdout stays pipeable.

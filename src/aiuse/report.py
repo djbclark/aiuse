@@ -455,17 +455,27 @@ def _alert_queue_priority(alert: UseOrLoseAlert, band: int | None = None) -> tup
 
 
 def _queue_score(band: int, priority: tuple[float, float, float]) -> int | None:
-    """Map a band's queue position onto the visible 0–99 action scale."""
+    """Map queue evidence onto one semantic 0–99 ``use next`` scale.
+
+    The category is evidence in its own right: ``slow`` means use is currently
+    unsafe, ``mid`` has no active burn recommendation, and ``use`` does.  The
+    thresholds are therefore shared action states, not three independently
+    stretched mini-scales.  In particular, the strongest row on either side
+    of a category boundary differs by one point rather than an artificial
+    band-sized jump.
+    """
     if band in (_BAND_ERROR, _BAND_NA):
         return None
     if band == _BAND_EMPTY:
         return 0
     raw = max(0.0, min(100.0, float(priority[0])))
     if band == _BAND_CONSERVE:
-        return 1 + round(raw * 31.0 / 100.0)
+        # A live but currently unsafe quota occupies the lower action quartile.
+        # Readiness moves it toward the adjacent ``mid`` threshold.
+        return 25 + round(raw * 24.0 / 100.0)
     if band == _BAND_MID:
-        return 33 + round(raw * 32.0 / 100.0)
-    return 66 + round(raw * 33.0 / 100.0)
+        return round(max(50.0, min(74.0, raw)))
+    return round(max(75.0, min(99.0, raw)))
 
 
 def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
@@ -511,19 +521,20 @@ def _account_prepaid_is_depleted(account: AccountUsage) -> bool:
 def _window_use_urgency(window: QuotaWindow) -> float:
     """Soft 0–100 recommendation score for an unalerted live window.
 
-    Remaining capacity supplies 65% of the score; a known near reset supplies
-    up to 35%.  This is intentionally strong enough to make ``mid`` useful as
-    a queue while remaining subordinate to the analyzer whenever an alert
-    (and therefore a real pace score) exists.
+    Capacity and deadline pressure multiply: plentiful capacity far from reset
+    is less urgent than the same capacity near reset.  The previous additive
+    formula routinely gave healthy monthly pools raw scores above active burn
+    alerts, which then had to be hidden by category-local score offsets.
+    Unknown reset timing is treated like a soft three-week horizon.
     """
-    rem = float(window.remaining() or 0.0)
+    rem = max(0.0, min(100.0, float(window.remaining() or 0.0)))
     days = window.days_until_reset()
     if days is None:
-        deadline = 0.0
+        deadline_pressure = 0.25
     else:
         days_clamped = max(0.0, float(days))
-        deadline = 35.0 / (1.0 + days_clamped / 7.0)
-    return rem * 0.65 + deadline
+        deadline_pressure = 1.0 / (1.0 + days_clamped / 7.0)
+    return rem * deadline_pressure
 
 
 def _unalerted_window_band(window: QuotaWindow | None) -> int:

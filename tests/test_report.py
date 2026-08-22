@@ -1084,12 +1084,36 @@ def test_clock_matrix_action_score_covers_all_bands_and_uses_color():
     assert scores["error"] == "??"
     assert scores["empty"] == "0"
     assert scores["n/a"] == "--"
-    assert 1 <= int(scores["slow"]) <= 32
-    assert 33 <= int(scores["mid"]) <= 65
+    assert 25 <= int(scores["slow"]) <= 49
+    assert 50 <= int(scores["mid"]) <= 74
     assert scores["use"] == "99"
 
     colored = render_clock_matrix(alerts, snapshot=snapshot, color=True, width=200)
     assert "\033[32m\033[1m99" in colored
+
+
+def test_action_score_has_contiguous_cross_band_boundaries():
+    """Category transitions add evidence, not an artificial 30-point gap."""
+    from aiuse.report import _queue_score
+
+    assert _queue_score(3, (100.0, 0.0, 0.0)) == 49  # safest slow
+    assert _queue_score(4, (0.0, 0.0, 0.0)) == 50  # weakest mid
+    assert _queue_score(4, (100.0, 0.0, 0.0)) == 74  # strongest mid
+    assert _queue_score(5, (0.0, 0.0, 0.0)) == 75  # weakest use
+    assert _queue_score(5, (100.0, 0.0, 0.0)) == 99  # use ASAP
+
+
+def test_soft_window_score_combines_capacity_with_deadline_pressure():
+    """A distant full pool must not outrank the same capacity near reset."""
+    from aiuse.report import _window_use_urgency
+
+    now = utcnow()
+    near = QuotaWindow(label="weekly", used_percent=10.0, resets_at=now + timedelta(days=1.0))
+    far = QuotaWindow(label="monthly", used_percent=0.0, resets_at=now + timedelta(days=28.0))
+
+    assert _window_use_urgency(near) > _window_use_urgency(far)
+    assert _window_use_urgency(near) == pytest.approx(78.75, abs=0.1)
+    assert _window_use_urgency(far) == pytest.approx(20.0, abs=0.1)
 
 
 def test_priority_ladder_includes_on_pace_providers():
