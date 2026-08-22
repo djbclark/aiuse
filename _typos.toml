@@ -1,9 +1,5 @@
-# Spell-check configuration for the `typos` pre-commit hook.
+[default.extend-words]
+certifi = "certifi"
 
-[default]
-# Git object names are not prose. `4ba6193` trips the word splitter ("ba" ->
-# "by"/"be"), and a hook that rewrote a commit SHA would silently corrupt the
-# evidence trail in a handoff or a release note — the one kind of string in
-# these docs that must be reproduced exactly. Scoped to backticked hex so it
-# only exempts identifiers that are already marked up as code.
-extend-ignore-re = ["`[0-9a-f]{7,40}`"]
+[default.extend-identifiers]
+certifi = "certifi"
