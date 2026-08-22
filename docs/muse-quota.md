@@ -81,7 +81,8 @@ The 15-minute browser trace that nails the endpoint (once, on a credentialed mac
 ```toml
 # ~/.config/aiuse/config.toml
 [collectors.muse]
-enabled = true   # uses AIUSE_MUSE_API_KEY / META_API_KEY, or: muse login / muse auth set
+# uses AIUSE_MUSE_API_KEY / META_API_KEY, or: muse login / muse auth set
+enabled = true
 
 # Optional: pin the endpoint if Meta moves it (or for tests)
 # AIUSE_MUSE_API_URL is an env var, not TOML — e.g. AIUSE_MUSE_API_URL=https://api.meta.ai/v1/usage
