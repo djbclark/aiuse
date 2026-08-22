@@ -106,6 +106,15 @@ Useful flags: `--notes-file PATH`, `--notes '…'`, `--skip-tests`,
 `--skip-pypi-wait`, `--skip-homebrew`, `--allow-dirty`,
 `--tap-path PATH`.
 
+Release identifiers are always plain numeric `X.Y.Z`. The script accepts only
+one deterministic step from the current version: the next patch (the usual
+choice), the next minor with patch reset to zero, or the next major with minor
+and patch reset to zero. A same-version run is allowed only to resume an
+interrupted release. Major bumps require explicit operator approval plus
+`--allow-major`. Pre-release suffixes, underscores, version skips, and Homebrew
+`revision` suffixes are rejected or removed; fixes ship by incrementing the
+package version instead.
+
 Manual equivalent (historical):
 
 1. Bump `version` in [`pyproject.toml`](../pyproject.toml) and `__version__` in

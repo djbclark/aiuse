@@ -30,10 +30,36 @@ def release():
 
 def test_validate_version(release):
     release._validate_version("2.1.16")
+    for invalid in ("v2.1.16", "2.1.16_1", "2.1.16-rc1", "not-a-version"):
+        with pytest.raises(release.ReleaseError):
+            release._validate_version(invalid)
+
+
+@pytest.mark.parametrize(
+    ("current", "target"),
+    [
+        ("3.0.31", "3.0.31"),
+        ("3.0.31", "3.0.32"),
+        ("3.0.31", "3.1.0"),
+    ],
+)
+def test_validate_version_increment_accepts_resume_patch_and_minor(current, target, release):
+    release._validate_version_increment(current, target, allow_major=False)
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["3.0.30", "3.0.33", "3.1.1", "3.2.0", "4.0.1"],
+)
+def test_validate_version_increment_rejects_non_deterministic_target(target, release):
     with pytest.raises(release.ReleaseError):
-        release._validate_version("v2.1.16")
-    with pytest.raises(release.ReleaseError):
-        release._validate_version("not-a-version")
+        release._validate_version_increment("3.0.31", target, allow_major=False)
+
+
+def test_validate_version_increment_requires_major_approval(release):
+    with pytest.raises(release.ReleaseError, match="--allow-major"):
+        release._validate_version_increment("3.0.31", "4.0.0", allow_major=False)
+    release._validate_version_increment("3.0.31", "4.0.0", allow_major=True)
 
 
 def test_open_release_https_url_rejects_non_release_urls(release):
@@ -59,6 +85,7 @@ def test_rewrite_homebrew_formula(tmp_path: Path, release):
     formula = tmp_path / "aiuse.rb"
     formula.write_text(
         'url "https://github.com/djbclark/aiuse/archive/refs/tags/v1.0.0.tar.gz"\n'
+        "  revision 7\n"
         'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n',
         encoding="utf-8",
     )
@@ -66,6 +93,7 @@ def test_rewrite_homebrew_formula(tmp_path: Path, release):
     text = formula.read_text(encoding="utf-8")
     assert "v2.3.4.tar.gz" in text
     assert ("b" * 64) in text
+    assert "revision" not in text
 
 
 def test_rewrite_packaging_version(tmp_path: Path, release):
@@ -182,6 +210,7 @@ def test_main_resume_pushes_main_before_tag(monkeypatch, release):
         version="3.0.4",
         dry_run=False,
         allow_dirty=False,
+        allow_major=False,
         skip_tests=False,
         notes=None,
         notes_file=None,

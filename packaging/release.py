@@ -35,7 +35,7 @@ INIT_PY = REPO_ROOT / "src" / "aiuse" / "__init__.py"
 UV_LOCK = REPO_ROOT / "uv.lock"
 PACKAGING_DOC = REPO_ROOT / "docs" / "packaging.md"
 HOMEBREW_FORMULA = REPO_ROOT / "packaging" / "homebrew" / "aiuse.rb"
-VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[a-zA-Z0-9.-]*)?$")
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 DEFAULT_TAP = Path.home() / "src" / "homebrew-aiuse"
 
 
@@ -85,8 +85,34 @@ def _current_version() -> str:
 
 
 def _validate_version(version: str) -> None:
-    if not VERSION_RE.match(version):
+    if not VERSION_RE.fullmatch(version):
         raise ReleaseError(f"invalid version {version!r} (want X.Y.Z)")
+
+
+def _validate_version_increment(current: str, target: str, *, allow_major: bool) -> None:
+    """Require a resume or one deterministic numeric SemVer increment."""
+    _validate_version(current)
+    _validate_version(target)
+    before = tuple(int(part) for part in current.split("."))
+    after = tuple(int(part) for part in target.split("."))
+    if after == before:
+        return
+
+    major, minor, patch = before
+    allowed = {
+        (major, minor, patch + 1): "patch",
+        (major, minor + 1, 0): "minor",
+        (major + 1, 0, 0): "major",
+    }
+    kind = allowed.get(after)
+    if kind is None:
+        raise ReleaseError(
+            f"release must increment exactly one version component from {current}: "
+            f"choose {major}.{minor}.{patch + 1}, {major}.{minor + 1}.0, "
+            f"or {major + 1}.0.0 (got {target})"
+        )
+    if kind == "major" and not allow_major:
+        raise ReleaseError(f"major release {target} requires explicit operator approval and --allow-major")
 
 
 def _ensure_clean_tree(*, allow_dirty: bool) -> None:
@@ -159,6 +185,10 @@ def _rewrite_packaging_version(root: Path, version: str) -> None:
 
 def _rewrite_homebrew_formula(path: Path, version: str, sha256: str) -> None:
     text = path.read_text(encoding="utf-8")
+    # Every release gets a new numeric package version.  Never carry a
+    # Homebrew-only ``revision`` suffix (displayed as e.g. ``3.0.30_1``)
+    # forward into the published formula.
+    text = re.sub(r"(?m)^[ \t]*revision\s+\d+[ \t]*\n", "", text)
     text, n1 = re.subn(
         r'url "https://github.com/djbclark/aiuse/archive/refs/tags/v[^"]+\.tar\.gz"',
         f'url "https://github.com/djbclark/aiuse/archive/refs/tags/v{version}.tar.gz"',
@@ -506,6 +536,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("version", help="New version, e.g. 2.1.16 (no leading v)")
     p.add_argument("--dry-run", action="store_true", help="Print actions without changing anything")
     p.add_argument("--allow-dirty", action="store_true", help="Allow a dirty working tree")
+    p.add_argument(
+        "--allow-major",
+        action="store_true",
+        help="Confirm the operator explicitly approved incrementing X in X.Y.Z",
+    )
     p.add_argument("--skip-tests", action="store_true", help="Skip pytest (not recommended)")
     p.add_argument("--skip-pypi-wait", action="store_true", help="Do not wait for OIDC publish")
     p.add_argument("--skip-homebrew", action="store_true", help="Skip formula + tap update")
@@ -535,7 +570,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    version = args.version.lstrip("v")
+    version = args.version
     _validate_version(version)
     dry = bool(args.dry_run)
 
@@ -544,16 +579,7 @@ def main(argv: list[str] | None = None) -> int:
         _ensure_clean_tree(allow_dirty=bool(args.allow_dirty))
 
     current = _current_version()
-
-    def version_tuple(v: str) -> tuple[int, int, int, int, str]:
-        m = re.match(r"^(\d+)\.(\d+)\.(\d+)(.*)$", v)
-        if not m:
-            return (0, 0, 0, 0, v)
-        weight = 1 if not m.group(4) else 0
-        return (int(m.group(1)), int(m.group(2)), int(m.group(3)), weight, m.group(4))
-
-    if version_tuple(version) < version_tuple(current):
-        raise ReleaseError(f"refusing to downgrade version from {current} to {version}")
+    _validate_version_increment(current, version, allow_major=bool(args.allow_major))
 
     _log(f"current version: {current} → {version}")
     if current == version and not dry:

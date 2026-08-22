@@ -187,6 +187,11 @@ install steps, CLI flags, and config. Install helpers:
   authorization.
 - **Full releases (PyPI + Homebrew) only when the operator explicitly asks.**
   Do not cut a “ship everywhere” release for routine doc/collector work.
+- Release versions are plain numeric `X.Y.Z`; never use a Homebrew `revision`
+  or underscore suffix to ship a change. Increment exactly one component,
+  normally patch (`Z`). Minor (`Y`) is an agent judgment call; major (`X`)
+  requires explicit operator approval. The deterministic release script
+  enforces this policy.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 
