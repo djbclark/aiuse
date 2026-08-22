@@ -11,6 +11,7 @@ from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
+from .qwencloud import collect_qwencloud
 from .runner import run_collectors
 from .tokscale import collect_tokscale
 
@@ -26,6 +27,7 @@ __all__ = [
     "collect_opencode_go",
     "collect_opencode_zen",
     "collect_openrouter",
+    "collect_qwencloud",
     "collect_tokscale",
     "run_collectors",
 ]

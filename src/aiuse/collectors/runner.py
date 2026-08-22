@@ -32,6 +32,7 @@ from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
+from .qwencloud import collect_qwencloud
 from .tokscale import collect_tokscale
 
 # Prefer earlier sources for *selection* (what drives the ladder). All live
@@ -48,6 +49,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "clinepass",
     "hermes",
     "muse",
+    "qwencloud",
 )
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
@@ -55,6 +57,8 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
     "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes"),
+    # Native qwencloud CLI is the authority; CodexBar qwen-cloud (cookies) cross-checks.
+    "qwencloud": ("qwencloud", "codexbar"),
     # Native /go page sees an expired plan; CodexBar local $caps cannot.
     "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
 }
@@ -72,6 +76,7 @@ SOURCE_LABELS: dict[str, str] = {
     "clinepass": "ClinePass (native)",
     "hermes": "Hermes (local)",
     "muse": "Muse (native)",
+    "qwencloud": "QwenCloud (native)",
 }
 
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
@@ -150,6 +155,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("hermes", partial(collect_hermes, timeout=timeout_for(config, "hermes"))))
     if _enabled(collectors_cfg, "muse"):
         jobs.append(("muse", partial(collect_muse, timeout=timeout_for(config, "muse"))))
+    if _enabled(collectors_cfg, "qwencloud"):
+        jobs.append(("qwencloud", partial(collect_qwencloud, timeout=timeout_for(config, "qwencloud"))))
 
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:

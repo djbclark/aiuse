@@ -35,6 +35,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`zai-quota.md`](zai-quota.md) — z.ai GLM coding-plan 5h / weekly credits.
 - [`devin-quota.md`](devin-quota.md) — Devin Free/Pro/Max daily + weekly included quota.
 - [`muse-quota.md`](muse-quota.md) — Muse Spark / Muse Code pay-as-you-go (Meta Model API).
+- [`qwencloud-quota.md`](qwencloud-quota.md) — QwenCloud coding/token plans + PAYG limit via the `qwencloud` CLI.
 - [`antigravity-pools.md`](antigravity-pools.md) — independent Gemini and Claude/GPT pools.
 - [`tokscale-per-provider-investigation.md`](tokscale-per-provider-investigation.md) — current tokscale per-provider limitation.
 - [`claude-local-usage.md`](claude-local-usage.md) — why local Claude activity is distinct from subscription quota.

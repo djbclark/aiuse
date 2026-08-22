@@ -11,6 +11,7 @@
 # openusage_sh = 45  # OpenUsage.sh terminal dashboard
 # opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
 # muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
+# qwencloud = 45  # qwencloud CLI (`qwencloud auth login` once; no API-key mode)
 # tokscale = 45
 
 [collectors.caut]
@@ -46,6 +47,13 @@
 # Cookie fallback: browser session from dev.meta.ai — refresh via:
 #   aiuse credential refresh muse --from chrome --profile Default
 # The cookie is never stored in this file; team_id auto-scraped or AIUSE_MUSE_TEAM_ID.
+# enabled = true
+
+[collectors.qwencloud]
+# QwenCloud (qwencloud.com) native CLI. One-time OAuth setup:
+#   qwencloud auth login   (PKCE/device flow; there is no API-key mode)
+# Surfaces coding-plan 5h/weekly/monthly windows, token-plan credits,
+# and PAYG spend vs the `qwencloud billing limit` cap.
 # enabled = true
 
 # Usually unnecessary: aiuse automatically unifies a provider when every live

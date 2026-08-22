@@ -103,6 +103,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "opencode-zen": "oc-zen",
     "openrouter": "openrouter",
     "muse": "muse",
+    "qwencloud": "qwen",
 }
 
 # Any provider spelling that may reach us — vendor ids from collectors, external
@@ -127,6 +128,8 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "muse-spark": "muse",
     "muse-code": "muse",
     "metamuse": "muse",
+    "qwen-cloud": "qwencloud",
+    "qwen": "qwencloud",
 }
 
 # Map canonical collector provider keys to config plan/override keys.
