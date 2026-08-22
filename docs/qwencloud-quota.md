@@ -54,6 +54,37 @@ reports canonical provider id `qwencloud`, identical to the native collector,
 so the two cross-check when both are enabled. Source priority is
 `qwencloud` (native CLI) over `codexbar`.
 
+## Sibling provider: Alibaba Cloud (Bailian) — canonical id `alibaba`
+
+A separate Alibaba Cloud Model Studio account is **not** qwencloud.com: it
+bills through the Bailian console and authenticates the
+[bailian-cli](https://www.npmjs.com/package/bailian-cli) (`bl`, also
+installed as `bailian`). The native `bailian` collector reads it after a
+one-time console login:
+
+```bash
+bl auth login --console   # browser OAuth; saves ~/.bailian/config.json
+bl usage token-plan --output json
+# {"per1WeekPercentage": 0.0178, "per1WeekResetTime": 1788016260000}
+```
+
+Percentages are fractions **consumed**; reset times are epoch ms; the 5-hour
+fields are omitted when the plan has no 5h limit. Windows emitted:
+`alibaba 5-hour` (300 min) and `alibaba weekly` (10080 min),
+`billing_kind=subscription_window`. `bl usage coding-plan` covers the Team
+coding plan the same way. Inference-only API keys (`sk-…`, including the
+qwen TUI's `BAILIAN_CODING_PLAN_API_KEY` in `~/.qwen/settings.json`) get
+404/ConsoleNeedLogin on these endpoints — console OAuth is required.
+
+CodexBar's `alibaba-coding-plan` / `alibaba-token-plan` providers read the
+same data through Chrome cookies and also report canonical id `alibaba`, so
+the sources cross-check; priority is `bailian` (native CLI) over `codexbar`.
+
+The qwen Code TUI's local `~/.qwen/usage/token-usage-*.jsonl` is per-call
+activity (input/output/cached/thought token counts per request), not quota —
+see [`claude-local-usage.md`](claude-local-usage.md) for why aiuse does not
+rank from it.
+
 ## Prior art
 
 - [CodexBar issue #2328](https://github.com/steipete/CodexBar/issues/2328) —

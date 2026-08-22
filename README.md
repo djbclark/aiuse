@@ -315,31 +315,31 @@ JSON Schemas, enums, pace rules, and golden fixtures are designed to be copied
 or validated from any language. `aiuse` uses those fixtures itself, but they do
 not require importing its Python package.
 
-| Flag                                                                                                   | Effect                                                                            |
-| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| _(none)_ / `--format pretty`                                                                           | Clock matrix on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
-| `--full`                                                                                               | Long pretty report: per-provider, cross-checks, tips, History, detailed plan      |
-| `--json` / `--format json`                                                                             | Full snapshot + alerts + `suggestion` + `history` as JSON                         |
-| `--brief`                                                                                              | Alias of the default pretty report                                                |
-| `--no-tui`                                                                                             | Force classic plain-text pretty report                                            |
-| `--no-color`                                                                                           | Disable ANSI colors in plain-text pretty mode                                     |
-| `-q` / `--quiet`                                                                                       | Suppress progress messages on stderr                                              |
-| `--alerts-only`                                                                                        | Recommendations only (respects pretty vs json)                                    |
-| `suggest` / `--suggest`                                                                                | Single best burn pool (or nothing urgent); pair with `--json` for structured      |
-| `status` / `prompt` / `--status`                                                                       | One-line status for shell prompts / status bars                                   |
-| `serve` / `--serve`                                                                                    | Loopback HTTP API for agents (`127.0.0.1`)                                        |
-| `--port` / `--max-age`                                                                                 | Serve bind port (default 8787) and snapshot cache max age                         |
-| `--print-completion bash\|zsh`                                                                         | Print shell completion script to stdout                                           |
-| `--no-<collector>` flags: tokscale, cswap, codexbar, caut, openusage-ai, openusage-sh, muse, qwencloud | Skip specific collectors                                                          |
-| `--providers copilot,grok`                                                                             | Query specific CodexBar providers (CSV, one per subprocess)                       |
-| `-t` / `--timeout SECONDS`                                                                             | Force subprocess timeout for all external tools (default **45**)                  |
-| `--generate-config`                                                                                    | Write default `~/.config/aiuse/config.toml`; never overwrites existing            |
-| `--show-config-path`                                                                                   | Print the active config path                                                      |
-| `doctor` / `--doctor`                                                                                  | Check tools on PATH, config presence, effective timeouts; no collect              |
-| `trust` …                                                                                              | macOS: codesign status, sign caut, and Keychain grant guide                       |
-| `credential refresh opencode-zen`                                                                      | Validate a Chrome OpenCode session and save it through SecretSpec                 |
-| `--min-remaining 50 --max-days 10`                                                                     | Override alert thresholds                                                         |
-| `--save PATH`                                                                                          | Also write full JSON snapshot to PATH                                             |
+| Flag                                                                                                            | Effect                                                                            |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| _(none)_ / `--format pretty`                                                                                    | Clock matrix on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped |
+| `--full`                                                                                                        | Long pretty report: per-provider, cross-checks, tips, History, detailed plan      |
+| `--json` / `--format json`                                                                                      | Full snapshot + alerts + `suggestion` + `history` as JSON                         |
+| `--brief`                                                                                                       | Alias of the default pretty report                                                |
+| `--no-tui`                                                                                                      | Force classic plain-text pretty report                                            |
+| `--no-color`                                                                                                    | Disable ANSI colors in plain-text pretty mode                                     |
+| `-q` / `--quiet`                                                                                                | Suppress progress messages on stderr                                              |
+| `--alerts-only`                                                                                                 | Recommendations only (respects pretty vs json)                                    |
+| `suggest` / `--suggest`                                                                                         | Single best burn pool (or nothing urgent); pair with `--json` for structured      |
+| `status` / `prompt` / `--status`                                                                                | One-line status for shell prompts / status bars                                   |
+| `serve` / `--serve`                                                                                             | Loopback HTTP API for agents (`127.0.0.1`)                                        |
+| `--port` / `--max-age`                                                                                          | Serve bind port (default 8787) and snapshot cache max age                         |
+| `--print-completion bash\|zsh`                                                                                  | Print shell completion script to stdout                                           |
+| `--no-<collector>` flags: tokscale, cswap, codexbar, caut, openusage-ai, openusage-sh, muse, qwencloud, bailian | Skip specific collectors                                                          |
+| `--providers copilot,grok`                                                                                      | Query specific CodexBar providers (CSV, one per subprocess)                       |
+| `-t` / `--timeout SECONDS`                                                                                      | Force subprocess timeout for all external tools (default **45**)                  |
+| `--generate-config`                                                                                             | Write default `~/.config/aiuse/config.toml`; never overwrites existing            |
+| `--show-config-path`                                                                                            | Print the active config path                                                      |
+| `doctor` / `--doctor`                                                                                           | Check tools on PATH, config presence, effective timeouts; no collect              |
+| `trust` …                                                                                                       | macOS: codesign status, sign caut, and Keychain grant guide                       |
+| `credential refresh opencode-zen`                                                                               | Validate a Chrome OpenCode session and save it through SecretSpec                 |
+| `--min-remaining 50 --max-days 10`                                                                              | Override alert thresholds                                                         |
+| `--save PATH`                                                                                                   | Also write full JSON snapshot to PATH                                             |
 
 ### Exit codes
 
@@ -451,7 +451,7 @@ Lapsed subscriptions: `analysis.lapsed_accounts` maps `"provider/account"` to a 
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.
-- All enabled collectors (cswap, CodexBar, caut, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s** (`-t` / `config.toml [timeouts]`).
+- All enabled collectors (cswap, CodexBar, caut, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud, bailian) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s** (`-t` / `config.toml [timeouts]`).
 - Per-window detail still shows $ value, flexibility class, and a **pace** ratio when computable.
 - Duplicate live measurements are retained for cross-checking but only one copy drives recommendations.
 - Dollar values use plan `monthly_price` with waking-hours correction (default 16h/day).

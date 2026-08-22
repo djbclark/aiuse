@@ -12,6 +12,7 @@
 # opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
 # muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
 # qwencloud = 45  # qwencloud CLI (`qwencloud auth login` once; no API-key mode)
+# bailian = 45    # bailian-cli / bl (`bl auth login --console` once)
 # tokscale = 45
 
 [collectors.caut]
@@ -54,6 +55,12 @@
 #   qwencloud auth login   (PKCE/device flow; there is no API-key mode)
 # Surfaces coding-plan 5h/weekly/monthly windows, token-plan credits,
 # and PAYG spend vs the `qwencloud billing limit` cap.
+# enabled = true
+
+[collectors.bailian]
+# Alibaba Cloud (Bailian / Model Studio) plans, distinct from qwencloud.com.
+# One-time console OAuth: bl auth login --console
+# Surfaces token/coding-plan 5h + weekly quota windows via `bl usage`.
 # enabled = true
 
 # Usually unnecessary: aiuse automatically unifies a provider when every live

@@ -20,6 +20,7 @@ from aiuse.models import (
     utcnow,
 )
 
+from .bailian import collect_bailian
 from .base import which
 from .caut import collect_caut
 from .clinepass import collect_clinepass
@@ -50,6 +51,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "hermes",
     "muse",
     "qwencloud",
+    "bailian",
 )
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
@@ -59,6 +61,8 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes"),
     # Native qwencloud CLI is the authority; CodexBar qwen-cloud (cookies) cross-checks.
     "qwencloud": ("qwencloud", "codexbar"),
+    # Native bl CLI is the authority; CodexBar alibaba-*-plan (cookies) cross-checks.
+    "alibaba": ("bailian", "codexbar"),
     # Native /go page sees an expired plan; CodexBar local $caps cannot.
     "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
 }
@@ -77,6 +81,7 @@ SOURCE_LABELS: dict[str, str] = {
     "hermes": "Hermes (local)",
     "muse": "Muse (native)",
     "qwencloud": "QwenCloud (native)",
+    "bailian": "Bailian (native)",
 }
 
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
@@ -157,6 +162,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("muse", partial(collect_muse, timeout=timeout_for(config, "muse"))))
     if _enabled(collectors_cfg, "qwencloud"):
         jobs.append(("qwencloud", partial(collect_qwencloud, timeout=timeout_for(config, "qwencloud"))))
+    if _enabled(collectors_cfg, "bailian"):
+        jobs.append(("bailian", partial(collect_bailian, timeout=timeout_for(config, "bailian"))))
 
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:

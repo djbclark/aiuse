@@ -178,6 +178,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "Authenticate the CLI with `qwencloud auth login`."
             ),
         },
+        "alibaba": {
+            "name": "Alibaba Cloud (Bailian)",
+            "notes": (
+                "Token/coding plan 5h + weekly quota windows on the Alibaba Cloud "
+                "Model Studio account (distinct from qwencloud.com). Authenticate "
+                "bailian-cli once with `bl auth login --console`."
+            ),
+        },
     },
     "collectors": {
         "cswap": {"enabled": True},
@@ -202,6 +210,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "hermes": {"enabled": True},
         "muse": {"enabled": True},
         "qwencloud": {"enabled": True},
+        "bailian": {"enabled": True},
     },
     # Source-specific local account ids can be mapped to the account label used
     # by other collectors.  Normally this stays empty: runner.py automatically
@@ -229,6 +238,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "hermes",
         "muse",
         "qwencloud",
+        "bailian",
     }
 )
 KNOWN_COLLECTOR_KEYS = frozenset(
@@ -244,6 +254,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "hermes",
         "muse",
         "qwencloud",
+        "bailian",
     }
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(

@@ -1,5 +1,6 @@
 """CLI collectors for live provider quotas."""
 
+from .bailian import collect_bailian
 from .caut import collect_caut
 from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
@@ -28,6 +29,7 @@ __all__ = [
     "collect_opencode_zen",
     "collect_openrouter",
     "collect_qwencloud",
+    "collect_bailian",
     "collect_tokscale",
     "run_collectors",
 ]
