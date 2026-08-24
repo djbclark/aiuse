@@ -26,9 +26,22 @@ def collect_clinepass(
 ) -> list[AccountUsage]:
     """Fetch usage limits from the ClinePass API."""
     env = os.environ if environ is None else environ
-    api_key = _resolve_api_key(env, timeout)
+    api_key, key_error = _resolve_api_key(env, timeout)
     if not api_key:
-        return []
+        # Report the account with an error rather than returning [].
+        # Returning an empty list makes an unreachable provider indistinguishable
+        # from one that is not configured: the account simply vanishes from the
+        # snapshot, and anything reading that snapshot sees "no data" where it
+        # should see "could not check". That is actively dangerous for a
+        # burn-rate or quota alert, which would read silence as healthy.
+        return [
+            AccountUsage(
+                source="clinepass",
+                provider="clinepass",
+                error=key_error or "ClinePass API key unavailable",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            )
+        ]
 
     try:
         response = requests.get(
@@ -111,15 +124,21 @@ def _clinepass_window(limit_type: str) -> tuple[str, int | None]:
     return f"ClinePass {limit_type.replace('_', ' ')}", None
 
 
-def _resolve_api_key(env: Mapping[str, str], timeout: float) -> str | None:
-    """Return an explicit API key or fetch it from sudo-secretspec."""
+def _resolve_api_key(env: Mapping[str, str], timeout: float) -> tuple[str | None, str | None]:
+    """Return (api_key, error). Exactly one is non-None.
+
+    Every failure carries a distinct reason. They used to collapse into a bare
+    None, so a broker timeout, a missing binary and an empty secret were
+    indistinguishable downstream — and all three silently dropped the provider
+    from the snapshot.
+    """
     explicit = str(env.get(_ENV_VAR) or "").strip()
     if explicit:
-        return explicit
+        return explicit, None
 
     executable = shutil.which("sudo-secretspec")
     if executable is None:
-        return None
+        return None, (f"{_ENV_VAR} unset and sudo-secretspec not on PATH, so {_SECRET_NAME} could not be read")
 
     try:
         result = subprocess.run(
@@ -137,11 +156,17 @@ def _resolve_api_key(env: Mapping[str, str], timeout: float) -> str | None:
             timeout=min(max(timeout, 0.1), _TIMEOUT),
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
-        return None
+    except subprocess.TimeoutExpired:
+        # The likeliest intermittent cause: the privilege-separated broker is
+        # busy, so the lookup exceeds its window even though the secret exists.
+        return None, (f"sudo-secretspec timed out reading {_SECRET_NAME} (broker busy?)")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"sudo-secretspec failed: {exc.__class__.__name__}"
 
     if result.returncode != 0:
-        return None
+        return None, (f"sudo-secretspec exited {result.returncode} reading {_SECRET_NAME}")
 
     api_key = result.stdout.strip()
-    return api_key or None
+    if not api_key:
+        return None, f"sudo-secretspec returned an empty {_SECRET_NAME}"
+    return api_key, None
