@@ -46,10 +46,19 @@ if ! command -v just >/dev/null 2>&1; then
 fi
 
 # --- bun: runs the docs lint/format tools via bunx (prettier, markdownlint) ---
-if ! command -v bun >/dev/null 2>&1; then
+if [ ! -x "$HOME/.bun/bin/bun" ]; then
   echo "Installing bun..."
   run_installer https://bun.sh/install
 fi
+
+# The bun installer drops binaries in ~/.bun/bin and only appends that dir to
+# PATH via ~/.bashrc, which non-interactive Cloud Agent shells do not source —
+# so `bunx` (used by the prettier/markdownlint pre-commit hooks) would not be
+# found on a freshly booted build. ~/.local/bin *is* reliably on PATH (uv and
+# just live there), so expose bun + bunx from there.
+mkdir -p "$HOME/.local/bin"
+ln -sf "$HOME/.bun/bin/bun" "$HOME/.local/bin/bun"
+ln -sf "$HOME/.bun/bin/bunx" "$HOME/.local/bin/bunx"
 
 # Pin Python 3.11 to match the CI matrix and pyproject target-version.
 uv python install 3.11
