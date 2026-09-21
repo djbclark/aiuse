@@ -158,6 +158,10 @@ def independent_pool_key(label: str | None) -> str | None:
         return "claude_gpt"
     if "gemini" in text:
         return "gemini"
+    if "deepseek" in text:
+        return "deepseek"
+    if "z.ai" in text or "glm" in text:
+        return "glm"
     # Display label is "Cursor other models"; accept legacy "Cursor API" too.
     if "cursor other models" in text or "cursor api" in text:
         return "cursor_other_models"
@@ -169,6 +173,8 @@ def independent_pool_key(label: str | None) -> str | None:
 POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "claude_gpt": "claude/gpt",
+    "deepseek": "deepseek",
+    "glm": "glm",
     "cursor_other_models": "other models",
 }
 

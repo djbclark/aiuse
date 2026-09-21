@@ -186,6 +186,16 @@ def test_independent_pool_key_gemini_vs_claude_gpt():
     assert independent_pool_key("Claude/GPT weekly") == "claude_gpt"
     assert independent_pool_key("Claude/GPT 5-hour") == "claude_gpt"
     assert independent_pool_key("Antigravity nonGeminiWeekly") == "claude_gpt"
+
+
+def test_independent_pool_key_deepseek_and_glm():
+    from aiuse.analysis.pace import independent_pool_key, pool_scope_label
+
+    assert independent_pool_key("DeepSeek 5-hour") == "deepseek"
+    assert independent_pool_key("z.ai weekly") == "glm"
+    assert independent_pool_key("GLM 5-hour") == "glm"
+    assert pool_scope_label("deepseek") == "deepseek"
+    assert pool_scope_label("glm") == "glm"
     assert independent_pool_key("Claude Code weekly") is None
     assert independent_pool_key("Cursor included") is None
 

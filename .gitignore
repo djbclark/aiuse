@@ -27,3 +27,6 @@ htmlcov/
 .beads-credential-key
 .beads/proxieddb/
 .aider*
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
