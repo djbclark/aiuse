@@ -33,6 +33,8 @@ project's guides by the job they help you do; most people only need one or two.
 - [`cursor-quota.md`](cursor-quota.md) — Cursor Included, Auto, Other Models, and on-demand pools.
 - [`clinepass-quota.md`](clinepass-quota.md) — ClinePass 5h / weekly / monthly shared allotment.
 - [`zai-quota.md`](zai-quota.md) — z.ai GLM coding-plan 5h / weekly credits.
+- [`hyper-quota.md`](hyper-quota.md) — Charm Hyper monthly plan.
+
 - [`devin-quota.md`](devin-quota.md) — Devin Free/Pro/Max daily + weekly included quota.
 - [`muse-quota.md`](muse-quota.md) — Muse Spark / Muse Code pay-as-you-go (Meta Model API).
 - [`qwencloud-quota.md`](qwencloud-quota.md) — QwenCloud plans + PAYG limit via `qwencloud` CLI; Alibaba Cloud (Bailian) `alibaba` via `bl`.
