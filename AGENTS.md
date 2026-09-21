@@ -186,6 +186,14 @@ install steps, CLI flags, and config. Install helpers:
   unless there is a concrete reason not to (e.g. the operator said not to, or
   the branch is deliberately local-only). Do not wait for separate push
   authorization.
+- **Beads profile: this repo opts in to team-maintainer behavior.** Agents may
+  close beads, run quality gates, commit, and push, and should sync beads
+  proactively — `bd dolt pull` then `bd dolt push` — after creating, updating,
+  or closing issues and at session close, without waiting for authorization.
+  This overrides the "Conservative (default)" wording in the generated Beads
+  block above. An explicit current "do not commit / push / sync" from the
+  operator still wins. (Rationale: single-operator repo, work is reversible,
+  and unsynced beads are exactly the kind of state that gets lost.)
 - **Full releases (PyPI + Homebrew) only when the operator explicitly asks.**
   Do not cut a “ship everywhere” release for routine doc/collector work.
 - Release versions are plain numeric `X.Y.Z`; never use a Homebrew `revision`

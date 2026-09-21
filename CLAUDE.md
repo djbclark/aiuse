@@ -80,6 +80,14 @@ _Add your project-specific conventions here_
 
 - Commit and push coherent, verified changes at opportune moments without
   waiting for separate authorization.
+- **Beads profile: this repo opts in to team-maintainer behavior.** Agents may
+  close beads, run quality gates, commit, and push, and should sync beads
+  proactively — `bd dolt pull` then `bd dolt push` — after creating, updating,
+  or closing issues and at session close, without waiting for authorization.
+  This overrides the "Conservative (default)" wording in the generated Beads
+  block above. An explicit current "do not commit / push / sync" from the
+  operator still wins. (Rationale: single-operator repo, work is reversible,
+  and unsynced beads are exactly the kind of state that gets lost.)
 - Full releases (PyPI + Homebrew) require an explicit operator request.
 - Release versions are plain numeric `X.Y.Z`; never use a Homebrew `revision`
   or underscore suffix to ship a change. Increment exactly one component,
