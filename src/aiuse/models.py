@@ -92,6 +92,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "codex": "codex",
     "copilot": "copilot",
     "cursor": "cursor",
+    "deepseek": "deepseek",
     "grok": "grok",
     "clinepass": "clinepass",
     # The GLM coding plan is what powers Crush here, so the row says which
