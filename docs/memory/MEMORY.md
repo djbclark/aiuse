@@ -1,6 +1,6 @@
 # Memory Index
 
-Project policy and priorities live in [`../AGENTS.md`](../AGENTS.md) — do not
+Project policy and priorities live in [`../../AGENTS.md`](../../AGENTS.md) — do not
 restate them here (avoids duplicate token load). This directory is only the
 Claude Code symlink target for `~/src/aiuse`.
 
