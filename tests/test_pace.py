@@ -186,6 +186,8 @@ def test_independent_pool_key_gemini_vs_claude_gpt():
     assert independent_pool_key("Claude/GPT weekly") == "claude_gpt"
     assert independent_pool_key("Claude/GPT 5-hour") == "claude_gpt"
     assert independent_pool_key("Antigravity nonGeminiWeekly") == "claude_gpt"
+    assert independent_pool_key("Claude Code weekly") is None
+    assert independent_pool_key("Cursor included") is None
 
 
 def test_partition_independent_pools_antigravity_splits_families():
