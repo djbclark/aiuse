@@ -1310,7 +1310,7 @@ def test_deepseek_prepaid_has_no_use_urgency():
     )
     snap = Snapshot(collected_at=utcnow(), accounts=[deepseek, sub])
     text = render_priority_ladder([empty, slow], snapshot=snap, color=False)
-    deep_line = next(line for line in text.splitlines() if "eepseek" in line)
+    deep_line = next(line for line in text.splitlines() if "rush" in line)
     assert deep_line.startswith("n/a")
     assert "$4.99" in deep_line
     assert "counts down" in deep_line

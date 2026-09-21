@@ -92,7 +92,6 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "codex": "codex",
     "copilot": "copilot",
     "cursor": "cursor",
-    "deepseek": "deepseek",
     "grok": "grok",
     "clinepass": "clinepass",
     # The GLM coding plan is what powers Crush here, so the row says which
@@ -119,6 +118,8 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
 PROVIDER_ID_ALIASES: dict[str, str] = {
     "chatgpt": "codex",
     "openai-codex": "codex",
+    "deepseek": "zai",
+    "hyper": "zai",
     "github-copilot": "copilot",
     "grok-build": "grok",
     "supergrok": "grok",
@@ -146,6 +147,8 @@ PROVIDER_CONFIG_ALIASES: dict[str, str] = {
 # Subset of PROVIDER_ID_ALIASES, kept for callers that import it by name.
 EXTERNAL_PROVIDER_ALIASES: dict[str, str] = {
     "openai-codex": "codex",
+    "deepseek": "zai",
+    "hyper": "zai",
 }
 
 
