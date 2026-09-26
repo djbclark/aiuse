@@ -21,7 +21,6 @@ from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.models import Snapshot, UseOrLoseAlert, utcnow
 from aiuse.report import render_clock_matrix, render_stderr_meta
-from aiuse.tui import should_use_tui
 
 DEFAULT_INTERVAL_S = 600.0
 MIN_INTERVAL_S = 5.0
@@ -140,6 +139,16 @@ class StdinKeyReader:
 
 def is_quit_key(key: str | None) -> bool:
     return key in {"q", "Q", "\x1b", "\x03"}
+
+
+def _watch_color_enabled(*, no_color: bool, detected_color_system: str | None) -> bool:
+    """Use color when requested and supported; terminal control stays separate."""
+    if no_color or os.environ.get("NO_COLOR"):
+        return False
+    force_color = os.environ.get("FORCE_COLOR")
+    if force_color is not None:
+        return force_color not in {"", "0"}
+    return detected_color_system is not None
 
 
 @dataclass
@@ -358,19 +367,21 @@ def run_watch(
             file=err,
         )
         return 2
-    force_compatible = os.environ.get("TTY_COMPATIBLE") == "1" or os.environ.get("FORCE_COLOR") not in {
-        None,
-        "",
-        "0",
-    }
-    if require_tty and os.environ.get("TERM", "").casefold() == "dumb" and not force_compatible:
+    from rich.console import Console
+
+    console = Console(file=out, force_terminal=True, color_system="auto", no_color=False)
+    if require_tty and console.is_dumb_terminal:
+        term = os.environ.get("TERM") or "unset"
         print(
-            "aiuse watch requires an ANSI-compatible terminal (TERM=dumb cannot display the full-screen board).",
+            f"aiuse watch requires an ANSI-compatible terminal (TERM={term} cannot display the full-screen board).",
             file=err,
         )
         return 2
 
-    use_style = should_use_tui(as_json=False, alerts_only=False, no_tui=False, stream=out)
+    color_enabled = _watch_color_enabled(
+        no_color=no_color,
+        detected_color_system=console.color_system,
+    )
     reader = key_reader or StdinKeyReader()
     stop = threading.Event()
     process_worker = _WatchCollectionProcess(config) if collect is None else None
@@ -397,16 +408,8 @@ def run_watch(
         old_attrs = None
 
     try:
-        from rich.console import Console
         from rich.live import Live
         from rich.text import Text
-
-        # Full-screen cursor control is required even when color is disabled.
-        # Explicitly supply a basic color system because Rich otherwise emits
-        # no Live screen at all for TERM=dumb or ``--no-color``. Rich's
-        # ``no_color`` also strips screen-control escapes, so color suppression
-        # happens in _render() while the console keeps terminal controls.
-        console = Console(file=out, force_terminal=True, color_system="standard", no_color=False)
 
         def _render() -> Text:
             return Text.from_ansi(
@@ -414,7 +417,7 @@ def run_watch(
                     runtime.snapshot,
                     runtime.alerts,
                     config=config,
-                    color=False if no_color else use_style,
+                    color=color_enabled,
                     quiet=quiet,
                     last_at=runtime.last_wall,
                     next_in=runtime.next_in(),

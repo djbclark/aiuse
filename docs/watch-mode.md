@@ -96,9 +96,11 @@ stdout report.
 - `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
   becomes a **footer line inside the screen**, not stderr (stderr would corrupt
   the alternate-screen layout). `-q` suppresses it.
-- `NO_COLOR` / `--no-color` disable color without disabling Rich's terminal
-  control. The alternate screen still needs ANSI cursor control; treating
-  `--no-color` as `force_terminal=False` produces a blank board.
+- Color is on by default. `NO_COLOR` / `--no-color`, `FORCE_COLOR=0`, or a
+  terminal for which Rich detects no color system automatically select a
+  monochrome board without disabling alternate-screen control. A nonzero
+  `FORCE_COLOR` overrides failed color detection, but not explicit
+  `NO_COLOR` / `--no-color`.
 - On resize, Rich `Live` re-flows automatically; the matrix width logic already
   adapts to `terminal_width()`.
 
@@ -110,8 +112,9 @@ stdout report.
 - Non-TTY stdout (`!stdout.isatty()` and not `FORCE_COLOR`) → exit `2` with
   `aiuse watch requires an interactive terminal` on stderr. (Suggest
   `aiuse --json` or the hourly LaunchAgent for non-interactive monitoring.)
-- `TERM=dumb` without `TTY_COMPATIBLE=1` or a nonzero `FORCE_COLOR` → exit `2`
-  with an ANSI-compatibility error instead of opening a blank Rich screen.
+- A terminal Rich classifies as dumb (for example `TERM=dumb`) → exit `2` with
+  an ANSI-compatibility error instead of opening a blank screen. Monochrome
+  fallback cannot replace the cursor controls required by a full-screen board.
 - Unknown flag → argparse default error path.
 
 ## Tests (pytest; mirror `tests/test_tui.py` style)

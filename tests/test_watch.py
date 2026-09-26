@@ -8,6 +8,7 @@ from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, utcno
 from aiuse.watch import (
     WatchError,
     WatchRuntime,
+    _watch_color_enabled,
     collect_watch_frame,
     is_quit_key,
     parse_interval,
@@ -66,6 +67,36 @@ def test_quit_keys():
     assert is_quit_key("\x03")
     assert not is_quit_key("x")
     assert not is_quit_key(None)
+
+
+@pytest.mark.parametrize(
+    ("no_color", "detected", "force_color", "no_color_env", "expected"),
+    [
+        (False, "truecolor", None, False, True),
+        (False, None, None, False, False),
+        (True, "truecolor", "1", False, False),
+        (False, "truecolor", None, True, False),
+        (False, None, "1", False, True),
+        (False, "truecolor", "0", False, False),
+        (False, "truecolor", "1", True, False),
+    ],
+)
+def test_watch_color_falls_back_without_disabling_terminal_control(
+    monkeypatch,
+    no_color,
+    detected,
+    force_color,
+    no_color_env,
+    expected,
+):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    if no_color_env:
+        monkeypatch.setenv("NO_COLOR", "1")
+    if force_color is not None:
+        monkeypatch.setenv("FORCE_COLOR", force_color)
+
+    assert _watch_color_enabled(no_color=no_color, detected_color_system=detected) is expected
 
 
 def test_render_watch_board_includes_header_and_matrix():
