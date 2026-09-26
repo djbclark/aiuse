@@ -94,10 +94,10 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "cursor": "cursor",
     "deepseek": "deepseek",
     "grok": "grok",
-    "clinepass": "clinepass",
-    # The GLM coding plan is what powers Crush here, so the row says which
-    # assistant to spend it on; canonical id stays "zai".
-    "zai": "zai/crush",
+    # Name the default local client for each independent service without
+    # collapsing their provider identities.
+    "clinepass": "clinepass/crush",
+    "zai": "zai/zcode",
     "hyper": "hyper/crush",
     "devin": "devin",
     "opencode-go": "oc-go",

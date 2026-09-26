@@ -13,6 +13,7 @@ from aiuse.models import (
     Snapshot,
     Urgency,
     UseOrLoseAlert,
+    provider_display_name,
     utcnow,
 )
 from aiuse.report import (
@@ -1845,12 +1846,24 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
         ],
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    zai = next(line for line in text.splitlines() if " zai/crush " in line)
+    zai = next(line for line in text.splitlines() if " zai/zcode " in line)
     assert "0%/6d20h" in zai
     # The 5h cell is a bare percent, not 0%/—.
     assert "0%/—" not in zai
     tokens = zai.split()
     assert "0%" in tokens
+
+
+@pytest.mark.parametrize(
+    ("provider", "display"),
+    [
+        ("zai", "zai/zcode"),
+        ("clinepass", "clinepass/crush"),
+        ("hyper", "hyper/crush"),
+    ],
+)
+def test_provider_display_names_preserve_service_and_default_client(provider, display):
+    assert provider_display_name(provider) == display
 
 
 def test_clock_matrix_compacts_deadline_before_dropping_identity():

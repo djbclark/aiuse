@@ -27,6 +27,9 @@ Do not merge `hyper` and `zai`. They are separate services that a user might
 subscribe to independently, even if both are used through the same Crush UI.
 
 - `hyper` is mapped in `PROVIDER_DISPLAY_NAMES` to `"hyper/crush"`.
-- `zai` is mapped in `PROVIDER_DISPLAY_NAMES` to `"zai/crush"`.
+- `zai` is mapped to `"zai/zcode"` because Zcode defaults to Z.ai.
+- `clinepass` is mapped to `"clinepass/crush"` because Crush defaults to
+  ClinePass. A separately configured Crush session can still use Hyper, but
+  that does not make Crush the default Z.ai client.
 - `deepseek` (direct pay-as-you-go API) is a separate provider, not part of
   either plan.
