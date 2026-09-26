@@ -48,10 +48,10 @@ a different beast from the default stdout report that
 aiuse watch
  └─ enter alternate screen (Rich Live, screen=True) or Textual app
      ├─ tick loop (interval)
-     │    ├─ run_collectors (ThreadPoolExecutor, 6 collectors, ≤45s)  ← background thread
+     │    ├─ run_collectors (concurrent collectors, ≤45s)  ← cancellable child process
      │    ├─ render_clock_matrix(snapshot, alerts)  ← reused, unchanged
      │    └─ redraw board (header + matrix + footer)
-     ├─ key poll (non-blocking stdin): q / Esc / Ctrl-C → restore + exit 0
+     ├─ key poll: q / Esc / Ctrl-C → terminate collection group, restore, exit 0
      └─ SIGINT handler → same restore + exit 0
 ```
 
@@ -64,8 +64,10 @@ see [`collector-concurrency.md`](collector-concurrency.md)). Rules:
    collect + render finishes. If a collect runs longer than the interval, the
    next tick fires immediately (no skip, no queue).
 2. **Background the collect.** The UI thread renders the last-good snapshot
-   while a worker collects; the board shows `collecting… (Ns)` so the user
-   knows it is not frozen.
+   while an isolated worker process collects; the board shows the collection's
+   elapsed seconds so the user knows it is not frozen. Process isolation is
+   required: collector thread pools are non-daemon, so a background thread
+   made `q` close the screen but left Python waiting for slow CodexBar calls.
 3. **Staleness is shown.** Header: `last: HH:MM:SS · next in M:SS · q/esc quit`.
 4. **Floor the interval.** Warn if `< 30s` (sub-collect-time intervals starve
    the six external tools). Hard floor at `5s` to prevent abuse.
@@ -94,19 +96,22 @@ stdout report.
 - `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
   becomes a **footer line inside the screen**, not stderr (stderr would corrupt
   the alternate-screen layout). `-q` suppresses it.
-- `NO_COLOR` / `--no-color` honored; `FORCE_COLOR` / `TTY_COMPATIBLE` gate whether
-  the styled render is used (mirror `aiuse.tui.should_use_tui`).
+- `NO_COLOR` / `--no-color` disable color without disabling Rich's terminal
+  control. The alternate screen still needs ANSI cursor control; treating
+  `--no-color` as `force_terminal=False` produces a blank board.
 - On resize, Rich `Live` re-flows automatically; the matrix width logic already
   adapts to `terminal_width()`.
 
 ## Exit behavior
 
-- `q`, `Esc`, `Ctrl-C` (SIGINT) → restore terminal (disable raw mode, leave
-  alternate screen), exit `0`. Watch is a UI; it never returns collect exit
-  codes.
+- `q`, `Esc`, `Ctrl-C` (SIGINT) → terminate any active collection process
+  group, restore terminal (disable raw mode, leave alternate screen), and exit
+  `0`. Watch is a UI; it never returns collect exit codes.
 - Non-TTY stdout (`!stdout.isatty()` and not `FORCE_COLOR`) → exit `2` with
   `aiuse watch requires an interactive terminal` on stderr. (Suggest
   `aiuse --json` or the hourly LaunchAgent for non-interactive monitoring.)
+- `TERM=dumb` without `TTY_COMPATIBLE=1` or a nonzero `FORCE_COLOR` → exit `2`
+  with an ANSI-compatibility error instead of opening a blank Rich screen.
 - Unknown flag → argparse default error path.
 
 ## Tests (pytest; mirror `tests/test_tui.py` style)

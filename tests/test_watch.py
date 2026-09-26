@@ -142,7 +142,8 @@ def test_run_watch_loop_quits_on_injected_key(monkeypatch):
 
     class FakeLive:
         def __init__(self, *args, **kwargs):
-            pass
+            assert kwargs["console"].is_terminal
+            assert kwargs["console"].no_color is False
 
         def __enter__(self):
             return self
@@ -167,6 +168,83 @@ def test_run_watch_loop_quits_on_injected_key(monkeypatch):
         require_tty=False,
     )
     assert code == 0
+
+
+def test_run_watch_stops_default_collection_process_on_quit(monkeypatch):
+    instances = []
+
+    class FakeProcessWorker:
+        def __init__(self, config):
+            self.config = config
+            self.started = False
+            self.stop_calls = 0
+            instances.append(self)
+
+        def start(self):
+            self.started = True
+
+        def poll(self):
+            return None
+
+        def stop(self):
+            self.stop_calls += 1
+
+    class Reader:
+        def read(self):
+            return "q"
+
+    class FakeLive:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def update(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr("aiuse.watch._WatchCollectionProcess", FakeProcessWorker)
+    monkeypatch.setattr("rich.live.Live", FakeLive)
+
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=Reader(),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+
+    assert code == 0
+    assert len(instances) == 1
+    assert instances[0].started
+    assert instances[0].stop_calls >= 1
+
+
+def test_run_watch_rejects_dumb_terminal_instead_of_showing_blank_board(monkeypatch):
+    class TtyOutput(StringIO):
+        def isatty(self):
+            return True
+
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.delenv("TTY_COMPATIBLE", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    err = StringIO()
+
+    code = run_watch(
+        {},
+        interval=600,
+        stdout=TtyOutput(),
+        stderr=err,
+        collect=lambda: (_snap(), []),
+    )
+
+    assert code == 2
+    assert "TERM=dumb" in err.getvalue()
 
 
 def test_cli_watch_rejects_json_and_no_tui(monkeypatch):

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import multiprocessing
+import os
 import re
 import select
+import signal
 import sys
 import threading
 import time
@@ -171,15 +174,29 @@ class WatchRuntime:
         start(self._run_collect)
 
     def _run_collect(self) -> None:
-        started = self.collecting_started if self.collecting_started is not None else self.now()
         try:
             snapshot, alerts = self.collect()
+        except Exception as exc:  # noqa: BLE001 — keep the board up
+            self._finish_collect(error=f"{exc.__class__.__name__}: {exc}")
+        else:
+            self._finish_collect(snapshot=snapshot, alerts=alerts)
+
+    def _finish_collect(
+        self,
+        *,
+        snapshot: Snapshot | None = None,
+        alerts: list[UseOrLoseAlert] | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Apply one asynchronous collection result and schedule the next."""
+        started = self.collecting_started if self.collecting_started is not None else self.now()
+        if error is None and snapshot is not None:
             self.snapshot = snapshot
-            self.alerts = alerts
+            self.alerts = alerts or []
             self.last_wall = utcnow()
             self.error = None
-        except Exception as exc:  # noqa: BLE001 — keep the board up
-            self.error = f"{exc.__class__.__name__}: {exc}"
+        elif error is not None:
+            self.error = error
         finished = self.now()
         due = started + self.interval
         self.next_due = finished if finished >= due else due
@@ -195,6 +212,101 @@ class WatchRuntime:
         if self.collecting:
             return None
         return max(0.0, self.next_due - self.now())
+
+
+def _collect_process_entry(config: dict[str, Any], send: Any) -> None:
+    """Collect in an isolated process so an in-flight refresh is cancellable."""
+    if os.name == "posix":
+        try:
+            os.setsid()
+        except OSError:
+            pass
+    try:
+        snapshot, alerts = collect_watch_frame(config)
+        send.send(("ok", snapshot, alerts))
+    except BaseException as exc:  # noqa: BLE001 — return a board error instead of losing the worker
+        try:
+            send.send(("error", f"{exc.__class__.__name__}: {exc}"))
+        except (BrokenPipeError, EOFError, OSError):
+            pass
+    finally:
+        send.close()
+
+
+class _WatchCollectionProcess:
+    """One cancellable live-collection process for interactive watch mode."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        methods = multiprocessing.get_all_start_methods()
+        self.context: Any = multiprocessing.get_context("fork" if "fork" in methods else "spawn")
+        self.process: multiprocessing.Process | None = None
+        self.recv: Any | None = None
+
+    def start(self) -> None:
+        recv, send = self.context.Pipe(duplex=False)
+        process = self.context.Process(
+            target=_collect_process_entry,
+            args=(self.config, send),
+            name="aiuse-watch-collect",
+            daemon=True,
+        )
+        process.start()
+        send.close()
+        self.recv = recv
+        self.process = process
+
+    def poll(self) -> tuple[Snapshot | None, list[UseOrLoseAlert], str | None] | None:
+        process = self.process
+        recv = self.recv
+        if process is None or recv is None:
+            return None
+        if recv.poll():
+            try:
+                message = recv.recv()
+            except EOFError:
+                message = ("error", "collection process closed without a result")
+            self._cleanup_finished()
+            if message[0] == "ok":
+                return message[1], message[2], None
+            return None, [], str(message[1])
+        if not process.is_alive():
+            exit_code = process.exitcode
+            self._cleanup_finished()
+            return None, [], f"collection process exited without a result (status {exit_code})"
+        return None
+
+    def stop(self) -> None:
+        """Terminate the process group, including active collector subprocesses."""
+        process = self.process
+        if process is not None and process.is_alive():
+            terminated_group = False
+            pid = process.pid
+            if os.name == "posix" and pid is not None:
+                try:
+                    os.killpg(pid, signal.SIGTERM)
+                    terminated_group = True
+                except (ProcessLookupError, PermissionError):
+                    pass
+            if not terminated_group:
+                process.terminate()
+            process.join(timeout=1.0)
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=1.0)
+        self._cleanup_finished()
+
+    def _cleanup_finished(self) -> None:
+        if self.recv is not None:
+            self.recv.close()
+        if self.process is not None:
+            self.process.join(timeout=1.0)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join(timeout=1.0)
+            self.process.close()
+        self.recv = None
+        self.process = None
 
 
 def run_watch(
@@ -246,13 +358,28 @@ def run_watch(
             file=err,
         )
         return 2
+    force_compatible = os.environ.get("TTY_COMPATIBLE") == "1" or os.environ.get("FORCE_COLOR") not in {
+        None,
+        "",
+        "0",
+    }
+    if require_tty and os.environ.get("TERM", "").casefold() == "dumb" and not force_compatible:
+        print(
+            "aiuse watch requires an ANSI-compatible terminal (TERM=dumb cannot display the full-screen board).",
+            file=err,
+        )
+        return 2
 
-    use_style = should_use_tui(as_json=False, alerts_only=False, no_tui=no_color, stream=out)
+    use_style = should_use_tui(as_json=False, alerts_only=False, no_tui=False, stream=out)
     reader = key_reader or StdinKeyReader()
     stop = threading.Event()
+    process_worker = _WatchCollectionProcess(config) if collect is None else None
 
     def start_worker(fn: Callable[[], None]) -> None:
-        threading.Thread(target=fn, name="aiuse-watch-collect", daemon=True).start()
+        if process_worker is not None:
+            process_worker.start()
+        else:
+            threading.Thread(target=fn, name="aiuse-watch-collect", daemon=True).start()
 
     runtime.maybe_start(start_worker)
 
@@ -274,7 +401,12 @@ def run_watch(
         from rich.live import Live
         from rich.text import Text
 
-        console = Console(file=out, force_terminal=use_style and not no_color, no_color=bool(no_color))
+        # Full-screen cursor control is required even when color is disabled.
+        # Explicitly supply a basic color system because Rich otherwise emits
+        # no Live screen at all for TERM=dumb or ``--no-color``. Rich's
+        # ``no_color`` also strips screen-control escapes, so color suppression
+        # happens in _render() while the console keeps terminal controls.
+        console = Console(file=out, force_terminal=True, color_system="standard", no_color=False)
 
         def _render() -> Text:
             return Text.from_ansi(
@@ -293,7 +425,14 @@ def run_watch(
 
         with Live(_render(), console=console, screen=True, auto_refresh=False, transient=True) as live:
             while not stop.is_set():
+                if process_worker is not None:
+                    result = process_worker.poll()
+                    if result is not None:
+                        snapshot, alerts, error = result
+                        runtime._finish_collect(snapshot=snapshot, alerts=alerts, error=error)
                 if is_quit_key(reader.read()):
+                    if process_worker is not None:
+                        process_worker.stop()
                     break
                 runtime.maybe_start(start_worker)
                 live.update(_render(), refresh=True)
@@ -301,6 +440,8 @@ def run_watch(
     except KeyboardInterrupt:
         pass
     finally:
+        if process_worker is not None:
+            process_worker.stop()
         if fd is not None and old_attrs is not None:
             try:
                 import termios
