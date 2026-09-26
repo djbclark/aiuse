@@ -9,3 +9,4 @@ Generic / private cross-project memory:
 [GitHub](https://github.com/djbclark/site-private/blob/master/memory/MEMORY.md).
 
 - [Continuous work, batch questions](feedback_continuous_work_batch_questions.md) — don't pause between plan phases; batch questions ahead of time.
+- [graft wiring + nudge hook](reference_graft_wiring.md) — how graft is wired, nudge hook, alwaysLoad outcome
