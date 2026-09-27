@@ -1,50 +1,43 @@
-"""Collect OpenCode Go subscription status from the official workspace page.
+"""Collect OpenCode Go subscription status from the official console API.
 
 CodexBar's local path sums SQLite costs against hardcoded $12/$30/$60 caps and
 cannot see that a Go plan has lapsed. This collector reuses the same OpenCode
-console cookie as the Zen collector and reads ``/workspace/<id>/go``.
+console session cookie as the Zen collector and reads
+``/console/api/go/status`` for the workspace.
 
-A lapsed plan has no ``rollingUsage`` / ``weeklyUsage`` / ``monthlyUsage``
-objects. After a renew those objects come back (often still with
-``subscription: null``) — treat the window objects as the live allotment.
+A lapsed plan has no ``access`` object (or the route 404s); an active plan
+returns ``access.meters`` with ``fiveHour`` / ``week`` / ``month`` limits and
+usage in micro-cents — treat those meters as the live allotment.
 """
 
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Mapping
-from datetime import timedelta
-from urllib.parse import urlparse
+from datetime import datetime, timezone
+from typing import Any
 
-import requests
-
-from aiuse.models import AccountUsage, BillingKind, QuotaWindow, utcnow
+from aiuse.models import AccountUsage, BillingKind, QuotaWindow
 
 from .base import CollectorError
 from .opencode_zen import (
-    _BASE_URL,
-    _WORKSPACES_SERVER_ID,
-    _fetch_server,
+    _fetch_console,
     _resolve_cookie,
     _workspace_id,
+    list_workspaces,
+    micro_cents_to_usd,
 )
 
 _WORKSPACE_ENV = "AIUSE_OPENCODE_ZEN_WORKSPACE_ID"
-_USER_AGENT = "aiuse OpenCode Go collector"
+_GO_STATUS_PATH = "/go/status"
+_LABEL = "OpenCode Go status"
 _EXPIRED_DESCRIPTION = "subscription expired"
+_LIVE_NOTE = "Live data fetched directly from the OpenCode Go console API."
 
-_SUBSCRIPTION_NULL = re.compile(r"""["']?subscription["']?\s*:\s*null\b""", re.I)
-_SUBSCRIPTION_ID_NULL = re.compile(r"""["']?subscriptionID["']?\s*:\s*null\b""", re.I)
-_SUBSCRIPTION_PRESENT = re.compile(
-    r"""["']?subscription["']?\s*:\s*(?:\{|"[^"\n]*"|sub_[A-Za-z0-9]+)""",
-    re.I,
-)
-
-_WINDOW_SPECS: tuple[tuple[str, str, int], ...] = (
-    ("rollingUsage", "OpenCode Go 5-hour", 300),
-    ("weeklyUsage", "OpenCode Go weekly", 10080),
-    ("monthlyUsage", "OpenCode Go monthly", 43200),
+_METER_SPECS: tuple[tuple[str, str, int], ...] = (
+    ("fiveHour", "OpenCode Go 5-hour", 300),
+    ("week", "OpenCode Go weekly", 10080),
+    ("month", "OpenCode Go monthly", 43200),
 )
 
 
@@ -59,24 +52,24 @@ def collect_opencode_go(
     if not cookie:
         return []
     override = _workspace_id(str(env.get(_WORKSPACE_ENV) or ""))
-    workspace_ids = [override] if override else _workspace_ids(_fetch_workspaces(cookie, timeout))
-    if not workspace_ids:
-        raise CollectorError("OpenCode Go: workspace id missing from authenticated response")
+    workspaces = [override] if override else list_workspaces(cookie, timeout, label=_LABEL)
+    if not workspaces:
+        raise CollectorError(f"{_LABEL}: no workspace for this session")
 
-    pages: list[str] = []
+    payloads: list[Any] = []
     errors: list[str] = []
-    for workspace in workspace_ids:
+    for workspace in workspaces:
         try:
-            pages.append(_fetch_go_page(workspace, cookie, timeout))
+            payloads.append(_fetch_go_status(workspace, cookie, timeout))
         except CollectorError as exc:
             errors.append(str(exc))
 
-    if not pages:
-        raise CollectorError(errors[0] if errors else "OpenCode Go: workspace page unavailable")
+    if not payloads:
+        raise CollectorError(errors[0] if errors else f"{_LABEL}: workspace status unavailable")
 
     expired = False
-    for text in pages:
-        account = _account_from_go_page(text)
+    for payload in payloads:
+        account = _account_from_go_status(payload)
         if account is None:
             continue
         if account.plan == "expired":
@@ -88,71 +81,39 @@ def collect_opencode_go(
     return []
 
 
-def _fetch_workspaces(cookie: str, timeout: float) -> str:
-    try:
-        return _fetch_server(_WORKSPACES_SERVER_ID, None, cookie, timeout)
-    except CollectorError as exc:
-        raise CollectorError(str(exc).replace("Zen billing", "Go workspace lookup")) from exc
+def _fetch_go_status(workspace: str, cookie: str, timeout: float) -> Any:
+    return _fetch_console(
+        _GO_STATUS_PATH,
+        cookie,
+        timeout,
+        org=workspace,
+        label=_LABEL,
+        allow_missing=True,
+    )
 
 
-def _workspace_ids(text: str) -> list[str]:
-    found: list[str] = []
-    seen: set[str] = set()
-    for match in re.finditer(r"\bw(?:rk|ork)_[A-Za-z0-9]+\b", text):
-        workspace = match.group(0)
-        if workspace not in seen:
-            seen.add(workspace)
-            found.append(workspace)
-    return found
-
-
-def _fetch_go_page(workspace: str, cookie: str, timeout: float) -> str:
-    url = f"{_BASE_URL}/workspace/{workspace}/go"
-    try:
-        response = requests.get(
-            url,
-            timeout=timeout,
-            allow_redirects=True,
-            headers={
-                "Accept": "text/html,application/json;q=0.9, */*;q=0.8",
-                "Cookie": cookie,
-                "Origin": _BASE_URL,
-                "Referer": _BASE_URL,
-                "User-Agent": _USER_AGENT,
-            },
-        )
-        response.raise_for_status()
-    except requests.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else "unknown"
-        raise CollectorError(f"OpenCode Go usage page returned HTTP {status}") from exc
-    except requests.RequestException as exc:
-        raise CollectorError(f"OpenCode Go usage page request failed: {exc.__class__.__name__}") from exc
-    if not _host_is_opencode(response.url):
-        raise CollectorError("OpenCode Go usage page redirected off opencode.ai")
-    return response.text
-
-
-def _host_is_opencode(url: str) -> bool:
-    host = urlparse(url).hostname or ""
-    host = host.lower()
-    return host == "opencode.ai" or host.endswith(".opencode.ai")
-
-
-def _account_from_go_page(text: str) -> AccountUsage | None:
-    windows = _windows_from_go_page(text)
-    if windows:
-        return AccountUsage(
-            source="opencode_go",
-            provider="opencode-go",
-            plan=_subscription_plan(text) or "go",
-            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
-            windows=windows,
-            notes=["Live data fetched directly from the OpenCode Go workspace page."],
-            raw={"subscription_active": True},
-        )
-    if _subscription_inactive(text) or not text.strip():
+def _account_from_go_status(payload: Any) -> AccountUsage | None:
+    """Build one account from ``/go/status``; ``None`` when the shape is unknown."""
+    if payload is None:
         return _expired_account()
-    return None
+    if not isinstance(payload, dict):
+        return None
+    access = payload.get("access")
+    if not isinstance(access, dict):
+        return _expired_account()
+    windows = _windows_from_access(access)
+    if not windows:
+        return _expired_account()
+    plan = payload.get("product")
+    return AccountUsage(
+        source="opencode_go",
+        provider="opencode-go",
+        plan=plan if isinstance(plan, str) and plan else "go",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=windows,
+        notes=[_LIVE_NOTE],
+        raw={"subscription_active": True},
+    )
 
 
 def _expired_account() -> AccountUsage:
@@ -171,89 +132,50 @@ def _expired_account() -> AccountUsage:
             )
         ],
         notes=[
-            "Live data fetched directly from the OpenCode Go workspace page.",
+            _LIVE_NOTE,
             "OpenCode Go has no active subscription (expired or not renewed).",
         ],
         raw={"subscription_active": False},
     )
 
 
-def _subscription_inactive(text: str) -> bool:
-    return bool(_SUBSCRIPTION_NULL.search(text) and _SUBSCRIPTION_ID_NULL.search(text))
-
-
-def _subscription_plan(text: str) -> str | None:
-    match = re.search(r"""["']?subscriptionPlan["']?\s*:\s*["']([^"'\n]+)["']""", text)
-    if match:
-        return match.group(1)
-    if _SUBSCRIPTION_PRESENT.search(text):
-        return "active"
-    return None
-
-
-def _windows_from_go_page(text: str) -> list[QuotaWindow]:
-    now = utcnow()
+def _windows_from_access(access: Mapping[str, Any]) -> list[QuotaWindow]:
+    meters = access.get("meters")
+    if not isinstance(meters, Mapping):
+        return []
+    period_end = _parse_timestamp(access.get("endsAt"))
     windows: list[QuotaWindow] = []
-    for key, label, minutes in _WINDOW_SPECS:
-        parsed = _named_usage_window(text, key)
-        if parsed is None:
+    for key, label, minutes in _METER_SPECS:
+        meter = meters.get(key)
+        if not isinstance(meter, Mapping):
             continue
-        used, reset_in = parsed
-        remaining = max(0.0, 100.0 - used)
+        limit = micro_cents_to_usd(meter.get("limitMicroCents"))
+        used = micro_cents_to_usd(meter.get("usedMicroCents"))
+        if limit is None or used is None or limit <= 0:
+            continue
+        percent = min(100.0, max(0.0, used / limit * 100.0))
+        resets_at = _parse_timestamp(meter.get("resetsAt")) or (period_end if key == "month" else None)
         windows.append(
             QuotaWindow(
                 label=label,
-                used_percent=used,
-                remaining_percent=remaining,
-                resets_at=now + timedelta(seconds=reset_in) if reset_in is not None else None,
+                used_percent=percent,
+                remaining_percent=max(0.0, 100.0 - percent),
+                resets_at=resets_at,
                 window_minutes=minutes,
-                raw={"field": key, "usage_percent": used, "reset_in_sec": reset_in},
+                raw={"meter": key, "limit_usd": limit, "used_usd": used},
             )
         )
     return windows
 
 
-def _named_usage_window(text: str, key: str) -> tuple[float, int | None] | None:
-    """Parse a usage object, including Solid ``$R[n]=`` wrappers.
-
-    Matches ``rollingUsage:{usagePercent:12}`` and the live page form
-    ``rollingUsage:$R[34]={status:"ok",resetInSec:18000,usagePercent:0}``.
-    Does not treat a scalar ``monthlyUsage:0`` as a window.
-    """
-    percent = _extract_float(
-        rf"{re.escape(key)}[^}}]*?usagePercent\s*:\s*([0-9]+(?:\.[0-9]+)?)",
-        text,
-    )
-    if percent is None:
-        percent = _extract_float(
-            rf""""{re.escape(key)}"\s*:\s*\{{[^}}]*?"usagePercent"\s*:\s*([0-9]+(?:\.[0-9]+)?)""",
-            text,
-        )
-    if percent is None:
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
         return None
-    if 0.0 < percent <= 1.0:
-        percent *= 100.0
-    reset_in = _extract_int(rf"{re.escape(key)}[^}}]*?resetInSec\s*:\s*([0-9]+)", text)
-    if reset_in is None:
-        reset_in = _extract_int(rf""""{re.escape(key)}"\s*:\s*\{{[^}}]*?"resetInSec"\s*:\s*([0-9]+)""", text)
-    return percent, reset_in
-
-
-def _extract_float(pattern: str, text: str) -> float | None:
-    match = re.search(pattern, text)
-    if not match:
-        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
     try:
-        return float(match.group(1))
-    except (TypeError, ValueError):
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
         return None
-
-
-def _extract_int(pattern: str, text: str) -> int | None:
-    match = re.search(pattern, text)
-    if not match:
-        return None
-    try:
-        return int(match.group(1))
-    except (TypeError, ValueError):
-        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

@@ -67,6 +67,32 @@ otherwise the collector uses the first workspace in the authenticated response.
 The cookie value is never stored in TOML, snapshots, output, or error messages.
 The `OPENCODE_ZEN_API_KEY` available to the OpenCode client is intentionally
 not used: OpenCode documents it for model requests, not a wallet-balance API.
+(An OpenCode API key does authenticate against `/console/api`, but is not an
+org actor: those routes answer `403 Forbidden` for it.)
+
+### Console API migration (2026-09-27)
+
+OpenCode replaced its server-rendered console with a single-page app, retiring
+the `/_server?id=<build-hash>` server functions this collector used to call.
+The balance now comes from `GET /console/api/billing/status` with the workspace
+in an `x-org-id` header, after listing workspaces via `GET /console/api/orgs`:
+
+```json
+{
+  "billingMode": "prepaid",
+  "mode": "pay-as-you-go",
+  "balanceMicroCents": "-3795383",
+  "availableMicroCents": "0"
+}
+```
+
+`balanceMicroCents` is in **micro-cents** (`100_000_000` = `$1`), the same
+scale as the retired `balance` field, so stored history stays comparable.
+Authentication is the console session cookie `__Host-console_session` — the
+older site-wide `auth` cookie alone now gets `401 Unauthorized`, which the
+collector reports as an actionable "session is not signed in" error rather
+than a cryptic missing-workspace message. See `docs/opencode-go-quota.md` for
+the sibling Go route.
 
 ### Refresh from Chrome (interactive, optional)
 
@@ -78,13 +104,14 @@ pipx inject aiuse browser-cookie3
 aiuse credential refresh opencode-zen --from chrome --profile Default
 ```
 
-The command reads only cookies for `opencode.ai`, validates an authenticated
-workspace and a live Zen balance before asking to replace SecretSpec, and never
-prints the cookie. It creates the standard manifest if it does not exist. Use
-`--dry-run` to check without saving or `--yes` for a confirmed non-interactive
-replacement. It is never called by normal collection or the scheduled snapshot
-agent. See `aiuse credential refresh --help` for the provider-generic command
-interface.
+The command reads only cookies for `opencode.ai`, requires the console session
+cookie `__Host-console_session` (sign in at <https://opencode.ai/console/>
+first), validates an authenticated workspace and a live Zen balance before
+asking to replace SecretSpec, and never prints the cookie. It creates the
+standard manifest if it does not exist. Use `--dry-run` to check without saving
+or `--yes` for a confirmed non-interactive replacement. It is never called by
+normal collection or the scheduled snapshot agent. See
+`aiuse credential refresh --help` for the provider-generic command interface.
 `aiuse` runs this collector alongside CodexBar and records a cross-check when
 both produce a balance.
 

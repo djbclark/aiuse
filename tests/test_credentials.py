@@ -4,6 +4,7 @@ from http.cookiejar import Cookie, CookieJar
 from pathlib import Path
 
 from aiuse import cli
+from aiuse.collectors.opencode_zen import _SESSION_COOKIE
 from aiuse.credentials import CredentialError, _cookie_header_for_opencode
 
 
@@ -31,10 +32,23 @@ def _cookie(name: str, value: str, domain: str) -> Cookie:
 
 def test_cookie_header_is_scoped_to_opencode():
     jar = CookieJar()
-    jar.set_cookie(_cookie("session", "good", ".opencode.ai"))
+    jar.set_cookie(_cookie(_SESSION_COOKIE, "good", ".opencode.ai"))
     jar.set_cookie(_cookie("unrelated", "nope", ".example.com"))
 
-    assert _cookie_header_for_opencode(jar) == "session=good"
+    assert _cookie_header_for_opencode(jar) == f"{_SESSION_COOKIE}=good"
+
+
+def test_cookie_header_requires_the_console_session_cookie():
+    jar = CookieJar()
+    jar.set_cookie(_cookie("auth", "legacy", ".opencode.ai"))
+
+    try:
+        _cookie_header_for_opencode(jar)
+    except CredentialError as exc:
+        assert _SESSION_COOKIE in str(exc)
+        assert "https://opencode.ai/console/" in str(exc)
+    else:
+        raise AssertionError("the legacy site cookie alone must not be accepted")
 
 
 def test_cookie_header_rejects_missing_opencode_cookie():

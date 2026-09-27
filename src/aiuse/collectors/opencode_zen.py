@@ -6,6 +6,13 @@ not expose this balance through its API key, so the collector first asks the
 project's SecretSpec manifest for ``OPENCODE_ZEN_COOKIE``. An explicit
 ``AIUSE_OPENCODE_ZEN_COOKIE`` environment variable overrides that lookup. The
 value is never written to config, snapshots, logs, or error messages.
+
+OpenCode replaced its server-rendered console with a single-page app in
+September 2026: the old ``/_server?id=<build-hash>`` server functions now
+redirect to ``/console/login``. Both OpenCode collectors therefore speak the
+console's JSON API under ``/console/api``, selecting a workspace with the
+``x-org-id`` header. Authentication is the browser session cookie
+(``__Host-console_session``).
 """
 
 from __future__ import annotations
@@ -15,7 +22,6 @@ import os
 import re
 import shutil
 import subprocess
-import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -27,15 +33,23 @@ from aiuse.secretspec import resolve_manifest_path
 from .base import CollectorError
 
 _BASE_URL = "https://opencode.ai"
-_SERVER_URL = f"{_BASE_URL}/_server"
-_WORKSPACES_SERVER_ID = "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f"
-_BILLING_SERVER_ID = "c83b78a614689c38ebee981f9b39a8b377716db85c1fd7dbab604adc02d3313d"
+_CONSOLE_URL = f"{_BASE_URL}/console"
+_CONSOLE_API = f"{_CONSOLE_URL}/api"
+_ORGS_PATH = "/orgs"
+_BILLING_STATUS_PATH = "/billing/status"
+_ORG_HEADER = "x-org-id"
+_SESSION_COOKIE = "__Host-console_session"
+# OpenCode reports money in micro-cents: 100_000_000 micro-cents == 1 USD.
 _BALANCE_SCALE = 100_000_000.0
 _COOKIE_ENV = "AIUSE_OPENCODE_ZEN_COOKIE"
 _COOKIE_SECRET = "OPENCODE_ZEN_COOKIE"
 _WORKSPACE_ENV = "AIUSE_OPENCODE_ZEN_WORKSPACE_ID"
 _USER_AGENT = "aiuse OpenCode Zen collector"
 _SECRETSPEC_TIMEOUT = 5.0
+_SIGNED_OUT_HINT = (
+    "OpenCode console session is not signed in; open https://opencode.ai/console/ "
+    "in Chrome, then run `aiuse credential refresh opencode-zen --from chrome`"
+)
 
 
 def collect_opencode_zen(
@@ -48,24 +62,40 @@ def collect_opencode_zen(
     cookie = _resolve_cookie(env, timeout, allow_secretspec=environ is None)
     if not cookie:
         return []
-    workspace = _workspace_id(str(env.get(_WORKSPACE_ENV) or ""))
-    if workspace is None:
-        workspace = _first_workspace(_fetch_server(_WORKSPACES_SERVER_ID, None, cookie, timeout))
-    if workspace is None:
-        raise CollectorError("OpenCode Zen billing: workspace id missing from authenticated response")
-    raw = _fetch_server(_BILLING_SERVER_ID, [workspace], cookie, timeout)
-    balance = _parse_billing_balance(raw)
-    if balance is None:
-        raise CollectorError("OpenCode Zen billing: authenticated response did not include a balance")
-    return [
-        AccountUsage(
-            source="opencode_zen",
-            provider="opencode-zen",
-            billing_kind=BillingKind.PREPAID_BALANCE,
-            balance_usd=balance,
-            notes=["Live data fetched directly from OpenCode Zen billing."],
-        )
-    ]
+    override = _workspace_id(str(env.get(_WORKSPACE_ENV) or ""))
+    workspaces = [override] if override else list_workspaces(cookie, timeout, label="OpenCode Zen billing")
+    if not workspaces:
+        raise CollectorError(f"OpenCode Zen billing: no workspace for this session ({_SIGNED_OUT_HINT})")
+
+    errors: list[str] = []
+    for workspace in workspaces:
+        try:
+            status = _fetch_console(
+                _BILLING_STATUS_PATH,
+                cookie,
+                timeout,
+                org=workspace,
+                label="OpenCode Zen billing",
+            )
+        except CollectorError as exc:
+            errors.append(str(exc))
+            continue
+        balance = _balance_usd(status)
+        if balance is None:
+            continue
+        return [
+            AccountUsage(
+                source="opencode_zen",
+                provider="opencode-zen",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=balance,
+                notes=["Live data fetched directly from OpenCode Zen billing."],
+                raw=_billing_raw(status),
+            )
+        ]
+    if errors:
+        raise CollectorError(errors[0])
+    raise CollectorError("OpenCode Zen billing: authenticated response did not include a balance")
 
 
 def _resolve_cookie(env: Mapping[str, str], timeout: float, *, allow_secretspec: bool = True) -> str | None:
@@ -105,32 +135,59 @@ def _resolve_cookie(env: Mapping[str, str], timeout: float, *, allow_secretspec:
     return cookie or None
 
 
-def _fetch_server(server_id: str, args: list[str] | None, cookie: str, timeout: float) -> str:
-    query: dict[str, str] = {"id": server_id}
-    if args is not None:
-        query["args"] = json.dumps(args, separators=(",", ":"))
+def _fetch_console(
+    path: str,
+    cookie: str,
+    timeout: float,
+    *,
+    org: str | None = None,
+    label: str = "OpenCode console",
+    allow_missing: bool = False,
+) -> Any:
+    """GET one ``/console/api`` route and return its parsed JSON body.
+
+    ``allow_missing`` turns a 404 into ``None`` so callers can treat an absent
+    resource (such as a workspace without a Go subscription) as data.
+    """
+    headers = {
+        "Accept": "application/json",
+        "Cookie": cookie,
+        "Origin": _BASE_URL,
+        "Referer": f"{_CONSOLE_URL}/",
+        "User-Agent": _USER_AGENT,
+    }
+    if org:
+        headers[_ORG_HEADER] = org
     try:
-        response = requests.get(
-            _SERVER_URL,
-            params=query,
-            timeout=timeout,
-            headers={
-                "Accept": "text/javascript, application/json;q=0.9, */*;q=0.8",
-                "Cookie": cookie,
-                "Origin": _BASE_URL,
-                "Referer": _BASE_URL,
-                "User-Agent": _USER_AGENT,
-                "X-Server-Id": server_id,
-                "X-Server-Instance": f"server-fn:{uuid.uuid4()}",
-            },
-        )
+        response = requests.get(f"{_CONSOLE_API}{path}", timeout=timeout, headers=headers)
+        if allow_missing and response.status_code == 404:
+            return None
+        if response.status_code in (401, 403):
+            raise CollectorError(f"{label}: {_SIGNED_OUT_HINT}")
         response.raise_for_status()
-        return response.text
+        body = response.text
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"
-        raise CollectorError(f"OpenCode Zen billing returned HTTP {status}") from exc
+        raise CollectorError(f"{label} returned HTTP {status}") from exc
     except requests.RequestException as exc:
-        raise CollectorError(f"OpenCode Zen billing request failed: {exc.__class__.__name__}") from exc
+        raise CollectorError(f"{label} request failed: {exc.__class__.__name__}") from exc
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise CollectorError(f"{label}: response was not JSON ({_SIGNED_OUT_HINT})") from exc
+
+
+def list_workspaces(cookie: str, timeout: float, *, label: str = "OpenCode console") -> list[str]:
+    """Return every workspace (org) id this console session can act for."""
+    payload = _fetch_console(_ORGS_PATH, cookie, timeout, label=label)
+    found: list[str] = []
+    for entry in payload if isinstance(payload, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        workspace = _workspace_id(str(entry.get("id") or ""))
+        if workspace and workspace not in found:
+            found.append(workspace)
+    return found
 
 
 def _workspace_id(value: str) -> str | None:
@@ -140,56 +197,36 @@ def _workspace_id(value: str) -> str | None:
     return match.group(0) if match else None
 
 
-def _first_workspace(text: str) -> str | None:
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return _workspace_id(text)
-    return _find_workspace(parsed)
-
-
-def _find_workspace(value: Any) -> str | None:
+def micro_cents_to_usd(value: Any) -> float | None:
+    """Convert OpenCode's string/number micro-cents into dollars."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) / _BALANCE_SCALE
     if isinstance(value, str):
-        return _workspace_id(value)
-    if isinstance(value, dict):
-        for item in value.values():
-            if workspace := _find_workspace(item):
-                return workspace
-    if isinstance(value, list):
-        for item in value:
-            if workspace := _find_workspace(item):
-                return workspace
+        try:
+            return float(value.strip()) / _BALANCE_SCALE
+        except ValueError:
+            return None
     return None
 
 
-def _parse_billing_balance(text: str) -> float | None:
-    """Parse OpenCode's serialized billing response without retaining its body."""
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        parsed = None
-    if parsed is not None and (raw := _find_raw_balance(parsed)) is not None:
-        return raw / _BALANCE_SCALE
-    customer = re.search(r'(?:"customerID"|customerID)\s*:\s*(?:\$R\[\d+\]\s*=\s*)?"[^"\n]+"', text)
-    balance = re.search(r'(?:"balance"|balance)\s*:\s*(?:\$R\[\d+\]\s*=\s*)?(-?[0-9]+(?:\.[0-9]+)?)', text)
-    if customer and balance:
-        captured = balance.group(1)
-        if isinstance(captured, str):
-            return float(captured) / _BALANCE_SCALE
-    return None
+def _balance_usd(status: Any) -> float | None:
+    if not isinstance(status, dict):
+        return None
+    return micro_cents_to_usd(status.get("balanceMicroCents"))
 
 
-def _find_raw_balance(value: Any) -> float | None:
-    if isinstance(value, dict):
-        customer = value.get("customerID")
-        balance = value.get("balance")
-        if isinstance(customer, str) and customer and isinstance(balance, (str, int, float)):
-            return float(balance)
-        for item in value.values():
-            if (found := _find_raw_balance(item)) is not None:
-                return found
-    if isinstance(value, list):
-        for item in value:
-            if (found := _find_raw_balance(item)) is not None:
-                return found
-    return None
+def _billing_raw(status: Any) -> dict[str, Any]:
+    """Keep only non-identifying billing shape; never retain session material."""
+    if not isinstance(status, dict):
+        return {}
+    raw: dict[str, Any] = {}
+    for key in ("billingMode", "mode"):
+        value = status.get(key)
+        if isinstance(value, str):
+            raw[key] = value
+    available = micro_cents_to_usd(status.get("availableMicroCents"))
+    if available is not None:
+        raw["available_usd"] = available
+    return raw

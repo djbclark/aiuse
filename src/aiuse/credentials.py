@@ -20,11 +20,11 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 
 from aiuse.collectors.opencode_zen import (
-    _BILLING_SERVER_ID,
-    _WORKSPACES_SERVER_ID,
-    _fetch_server,
-    _first_workspace,
-    _parse_billing_balance,
+    _BILLING_STATUS_PATH,
+    _SESSION_COOKIE,
+    _balance_usd,
+    _fetch_console,
+    list_workspaces,
 )
 from aiuse.secretspec import default_manifest_path, ensure_manifest
 
@@ -131,6 +131,7 @@ def _chrome_cookie_file(profile: str) -> Path:
 def _cookie_header_for_opencode(jar: CookieJar) -> str:
     pairs: list[str] = []
     seen: set[tuple[str, str]] = set()
+    names: set[str] = set()
     for item in jar:
         domain = item.domain.lstrip(".").lower()
         if domain != _OPENCODE_HOST and not domain.endswith(f".{_OPENCODE_HOST}"):
@@ -141,19 +142,34 @@ def _cookie_header_for_opencode(jar: CookieJar) -> str:
         pair = (item.name, value)
         if pair not in seen:
             seen.add(pair)
+            names.add(item.name)
             pairs.append(f"{item.name}={value}")
     if not pairs:
         raise CredentialError("no OpenCode cookies were found; sign in to OpenCode in the selected Chrome profile")
+    # The console SPA authenticates with its own session cookie; the older
+    # site-wide `auth` cookie alone no longer reaches /console/api.
+    if _SESSION_COOKIE not in names:
+        raise CredentialError(
+            f"Chrome is missing the OpenCode console session cookie ({_SESSION_COOKIE}). "
+            "In this Chrome profile open https://opencode.ai/console/ until the console "
+            "loads, then re-run `aiuse credential refresh opencode-zen --from chrome`."
+        )
     return "; ".join(pairs)
 
 
 def _validate_opencode_zen_cookie(cookie: str, *, timeout: float) -> None:
     """Prove the session reaches the same live billing route that collection uses."""
-    workspace = _first_workspace(_fetch_server(_WORKSPACES_SERVER_ID, None, cookie, timeout))
-    if workspace is None:
+    workspaces = list_workspaces(cookie, timeout, label="OpenCode Zen billing")
+    if not workspaces:
         raise CredentialError("OpenCode did not return an authenticated workspace")
-    raw = _fetch_server(_BILLING_SERVER_ID, [workspace], cookie, timeout)
-    if _parse_billing_balance(raw) is None:
+    status = _fetch_console(
+        _BILLING_STATUS_PATH,
+        cookie,
+        timeout,
+        org=workspaces[0],
+        label="OpenCode Zen billing",
+    )
+    if _balance_usd(status) is None:
         raise CredentialError("OpenCode did not return a Zen balance for this session")
 
 
