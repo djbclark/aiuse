@@ -192,16 +192,18 @@ def _merge_grok_extra_credits(accounts: list[AccountUsage]) -> None:
     """Fold Grok Extra Usage Credits into CodexBar/OpenUsage grok rows.
 
     The billing row is a supplement: when another collector already carries a
-    ``grok`` row, the wallet folds in as ``usage_credits`` and the standalone
-    row is dropped. When nothing else reports grok (e.g. CodexBar disabled),
-    the row is kept — dropping it would hide a known prepaid wallet behind a
-    missing host row.
+    ``grok`` row, the wallet folds in as ``usage_credits`` (and the billing
+    plan window fills a host that has none) and the standalone row is dropped.
+    When nothing else reports grok (e.g. CodexBar disabled), the row is kept —
+    dropping it would hide a known prepaid wallet behind a missing host row.
     """
     extra = next(
         (
             account
             for account in accounts
-            if account.provider == "grok" and account.source == "grok_billing" and account.usage_credits is not None
+            if account.provider == "grok"
+            and account.source == "grok_billing"
+            and (account.usage_credits is not None or account.windows)
         ),
         None,
     )
@@ -217,8 +219,10 @@ def _merge_grok_extra_credits(accounts: list[AccountUsage]) -> None:
     for account in accounts:
         if account.provider != "grok":
             continue
-        if account.usage_credits is None:
+        if account.usage_credits is None and extra.usage_credits is not None:
             account.usage_credits = extra.usage_credits
+        if not account.windows and extra.windows:
+            account.windows = list(extra.windows)
         for note in extra.notes:
             if note not in account.notes:
                 account.notes.append(note)

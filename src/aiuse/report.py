@@ -79,6 +79,8 @@ class _MatrixRow:
     ``clocks`` maps a clock key ("5h" / "weekly" / "monthly") to the cell for
     that column. ``note`` replaces the whole numeric tail for rows that have no
     windows to bucket — failed fetches and non-expiring prepaid balances.
+    ``tail_note`` annotates a row that *does* render clocks (e.g. a Grok row
+    whose wallet rides along after the weekly cell) instead of hiding them.
     """
 
     sort_key: tuple
@@ -91,6 +93,7 @@ class _MatrixRow:
     clocks: dict[str, _ClockCell] = field(default_factory=dict)
     value_usd: float | None = None
     note: str | None = None
+    tail_note: str | None = None
 
 
 @dataclass
@@ -930,6 +933,8 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
         total += 1 + (w_pct + ((1 + w_span) if w_span else 0))
     if layout.show_value:
         total += 1 + max(7, len("$ UNUSED"))
+    if any(row.tail_note for row in rows):
+        total += 1 + max(len(row.tail_note or "") for row in rows)
     return total
 
 
@@ -1232,14 +1237,22 @@ def _build_matrix_rows(
                 priority = _pool_queue_priority(account, band, pool)
 
             note = None
+            tail_note = None
             if not clocks:
                 for window in pool:
                     if window.reset_description:
                         note = window.reset_description
                         break
             extra_note = _extra_usage_wallet_fragment(account).strip(" ·")
-            if extra_note and band == _BAND_EMPTY:
-                note = extra_note if note is None else f"{note} · {extra_note}"
+            if extra_note:
+                # A wallet is inventory, not a clock: it may annotate a row
+                # that renders reset cells, but never replace or suppress
+                # them. Rows with no clocks at all keep the note as the row.
+                if clocks:
+                    if band == _BAND_EMPTY:
+                        tail_note = extra_note
+                else:
+                    note = extra_note if note is None else f"{note} · {extra_note}"
             rows.append(
                 _MatrixRow(
                     sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
@@ -1252,6 +1265,7 @@ def _build_matrix_rows(
                     clocks=clocks,
                     value_usd=value,
                     note=note,
+                    tail_note=tail_note,
                 )
             )
             covered.add(key)
@@ -1501,6 +1515,8 @@ def render_clock_matrix(
         if layout.show_value:
             value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
             tail.append(f"{value_text:>{w_value}}")
+        if row.tail_note:
+            tail.append(s.dim(row.tail_note))
 
         line = _line(tag, score, service, account, scope, tail)
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)

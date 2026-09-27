@@ -1232,6 +1232,54 @@ def test_grok_extra_usage_wallet_fragment():
     assert _extra_usage_wallet_fragment(AccountUsage(provider="grok", source="codexbar")) == ""
 
 
+def test_clock_matrix_shows_reset_clock_beside_wallet_note():
+    """A wallet must not suppress the reset cells: Grok renders weekly + credits."""
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="grok",
+                account="djbclark@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Grok usage limit",
+                        used_percent=100.0,
+                        remaining_percent=0.0,
+                        resets_at=utcnow() + timedelta(days=3, hours=14),
+                        window_minutes=10080,
+                    )
+                ],
+                usage_credits=UsageCredits(remaining=14.46, currency="USD"),
+            )
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False)
+    grok_line = next(line for line in text.splitlines() if "grok" in line)
+    assert "100%/3d14h" in grok_line
+    assert "$14.46 extra credits" in grok_line
+
+
+def test_clock_matrix_wallet_only_row_stays_note_only():
+    """No windows → the whole row is still the inventory note (wallet case)."""
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="grok",
+                account="djbclark@gmail.com",
+                usage_credits=UsageCredits(remaining=14.46, currency="USD"),
+            )
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False)
+    grok_line = next(line for line in text.splitlines() if "grok" in line)
+    assert "$14.46 extra credits" in grok_line
+    assert "%/" not in grok_line
+
+
 def test_negative_prepaid_is_empty_band():
     """Negative/zero prepaid balance should be classified as empty, not n/a."""
     from aiuse.models import AccountUsage, BillingKind, Snapshot, utcnow
