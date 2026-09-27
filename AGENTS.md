@@ -11,22 +11,21 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-08-14):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.0.17**
-(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release (PyPI trove
-classifier moved to Production/Stable). 3.0.1 adds the documented optional
-OpenCode Zen browser credential refresh: a validated Chrome session is stored
-through SecretSpec at `~/.config/aiuse/secretspec.toml`, so installed CLI runs
-do not need Chrome or Keychain access. 3.0.2 classifies zero/negative prepaid
-balances as `empty` while keeping positive non-expiring balances `n/a`. It
-includes **`aiuse trust`** (caut
-stable codesign + CodexBar#679 cache ACL repair) and release wait-race fix.
-Five collectors; prepaid/`n/a` band; hourly LaunchAgent; history learning
-`auto`. Normal CLI **always live-collects** (hourly snapshots densify History
-only). README's first-impression section rewritten with a colored real-output
-demo ([`docs/generate-readme-demo.py`](docs/generate-readme-demo.py)); TUI
-display gate now honors `FORCE_COLOR`/`TTY_COMPATIBLE`. **No mandatory numbered
-step.** Open-ended “what next?” → [`docs/next-options.md`](docs/next-options.md) +
+**Status (2026-09-27):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+done. Product issues **#1–#9** done. Packaging **3.0.40**
+(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release. The
+per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
+tracks only what a fresh session must know. **15 registered collectors**
+(cswap, CodexBar, caut, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale, hermes,
+muse, qwencloud, bailian, openrouter, clinepass, grok_billing — native
+collectors are default-on and quiet when their prerequisites are absent).
+Account rows in `aiuse --json` carry **`cli_binary`**: the local CLI that
+_spends_ each provider's quota, not the quota-measurement tool a collector
+shells out to — see [`docs/json-contract.md`](docs/json-contract.md) and
+README's "Which vendor CLI is which". Prepaid/`n/a` band; hourly LaunchAgent;
+history learning `auto`. Normal CLI **always live-collects** (hourly
+snapshots densify History only). **No mandatory numbered step.** Open-ended
+"what next?" → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**.
 
 1. **Session handoff:** [`docs/handoffs/`](docs/handoffs/) — newest file wins.
