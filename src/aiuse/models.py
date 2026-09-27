@@ -149,6 +149,33 @@ EXTERNAL_PROVIDER_ALIASES: dict[str, str] = {
     "openai-codex": "codex",
 }
 
+# Local CLI binary that *spends* each provider's quota — the coding TUI you
+# launch to burn the allotment — keyed by canonical provider id. Deliberately
+# not the measurement tool a collector shells out to: `qwencloud`, `bl`,
+# `caut`, `tokscale`, `openusage`, `cswap` and `codexbar` report quota but do
+# not consume it (`qwencloud → qwen` is the load-bearing example — `qwen` is
+# the Qwen Code TUI; `qwencloud` is the quota CLI this repo measures with).
+# Canonical ids left unmapped (openrouter, deepseek) have no local CLI —
+# API-only or cloud-run — and stay `null` in JSON rather than guessing a
+# binary that merely pattern-matches the provider name.
+PROVIDER_CLI_BINARIES: dict[str, str] = {
+    "antigravity": "agy",  # Google Antigravity CLI; also routes Claude/GPT-OSS
+    "claude": "claude",
+    "codex": "codex",
+    "copilot": "copilot",  # GitHub Copilot CLI
+    "cursor": "cursor-agent",  # `cursor` launches the editor, not the agent
+    "grok": "grok",  # xAI Grok Build TUI
+    "zai": "zcode",  # Z.ai's own CLI (tui / app-server subcommands)
+    "clinepass": "cline",  # Cline CLI; display name keeps the Crush alternative
+    "hyper": "crush",  # Charm Hyper is consumed through Crush
+    "devin": "devin",  # Cognition CLI; runs in the terminal and the cloud
+    "muse": "muse",  # Meta Muse Code CLI (`muse login`)
+    "opencode-go": "opencode",
+    "opencode-zen": "opencode",
+    "qwencloud": "qwen",  # Qwen Code TUI; `qwencloud` itself is the quota CLI
+    "alibaba": "qwen",  # Bailian coding plan is spent via the qwen TUI (BAILIAN_CODING_PLAN_API_KEY)
+}
+
 
 def canonical_provider(provider: str) -> str:
     """Normalize any provider spelling to the canonical collector provider id.
@@ -176,6 +203,16 @@ def provider_config_key(provider: str) -> str:
     """
     key = canonical_provider(provider)
     return PROVIDER_CONFIG_ALIASES.get(key, key)
+
+
+def provider_cli_binary(provider: str) -> str | None:
+    """The local CLI binary that consumes this provider's quota, if any.
+
+    Resolves through canonical_provider, so any collector/vendor spelling
+    (`gemini`, `opencodego`, `grok-build`) maps to the same binary as the
+    canonical id. Returns None for providers with no local CLI.
+    """
+    return PROVIDER_CLI_BINARIES.get(canonical_provider(provider))
 
 
 def keep_copilot_report_window(label: str) -> bool:
@@ -513,6 +550,7 @@ class AccountUsage:
         d: dict[str, Any] = {
             "source": self.source,
             "provider": self.provider,
+            "cli_binary": provider_cli_binary(self.provider),
             "account": self.account,
             "plan": self.plan,
             "billing_kind": self.billing_kind.value,

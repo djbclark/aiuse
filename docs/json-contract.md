@@ -156,21 +156,34 @@ Cross-check disagreements alone do **not** change the exit code.
 
 ### `accounts[]` (`AccountUsage`)
 
-| Field               | Type              | Stable?                                                                                                |
-| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` |
-| `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                             |
-| `account`           | string \| null    | email or label when known                                                                              |
-| `plan`              | string \| null    | plan name if reported                                                                                  |
-| `billing_kind`      | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                                  |
-| `windows`           | array             | quota windows                                                                                          |
-| `balance_usd`       | number \| null    | prepaid balance                                                                                        |
-| `credits_remaining` | number \| null    | legacy credits field                                                                                   |
-| `usage_credits`     | object \| omitted | extra/pay-as-you-go wallet when present                                                                |
-| `error`             | string \| null    | row-level error                                                                                        |
-| `notes`             | string[]          | human notes (age, hydrate, etc.)                                                                       |
+| Field               | Type              | Stable?                                                                                                                                                                                                                   |
+| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing`; grows as collectors are added |
+| `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                                                                                                                                                |
+| `cli_binary`        | string \| null    | local CLI binary that spends this quota; `null` = API-only / cloud-run (see below)                                                                                                                                        |
+| `account`           | string \| null    | email or label when known                                                                                                                                                                                                 |
+| `plan`              | string \| null    | plan name if reported                                                                                                                                                                                                     |
+| `billing_kind`      | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                                                                                                                                                     |
+| `windows`           | array             | quota windows                                                                                                                                                                                                             |
+| `balance_usd`       | number \| null    | prepaid balance                                                                                                                                                                                                           |
+| `credits_remaining` | number \| null    | legacy credits field                                                                                                                                                                                                      |
+| `usage_credits`     | object \| omitted | extra/pay-as-you-go wallet when present                                                                                                                                                                                   |
+| `error`             | string \| null    | row-level error                                                                                                                                                                                                           |
+| `notes`             | string[]          | human notes (age, hydrate, etc.)                                                                                                                                                                                          |
+| `provider_id`       | string            | canonical provider id used for matching/history (equals `provider` unless the row carries an alias spelling)                                                                                                              |
+| `service_id`        | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                         |
+| `collector_id`      | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                         |
 
 `raw` is **not** included in JSON (internal only).
+
+`cli_binary` names the local CLI that _spends_ the provider's quota — the
+coding TUI you launch to burn the allotment (`agy`, `zcode`, `cursor-agent`,
+`opencode`, `qwen`, …) — resolved through provider aliases (`gemini` → `agy`).
+It is deliberately **not** the quota-measurement tool a collector shells out to
+(`qwencloud`, `bl`, `caut`, `tokscale`, `openusage`, `cswap`, `codexbar`
+report quota but do not consume it). Providers with no local CLI — API-only or
+cloud-run, e.g. `openrouter`, `deepseek` — emit `null`. Added in **3.0.40**;
+additive per the stability policy below.
 
 ### `windows[]` (`QuotaWindow`)
 

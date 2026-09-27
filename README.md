@@ -27,8 +27,20 @@ for the actual agent CLI whose quota it tracks:
 | GitHub Copilot              | `copilot`                     |
 | Grok / SuperGrok            | `grok` (Grok Build)           |
 | Gemini / Google Antigravity | `agy`                         |
-| OpenCode                    | `opencode`                    |
+| OpenCode (Go + Zen)         | `opencode`                    |
+| Z.ai                        | `zcode`                       |
+| QwenCloud / Alibaba Bailian | `qwen` (Qwen Code)            |
+| Muse (Meta)                 | `muse`                        |
+| Devin                       | `devin`                       |
+| ClinePass                   | `cline`                       |
+| Hyper                       | `crush`                       |
 | DeepSeek, OpenRouter        | no CLI — per-token $ API only |
+
+`aiuse --json` exposes this same mapping per account row as `cli_binary`
+(`null` when there is no local CLI) — see
+[`docs/json-contract.md`](docs/json-contract.md). Note the trap this table
+exists for: the _quota_ CLIs (`qwencloud`, `bl`, `caut`, `tokscale`,
+`openusage`, `cswap`, `codexbar`) measure usage; they are not how you burn it.
 
 ## See it in action
 
