@@ -13,6 +13,7 @@
 # muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
 # qwencloud = 45  # qwencloud CLI (`qwencloud auth login` once; no API-key mode)
 # bailian = 45    # bailian-cli / bl (`bl auth login --console` once)
+# grok_billing = 15  # native Grok Extra Usage Credits billing (~/.grok/auth.json)
 # tokscale = 45
 
 [collectors.caut]
@@ -62,6 +63,12 @@
 # One-time console OAuth: bl auth login --console
 # Surfaces token/coding-plan 5h + weekly quota windows via `bl usage`.
 # enabled = true
+
+[collectors.grok_billing]
+# Grok Extra Usage Credits (prepaid wallet) via the local `grok` CLI's billing
+# endpoint; needs a one-time `grok` CLI login (~/.grok/auth.json). Supplements
+# the SuperGrok weekly pool from CodexBar/OpenUsage — see docs/grok-quota.md.
+# enabled = false   # when you do not use the grok CLI on this machine
 
 # Usually unnecessary: aiuse automatically unifies a provider when every live
 # source reports exactly one named account.  For a genuinely multi-account

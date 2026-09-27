@@ -243,3 +243,18 @@ def test_generate_user_config_refuses_to_create_toml_beside_legacy_yaml(monkeypa
 def test_default_config_dir_is_under_xdg_ai(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     assert default_config_dir() == tmp_path / "aiuse"
+
+
+def test_validate_config_accepts_native_collector_keys():
+    """grok_billing/openrouter/clinepass are runner-gated, so config must know them."""
+    issues = validate_config(
+        {
+            "timeouts": {"grok_billing": 15, "openrouter": 45, "clinepass": 45},
+            "collectors": {
+                "grok_billing": {"enabled": True},
+                "openrouter": {"enabled": False},
+                "clinepass": {"enabled": False},
+            },
+        }
+    )
+    assert issues == []

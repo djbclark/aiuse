@@ -239,6 +239,9 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "muse",
         "qwencloud",
         "bailian",
+        "openrouter",
+        "clinepass",
+        "grok_billing",
     }
 )
 KNOWN_COLLECTOR_KEYS = frozenset(
@@ -255,6 +258,9 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "muse",
         "qwencloud",
         "bailian",
+        "openrouter",
+        "clinepass",
+        "grok_billing",
     }
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(

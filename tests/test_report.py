@@ -12,6 +12,7 @@ from aiuse.models import (
     QuotaWindow,
     Snapshot,
     Urgency,
+    UsageCredits,
     UseOrLoseAlert,
     provider_display_name,
     utcnow,
@@ -24,6 +25,7 @@ from aiuse.report import (
     _action_plan_line,
     _advance_matrix_layout,
     _build_matrix_rows,
+    _extra_usage_wallet_fragment,
     _format_reset_span,
     _human_deadline,
     _MatrixLayout,
@@ -1218,6 +1220,16 @@ def test_priority_ladder_lists_antigravity_pools_separately():
     text2 = render_priority_ladder([gemini_burn], snapshot=snap, color=False)
     assert "Gemini weekly" in text2
     assert "Claude/GPT weekly" in text2
+
+
+def test_grok_extra_usage_wallet_fragment():
+    account = AccountUsage(
+        provider="grok",
+        source="codexbar",
+        usage_credits=UsageCredits(remaining=18.93, currency="USD"),
+    )
+    assert _extra_usage_wallet_fragment(account) == " · $18.93 extra credits"
+    assert _extra_usage_wallet_fragment(AccountUsage(provider="grok", source="codexbar")) == ""
 
 
 def test_negative_prepaid_is_empty_band():

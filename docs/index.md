@@ -34,6 +34,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`clinepass-quota.md`](clinepass-quota.md) — ClinePass 5h / weekly / monthly shared allotment.
 - [`zai-quota.md`](zai-quota.md) — z.ai GLM coding-plan 5h / weekly credits.
 - [`hyper-quota.md`](hyper-quota.md) — Charm Hyper monthly plan.
+- [`grok-quota.md`](grok-quota.md) — Grok weekly pool + Extra Usage Credits (`grok_billing` native collector).
 
 - [`devin-quota.md`](devin-quota.md) — Devin Free/Pro/Max daily + weekly included quota.
 - [`muse-quota.md`](muse-quota.md) — Muse Spark / Muse Code pay-as-you-go (Meta Model API).

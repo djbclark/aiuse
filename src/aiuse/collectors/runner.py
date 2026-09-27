@@ -26,6 +26,7 @@ from .caut import collect_caut
 from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
+from .grok import collect_grok
 from .hermes import collect_hermes
 from .muse import collect_muse
 from .opencode_go import collect_opencode_go
@@ -82,6 +83,7 @@ SOURCE_LABELS: dict[str, str] = {
     "muse": "Muse (native)",
     "qwencloud": "QwenCloud (native)",
     "bailian": "Bailian (native)",
+    "grok_billing": "Grok Billing (native)",
 }
 
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
@@ -115,6 +117,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 ),
             )
         )
+    if _enabled(collectors_cfg, "grok_billing"):
+        jobs.append(("grok_billing", partial(collect_grok, timeout=timeout_for(config, "grok_billing"))))
     if _enabled(collectors_cfg, "caut"):
         caut_cfg = collectors_cfg.get("caut") if isinstance(collectors_cfg.get("caut"), dict) else {}
         caut_providers = (caut_cfg or {}).get("providers", "all")
@@ -174,6 +178,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
             except Exception as exc:  # noqa: BLE001
                 snapshot.collector_errors.append(f"{name}: {exc}")
 
+    _merge_grok_extra_credits(snapshot.accounts)
     snapshot.accounts, snapshot.cross_checks = _select_and_cross_check(
         snapshot.accounts,
         cswap_authoritative=_enabled(collectors_cfg, "cswap"),
@@ -181,6 +186,42 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     )
     _apply_lapsed_accounts(snapshot.accounts, config)
     return snapshot
+
+
+def _merge_grok_extra_credits(accounts: list[AccountUsage]) -> None:
+    """Fold Grok Extra Usage Credits into CodexBar/OpenUsage grok rows.
+
+    The billing row is a supplement: when another collector already carries a
+    ``grok`` row, the wallet folds in as ``usage_credits`` and the standalone
+    row is dropped. When nothing else reports grok (e.g. CodexBar disabled),
+    the row is kept — dropping it would hide a known prepaid wallet behind a
+    missing host row.
+    """
+    extra = next(
+        (
+            account
+            for account in accounts
+            if account.provider == "grok" and account.source == "grok_billing" and account.usage_credits is not None
+        ),
+        None,
+    )
+    has_host = any(account.provider == "grok" and account.source != "grok_billing" for account in accounts)
+    keep_standalone = extra is not None and not has_host
+    accounts[:] = [
+        account
+        for account in accounts
+        if not (account.provider == "grok" and account.source == "grok_billing" and not keep_standalone)
+    ]
+    if extra is None or not has_host:
+        return
+    for account in accounts:
+        if account.provider != "grok":
+            continue
+        if account.usage_credits is None:
+            account.usage_credits = extra.usage_credits
+        for note in extra.notes:
+            if note not in account.notes:
+                account.notes.append(note)
 
 
 def _apply_lapsed_accounts(accounts: list[AccountUsage], config: dict[str, Any] | None) -> None:

@@ -494,6 +494,17 @@ def _account_is_spend_up_payg(account: AccountUsage) -> bool:
     )
 
 
+def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
+    """Short suffix when a subscription row also has Extra Usage Credits."""
+    uc = account.usage_credits
+    if uc is None or uc.remaining is None:
+        return ""
+    remaining = float(uc.remaining)
+    if remaining <= 0:
+        return " · extra credits empty"
+    return f" · ${remaining:.2f} extra credits"
+
+
 def _api_inventory_note(account: AccountUsage) -> str:
     """Ladder/matrix note for prepaid count-down vs spend-up meters."""
     if _account_is_spend_up_payg(account):
@@ -1226,6 +1237,9 @@ def _build_matrix_rows(
                     if window.reset_description:
                         note = window.reset_description
                         break
+            extra_note = _extra_usage_wallet_fragment(account).strip(" ·")
+            if extra_note and band == _BAND_EMPTY:
+                note = extra_note if note is None else f"{note} · {extra_note}"
             rows.append(
                 _MatrixRow(
                     sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
@@ -1633,7 +1647,10 @@ def _priority_account_line(
         when = _human_deadline(window.days_until_reset(), estimated=not window.reset_time_is_precise())
         # Empty capacity is not "ok" — only show reset timing.
         status = "resets" if band == _BAND_EMPTY else "ok"
-        body = f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · {status} {when}"
+        body = (
+            f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · {status} {when}"
+            f"{_extra_usage_wallet_fragment(account)}"
+        )
     elif account.balance_usd is not None:
         body = f"{name} · {who} · ${account.balance_usd:.2f} (counts down)"
     elif account.credits_remaining is not None:
