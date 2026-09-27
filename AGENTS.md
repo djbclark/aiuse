@@ -12,14 +12,18 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-09-27):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.0.40**
+done. Product issues **#1–#9** done. Packaging **3.1.0**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release. The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
 tracks only what a fresh session must know. **15 registered collectors**
 (cswap, CodexBar, caut, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale, hermes,
 muse, qwencloud, bailian, openrouter, clinepass, grok_billing — native
 collectors are default-on and quiet when their prerequisites are absent).
-Account rows in `aiuse --json` carry **`cli_binary`**: the local CLI that
+Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
+monthly reset parsed from the billing API's `currentPeriod`, see
+[`docs/grok-quota.md`](docs/grok-quota.md)) beside the prepaid wallet — and a
+wallet note never suppresses reset cells in the matrix. Account rows in
+`aiuse --json` carry **`cli_binary`**: the local CLI that
 _spends_ each provider's quota, not the quota-measurement tool a collector
 shells out to — see [`docs/json-contract.md`](docs/json-contract.md) and
 README's "Which vendor CLI is which". Prepaid/`n/a` band; hourly LaunchAgent;

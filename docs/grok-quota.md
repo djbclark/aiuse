@@ -28,9 +28,13 @@ Authorization: Bearer <token>
 ```
 
 `config.prepaidBalance.val` is **USD cents** (live-checked against ~$20
-purchases). Setup is just logging in once with the `grok` CLI; no API key and
-no Keychain entry. Without `~/.grok/auth.json` the collector is silent (`[]`)
-— grok rows simply come from the other sources, as before.
+purchases). The same payload carries the plan period itself:
+`config.currentPeriod` (`type` / `start` / `end`) and
+`config.creditUsagePercent`, plus a `config.productUsage` list of per-product
+pool percentages (e.g. GrokBuild vs GrokChat). Setup is just logging in once
+with the `grok` CLI; no API key and no Keychain entry. Without
+`~/.grok/auth.json` the collector is silent (`[]`) — grok rows simply come
+from the other sources, as before.
 
 ## How the wallet surfaces
 
@@ -41,7 +45,27 @@ no Keychain entry. Without `~/.grok/auth.json` the collector is silent (`[]`)
   grok, the standalone row is kept so a known prepaid wallet is not hidden
   behind a disabled source.
 - The ladder and matrix append `· $X.XX extra credits` (or `extra credits
-empty` at zero) to the grok line.
+empty` at zero) to the grok line. The wallet is inventory, not a clock: in
+  the matrix it renders as a trailing note and never suppresses the reset
+  cells of a window on the same row.
+
+## How the plan reset surfaces
+
+Since 3.1.0 the collector also parses `currentPeriod` into a `QuotaWindow` so
+the time until the plan resets survives with CodexBar disabled:
+
+- `USAGE_PERIOD_TYPE_HOURLY` / `_DAILY` / `_WEEKLY` / `_MONTHLY` map to
+  labels `hourly plan` / `daily plan` / `weekly plan` / `monthly plan` and
+  nominal window minutes (60 / 1440 / 10080 / 43200); unknown types fall back
+  to label `plan` with no minutes, and the clock is then inferred from the
+  reset distance.
+- `creditUsagePercent` becomes the window's `used_percent`; `currentPeriod.end`
+  becomes `resets_at`.
+- `productUsage` becomes a note (`Plan pools: GrokBuild 93% used · …`).
+- A subscriber with an empty prepaid wallet still gets a row: the plan window
+  alone is enough.
+- On merge, the billing window fills only a host row that has **no** windows
+  of its own — CodexBar's window wins, no duplication.
 
 ## Config
 
@@ -56,5 +80,6 @@ empty` at zero) to the grok line.
 ## JSON
 
 Account rows carry `cli_binary: "grok"`; the wallet is the optional
-`usage_credits` object (`remaining` in USD), per
-[`json-contract.md`](json-contract.md).
+`usage_credits` object (`remaining` in USD), and the plan period is an
+ordinary entry in `windows` (`label`, `used_percent`, `resets_at`,
+`window_minutes`), per [`json-contract.md`](json-contract.md).
