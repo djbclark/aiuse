@@ -16,13 +16,13 @@ def pick_suggestion(alerts: list[UseOrLoseAlert]) -> UseOrLoseAlert | None:
     burns = [a for a in alerts if a.kind == "burn" and a.urgency not in (Urgency.INFO, Urgency.NONE)]
     if not burns:
         return None
-    # Higher score first; more remaining and sooner reset as light tie-breakers.
+    # Higher score first; sooner reset and more remaining as tie-breakers.
     return max(
         burns,
         key=lambda a: (
             float(a.score),
-            float(a.remaining_percent),
             -(float(a.days_until_reset) if a.days_until_reset is not None else 99.0),
+            float(a.remaining_percent),
         ),
     )
 

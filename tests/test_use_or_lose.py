@@ -1365,3 +1365,64 @@ def test_history_child_is_suppressed_across_collector_label_variants(monkeypatch
 
     alerts = analyze_use_or_lose(snap, cfg)
     assert not any(a.source == "history" for a in alerts)
+
+
+def test_pace_scoring_prioritizes_soon_and_inflexible():
+    """Verify that a rigid window expiring soon outscores a flexible monthly window
+    with a higher projected waste fraction."""
+    from datetime import timedelta
+
+    from aiuse.analysis.use_or_lose import analyze_use_or_lose
+    from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, utcnow
+
+    now = utcnow()
+
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="test",
+                provider="claude",
+                account="user1",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    # Window 1: rigid, short, expires very soon
+                    QuotaWindow(
+                        label="5-hour",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(hours=1),
+                        window_minutes=300,
+                    ),
+                    # Window 2: flexible, long, expires later
+                    QuotaWindow(
+                        label="monthly",
+                        used_percent=10.0,
+                        remaining_percent=90.0,
+                        resets_at=now + timedelta(days=2),
+                        window_minutes=43200,  # 30 days
+                    ),
+                ],
+            )
+        ],
+    )
+
+    cfg = _pace_cfg()
+    cfg["analysis"]["provider_overrides"] = {
+        "claude": {
+            "5h": {"flexibility": 0.0},  # Inflexible
+            "monthly": {"flexibility": 1.0},  # Flexible
+            "shared_allotment": False,  # Score them both
+        }
+    }
+    cfg["analysis"]["min_value_at_risk_usd"] = 0.0
+    cfg["analysis"]["min_value_fraction"] = 0.0
+    cfg["plans"] = {"claude": {"monthly_price": 20, "name": "Claude Pro"}}
+
+    alerts = analyze_use_or_lose(snap, cfg)
+    assert len(alerts) == 2
+
+    # Sort order is highest score first, breaking ties by sooner reset
+    assert alerts[0].window_label == "5-hour"
+    assert alerts[1].window_label == "monthly"
+    assert alerts[0].score >= alerts[1].score

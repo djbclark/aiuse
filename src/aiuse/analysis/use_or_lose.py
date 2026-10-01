@@ -420,7 +420,26 @@ def analyze_use_or_lose(
                         plan_price = float(monthly_price or 0)
                         if plan_price <= 0 or (pace.projected_waste_usd / plan_price) < min_value_fraction:
                             continue
-                    score = min(100.0, 30.0 + 70.0 * (pace.projected_waste_fraction or 0.0))
+
+                    base_score = 30.0 + 70.0 * (pace.projected_waste_fraction or 0.0)
+
+                    time_bonus = 0.0
+                    if days is not None:
+                        if days <= 0.5:
+                            time_bonus = 25.0
+                        elif days <= 1.0:
+                            time_bonus = 15.0
+                        elif days <= 3.0:
+                            time_bonus = 10.0
+                        elif days <= 7.0:
+                            time_bonus = 5.0
+
+                    flex_bonus = 0.0
+                    if flex_profile is not None:
+                        flex_bonus = 15.0 * (1.0 - flex_profile.consumption_flexibility)
+
+                    score = min(100.0, base_score + time_bonus + flex_bonus)
+
                     if score >= 90:
                         urgency = Urgency.CRITICAL
                     elif score >= 75:
@@ -562,7 +581,14 @@ def analyze_use_or_lose(
                     deadline_is_estimated=not window.reset_time_is_precise(),
                 )
             )
-    alerts.sort(key=lambda a: (-a.score, a.provider.casefold(), a.window_label.casefold()))
+    alerts.sort(
+        key=lambda a: (
+            -a.score,
+            a.days_until_reset if a.days_until_reset is not None else 99.0,
+            a.provider.casefold(),
+            a.window_label.casefold(),
+        )
+    )
 
     if should_learn_from_history(analysis_cfg):
         retention = int(analysis_cfg.get("snapshot_retention_days", 90))
