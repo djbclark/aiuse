@@ -404,6 +404,14 @@ def analyze_use_or_lose(
                     conserve_min_lead_hours=float(pace_cfg.get("conserve_min_lead_hours", 4.0)),
                     has_learned_rate=learned_n > 0,
                 )
+                is_short = days is not None and days <= 1.0
+                is_prioritized = priority_weight > 0
+                if verdict == "on_pace" and (is_short or is_prioritized):
+                    if pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= float(
+                        pace_cfg.get("waste_alert_fraction", 0.30)
+                    ):
+                        verdict = "burn"
+
                 if verdict in ("on_pace", "unknown"):
                     continue
                 if days is not None and days > max_days and verdict != "conserve":
