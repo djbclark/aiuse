@@ -1089,10 +1089,10 @@ def test_clock_matrix_action_score_covers_all_bands_and_uses_color():
     assert scores["n/a"] == "--"
     assert 25 <= int(scores["slow"]) <= 49
     assert 50 <= int(scores["mid"]) <= 74
-    assert scores["use"] == "99"
+    assert scores["use"] == "92"
 
     colored = render_clock_matrix(alerts, snapshot=snapshot, color=True, width=200)
-    assert "\033[32m\033[1m99" in colored
+    assert "\033[32m\033[1m92" in colored
 
 
 def test_action_score_has_contiguous_cross_band_boundaries():
@@ -1103,7 +1103,8 @@ def test_action_score_has_contiguous_cross_band_boundaries():
     assert _queue_score(4, (0.0, 0.0, 0.0)) == 50  # weakest mid
     assert _queue_score(4, (100.0, 0.0, 0.0)) == 74  # strongest mid
     assert _queue_score(5, (0.0, 0.0, 0.0)) == 75  # weakest use
-    assert _queue_score(5, (100.0, 0.0, 0.0)) == 99  # use ASAP
+    assert _queue_score(5, (100.0, 0.0, 0.0)) == 92  # high urgency use
+    assert _queue_score(5, (150.0, 0.0, 0.0)) == 99  # max urgency use
 
 
 def test_soft_window_score_combines_capacity_with_deadline_pressure():

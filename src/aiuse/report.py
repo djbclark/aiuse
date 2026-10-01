@@ -471,14 +471,25 @@ def _queue_score(band: int, priority: tuple[float, float, float]) -> int | None:
         return None
     if band == _BAND_EMPTY:
         return 0
-    raw = max(0.0, min(100.0, float(priority[0])))
+
+    raw = float(priority[0])
+
     if band == _BAND_CONSERVE:
         # A live but currently unsafe quota occupies the lower action quartile.
         # Readiness moves it toward the adjacent ``mid`` threshold.
-        return 25 + round(raw * 24.0 / 100.0)
+        clamped = max(0.0, min(100.0, raw))
+        return 25 + round(clamped * 24.0 / 100.0)
     if band == _BAND_MID:
         return round(max(50.0, min(74.0, raw)))
-    return round(max(75.0, min(99.0, raw)))
+
+    # _BAND_USE: Scale short-window top priorities (which can hit raw 150+)
+    # to differentiate them in the 90-99 range without artificial flattening.
+    if raw <= 90.0:
+        return round(max(75.0, raw))
+    elif raw >= 150.0:
+        return 99
+    else:
+        return 90 + round((raw - 90.0) * (9.0 / 60.0))
 
 
 def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
