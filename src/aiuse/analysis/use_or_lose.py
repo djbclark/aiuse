@@ -422,7 +422,13 @@ def analyze_use_or_lose(
                     pace.projected_waste_usd = round((pace.projected_waste_fraction or 0.0) * v_cycle, 2)
 
                 if verdict == "burn":
-                    if pace.projected_waste_usd is not None and pace.projected_waste_usd < min_value_usd:
+                    is_short = days is not None and days <= 1.0
+                    is_prioritized = priority_weight > 0
+                    if (
+                        not (is_short or is_prioritized)
+                        and pace.projected_waste_usd is not None
+                        and pace.projected_waste_usd < min_value_usd
+                    ):
                         plan_price = float(monthly_price or 0)
                         if plan_price <= 0 or (pace.projected_waste_usd / plan_price) < min_value_fraction:
                             continue
@@ -431,20 +437,21 @@ def analyze_use_or_lose(
 
                     time_bonus = 0.0
                     if days is not None:
-                        if days <= 0.5:
-                            time_bonus = 25.0
+                        if days <= 0.25:  # <= 6 hours
+                            time_bonus = 40.0
                         elif days <= 1.0:
-                            time_bonus = 15.0
+                            time_bonus = 25.0
                         elif days <= 3.0:
                             time_bonus = 10.0
                         elif days <= 7.0:
-                            time_bonus = 5.0
+                            time_bonus = 0.0
 
                     flex_bonus = 0.0
                     if flex_profile is not None:
                         flex_bonus = 15.0 * (1.0 - flex_profile.consumption_flexibility)
 
-                    score = min(100.0, base_score + time_bonus + flex_bonus)
+                    score = min(100.0, base_score + flex_bonus)
+                    score += time_bonus
                     score += priority_weight * 5.0
 
                     if score >= 90:
@@ -527,6 +534,16 @@ def analyze_use_or_lose(
                     monthly_price=float(monthly_price) if monthly_price is not None else None,
                 )
                 if urgency != Urgency.NONE:
+                    # Give short-window bonus to legacy/v1 modes too
+                    time_bonus = 0.0
+                    if days is not None:
+                        if days <= 0.25:
+                            time_bonus = 40.0
+                        elif days <= 1.0:
+                            time_bonus = 25.0
+                        elif days <= 3.0:
+                            time_bonus = 10.0
+                    score += time_bonus
                     score += priority_weight * 5.0
 
                 value_usd = flex_profile.value_at_risk_usd
@@ -563,6 +580,16 @@ def analyze_use_or_lose(
                     max_days=max_days,
                 )
                 if urgency != Urgency.NONE:
+                    # Give short-window bonus to legacy/v1 modes too
+                    time_bonus = 0.0
+                    if days is not None:
+                        if days <= 0.25:
+                            time_bonus = 40.0
+                        elif days <= 1.0:
+                            time_bonus = 25.0
+                        elif days <= 3.0:
+                            time_bonus = 10.0
+                    score += time_bonus
                     score += priority_weight * 5.0
                 if urgency == Urgency.NONE:
                     continue
