@@ -54,6 +54,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "weekly": 0.7,
             "monthly": 1.0,
         },
+        "provider_priority": ["cursor", "devin", "codex"],
         "provider_overrides": {
             "claude": {
                 "shared_allotment": True,  # 5h ⊂ weekly; pace-score governing window only
@@ -217,11 +218,44 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # resolves providers where every source has exactly one named account.
     # Example: {"codex": {"openusage_sh": {"codex-cli": "me@example.com"}}}
     "account_aliases": {},
+    # Adaptive cadence for `aiuse sample` (the scheduled entry point). The
+    # scheduler fires every ``burst_interval``; most firings return immediately.
+    "sampling": {
+        "idle_interval": 3600,  # nothing moved since the previous sample
+        "active_interval": 900,  # some window moved
+        "burst_interval": 180,  # a window is burning fast (hot providers only)
+        "min_move_percent": 0.5,  # smallest rise that counts as "moved"
+        # Burst needs both: an absolute rate, and a multiple of the pace that
+        # would exactly exhaust the window (so a 5-hour window's normal 20
+        # points/hour is not a burst, but a weekly window's 8 is).
+        "burst_percent_per_hour": 8.0,
+        "burst_pace_ratio": 3.0,
+        "cooldown_samples": 3,  # quiet samples before stepping down one tier
+    },
+    # Token ledgers set beside the quota meters by `aiuse attribute`.
+    "attribution": {
+        # true | false | "auto" — capture tokscale's per-client session-file
+        # totals with each persisted snapshot (auto: when tokscale is on PATH).
+        "ledger": "auto",
+        # "tokscale-client/tokscale-provider" (fnmatch) -> aiuse provider id,
+        # checked before the built-in table. Example: {"hermes/openai": "codex"}
+        "provider_map": {},
+        "litellm": {
+            # Postgres URL of a LiteLLM proxy's spend database; empty = off.
+            "database_url": "",
+            "psql": "psql",
+            # model_group (fnmatch) -> aiuse provider id, for routes whose
+            # upstream cannot be told from the api_base (a local bridge).
+            "provider_map": {},
+        },
+    },
 }
 
 
 # Top-level and nested keys recognized by the loader / doctor (unknown → warning).
-KNOWN_TOP_LEVEL_KEYS = frozenset({"timeouts", "analysis", "plans", "collectors", "account_aliases", "macos"})
+KNOWN_TOP_LEVEL_KEYS = frozenset(
+    {"timeouts", "analysis", "plans", "collectors", "account_aliases", "macos", "sampling", "attribution"}
+)
 KNOWN_TIMEOUT_KEYS = frozenset(
     {
         "default",
@@ -313,6 +347,9 @@ def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None
 
 
 KNOWN_ANALYSIS_KEYS = frozenset(DEFAULT_CONFIG["analysis"].keys())
+KNOWN_SAMPLING_KEYS = frozenset(DEFAULT_CONFIG["sampling"].keys())
+KNOWN_ATTRIBUTION_KEYS = frozenset(DEFAULT_CONFIG["attribution"].keys())
+KNOWN_ATTRIBUTION_LITELLM_KEYS = frozenset(DEFAULT_CONFIG["attribution"]["litellm"].keys())
 KNOWN_PACE_KEYS = frozenset(DEFAULT_CONFIG["analysis"]["pace"].keys())
 KNOWN_SCORING_MODES = frozenset({"pace", "multi_dim", "legacy"})
 
@@ -464,6 +501,39 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 issues.append(
                     f"warning: plans key {name!r} is dead — use {canon!r} (collector id aliases to that config key)"
                 )
+
+    sampling = cfg.get("sampling")
+    if sampling is not None and not isinstance(sampling, dict):
+        issues.append("error: sampling must be a mapping")
+    elif isinstance(sampling, dict):
+        for key, value in sampling.items():
+            if key not in KNOWN_SAMPLING_KEYS:
+                issues.append(f"warning: unknown sampling key {key!r}")
+                continue
+            try:
+                num = float(value)
+            except (TypeError, ValueError):
+                issues.append(f"error: sampling.{key} must be a number (got {value!r})")
+                continue
+            if num <= 0:
+                issues.append(f"error: sampling.{key} must be positive (got {num:g})")
+
+    attribution = cfg.get("attribution")
+    if attribution is not None and not isinstance(attribution, dict):
+        issues.append("error: attribution must be a mapping")
+    elif isinstance(attribution, dict):
+        for key in attribution:
+            if key not in KNOWN_ATTRIBUTION_KEYS:
+                issues.append(f"warning: unknown attribution key {key!r}")
+        if not isinstance(attribution.get("provider_map", {}), dict):
+            issues.append("error: attribution.provider_map must be a mapping")
+        litellm = attribution.get("litellm")
+        if litellm is not None and not isinstance(litellm, dict):
+            issues.append("error: attribution.litellm must be a mapping")
+        elif isinstance(litellm, dict):
+            for key in litellm:
+                if key not in KNOWN_ATTRIBUTION_LITELLM_KEYS:
+                    issues.append(f"warning: unknown attribution.litellm key {key!r}")
 
     macos = cfg.get("macos")
     if macos is not None and not isinstance(macos, dict):

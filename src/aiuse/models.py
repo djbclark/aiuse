@@ -588,6 +588,7 @@ class UseOrLoseAlert:
     kind: str = "burn"  # burn | conserve | prepaid
     pace: PaceProfile | None = None
     deadline_is_estimated: bool = False
+    priority_weight: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {

@@ -296,6 +296,12 @@ def analyze_use_or_lose(
         value_multipliers = plan_meta.get("value_multiplier")
         provider_key = provider_config_key(account.provider)
 
+        priorities = analysis_cfg.get("provider_priority") or []
+        try:
+            priority_weight = len(priorities) - priorities.index(provider_key)
+        except ValueError:
+            priority_weight = 0
+
         # Shared-allotment (pace mode): score only the longest-duration window per
         # *independent* pool; shorter siblings (e.g. Claude 5h under weekly) are
         # suppressed children. Hard-separated families (Antigravity Gemini vs
@@ -439,6 +445,7 @@ def analyze_use_or_lose(
                         flex_bonus = 15.0 * (1.0 - flex_profile.consumption_flexibility)
 
                     score = min(100.0, base_score + time_bonus + flex_bonus)
+                    score += priority_weight * 5.0
 
                     if score >= 90:
                         urgency = Urgency.CRITICAL
@@ -496,6 +503,7 @@ def analyze_use_or_lose(
                         kind=kind,
                         pace=pace,
                         deadline_is_estimated=not window.reset_time_is_precise(),
+                        priority_weight=priority_weight,
                     )
                 )
                 continue
@@ -518,6 +526,8 @@ def analyze_use_or_lose(
                     config=config,
                     monthly_price=float(monthly_price) if monthly_price is not None else None,
                 )
+                if urgency != Urgency.NONE:
+                    score += priority_weight * 5.0
 
                 value_usd = flex_profile.value_at_risk_usd
                 plan_price = float(monthly_price or 0)
@@ -552,6 +562,8 @@ def analyze_use_or_lose(
                     label=window.label,
                     max_days=max_days,
                 )
+                if urgency != Urgency.NONE:
+                    score += priority_weight * 5.0
                 if urgency == Urgency.NONE:
                     continue
 
