@@ -8,6 +8,7 @@ forces a live collect.
 from __future__ import annotations
 
 import json
+import socket
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,8 +34,45 @@ from aiuse.models import (
 )
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8787
+# 28787, not 8787: 8787 is commonly held by other loopback apps (on the
+# operator's machine it is the registered collie-bridge port, which answers
+# every path with HTML 200 — indistinguishable from aiuse for a client that
+# doesn't check /v1/health). run_serve refuses to start when the port is
+# already held by a non-aiuse responder.
+DEFAULT_PORT = 28787
 DEFAULT_MAX_AGE_SECONDS = 3600.0
+_PROBE_TIMEOUT_SECONDS = 1.5
+
+
+def probe_port_holder(host: str, port: int) -> str | None:
+    """Return who holds (host, port): ``"aiuse"``, ``"other"``, or None (free).
+
+    A TCP connect that nothing accepts counts as free; a responder whose
+    /v1/health body names ``"service": "aiuse"`` counts as aiuse; anything
+    else — including HTML, empty replies, or connection resets — counts as
+    other. Never raises.
+    """
+    try:
+        with socket.create_connection((host, port), timeout=_PROBE_TIMEOUT_SECONDS) as sock:
+            sock.settimeout(_PROBE_TIMEOUT_SECONDS)
+            sock.sendall(b"GET /v1/health HTTP/1.1\r\nHost: aiuse-probe\r\nConnection: close\r\n\r\n")
+            chunks: list[bytes] = []
+            while sum(len(c) for c in chunks) < 4096:
+                chunk = sock.recv(1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+    except OSError:
+        return None
+    raw = b"".join(chunks)
+    body = raw.split(b"\r\n\r\n", 1)[-1] if b"\r\n\r\n" in raw else raw
+    try:
+        parsed = json.loads(body.decode("utf-8", "replace"))
+    except ValueError:
+        return "other"
+    if isinstance(parsed, dict) and parsed.get("service") == "aiuse":
+        return "aiuse"
+    return "other"
 
 
 def run_serve(
@@ -48,6 +86,22 @@ def run_serve(
     if host not in ("127.0.0.1", "localhost", "::1"):
         print(
             f"error: refuse to bind non-loopback host {host!r} (pass 127.0.0.1 / localhost only)",
+            flush=True,
+        )
+        return 1
+
+    holder = probe_port_holder(host, port)
+    if holder == "aiuse":
+        print(
+            f"error: an aiuse serve is already listening on {host}:{port} — not starting a second one",
+            flush=True,
+        )
+        return 1
+    if holder == "other":
+        print(
+            f"error: {host}:{port} is already held by a non-aiuse server; refusing to start "
+            f"(verify with `lsof -nP -iTCP:{port} -sTCP:LISTEN`, or pass --port; clients can "
+            f'identity-check any listener via GET /v1/health -> {{"service": "aiuse"}})',
             flush=True,
         )
         return 1
@@ -120,7 +174,15 @@ def run_serve(
             self.end_headers()
             self.wfile.write(data)
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    try:
+        server = ThreadingHTTPServer((host, port), Handler)
+    except OSError as exc:
+        print(
+            f"error: cannot bind {host}:{port} ({exc}); verify with "
+            f"`lsof -nP -iTCP:{port} -sTCP:LISTEN` or pass --port",
+            flush=True,
+        )
+        return 1
     print(
         f"aiuse serve  http://{host}:{port}/v1/  (loopback only; max_age={max_age_seconds:g}s; Ctrl-C to stop)",
         flush=True,

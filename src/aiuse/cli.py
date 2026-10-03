@@ -164,8 +164,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--port",
         type=int,
-        default=8787,
-        help="Port for aiuse serve (default 8787, 127.0.0.1 only)",
+        default=28787,
+        help="Port for aiuse serve (default 28787 — moved off 8787, which other loopback apps commonly hold; 127.0.0.1 only)",
     )
     p.add_argument(
         "--max-age",

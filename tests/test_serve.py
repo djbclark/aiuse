@@ -103,3 +103,98 @@ def test_http_handler_health(monkeypatch):
 
     code = serve_mod.run_serve(host="0.0.0.0", port=1)
     assert code == 1
+
+
+def test_default_port_is_not_8787():
+    # 8787 is commonly held by other loopback apps (collie-bridge on the
+    # operator's Mac answers every path with HTML 200). Pin the moved default
+    # and keep the CLI argparse default in sync with serve.DEFAULT_PORT.
+    from aiuse import cli as cli_mod
+    from aiuse.serve import DEFAULT_PORT
+
+    assert DEFAULT_PORT == 28787
+    parser = cli_mod.build_parser()
+    got = [a for a in parser._actions if "--port" in a.option_strings]
+    assert got and got[0].default == DEFAULT_PORT
+
+
+class _StubResponder:
+    """Minimal HTTP server impersonating whatever holds a port in tests."""
+
+    def __init__(self, *, aiuse_health: bool) -> None:
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):  # noqa: A003
+                pass
+
+            def do_GET(self):  # noqa: N802
+                if aiuse_health:
+                    body = b'{"ok": true, "service": "aiuse", "version": "9.9.9"}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                else:
+                    body = b"<html><body>collie says hi</body></html>"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        import threading
+
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    @property
+    def port(self) -> int:
+        return self._server.server_address[1]
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def test_probe_port_holder_free_aiuse_other():
+    from aiuse.serve import probe_port_holder
+
+    assert probe_port_holder("127.0.0.1", 1) is None  # nothing listens on tcp/1
+
+    stub_aiuse = _StubResponder(aiuse_health=True)
+    try:
+        assert probe_port_holder("127.0.0.1", stub_aiuse.port) == "aiuse"
+    finally:
+        stub_aiuse.close()
+
+    stub_other = _StubResponder(aiuse_health=False)
+    try:
+        assert probe_port_holder("127.0.0.1", stub_other.port) == "other"
+    finally:
+        stub_other.close()
+
+
+def test_run_serve_refuses_port_held_by_non_aiuse(capsys):
+    from aiuse import serve as serve_mod
+
+    stub = _StubResponder(aiuse_health=False)
+    try:
+        code = serve_mod.run_serve(host="127.0.0.1", port=stub.port)
+        assert code == 1
+        err = capsys.readouterr().out
+        assert "non-aiuse server" in err
+    finally:
+        stub.close()
+
+
+def test_run_serve_refuses_second_aiuse(capsys):
+    from aiuse import serve as serve_mod
+
+    stub = _StubResponder(aiuse_health=True)
+    try:
+        code = serve_mod.run_serve(host="127.0.0.1", port=stub.port)
+        assert code == 1
+        err = capsys.readouterr().out
+        assert "already listening" in err
+    finally:
+        stub.close()
