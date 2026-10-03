@@ -43,6 +43,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # true | false | "auto" — auto learns once enough snapshots exist (>= 2).
         "learn_from_history": "auto",
         "snapshot_retention_days": 90,
+        # Age (seconds) at or below which a cached snapshot counts as `fresh`
+        # in --json/--available/serve output. 25 min covers the watch refresh
+        # cadence (10-20 min) plus the hourly LaunchAgent with margin.
+        "fresh_threshold_seconds": 1500.0,
         "waking_hours_per_day": 16,
         "min_value_at_risk_usd": 0.50,
         "min_value_fraction": 0.05,

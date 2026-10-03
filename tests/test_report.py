@@ -177,7 +177,7 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     lines = text.splitlines()
     go_line = next(line for line in lines if "oc-go" in line)
     assert go_line.startswith("empty")
-    assert "0% left" in go_line
+    assert "100u/0l" in go_line
     assert "resets" in go_line
     # Empty tag must not also claim pace / upcoming lockout.
     assert " pace " not in go_line
@@ -220,7 +220,7 @@ def test_ladder_empty_conserve_skips_pace_and_lockout_forecast():
     )
     text = render_priority_ladder([alert], color=False, width=120)
     assert text.startswith("empty")
-    assert "0% left" in text
+    assert "100u/0l" in text
     assert "resets within" in text
     assert "pace" not in text
     assert "~lockout" not in text
@@ -1258,7 +1258,8 @@ def test_clock_matrix_shows_reset_clock_beside_wallet_note():
     )
     text = render_clock_matrix([], snapshot=snap, color=False)
     grok_line = next(line for line in text.splitlines() if "grok" in line)
-    assert "100%/3d14h" in grok_line
+    assert "100u/0l/3d14h" in grok_line
+    assert "EXHAUSTED" in grok_line
     assert "$14.46 extra credits" in grok_line
 
 
@@ -1466,8 +1467,8 @@ def test_brief_report_omits_usage_and_tips():
     assert lines[0].split()[0] == "##"
     assert lines[1].startswith("mid")
     assert "codex" in text
-    # Percentages are consumption, not headroom: 90% left prints as 10%.
-    assert "10%" in lines[1]
+    # Consumption and headroom print together, labeled: 10u used / 90l left.
+    assert "10u/90l" in lines[1]
 
 
 def test_glance_respects_custom_width():
@@ -1669,15 +1670,15 @@ def test_clock_matrix_puts_each_window_under_its_own_clock():
 
     # Claude reports both clocks; the monthly cell is empty, not fabricated.
     claude = rows["claude"].split()
-    assert claude[5:8] == ["75%/4h", "3%/7d", "<-"]
+    assert claude[5:8] == ["75u/25l/4h", "3u/97l/7d", "<-"]
 
 
 def test_clock_matrix_shows_used_not_remaining():
-    """0% must mean untouched and 100% exhausted — the inverse of the old ladder."""
+    """0 must mean untouched and 100 exhausted — and both print, labeled."""
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
     claude = next(line for line in text.splitlines() if " claude " in line)
-    assert "75%" in claude and "25%" not in claude  # 25% left renders as 75% used
-    assert "3%" in claude and "97%" not in claude
+    assert "75u/25l" in claude  # used first, left second, labeled per cell
+    assert "3u/97l" in claude
 
 
 def test_clock_matrix_splits_independent_pools_into_their_own_rows():
@@ -1875,8 +1876,8 @@ def test_clock_matrix_puts_reset_after_slash_not_in_next_column():
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=120)
     assert "NEXT" not in text
-    assert "10%/3h43m" in text
-    assert "16%/2d14h" in text
+    assert "10u/90l/3h43m" in text
+    assert "16u/84l/2d14h" in text
 
 
 def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
@@ -1908,11 +1909,11 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=120)
     zai = next(line for line in text.splitlines() if " zai/zcode " in line)
-    assert "0%/6d20h" in zai
-    # The 5h cell is a bare percent, not 0%/—.
-    assert "0%/—" not in zai
+    assert "0u/100l/6d20h" in zai
+    # The 5h cell is a labeled pair, not 0u/100l/—.
+    assert "0u/100l/—" not in zai
     tokens = zai.split()
-    assert "0%" in tokens
+    assert "0u/100l" in tokens
 
 
 @pytest.mark.parametrize(
@@ -1950,9 +1951,11 @@ def test_clock_matrix_compacts_deadline_before_dropping_identity():
         ],
     )
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    mid = render_clock_matrix([], snapshot=snap, color=False, width=43)
-    assert "10%/3h43m" in wide
-    assert "10%/3h" in mid
+    # Cells carry the used/left pair now (~6 cols wider), so the identity-fold
+    # boundary moved from 43 to 49 — compaction order itself is unchanged.
+    mid = render_clock_matrix([], snapshot=snap, color=False, width=49)
+    assert "10u/90l/3h43m" in wide
+    assert "10u/90l/3h" in mid
     assert "3h43m" not in mid
     assert "claude" in mid
     assert "gmail" in mid

@@ -11,13 +11,71 @@ pretty text parsing.
 [collector-concurrency.md](collector-concurrency.md); scheduled runs in
 [scheduling.md](scheduling.md).
 
+## How to read this (start here — three real failure modes, worked)
+
+These three misreads all happened on 2026-10-03. The 1.1 fields exist so the
+next agent cannot repeat them without ignoring data that is right in front of
+it. Or skip all of it and call `aiuse --available`.
+
+1. **`used_percent` is the share CONSUMED.** An agent read
+   `Codex 5-hour quota: used_percent 100` as "100% free" and dispatched work to
+   codex, which failed with a usage-limit error. Decide from
+   `remaining_percent` (or its alias `headroom_percent`), or better from the
+   explicit `state` — here `state: "exhausted"`, `usable_now: false`,
+   `available_at` set to the reset time. Every window in 1.1 carries `state`:
+   `exhausted` (≤1% left) | `tight` (<15% left) | `ok` | `unknown`.
+
+2. **One vendor can hold several independent pools by model family.** agy
+   (provider `antigravity`) has a Gemini pool and a separate Claude/GPT pool.
+   The Claude/GPT 5-hour window read 0% used at probe time and was exhausted
+   ~35 minutes later (one Opus-high review drained it), while Gemini still had
+   ~75% left. The agent concluded "agy is exhausted" and moved to another
+   vendor. In 1.1 each split-vendor window carries `pool_family`
+   (`antigravity`: `gemini` vs `claude_gpt`; `claude`: `default` vs `fable`;
+   `cursor`: `auto` / `included` / `other` / `grok_bot`) plus a `models_hint`
+   naming which models draw it. One family `exhausted` does NOT make the
+   vendor unusable — retry on the other family before abandoning it.
+
+3. **The fullest window of an account binds.** codex at 5-hour 100% used /
+   weekly 35% used is unusable for ~5 hours, but that requires reasoning
+   across windows. In 1.1 the account carries `usable_now` (false if ANY
+   window is exhausted), `binding_window` (label of the window with the least
+   remaining), and `available_at` (earliest `resets_at` among exhausted
+   windows). `summary_lines` renders the whole account as one sentence with
+   used AND left for every window.
+
+Everything below is also stated inside the output itself: `--json` carries a
+`semantics` object mapping each of these field names to its meaning, so a
+consumer that never read this document can learn the conventions from the JSON
+alone. When data is cached rather than live, `age_seconds` (computed at read
+time) and `fresh` (age ≤ `analysis.fresh_threshold_seconds`, default 1500s)
+say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
+(`--live`) before trusting it for routing.
+
+## What's new in schema 1.1 (additive; nothing renamed or removed)
+
+- Every window: `state`, `headroom_percent`, and on split vendors
+  `pool_family` + `models_hint`.
+- Every account: `usable_now`, `binding_window`, `binding_headroom_percent`,
+  `available_at`, `age_seconds`, and `collected_at` when the source itself
+  reports a measurement time (CodexBar rows do, via `usage.updatedAt`).
+- Top level: `summary_lines` (one line per pool, used AND left always),
+  `semantics` (field-name → meaning), `agent_notes` (active agent-reported
+  exhaustion overrides), `age_seconds`, `fresh`.
+- On-disk snapshots additionally mirror the live envelope under a top-level
+  `snapshot` key (see below), so `.snapshot.accounts[]` works on both the
+  cache file and `aiuse --json`.
+- New commands: `aiuse --available [--json] [--live]` and
+  `aiuse note-exhausted <provider> [--family F] --resets-in 4h53m|--resets-at
+ISO [--reason TEXT]`.
+
 ## Top-level payload
 
 Default `aiuse --json` stdout:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
 
@@ -33,9 +91,20 @@ Default `aiuse --json` stdout:
   "snapshot": { ... },
   "alerts": [ ... ],
   "suggestion": { ... } | null,
-  "history": { ... }
+  "history": { ... },
+
+  // New in schema 1.1:
+  "age_seconds": 0.0,
+  "fresh": true,
+  "summary_lines": [ "codex: Codex 5-hour quota (1): EXHAUSTED (100% used / 0% left, resets 15:42); … -> NOT usable now" ],
+  "semantics": { "used_percent": "share CONSUMED; 100 means exhausted, 0 means untouched", "...": "..." },
+  "agent_notes": [ { "provider": "codex", "pool_family": null, "resets_at": "...", "reason": "429", "source": "agent-reported" } ]
 }
 ```
+
+Live `--json` is by definition fresh (`age_seconds: 0`); the same keys appear
+with real values in `aiuse --available` output and in `aiuse serve`'s
+`/v1/snapshot` response when it serves a cached read.
 
 `aiuse --json --flatten` stdout:
 
@@ -58,14 +127,20 @@ Starting in **3.0.12**, these files are written atomically, guaranteeing that no
 
 Consumers reading these files should verify the `"complete": true` field before relying on them, though the atomic implementation prevents torn reads natively. Do not rely on lexicographical sorting of timestamps for the "latest" file, as older formats used colon-separated timestamps which sort differently than the newer compact ones. Use `latest.json` or sort by `mtime`.
 
-Files in `~/.cache/aiuse/snapshots/*.json` already use this flattened shape
-natively; no flag is needed when reading those files directly.
+Files in `~/.cache/aiuse/snapshots/*.json` are flat at the top level (that is
+the shape `--flatten` mirrors), and since **schema 1.1** they ALSO carry a
+top-level `snapshot` key mirroring the live envelope (`snapshot.accounts[]`,
+`snapshot.collected_at`, …), so one consumer code path —
+`.snapshot.accounts[]` — works on both the cache file and `aiuse --json`.
+The flat `.accounts[]` path keeps working unchanged (the `aiuse-pools`
+operator script reads it). Enriched fields (`state`, `usable_now`,
+`summary_lines`, `semantics`, …) are present in both spellings.
 
 `aiuse --json --alerts-only`:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
   "alerts": [ ... ],
@@ -142,8 +217,63 @@ provider with two subscriptions yields one row per account under the same
 - **0** — Data collected (or deliberately skipped), producing valid output.
 - **1** — Hard failure. The tool could not run or all configured collectors failed. No usable data.
 - **2** — (Only in human-readable/TTY mode) Success, but there is at least one active use-or-lose alert. In `--json` mode, this returns 0 since the JSON itself is usable.
+- **3** — (`--available` only) The run succeeded but zero pools are `usable_now` — everything measured is exhausted or unknown. Distinct from 1: the data is fine, the quota is not.
 
 Cross-check disagreements alone do **not** change the exit code.
+
+## `aiuse --available [--json] [--live]` — the routing shortlist
+
+The command an orchestrator should call instead of parsing windows. Prints
+only pools with `usable_now: true`, one entry per `(account, pool_family)`,
+sorted by headroom (most left first), each with `models_hint` and the local
+`cli_binary` that spends the quota:
+
+```json
+{
+  "schema_version": "1.1",
+  "generated_at": "2026-10-03T23:05:00+00:00",
+  "source": "cache",
+  "age_seconds": 412.0,
+  "fresh": true,
+  "available": [
+    {
+      "provider": "antigravity",
+      "account": null,
+      "pool_family": "gemini",
+      "cli_binary": "agy",
+      "usable_now": true,
+      "binding_window": "Gemini weekly",
+      "headroom_percent": 70.6,
+      "available_at": null,
+      "models_hint": "agy models — gemini-* models draw this pool",
+      "age_seconds": 412.0,
+      "windows": [ ... ]
+    }
+  ],
+  "semantics": { ... }
+}
+```
+
+Reads the snapshot cache (`latest.json`, kept fresh by `aiuse watch` and the
+hourly LaunchAgent) by default — a fast answer in well under a second.
+`--live` forces a fresh collect (27–60 s). Exit 3 when nothing is usable.
+
+## `aiuse note-exhausted` — agent-reported exhaustion overrides
+
+```
+aiuse note-exhausted antigravity --family claude_gpt --resets-in 4h53m --reason "RESOURCE_EXHAUSTED"
+aiuse note-exhausted codex --resets-at 2026-10-03T23:42:00+00:00
+```
+
+A 429 seen by one agent should be visible to the next agent without waiting
+for a collector pass. The note is a small JSON file under
+`~/.cache/aiuse/agent-notes/` that expires at its own reset time. While
+active it flips matching windows to `state: "exhausted"` with
+`state_source: "agent-reported"`, forces `usable_now: false`, and appears in
+the top-level `agent_notes` list — so `--json` and `--available` honour it and
+label it. Advisory by design: the note never edits numbers, and once it
+expires a live collector reading `ok` wins. Match scope is provider-wide, or
+provider + `--family` for split vendors.
 
 ## `snapshot` object
 
@@ -156,23 +286,29 @@ Cross-check disagreements alone do **not** change the exit code.
 
 ### `accounts[]` (`AccountUsage`)
 
-| Field               | Type              | Stable?                                                                                                                                                                                                                   |
-| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`            | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing`; grows as collectors are added |
-| `provider`          | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                                                                                                                                                |
-| `cli_binary`        | string \| null    | local CLI binary that spends this quota; `null` = API-only / cloud-run (see below)                                                                                                                                        |
-| `account`           | string \| null    | email or label when known                                                                                                                                                                                                 |
-| `plan`              | string \| null    | plan name if reported                                                                                                                                                                                                     |
-| `billing_kind`      | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                                                                                                                                                     |
-| `windows`           | array             | quota windows                                                                                                                                                                                                             |
-| `balance_usd`       | number \| null    | prepaid balance                                                                                                                                                                                                           |
-| `credits_remaining` | number \| null    | legacy credits field                                                                                                                                                                                                      |
-| `usage_credits`     | object \| omitted | extra/pay-as-you-go wallet when present                                                                                                                                                                                   |
-| `error`             | string \| null    | row-level error                                                                                                                                                                                                           |
-| `notes`             | string[]          | human notes (age, hydrate, etc.)                                                                                                                                                                                          |
-| `provider_id`       | string            | canonical provider id used for matching/history (equals `provider` unless the row carries an alias spelling)                                                                                                              |
-| `service_id`        | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                         |
-| `collector_id`      | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                         |
+| Field                      | Type              | Stable?                                                                                                                                                                                                                   |
+| -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                   | string            | yes — `cswap` \| `codexbar` \| `caut` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing`; grows as collectors are added |
+| `provider`                 | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                                                                                                                                                |
+| `cli_binary`               | string \| null    | local CLI binary that spends this quota; `null` = API-only / cloud-run (see below)                                                                                                                                        |
+| `account`                  | string \| null    | email or label when known                                                                                                                                                                                                 |
+| `plan`                     | string \| null    | plan name if reported                                                                                                                                                                                                     |
+| `billing_kind`             | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                                                                                                                                                     |
+| `windows`                  | array             | quota windows                                                                                                                                                                                                             |
+| `balance_usd`              | number \| null    | prepaid balance                                                                                                                                                                                                           |
+| `credits_remaining`        | number \| null    | legacy credits field                                                                                                                                                                                                      |
+| `usage_credits`            | object \| omitted | extra/pay-as-you-go wallet when present                                                                                                                                                                                   |
+| `error`                    | string \| null    | row-level error                                                                                                                                                                                                           |
+| `notes`                    | string[]          | human notes (age, hydrate, etc.)                                                                                                                                                                                          |
+| `provider_id`              | string            | canonical provider id used for matching/history (equals `provider` unless the row carries an alias spelling)                                                                                                              |
+| `service_id`               | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                         |
+| `collector_id`             | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                         |
+| `collected_at`             | string \| omitted | 1.1 — the source's own measurement time for this row (CodexBar `usage.updatedAt`); older than the snapshot's `collected_at` means the row was a cached read. Omitted when the source reports none                         |
+| `usable_now`               | bool              | 1.1 — false if ANY window is exhausted, or no window has data; true only with evidence of headroom. Per-family verdicts live in `--available` / `pool_family`                                                             |
+| `binding_window`           | string \| null    | 1.1 — label of the window with the least remaining (the one that stops you first)                                                                                                                                         |
+| `binding_headroom_percent` | number \| null    | 1.1 — that window's remaining share                                                                                                                                                                                       |
+| `available_at`             | string \| null    | 1.1 — earliest `resets_at` among exhausted windows; null when nothing is exhausted or no reset time is known (e.g. a depleted prepaid balance: top up)                                                                    |
+| `age_seconds`              | number \| null    | 1.1 — seconds since this account's `collected_at`, computed at read time                                                                                                                                                  |
 
 `raw` is **not** included in JSON (internal only).
 
@@ -198,6 +334,12 @@ additive per the stability policy below.
 | `refill_capacity`      | number \| null       |
 | `refill_capacity_unit` | string \| null       |
 | `internal_throttle`    | bool                 |
+| `state`                | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                 |
+| `headroom_percent`     | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                            |
+| `pool_family`          | string \| omitted    | 1.1 — only on split vendors: `antigravity` → `gemini`/`claude_gpt`; `claude` → `default`/`fable`; `cursor` → `auto`/`included`/`other`/`grok_bot` |
+| `models_hint`          | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                         |
+| `state_source`         | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                               |
+| `agent_reported`       | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                |
 
 ### `usage_credits` (optional)
 
@@ -294,4 +436,14 @@ fi
 ```bash
 # Actionable alerts only (still full alert objects)
 ai -q --json --alerts-only | jq '.alerts | map(select(.kind == "burn" or .kind == "conserve"))'
+```
+
+```bash
+# The one call an orchestrator needs: what can I use right now?
+aiuse --available --json | jq -r '.available[] | "\(.provider)/\(.pool_family // "default") via \(.cli_binary): \(.headroom_percent)% left"'
+```
+
+```bash
+# Report an exhaustion you just hit, so the next agent sees it immediately
+aiuse note-exhausted antigravity --family claude_gpt --resets-in 4h53m --reason "RESOURCE_EXHAUSTED"
 ```

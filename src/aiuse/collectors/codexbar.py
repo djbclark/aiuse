@@ -447,6 +447,10 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         usage_credits=usage_credits,
         notes=notes,
         raw=row,
+        # CodexBar's own measurement time for this provider row — the honest
+        # freshness signal, since `codexbar usage` may serve its last menu-bar
+        # refresh rather than a live API read.
+        collected_at=parse_dt(usage.get("updatedAt")),
     )
 
 

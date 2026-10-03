@@ -11,9 +11,18 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-09-27):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+**Status (2026-10-03):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
 done. Product issues **#1–#9** done. Packaging **3.1.0**
-(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release. The
+(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
+**Schema 1.1 (2026-10-03):** self-describing output — per-window
+`state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
+`age_seconds`, top-level `summary_lines`/`semantics`, `aiuse --available
+[--live]` (cache-default routing shortlist, exit 3 = nothing usable),
+`aiuse note-exhausted` (expiring agent-reported overrides), cache file mirrors
+the envelope under `snapshot`, serve default port moved to **28787** with
+fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
+replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
+"How to read this". The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
 tracks only what a fresh session must know. **15 registered collectors**
 (cswap, CodexBar, caut, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale, hermes,

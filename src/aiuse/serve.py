@@ -127,7 +127,19 @@ def run_serve(
                     return
                 if path == "/v1/snapshot":
                     payload = state.get_payload(refresh=refresh)
-                    self._json(200, {"snapshot": payload["snapshot"], "source": payload["source"]})
+                    snap = payload["snapshot"]
+                    from aiuse.analysis.selfdescribe import freshness
+
+                    self._json(
+                        200,
+                        {
+                            "snapshot": snap,
+                            "source": payload["source"],
+                            **freshness(snap.get("collected_at")),
+                            "summary_lines": snap.get("summary_lines", []),
+                            "semantics": snap.get("semantics", {}),
+                        },
+                    )
                     return
                 if path == "/v1/suggest":
                     payload = state.get_payload(refresh=refresh)
@@ -225,6 +237,9 @@ class _ServeState:
         return _payload_from_disk_row(row, config=self.config)
 
     def _collect_live(self) -> dict[str, Any]:
+        from aiuse.agent_notes import load_active_notes
+        from aiuse.analysis.selfdescribe import enrich_snapshot
+
         snapshot = run_collectors(self.config)
         alerts = analyze_use_or_lose(snapshot, self.config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=self.config))
@@ -240,7 +255,7 @@ class _ServeState:
                 pass
         suggestion = suggestion_to_dict(pick_suggestion(alerts))
         return {
-            "snapshot": snapshot.to_dict(),
+            "snapshot": enrich_snapshot(snapshot.to_dict(), notes=load_active_notes()),
             "alerts": [a.to_dict() for a in alerts],
             "suggestion": suggestion,
             "history": history_insights(snapshot, analysis_cfg=analysis_cfg),
@@ -249,16 +264,22 @@ class _ServeState:
 
 
 def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> dict[str, Any]:
+    from aiuse.agent_notes import load_active_notes
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
     alerts_raw = row.get("alerts") or []
     # Re-pick suggestion from stored alerts (stable field set).
     alerts = _alerts_from_dicts(alerts_raw)
     suggestion = suggestion_to_dict(pick_suggestion(alerts))
-    snap = {
-        "collected_at": row.get("collected_at"),
-        "accounts": row.get("accounts") or [],
-        "cross_checks": [],
-        "collector_errors": [],
-    }
+    snap = enrich_snapshot(
+        {
+            "collected_at": row.get("collected_at"),
+            "accounts": row.get("accounts") or [],
+            "cross_checks": [],
+            "collector_errors": [],
+        },
+        notes=load_active_notes(),
+    )
     # Minimal history object without reloading learning (cheap path).
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
     try:

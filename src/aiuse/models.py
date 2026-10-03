@@ -546,6 +546,11 @@ class AccountUsage:
     service_id: str | None = None
     collector_id: str | None = None
 
+    # When the source itself reports a measurement time for this account
+    # (e.g. CodexBar's usage.updatedAt). Older than the snapshot's
+    # collected_at means the row was a cached read, not a live one.
+    collected_at: datetime | None = None
+
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "source": self.source,
@@ -563,6 +568,8 @@ class AccountUsage:
             "service_id": self.service_id,
             "collector_id": self.collector_id or self.source,
         }
+        if self.collected_at is not None:
+            d["collected_at"] = self.collected_at.isoformat()
         if self.usage_credits is not None:
             d["usage_credits"] = self.usage_credits.to_dict()
         return d

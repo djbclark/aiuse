@@ -368,9 +368,14 @@ def test_json_keeps_nested_live_envelope(monkeypatch, capsys):
         "suggestion",
         "history",
         "snapshot",
+        "age_seconds",
+        "fresh",
+        "summary_lines",
+        "semantics",
     }
-    assert payload["schema_version"] == "1.0"
+    assert payload["schema_version"] == "1.1"
     assert payload["snapshot"]["accounts"] == []
+    assert "used_percent" in payload["semantics"]
 
 
 def test_json_flatten_matches_cached_snapshot_shape(monkeypatch, capsys):

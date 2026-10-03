@@ -53,6 +53,8 @@ _COMPLETIONS_DIR = Path(__file__).resolve().parents[2] / "completions"
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_ALERTS = 2
+# --available ran fine but zero pools are usable right now (distinct from 1 = error)
+EXIT_NO_POOLS = 3
 
 _HELP_EPILOG = f"""\
 config & setup:
@@ -215,6 +217,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --json, emit the cached snapshot shape instead of the live envelope",
     )
     p.add_argument(
+        "--available",
+        action="store_true",
+        help=(
+            "List only pools usable right now, grouped by vendor and pool family, sorted by headroom "
+            "(reads the snapshot cache by default; --live forces a fresh collect)"
+        ),
+    )
+    p.add_argument(
+        "--live",
+        action="store_true",
+        help="With --available, force a live collect instead of reading the snapshot cache",
+    )
+    p.add_argument(
         "--no-color",
         action="store_true",
         help="Disable ANSI colors in pretty output (classic string path)",
@@ -369,6 +384,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
         from aiuse.credentials import run_credential_command
 
         return run_credential_command(raw[1:])
+    if raw and raw[0] == "note-exhausted":
+        from aiuse.agent_notes import run_note_exhausted
+
+        return run_note_exhausted(raw[1:])
 
     args = build_parser().parse_args(_normalize_argv(argv))
     if getattr(args, "schema", False):
@@ -410,6 +429,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
             config_path=args.config,
             max_age_seconds=float(args.max_age),
         )
+    if getattr(args, "available", False):
+        return _run_available(args)
     config = load_config(args.config)
     _apply_cli_overrides(config, args)
 
@@ -458,15 +479,25 @@ def _main_inner(argv: list[str] | None = None) -> int:
     suggestion_alert = pick_suggestion(alerts)
     suggestion = suggestion_to_dict(suggestion_alert)
     insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
+    from aiuse.agent_notes import load_active_notes
+    from aiuse.analysis.selfdescribe import SCHEMA_VERSION, enrich_snapshot
+
+    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes())
     payload = {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
         "contract_command": "aiuse schema",
-        "snapshot": snapshot.to_dict(),
+        "snapshot": snap_dict,
         "alerts": [a.to_dict() for a in alerts],
         "suggestion": suggestion,
         "history": insights,
+        "age_seconds": 0.0,
+        "fresh": True,
+        "summary_lines": snap_dict["summary_lines"],
+        "semantics": snap_dict["semantics"],
     }
+    if "agent_notes" in snap_dict:
+        payload["agent_notes"] = snap_dict["agent_notes"]
     cross_check_warnings = [check.to_dict() for check in snapshot.cross_checks if check.status == "warning"]
 
     if args.save:
@@ -493,7 +524,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
             print(
                 json.dumps(
                     {
-                        "schema_version": "1.0",
+                        "schema_version": SCHEMA_VERSION,
                         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
                         "contract_command": "aiuse schema",
                         "alerts": payload["alerts"],
@@ -509,7 +540,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
             if args.flatten:
                 json_payload = {
                     "collected_at": snapshot.collected_at.isoformat(),
-                    "accounts": [account.to_dict() for account in snapshot.accounts],
+                    "accounts": snap_dict["accounts"],
                     "alerts": payload["alerts"],
                 }
             print(json.dumps(json_payload, indent=2, default=str))
@@ -916,6 +947,106 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
         quiet=bool(args.quiet),
         no_color=bool(args.no_color),
     )
+
+
+def _run_available(args: argparse.Namespace) -> int:
+    """`aiuse --available [--json] [--live]` — the routing shortlist for orchestrators.
+
+    Reads the snapshot cache by default (~/.cache/aiuse/snapshots/latest.json,
+    kept fresh by `aiuse watch` and the hourly LaunchAgent); `--live` forces a
+    collect (27-60 s). Exit 0 with at least one usable pool, 3 when none.
+    """
+    from aiuse.agent_notes import load_active_notes
+    from aiuse.analysis.history import snapshot_dir
+    from aiuse.analysis.selfdescribe import (
+        FRESH_THRESHOLD_SECONDS_DEFAULT,
+        SCHEMA_VERSION,
+        SEMANTICS,
+        available_pools,
+        enrich_snapshot,
+        freshness,
+        summary_line,
+    )
+    from aiuse.models import utcnow
+
+    config = load_config(args.config)
+    analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
+    try:
+        threshold = float(analysis_cfg.get("fresh_threshold_seconds") or FRESH_THRESHOLD_SECONDS_DEFAULT)
+    except (TypeError, ValueError):
+        threshold = FRESH_THRESHOLD_SECONDS_DEFAULT
+
+    notes = load_active_notes()
+    source = "cache"
+    snap_dict: dict[str, Any] | None = None
+    latest = snapshot_dir() / "latest.json"
+    if not args.live and latest.is_file():
+        try:
+            snap_dict = json.loads(latest.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            snap_dict = None
+    if snap_dict is None:
+        missing = check_dependencies(config)
+        if missing:
+            print(
+                f"Error: Required collector tools are missing from PATH: {', '.join(missing)}",
+                file=sys.stderr,
+            )
+            return EXIT_FAILURE
+        if not args.quiet:
+            print("Collecting usage from local tools…", file=sys.stderr)
+        snapshot = run_collectors(config)
+        if should_persist_snapshots(analysis_cfg):
+            try:
+                save_snapshot(
+                    snapshot,
+                    [],
+                    retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
+                )
+            except OSError:
+                pass
+        snap_dict = snapshot.to_dict()
+        source = "live"
+
+    enrich_snapshot(snap_dict, notes=notes)
+    fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
+    pools = available_pools(snap_dict)
+
+    if args.json or args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+                    "contract_command": "aiuse schema",
+                    "generated_at": utcnow().isoformat(),
+                    "source": source,
+                    **fresh,
+                    "available": pools,
+                    "agent_notes": snap_dict.get("agent_notes", []),
+                    "semantics": dict(SEMANTICS),
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        return EXIT_OK if pools else EXIT_NO_POOLS
+
+    for pool in pools:
+        line = summary_line(pool)
+        if pool.get("models_hint"):
+            line += f"  [{pool['models_hint']}]"
+        print(line)
+    if not pools:
+        print(
+            "no usable pools right now — everything measured is exhausted or unknown",
+            file=sys.stderr,
+        )
+    age_note = "age unknown"
+    if fresh["age_seconds"] is not None:
+        age_note = f"age {fresh['age_seconds']:.0f}s, {'fresh' if fresh['fresh'] else 'STALE'}"
+    print(f"(source: {source} · {age_note} · --live forces a collect)", file=sys.stderr)
+    return EXIT_OK if pools else EXIT_NO_POOLS
 
 
 def _run_trust(trust_argv: list[str], *, config_path: str | None) -> int:

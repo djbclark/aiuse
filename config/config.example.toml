@@ -80,6 +80,7 @@
 # Persist hourly/manual snapshots for History learning.
 # persist_snapshots = true
 # learn_from_history = "auto" # true | false | auto
+# fresh_threshold_seconds = 1500 # cached snapshot counts as fresh under this age (seconds)
 
 # Operator-declared dead subscriptions: "provider/account" = reason (or true).
 # A not-renewed plan keeps serving stale collector cache that looks like usable

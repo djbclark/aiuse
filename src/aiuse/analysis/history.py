@@ -99,8 +99,15 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int 
     while filepath.exists():
         filepath = path / f"{ts}-{n}.json"
         n += 1
+    from aiuse.agent_notes import load_active_notes
+    from aiuse.analysis.selfdescribe import SCHEMA_VERSION, enrich_snapshot
+
+    # Self-describing at rest: windows carry state/pool_family and accounts
+    # carry usable_now/binding_window/available_at, so even a naive reader of
+    # the cache file cannot misread a consumed share as free headroom.
+    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes())
     payload = {
-        "schema_version": "1.0",
+        "schema_version": SCHEMA_VERSION,
         "collection_id": f"{ts}-{os.getpid()}",
         "complete": True,
         "started_at": snapshot.collected_at.isoformat(),
@@ -109,10 +116,23 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int 
         "collector_success_count": len({a.source for a in snapshot.accounts}),
         "collector_failure_count": len(snapshot.collector_errors),
         "account_count": len(snapshot.accounts),
-        "accounts": [a.to_dict() for a in snapshot.accounts],
+        "accounts": snap_dict["accounts"],
         "alerts": [a.to_dict() for a in alerts],
         "collector_errors": snapshot.collector_errors,
+        "summary_lines": snap_dict["summary_lines"],
+        "semantics": snap_dict["semantics"],
+        # Mirror of the live --json envelope's snapshot object, so consumers
+        # can use `.snapshot.accounts[]` on BOTH the cache file and `aiuse
+        # --json` without two code paths (flat `.accounts[]` still works).
+        "snapshot": {
+            "collected_at": snap_dict.get("collected_at"),
+            "accounts": snap_dict["accounts"],
+            "cross_checks": snap_dict.get("cross_checks", []),
+            "collector_errors": snap_dict.get("collector_errors", []),
+        },
     }
+    if "agent_notes" in snap_dict:
+        payload["agent_notes"] = snap_dict["agent_notes"]
     text = json.dumps(payload, indent=2, default=str) + "\n"
 
     tmp_filepath = filepath.with_suffix(".tmp")

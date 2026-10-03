@@ -790,9 +790,9 @@ def test_all_three_formats_report_the_same_percentage():
     assert window["used_percent"] == 75.0
     assert window["remaining_percent"] == 25.0
 
-    # Table states consumption and labels the convention.
-    assert "75%" in table
-    assert "Note: 100% means 100% Used" in table
+    # Table states consumption and headroom together, labeled per cell.
+    assert "75u/25l" in table
+    assert "percent used / percent left" in table
     # Chat states headroom and labels its own.
     assert "25% left" in chat
 

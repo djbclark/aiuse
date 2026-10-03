@@ -911,8 +911,12 @@ def _row_identity(
 
 
 def _clock_percent_text(cell: _ClockCell) -> str:
+    """`100u/0l` — percent used / percent left, labeled so the pair cannot be misread."""
     mark = "+" if cell.folded else ""
-    return f"{_format_used_percent(cell.used_percent)}{mark}"
+    used_txt = _format_used_percent(cell.used_percent).rstrip("%")
+    left = max(0.0, 100.0 - float(cell.used_percent))
+    left_txt = _format_remaining_percent(left).rstrip("%")
+    return f"{used_txt}u/{left_txt}l{mark}"
 
 
 def _clock_plain(cell: _ClockCell, *, compact: bool) -> str:
@@ -1007,12 +1011,14 @@ def render_status_line(
     name = provider_display_name(top.provider)
     label = top.window_label
     rem = top.remaining_percent
+    used = max(0.0, 100.0 - rem)
+    pair = f"{used:.0f}% used / {rem:.0f}% left"
     if top.kind == "conserve":
-        head = f"slow: {name} {label} {rem:.0f}%"
+        head = f"slow: {name} {label} {pair}"
     elif rem <= 0.0:
-        head = f"empty: {name} {label}"
+        head = f"empty: {name} {label} (100% used / 0% left)"
     else:
-        head = f"use: {name} {label} {rem:.0f}%"
+        head = f"use: {name} {label} {pair}"
 
     bits: list[str] = [head]
     forecast = _forecast_fragment(top, compact=True).lstrip(" ·")
@@ -1487,10 +1493,13 @@ def render_clock_matrix(
             continue
 
         tail: list[str] = []
+        row_exhausted = False
         present_indices = [idx for idx, (k, _) in enumerate(CLOCK_COLUMNS) if row.clocks.get(k) is not None]
         for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
             w_clock = w_clocks[idx]
+            if cell is not None and 100.0 - float(cell.used_percent) <= 1.0:
+                row_exhausted = True
             if cell is None:
                 if not present_indices or min(present_indices) < idx < max(present_indices):
                     missing_char = "—"
@@ -1523,6 +1532,9 @@ def render_clock_matrix(
                 styled += " " * pad
             tail.append(styled)
 
+        if row_exhausted:
+            tail.append(s.red(s.bold("EXHAUSTED")))
+
         if layout.show_value:
             value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
             tail.append(f"{value_text:>{w_value}}")
@@ -1541,14 +1553,14 @@ def render_clock_matrix(
             )
         )
     if any_inferred:
-        legend_items.append(("dim % = clock inferred, not reported", s.dim("dim % = clock inferred, not reported")))
+        legend_items.append(("dim u/l = inferred, not reported", s.dim("dim u/l = inferred, not reported")))
     if any_folded:
         legend_items.append(
             ("+ = >1 window on that clock, showing most-used", s.dim("+ = >1 window on that clock, showing most-used"))
         )
 
-    plain_note = "Note: 100% means 100% Used"
-    fmt_note = s.dim("Note: ") + s.red("100% means 100% Used")
+    plain_note = "u/l = percent used / percent left — l is what you can still spend"
+    fmt_note = s.dim("u/l = ") + s.bold("percent used / percent left") + s.dim(" — l is what you can still spend")
     legend_items.append((plain_note, fmt_note))
 
     plain_ai_note = "AI: Use `aiuse --json` for machine-readable output"
@@ -1625,16 +1637,20 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
         if alert.source == "history" and alert.days_until_reset is None
         else _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
     )
-    remaining = _format_remaining_percent(alert.remaining_percent)
+    remaining = _format_remaining_percent(alert.remaining_percent).rstrip("%")
+    used = _format_used_percent(max(0.0, 100.0 - float(alert.remaining_percent))).rstrip("%")
+    # Compact labeled pair (matrix-cell notation): ladder lines are
+    # width-clamped at 80 cols and the guidance tail must survive the clamp.
+    pair = f"{used}u/{remaining}l"
     # Depleted rows already use the empty tag — do not also say "pace" or
     # "~lockout", which imply capacity remains.
     if band == _BAND_EMPTY:
-        body = f"{name} · {who} · {alert.window_label}: {remaining} left · resets {when}"
+        body = f"{name} · {who} · {alert.window_label}: {pair} · resets {when}"
         return f"{_priority_tag(s, band)} {body}"
     verb = "pace" if alert.kind == "conserve" else "use"
     # Forecast before the deadline phrase so width-clamp keeps the useful bit.
     forecast = _forecast_fragment(alert, compact=True)
-    body = f"{name} · {who} · {alert.window_label}: {remaining} left{forecast} · {verb} {when}"
+    body = f"{name} · {who} · {alert.window_label}: {pair}{forecast} · {verb} {when}"
     return f"{_priority_tag(s, band)} {body}"
 
 

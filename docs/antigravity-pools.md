@@ -70,3 +70,28 @@ for each when off-pace), not a single combined row. Both must print under the
 same provider name — two pools of one subscription, not two vendors. See
 [`provider-identity.md`](provider-identity.md) for why they once did not, and
 for the canonical-id rule that keeps them together.
+
+## Freshness (investigated 2026-10-03)
+
+aiuse adds no cache of its own for CodexBar rows — every collect spawns a
+fresh `codexbar usage --format json --provider antigravity` subprocess, so the
+freshness of an Antigravity row is whatever CodexBar serves. CodexBar rows
+carry their own measurement time (`usage.updatedAt`, one per provider row);
+since schema 1.1 aiuse surfaces it as `collected_at` on the account with a
+computed `age_seconds`, so "this Claude/GPT number is 40 minutes old" is
+visible in `--json` itself.
+
+Can `Claude/GPT 5-hour` lag a real exhaustion? Two distinct cases:
+
+1. **Genuinely open, then drained** — the 2026-10-03 incident: the pool read
+   0% used at probe time and one Opus-high review exhausted it ~35 minutes
+   later. The number was correct both times; the conclusion "agy is fine"
+   just had a short shelf life. Countermeasures now in the data:
+   `age_seconds`/`fresh` on every read, and `aiuse note-exhausted
+antigravity --family claude_gpt …` so a 429 one agent sees suppresses the
+   pool for the next agent until the stated reset.
+2. **CodexBar serving a stale row** — `codexbar usage` can reflect its last
+   menu-bar refresh rather than a live API read. That is exactly what the
+   per-account `collected_at` (from `usage.updatedAt`) exposes: a row older
+   than the snapshot's `collected_at` was a cached read. Treat `fresh: false`
+   Antigravity rows as unproven before routing an expensive task.

@@ -60,4 +60,8 @@ def format_suggestion_line(alert: UseOrLoseAlert | None) -> str:
         when_s = f"within ~{max(1, int(round(when * 24)))}h"
     else:
         when_s = f"within {when:.1f} days"
-    return f"suggest: {name} · {who} · {alert.window_label}: {rem:.0f}% left · use {when_s} · score {alert.score:.0f}"
+    used = max(0.0, 100.0 - rem)
+    return (
+        f"suggest: {name} · {who} · {alert.window_label}: {used:.0f}% used / {rem:.0f}% left"
+        f" · use {when_s} · score {alert.score:.0f}"
+    )
