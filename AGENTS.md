@@ -157,13 +157,14 @@ Full path-by-path map with "read when" hints:
   block above. An explicit current "do not commit / push / sync" from the
   operator still wins. (Rationale: single-operator repo, work is reversible,
   and unsynced beads are exactly the kind of state that gets lost.)
-- **Full releases (PyPI + Homebrew) only when the operator explicitly asks.**
-  Do not cut a “ship everywhere” release for routine doc/collector work.
+- **Full releases (PyPI + Homebrew) only when the operator explicitly asks,**
+  and then only through `just release X.Y.Z`
+  ([`docs/packaging.md`](docs/packaging.md)). Do not cut a release for routine
+  doc/collector work.
 - Release versions are plain numeric `X.Y.Z`; never use a Homebrew `revision`
   or underscore suffix to ship a change. Increment exactly one component,
   normally patch (`Z`). Minor (`Y`) is an agent judgment call; major (`X`)
-  requires explicit operator approval. The deterministic release script
-  enforces this policy.
+  requires explicit operator approval. `just release` enforces this policy.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 
