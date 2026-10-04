@@ -1398,6 +1398,25 @@ def _cell_color(s: _Style, used: float) -> Any:
     return s.green
 
 
+def _style_clock_percent(s: _Style, cell: _ClockCell, *, width: int) -> str:
+    """Right-align ``NNu/NNl`` into ``width`` and color only the left token.
+
+    The used side (``44u/``) stays the default color. The left side (``56l``
+    or ``56l+``) is one colored token, so the ``l`` does not drop out between
+    the number and the reset span. An inferred clock is dim end to end.
+    Visible width is always ``width``: a short pair is padded on the left,
+    and the color codes are not part of that width, so the next column starts
+    on the same character in every row.
+    """
+    padded = f"{_clock_percent_text(cell):>{width}}"
+    if cell.inferred:
+        return s.dim(padded)
+    slash = padded.rfind("/")
+    if slash < 0:
+        return _cell_color(s, cell.used_percent)(padded)
+    return padded[: slash + 1] + _cell_color(s, cell.used_percent)(padded[slash + 1 :])
+
+
 def render_clock_matrix(
     alerts: list[UseOrLoseAlert],
     *,
@@ -1511,33 +1530,12 @@ def render_clock_matrix(
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
-            percent = _clock_percent_text(cell)
             span = _format_reset_span(
                 cell.days_until_reset,
                 estimated=cell.reset_estimated,
                 compact=layout.compact_deadline,
             )
-            # Split percent into used part (before "/") and left part (after "/" but before "l")
-            # Format: "44u/56l" or "44u/56l+" if folded
-            # Keep used part and slash in normal text, color only the left part
-            if "/" in percent:
-                used_part, rest = percent.split("/", 1)
-                # rest is like "56l" or "56l+"
-                left_part = rest.rstrip("l+")
-                mark = "+" if "+" in rest else ""
-                if cell.inferred:
-                    colored_used = s.dim(used_part)
-                    colored_left = s.dim(left_part)
-                else:
-                    colored_used = used_part  # Normal text for used part
-                    colored_left = _cell_color(s, cell.used_percent)(left_part)
-                colored = f"{colored_used}/{colored_left}l{mark}"
-            else:
-                colored = (
-                    s.dim(f"{percent:>{w_pct}}")
-                    if cell.inferred
-                    else _cell_color(s, cell.used_percent)(f"{percent:>{w_pct}}")
-                )
+            colored = _style_clock_percent(s, cell, width=w_pct)
             if span is None:
                 tail.append(colored + (" " * (w_clock - w_pct)))
                 continue

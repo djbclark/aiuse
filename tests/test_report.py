@@ -1916,6 +1916,88 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
     assert "0u/100l" in tokens
 
 
+def test_clock_matrix_pads_percents_and_colors_only_the_left_token():
+    """A short ``4u/96l`` must not slide the next clock left of a ``79u/21l``.
+
+    Color wraps the whole left token (``21l``), not just the digits, and the
+    used side stays plain. Stripping ANSI leaves the plain table unchanged.
+    """
+    now = utcnow()
+
+    def window(label: str, used: float, left: float, *, window_minutes: int, **when: float) -> QuotaWindow:
+        return QuotaWindow(
+            label=label,
+            used_percent=used,
+            remaining_percent=left,
+            resets_at=now + timedelta(**when),
+            window_minutes=window_minutes,
+        )
+
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="claude",
+                source="cswap",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    window("5-hour", 79.0, 21.0, window_minutes=300, hours=1, minutes=52),
+                    window("weekly", 56.0, 44.0, window_minutes=10080, days=5, hours=8),
+                ],
+            ),
+            AccountUsage(
+                provider="cursor",
+                source="codexbar",
+                account="me@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    window("5-hour", 4.0, 96.0, window_minutes=300, minutes=36),
+                    window("weekly", 29.0, 71.0, window_minutes=10080, days=3, hours=2),
+                ],
+            ),
+        ],
+    )
+    plain = render_clock_matrix([], snapshot=snap, color=False, width=160)
+    colored = render_clock_matrix([], snapshot=snap, color=True, width=160)
+    assert _strip_ansi(colored) == plain
+
+    rows = {line.split()[2]: line for line in plain.splitlines() if line[:5].strip() in _BAND_TAGS}
+    claude = rows["claude"]
+    cursor = rows["cursor"]
+    assert claude.index("56u/44l") == cursor.index("29u/71l")
+    assert claude.index("79u/21l") == cursor.index("4u/96l") - 1
+    header = plain.splitlines()[0]
+    assert header.index("5H") + 1 == claude.index("79u/21l") + len("79u/21l") - 1
+    assert header.index("WEEK") + 3 == claude.index("56u/44l") + len("56u/44l") - 1
+
+    # First data row has no zebra stripe, so the reset is a plain ``[0m``.
+    # The next row's stripe rewrites that reset; the open code is what matters.
+    assert "79u/\033[33m21l\033[0m" in colored
+    assert "\033[32m96l" in colored
+    assert "\033[33m79u" not in colored
+    assert "\033[32m4u" not in colored
+
+
+def test_style_clock_percent_pads_and_keeps_fold_mark_in_the_left_token():
+    from aiuse.report import _ClockCell, _style_clock_percent
+
+    on = _Style(True)
+    short = _style_clock_percent(on, _ClockCell(used_percent=4.0), width=8)
+    assert _strip_ansi(short) == "  4u/96l"
+    assert short == "  4u/\033[32m96l\033[0m"
+
+    folded = _style_clock_percent(on, _ClockCell(used_percent=56.0, folded=2), width=8)
+    assert _strip_ansi(folded) == "56u/44l+"
+    assert folded == "56u/\033[36m44l+\033[0m"
+
+    inferred = _style_clock_percent(on, _ClockCell(used_percent=4.0, inferred=True), width=8)
+    assert inferred == on.dim("  4u/96l")
+
+    off = _Style(False)
+    assert _style_clock_percent(off, _ClockCell(used_percent=4.0), width=8) == "  4u/96l"
+
+
 @pytest.mark.parametrize(
     ("provider", "display"),
     [
