@@ -5,6 +5,7 @@ import pytest
 from aiuse.config import (
     DEFAULT_CONFIG,
     DEFAULT_SUBPROCESS_TIMEOUT,
+    OPENUSAGE_SH_TIMEOUT,
     collector_health_url,
     default_config_dir,
     default_config_path,
@@ -132,6 +133,9 @@ def test_default_timeouts_are_45s():
     assert DEFAULT_SUBPROCESS_TIMEOUT == 45.0
     assert timeout_for({}, "tokscale") == 45.0
     assert timeout_for({"timeouts": {"default": 45}}, "cswap") == 45.0
+    assert OPENUSAGE_SH_TIMEOUT == 90.0
+    assert timeout_for(DEFAULT_CONFIG, "openusage_sh") == 90.0
+    assert timeout_for(DEFAULT_CONFIG, "cswap") == 45.0
 
 
 def test_timeout_for_per_tool_and_force_precedence():
@@ -140,6 +144,7 @@ def test_timeout_for_per_tool_and_force_precedence():
     cfg_no_force = {"timeouts": {"default": 45, "tokscale": 20}}
     assert timeout_for(cfg_no_force, "tokscale") == 20.0
     assert timeout_for(cfg_no_force, "cswap") == 45.0
+    assert timeout_for({"timeouts": {"openusage_sh": 20}}, "openusage_sh") == 20.0
 
 
 def test_load_config_merges_toml_timeouts(monkeypatch, tmp_path):
@@ -155,6 +160,8 @@ def test_load_config_merges_toml_timeouts(monkeypatch, tmp_path):
 
     assert timeout_for(config, "cswap") == 30.0
     assert timeout_for(config, "tokscale") == 12.0
+    # A generic default does not erase the built-in OpenUsage.sh budget.
+    assert timeout_for(config, "openusage_sh") == 90.0
 
 
 def test_ensure_config_dir_creates_nested_levels(monkeypatch, tmp_path):

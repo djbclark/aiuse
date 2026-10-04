@@ -17,6 +17,9 @@ from typing import Any
 # Default wall-clock budget for every external CLI subprocess. Tools either
 # return within tens of seconds or hang; long budgets only delay failure.
 DEFAULT_SUBPROCESS_TIMEOUT = 45.0
+# `openusage-sh export` polls every configured provider. A quiet run is about
+# 30s, and the same export often crosses 45s while the other collectors run.
+OPENUSAGE_SH_TIMEOUT = 90.0
 
 DEFAULT_CONFIG: dict[str, Any] = {
     # Subprocess timeouts (seconds). ``default`` applies to any tool that does
@@ -24,6 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # tokscale. Override via config.toml or CLI ``--timeout`` / ``-t``.
     "timeouts": {
         "default": DEFAULT_SUBPROCESS_TIMEOUT,
+        "openusage_sh": OPENUSAGE_SH_TIMEOUT,
     },
     "analysis": {
         "min_remaining_percent": 40,
@@ -690,7 +694,7 @@ def _default_toml_text() -> str:
         "# codexbar_discovery = 45   # `codexbar config providers` (local, usually ms)\n"
         "# caut = 45\n"
         "# openusage_ai = 45\n"
-        "# openusage_sh = 45\n"
+        "# openusage_sh = 90\n"
         "# tokscale = 45\n"
         "# hermes = 45\n"
         "\n"

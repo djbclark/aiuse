@@ -35,12 +35,13 @@ collectors are healthy.
 
 ## Defaults
 
-| Knob                   | Default               | Where                                                                                         |
-| ---------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
-| `timeouts.default`     | **45s**               | `config.toml` / built-in                                                                      |
-| Per-tool keys          | inherit default       | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage_ai`, `openusage_sh`, `tokscale` |
-| CLI `-t` / `--timeout` | sets `timeouts.force` | wins over every tool for that run                                                             |
-| Doctor version probe   | **5s** hard cap       | does not use usage endpoints                                                                  |
+| Knob                    | Default               | Where                                                                                     |
+| ----------------------- | --------------------- | ----------------------------------------------------------------------------------------- |
+| `timeouts.default`      | **45s**               | `config.toml` / built-in                                                                  |
+| Per-tool keys           | inherit default       | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage_ai`, `tokscale`             |
+| `timeouts.openusage_sh` | **90s**               | direct `openusage-sh export` often takes ~30s and crosses 45s beside the other collectors |
+| CLI `-t` / `--timeout`  | sets `timeouts.force` | wins over every tool for that run                                                         |
+| Doctor version probe    | **5s** hard cap       | does not use usage endpoints                                                              |
 
 Tools either return in tens of seconds or hang; long budgets only delay failure
 (see fix-plan history: 180s → 45s).

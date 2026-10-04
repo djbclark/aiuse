@@ -8,7 +8,7 @@
 # cswap = 45
 # codexbar = 45
 # openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
-# openusage_sh = 45  # OpenUsage.sh terminal dashboard
+# openusage_sh = 90  # OpenUsage.sh export polls every provider; 45s often kills a live run
 # opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
 # muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
 # qwencloud = 45  # qwencloud CLI (`qwencloud auth login` once; no API-key mode)

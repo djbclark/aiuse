@@ -29,7 +29,7 @@ def _window_label(provider_id: str, key: str, metric: dict[object, object]) -> s
     return "weekly" if label.casefold() == "7d" else label
 
 
-def collect_openusage_sh(*, timeout: float = 45.0) -> list[AccountUsage]:
+def collect_openusage_sh(*, timeout: float = 90.0) -> list[AccountUsage]:
     """Read OpenUsage.sh's documented versioned JSON export.
 
     Only explicit subscription/rate-limit percentage metrics become quota
