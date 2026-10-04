@@ -11,6 +11,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`shared-quota-semantics.md`](shared-quota-semantics.md) — rationale and design notes for the shared semantics package.
 - [`companion-stack.md`](companion-stack.md) — menu-bar companions and `aiuse status` / `prompt` integrations.
 - [`scheduling.md`](scheduling.md) — macOS LaunchAgent setup for hourly snapshots.
+- [`attribution.md`](attribution.md) — what spent the quota: token ledgers, adaptive sampling (`aiuse sample`), `aiuse attribute`.
 - [`history-learning.md`](history-learning.md) — snapshot retention and history-based learning.
 - [`collector-concurrency.md`](collector-concurrency.md) — parallel collection and timeout behavior.
 

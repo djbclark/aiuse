@@ -86,7 +86,7 @@ launchctl kickstart -k "gui/${UID_NUM}/${LABEL}" || true
 echo "installed: ${DEST}"
 echo "aiuse:     ${AIUSE_BIN}"
 echo "logs:      ${LOG_DIR}/"
-echo "interval:  1 hour (StartInterval 3600)"
+echo "interval:  fires every 3 min; aiuse sample collects hourly, faster while quota is moving"
 echo "note:      exit 1 = hard failure; exit 2 = alerts present (collection ok)"
 echo "next:      learn_from_history: auto turns learning on once >= 2 snapshots exist"
 echo "           (see docs/history-learning.md)"

@@ -21,6 +21,17 @@ def snapshot_dir() -> Path:
     return Path(os.path.expanduser(_DEFAULT_SNAPSHOT_DIR))
 
 
+def partial_sample_dir() -> Path:
+    """Where burst-tier samples go: the hot providers only, not a full collection.
+
+    A sibling of the snapshot directory rather than a flag inside it, because
+    everything that reads history assumes each file is a complete collection —
+    the newest one is served as the cached snapshot, and the chronic-waste pass
+    reads absence as absence. Only ``aiuse attribute`` reads this directory.
+    """
+    return snapshot_dir().parent / "samples"
+
+
 _SNAPSHOT_TS_FORMAT = "%Y-%m-%dT%H%M%S.%fZ"
 # The colon-separated spelling older versions wrote. Still ours, so still prunable.
 _LEGACY_SNAPSHOT_TS_FORMATS = ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ")
@@ -47,7 +58,9 @@ def _snapshot_file_time(name: str) -> datetime | None:
     return None
 
 
-def prune_snapshots(retention_days: int = _DEFAULT_RETENTION_DAYS, *, keep: Path | None = None) -> int:
+def prune_snapshots(
+    retention_days: int = _DEFAULT_RETENTION_DAYS, *, keep: Path | None = None, directory: Path | None = None
+) -> int:
     """Delete snapshots older than ``retention_days``. Returns the count removed.
 
     Retention was enforced only on the read side: ``load_recent_snapshots``
@@ -67,7 +80,7 @@ def prune_snapshots(retention_days: int = _DEFAULT_RETENTION_DAYS, *, keep: Path
     """
     if retention_days <= 0:
         return 0
-    directory = snapshot_dir()
+    directory = directory or snapshot_dir()
     if not directory.is_dir():
         return 0
     cutoff = utcnow() - timedelta(days=retention_days)
@@ -88,8 +101,18 @@ def prune_snapshots(retention_days: int = _DEFAULT_RETENTION_DAYS, *, keep: Path
     return removed
 
 
-def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int = _DEFAULT_RETENTION_DAYS) -> Path:
-    path = snapshot_dir()
+def save_snapshot(
+    snapshot: Snapshot,
+    alerts: list[Any],
+    *,
+    retention_days: int = _DEFAULT_RETENTION_DAYS,
+    partial_providers: list[str] | None = None,
+) -> Path:
+    """Persist one collection. ``partial_providers`` marks a burst-tier sample
+    of only those providers, which is filed under :func:`partial_sample_dir`
+    and never becomes ``latest.json``."""
+    partial = partial_providers is not None
+    path = partial_sample_dir() if partial else snapshot_dir()
     path.mkdir(parents=True, exist_ok=True)
     path.chmod(0o700)
     # Microseconds keep same-second runs unique and still sort lexicographically.
@@ -109,7 +132,7 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int 
     payload = {
         "schema_version": SCHEMA_VERSION,
         "collection_id": f"{ts}-{os.getpid()}",
-        "complete": True,
+        "complete": not partial,
         "started_at": snapshot.collected_at.isoformat(),
         "completed_at": utcnow().isoformat(),
         "collected_at": snapshot.collected_at.isoformat(),
@@ -133,6 +156,8 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int 
     }
     if "agent_notes" in snap_dict:
         payload["agent_notes"] = snap_dict["agent_notes"]
+    if partial:
+        payload["partial_providers"] = sorted(partial_providers or [])
     text = json.dumps(payload, indent=2, default=str) + "\n"
 
     tmp_filepath = filepath.with_suffix(".tmp")
@@ -144,15 +169,16 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int 
             os.fsync(handle.fileno())
         os.rename(tmp_filepath, filepath)
 
-        # Atomically update latest.json pointer
-        latest_path = path / "latest.json"
-        latest_tmp = path / "latest.tmp"
-        fd_latest = os.open(latest_tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd_latest, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.rename(latest_tmp, latest_path)
+        if not partial:
+            # Atomically update latest.json pointer
+            latest_path = path / "latest.json"
+            latest_tmp = path / "latest.tmp"
+            fd_latest = os.open(latest_tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd_latest, "w", encoding="utf-8") as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.rename(latest_tmp, latest_path)
     except Exception:
         if tmp_filepath.exists():
             tmp_filepath.unlink()
@@ -161,7 +187,7 @@ def save_snapshot(snapshot: Snapshot, alerts: list[Any], *, retention_days: int 
     # After the write, never before it: a prune that fails must not cost the
     # caller the snapshot it just collected.
     try:
-        prune_snapshots(retention_days, keep=filepath)
+        prune_snapshots(retention_days, keep=filepath, directory=path)
     except OSError:
         pass
 

@@ -43,3 +43,16 @@ def deterministic_terminal_width(monkeypatch):
     change under test. Pin it once here rather than in each affected test.
     """
     monkeypatch.setenv("COLUMNS", DEFAULT_TEST_COLUMNS)
+
+
+@pytest.fixture(autouse=True)
+def no_real_token_ledger(monkeypatch):
+    """Keep the suite from shelling out to the developer's real ``tokscale``.
+
+    ``attribution.ledger`` defaults to ``auto``, which turns on wherever
+    tokscale is installed, so any end-to-end CLI test would otherwise scan the
+    operator's session files. Tests of the ledger itself pass a fake runner.
+    """
+    from aiuse import ledger
+
+    monkeypatch.setattr(ledger, "ledger_enabled", lambda config=None: False)

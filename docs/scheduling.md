@@ -25,7 +25,11 @@ and OpenUsage.ai is available (CLI on `PATH` and/or OpenUsage.app running for
 **Generic template** (other machines / non-Ansible): [`packaging/launchd/`](../packaging/launchd/)
 and `./packaging/launchd/install.sh`.
 
-**Cadence:** every **hour** (`StartInterval` 3600) + `RunAtLoad`.  
+**Cadence:** the generic template runs `aiuse sample` every **3 minutes**
+(`StartInterval` 180) + `RunAtLoad`. `aiuse sample` decides whether to collect:
+hourly when idle, every 15 minutes when a window moved, every 3 minutes during
+a burst. See [`attribution.md`](attribution.md). Running `aiuse -q --json`
+hourly, as before, still works; it just never samples faster.  
 **Footnote:** cron one-liner at the bottom.
 
 Exit codes (for log / monitor tooling): see [`json-contract.md`](json-contract.md).

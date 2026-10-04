@@ -67,6 +67,10 @@ config & setup:
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
   aiuse watch                 full-screen quota board (q/esc quit; default 10m)
+  aiuse sample                scheduled entry point: collects hourly when idle, every 15m when a
+                           window moved, every 3m in a burst (docs/attribution.md)
+  aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
+                           --provider ID, --intervals, --json)
   aiuse schema                print the machine-readable JSON contract (markdown) for AI agents
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
@@ -150,6 +154,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--watch",
         action="store_true",
         help=argparse.SUPPRESS,
+    )
+    p.add_argument("--sample", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--attribute", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="aiuse sample: collect now even if the current tier's interval has not elapsed",
+    )
+    p.add_argument(
+        "--since",
+        default="24h",
+        metavar="WHEN",
+        help="aiuse attribute: start of the range (24h / 90m / 7d ago, or an ISO date/datetime; default 24h)",
+    )
+    p.add_argument("--until", metavar="WHEN", help="aiuse attribute: end of the range (default now)")
+    p.add_argument("--provider", metavar="ID", help="aiuse attribute: only this provider (e.g. clinepass)")
+    p.add_argument(
+        "--intervals",
+        action="store_true",
+        help="aiuse attribute: also list each sample interval in which a window moved",
     )
     p.add_argument(
         "-i",
@@ -362,6 +386,10 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--schema", *raw[1:]]
     if head == "watch":
         return ["--watch", *raw[1:]]
+    if head == "sample":
+        return ["--sample", *raw[1:]]
+    if head == "attribute":
+        return ["--attribute", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -436,6 +464,12 @@ def _main_inner(argv: list[str] | None = None) -> int:
 
     if getattr(args, "watch", False):
         return _run_watch(args, config)
+    if getattr(args, "sample", False):
+        from aiuse.sampler import run_sample
+
+        return run_sample(config, force=bool(args.force), quiet=bool(args.quiet))
+    if getattr(args, "attribute", False):
+        return _run_attribute(args, config)
 
     as_json = bool(args.json) or args.format == "json"
     as_chat = args.format == "chat"
@@ -459,13 +493,28 @@ def _main_inner(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    snapshot = run_collectors(config)
+    analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
+    ledger_sample = None
+    if should_persist_snapshots(analysis_cfg):
+        # A token-ledger reading taken beside the snapshot (see aiuse.ledger).
+        from aiuse.sampler import collect_with_ledger
+
+        snapshot, ledger_sample, _ledger_error = collect_with_ledger(config, run_collectors)
+    else:
+        snapshot = run_collectors(config)
     alerts = analyze_use_or_lose(snapshot, config)
     alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
 
-    analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
     if should_persist_snapshots(analysis_cfg):
         try:
+            if ledger_sample is not None:
+                from aiuse.ledger import save_ledger
+
+                save_ledger(
+                    ledger_sample,
+                    collected_at=snapshot.collected_at,
+                    retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
+                )
             snapshot_path = save_snapshot(
                 snapshot,
                 alerts,
@@ -947,6 +996,27 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
         quiet=bool(args.quiet),
         no_color=bool(args.no_color),
     )
+
+
+def _run_attribute(args: argparse.Namespace, config: dict[str, Any]) -> int:
+    """`aiuse attribute` — quota burned beside the tokens each client spent."""
+    from aiuse.attribute import AttributeArgError, build_report, parse_when
+    from aiuse.attribute import render_report as render_attribution
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    try:
+        since = parse_when(args.since, now)
+        until = parse_when(args.until, now) if args.until else now
+        report = build_report(config, since, until, provider=args.provider)
+    except AttributeArgError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    if bool(args.json) or args.format == "json":
+        print(json.dumps(report, indent=2, default=str))
+    else:
+        print(render_attribution(report, intervals=bool(args.intervals)))
+    return 0
 
 
 def _run_available(args: argparse.Namespace) -> int:

@@ -5,7 +5,8 @@
   Install: see docs/scheduling.md or packaging/launchd/install.sh
 
   AIUSE_BIN is replaced by install.sh with the absolute path to `aiuse`.
-  StartInterval 3600 = every hour.
+  StartInterval 180 = a firing every 3 minutes; `aiuse sample` decides whether to
+  collect (hourly when idle, every 15 min when a window moved, every 3 min in a burst).
 -->
 <plist version="1.0">
 <dict>
@@ -14,8 +15,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>AIUSE_BIN</string>
-		<string>-q</string>
-		<string>--json</string>
+		<string>sample</string>
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>
@@ -23,7 +23,7 @@
 		<string>USER_LOCAL_BIN:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 	</dict>
 	<key>StartInterval</key>
-	<integer>3600</integer>
+	<integer>180</integer>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardOutPath</key>
