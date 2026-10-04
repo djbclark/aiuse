@@ -1,7 +1,11 @@
 # Muse support investigation
 
+**Status:** superseded (2026-10-04). The collector is in
+`src/aiuse/collectors/muse.py`. Read [`muse-quota.md`](muse-quota.md).
+This file is the 2026-08-21 investigation, and its endpoint guess is stale.
+
 **Date:** 2026-08-21
-**Status:** Investigation only — no code changes (concurrent agent has unrelated dirty work on `main`)
+**Original status:** Investigation only — no code changes (concurrent agent has unrelated dirty work on `main`)
 **Question:** (a) Do any upstream collectors already support Muse (Muse Code / Muse Spark)? (b) How hard would direct `aiuse` support be, modelled on an existing native collector?
 **Related:** [`AGENTS.md`](../AGENTS.md), [`README.md`](../README.md), [`docs/source-coverage.md`](source-coverage.md), [`docs/provider-identity.md`](provider-identity.md), [`docs/collectors-caut-openusage.md`](collectors-caut-openusage.md), [`docs/zai-quota.md`](zai-quota.md), [`docs/clinepass-quota.md`](clinepass-quota.md), [`docs/opencode-go-quota.md`](opencode-go-quota.md)
 
