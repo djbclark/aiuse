@@ -20,7 +20,7 @@ Show a Muse plan used-percent when Meta actually publishes one, and stop `aiuse 
 
 ## Where We Are
 
-Code is `d12cdc4` (parent `83386d0`). `head_sha` above is that commit. This file is the only commit after it; if HEAD is one ahead and the diff is only this handoff, the pointer is current. PATH `aiuse` is the pipx install from this checkout and already contains both commits. The version string is still 3.2.6. A running `aiuse watch` keeps the old process until it is quit with `q`.
+Code is `d12cdc4` (parent `83386d0`). `head_sha` above is that code commit. Later commits on this chain are this handoff file only. PATH `aiuse` is the pipx install from this checkout and already contains both commits. The version string is still 3.2.6. A running `aiuse watch` keeps the old process until it is quit with `q`.
 
 This login's Muse row still shows pay-as-you-go spend. Meta did not send `subs_usage`. That is recorded in [`docs/muse-quota.md`](../muse-quota.md).
 
@@ -41,18 +41,20 @@ This login's Muse row still shows pay-as-you-go spend. Meta did not send `subs_u
 1. `just ci`: 773 passed, pre-commit, and `just --check`, once before each commit.
 2. Live `load_config()` after the pipx upgrade resolved `openusage_sh` to 90.0 and `cswap` to 45.0. `browser-cookie3` stayed injected.
 3. No Beads issues were in progress.
+4. Latest snapshot `2026-10-04T12:55:23Z` collector errors included `cswap: timed out after 45.0s: cswap list --json` and a CodexBar Claude provider timeout at 45s. The cross-check says cswap returned no Claude Code account rows.
 
 ## Operator Feedback
 
 1. Watch cells must stay aligned. The formatting redo already shipped as 3.2.5 and the package is 3.2.6. Do not re-release those.
 2. Full PyPI and Homebrew releases only when the operator explicitly says `just release X.Y.Z`.
 3. The Muse row should show percent used of the monthly plan, or of the free tier while this login is unpaid. Spent dollars alone are not that number. Do not invent the percent.
+4. CodexBar is down for Claude. aiuse shows Claude with no usage data. Claude must still come from the other collectors, cswap included.
 
 ## Where We're Going
 
-1. Quit the running `aiuse watch` with `q` and start it again. Confirm the `openusage_sh` timeout row is gone, and that Muse still shows spend until Meta sends `subs_usage`.
-2. Do not `just release`. Do not POST `/muse-code/key` again to re-check this login.
-3. The operator's next build task is outside this repo: make the existing site-private handoff skills visible to every TUI. Do not add a third handoff format under `docs/`.
+1. When CodexBar returns no Claude windows, show Claude from the next live source. `cswap` is already first in `PROVIDER_SOURCE_PRIORITY` while cswap is authoritative (`_source_priority` in `src/aiuse/collectors/runner.py`). An OpenUsage.ai row with zero windows must not count as the Claude reading. Snapshot `~/.cache/aiuse/snapshots/latest.json` collected `2026-10-04T12:55:23Z`: CodexBar's Claude query timed out at 45s (`codexbar-query-errors`), the selected Claude row is `openusage_ai` plan Max 5x with 0 windows, and `cswap list --json` also timed out at 45s, so the canonical source never filled in. `openusage_sh` (90s) and tokscale timed out on that same run.
+2. Quit a running `aiuse watch` with `q` and start it again after the code change. Do not `just release`. Do not POST `/muse-code/key` again.
+3. Grok's handoff skills are linked. That work is `site-private` `6c6543c`. Do not add a third handoff format under `docs/`.
 
 ## Quick Start
 
