@@ -1,0 +1,40 @@
+# Current status (long form)
+
+Moved out of `AGENTS.md` (loaded into every agent session). Update this file,
+not `AGENTS.md`, when the status line changes; keep the one-paragraph summary in
+`AGENTS.md` in step.
+
+**Status (2026-10-03):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+done. Product issues **#1–#9** done. Packaging **3.2.3**
+(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
+**Schema 1.1 (2026-10-03):** self-describing output — per-window
+`state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
+`age_seconds`, top-level `summary_lines`/`semantics`, `aiuse --available
+[--live]` (cache-default routing shortlist, exit 3 = nothing usable),
+`aiuse note-exhausted` (expiring agent-reported overrides), cache file mirrors
+the envelope under `snapshot`, serve default port moved to **28787** with
+fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
+replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
+"How to read this". The
+per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
+tracks only what a fresh session must know. **15 registered collectors**
+(cswap, CodexBar, caut, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale, hermes,
+muse, qwencloud, bailian, openrouter, clinepass, grok_billing — native
+collectors are default-on and quiet when their prerequisites are absent).
+Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
+monthly reset parsed from the billing API's `currentPeriod`, see
+[`docs/grok-quota.md`](docs/grok-quota.md)) beside the prepaid wallet — and a
+wallet note never suppresses reset cells in the matrix. Account rows in
+`aiuse --json` carry **`cli_binary`**: the local CLI that
+_spends_ each provider's quota, not the quota-measurement tool a collector
+shells out to — see [`docs/json-contract.md`](docs/json-contract.md) and
+README's "Which vendor CLI is which". Prepaid/`n/a` band; history learning
+`auto`. **Attribution (3.2.0):** the LaunchAgent fires `aiuse sample` every 3
+minutes (it collects hourly when idle, every 15 min when a window moved, every
+3 min in a burst), each snapshot carries a tokscale token ledger, and
+`aiuse attribute` sets quota burned beside tokens per client — see
+[`docs/attribution.md`](docs/attribution.md). Normal CLI **always
+live-collects** (scheduled snapshots densify History only); `aiuse watch`
+reuses a fresh snapshot instead. **No mandatory numbered step.** Open-ended
+"what next?" → [`docs/next-options.md`](docs/next-options.md) +
+[`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**.

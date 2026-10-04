@@ -11,40 +11,15 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-10-03):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.2.3**
-(PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
-**Schema 1.1 (2026-10-03):** self-describing output — per-window
-`state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
-`age_seconds`, top-level `summary_lines`/`semantics`, `aiuse --available
-[--live]` (cache-default routing shortlist, exit 3 = nothing usable),
-`aiuse note-exhausted` (expiring agent-reported overrides), cache file mirrors
-the envelope under `snapshot`, serve default port moved to **28787** with
-fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
-replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
-"How to read this". The
-per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
-tracks only what a fresh session must know. **15 registered collectors**
-(cswap, CodexBar, caut, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale, hermes,
-muse, qwencloud, bailian, openrouter, clinepass, grok_billing — native
-collectors are default-on and quiet when their prerequisites are absent).
-Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
-monthly reset parsed from the billing API's `currentPeriod`, see
-[`docs/grok-quota.md`](docs/grok-quota.md)) beside the prepaid wallet — and a
-wallet note never suppresses reset cells in the matrix. Account rows in
-`aiuse --json` carry **`cli_binary`**: the local CLI that
-_spends_ each provider's quota, not the quota-measurement tool a collector
-shells out to — see [`docs/json-contract.md`](docs/json-contract.md) and
-README's "Which vendor CLI is which". Prepaid/`n/a` band; history learning
-`auto`. **Attribution (3.2.0):** the LaunchAgent fires `aiuse sample` every 3
-minutes (it collects hourly when idle, every 15 min when a window moved, every
-3 min in a burst), each snapshot carries a tokscale token ledger, and
-`aiuse attribute` sets quota burned beside tokens per client — see
-[`docs/attribution.md`](docs/attribution.md). Normal CLI **always
-live-collects** (scheduled snapshots densify History only); `aiuse watch`
-reuses a fresh snapshot instead. **No mandatory numbered step.** Open-ended
-"what next?" → [`docs/next-options.md`](docs/next-options.md) +
-[`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**.
+**Status (2026-10-03):** Package/CLI **`aiuse`**, packaging **3.2.x**
+(PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
+done; JSON schema **1.1** (self-describing output, `aiuse --available`,
+`aiuse note-exhausted`); 15 registered collectors; scheduled sampling +
+`aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →
+[`docs/next-options.md`](docs/next-options.md) +
+[`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**. Full status
+(collectors, schema 1.1 details, attribution, watch/live-collect rules):
+[`docs/current-status.md`](docs/current-status.md).
 
 1. **Session handoff:** [`docs/handoffs/`](docs/handoffs/) — newest file wins.
    [`docs/handoff.md`](docs/handoff.md) (singular) is the pre-3.0.13 archive.
@@ -125,52 +100,19 @@ install steps, CLI flags, and config. Install helpers:
 
 ## Where things live
 
-| Path                                                                                                         | What it is                                                                                   | When to read it                                                                                        |
-| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `README.md`                                                                                                  | Project overview: install, usage, CLI flags, config, output format.                          | First, for "what does this tool do / how do I run it."                                                 |
-| `AGENTS.md` (this file)                                                                                      | Agent orientation, doc map, persistence policy, **active priorities**.                       | First, for "where is everything / what next."                                                          |
-| `docs/handoffs/`                                                                                             | Per-session Tier 2 handoffs (DAG-linked front matter). **Newest file is the resume point.**  | First stop after this file when resuming.                                                              |
-| `docs/ralph-orchestrator-phase1-pilot.md`                                                                    | PRD for the parked ralph-orchestrator Phase 1 pilot (beads `aiuse-juk`).                     | When resuming the ralph/judge.sh pilot.                                                                |
-| `docs/handoff.md`                                                                                            | Archive: one accreting file, releases 2.1.16–3.0.12. Superseded by `docs/handoffs/`.         | Per-release forensics (workflow run IDs, tap SHAs) not recorded anywhere else.                         |
-| `docs/fix-implementation-plan.md`                                                                            | Review-derived task list (Steps 1–32 + Phase 7 optional 33–35). **1–32 and 34 done.**        | Historical scope / remaining optional steps only.                                                      |
-| `docs/json-contract.md`                                                                                      | Stable `aiuse --json` fields and exit codes for scripts.                                     | Cron / automation consumers.                                                                           |
-| `docs/provider-identity.md`                                                                                  | Canonical provider id vs config key; window identity across collectors.                      | Any change touching provider names, history keys, or display.                                          |
-| `docs/companion-stack.md`                                                                                    | Ambient menu-bar tools + `aiuse status` / `prompt` one-liner.                                | Shell prompt / status bar integration.                                                                 |
-| `docs/agent-api.md`                                                                                          | Loopback HTTP for agents (`aiuse serve`).                                                    | Agent/MCP-style consumers without full MCP yet.                                                        |
-| `docs/scheduling.md`                                                                                         | macOS LaunchAgent hourly (`persist_snapshots`).                                              | Installing scheduled collection.                                                                       |
-| `docs/attribution.md`                                                                                        | Token ledgers (tokscale, LiteLLM), adaptive sampling (`aiuse sample`), `aiuse attribute`.    | Asking which client spent a quota window; changing sampling cadence.                                   |
-| `docs/history-learning.md`                                                                                   | Snapshot persist vs `learn_from_history`; `--full` history line.                             | Enabling / debugging history insights.                                                                 |
-| `docs/collector-concurrency.md`                                                                              | How collectors run in parallel and timeout (45s).                                            | Perf / hang questions.                                                                                 |
-| `completions/`                                                                                               | bash/zsh completion scripts.                                                                 | Shell UX.                                                                                              |
-| `https://github.com/djbclark/aiuse/issues/1`                                                                 | Tracks consuming cswap#170 last-good JSON (Step 33).                                         | When #170 merges or when checking upstream status.                                                     |
-| `docs/cswap-reliability.md`                                                                                  | Claude/cswap reliability: decision-stale JSON, cache hydration, fallbacks.                   | When Claude rows go missing or multi-account looks wrong.                                              |
-| `docs/opencode-go-quota.md`                                                                                  | OpenCode Go: web vs local estimate; shared allotment; **Go ≠ Zen**.                          | When Go % disagrees with the OpenCode TUI / short windows look open.                                   |
-| `docs/opencode-zen-balance.md`                                                                               | OpenCode Zen prepaid wallet (separate billing from Go).                                      | Zen balance / credential refresh / empty Zen.                                                          |
-| `docs/cursor-quota.md`                                                                                       | Cursor Included/Auto/Other Models + on-demand vs CodexBar slots.                             | When Cursor % or CONSERVE disagrees with the Cursor usage UI.                                          |
-| `docs/qwencloud-quota.md`                                                                                    | QwenCloud + sibling Alibaba Cloud (Bailian) plans via `qwencloud` / `bl` CLIs.               | Qwen/alibaba rows missing; qwencloud / bl CLI auth setup.                                              |
-| `docs/antigravity-pools.md`                                                                                  | Antigravity Gemini vs Claude/GPT independent pools (score + ladder rows).                    | When Antigravity is listed only once or pools look merged.                                             |
-| `docs/pretty-display.md`                                                                                     | Rich vs Textual for long scrollback-safe reports.                                            | When changing pretty/TTY display.                                                                      |
-| `docs/watch-mode.md`                                                                                         | Design: opt-in full-screen `aiuse watch` monitor (q/esc quit, default 10m).                  | When implementing or refining the watch feature.                                                       |
-| `docs/packaging.md`                                                                                          | pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow.                            | When releasing or changing install UX.                                                                 |
-| `docs/competitive-landscape.md`                                                                              | Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; post-#2–#9 positioning.          | Positioning / “what pool next?” / remaining gaps.                                                      |
-| `docs/next-options.md`                                                                                       | Recommended next actions + effort map for remaining gaps; open issue index.                  | Open-ended “what next?” / whether to chase a competitive gap.                                          |
-| `docs/shared-quota-semantics.md`                                                                             | Design for language-neutral ranking semantics.                                               | Background for the package.                                                                            |
-| `docs/shared-quota-semantics/`                                                                               | **v0.1 package**: schemas, enums, formulas, golden fixtures (+ pytest dogfood).              | Contract tests / peer interop.                                                                         |
-| Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8)     | **Done** (2.1.9): suggest, forecast, status/prompt, serve, History, local note, health_path. | Historical competitive-strategy pull; see [`competitive-landscape.md`](docs/competitive-landscape.md). |
-| [Issue #9](https://github.com/djbclark/aiuse/issues/9)                                                       | **Done** (2.1.10): shared quota-semantics v0.1 + pytest dogfood.                             | Contract tests / peer interop.                                                                         |
-| [Issue #10](https://github.com/djbclark/aiuse/issues/10)                                                     | Open · operator: public announce (venues + draft). **Do not auto-post.**                     | Distribution.                                                                                          |
-| Issues [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) | Open · optional polish (MCP, peer outreach, History, watch, fixtures).                       | Only if concrete pain; see [`next-options.md`](docs/next-options.md).                                  |
-| `docs/collectors-caut-openusage.md`                                                                          | caut + OpenUsage install, config, multi-source cross-check priority.                         | New collectors / doctor PATH / site install.                                                           |
-| `docs/macos-keychain-trust.md`                                                                               | Operator guide: `aiuse trust` — stable codesign for caut, Keychain Always Allow.             | Keychain dialogs / cargo reinstall of caut.                                                            |
-| `docs/macos-keychain-trust-plan.md`                                                                          | Implementation plan for `aiuse trust` (shipped).                                             | Historical design notes.                                                                               |
-| `docs/claude-local-usage.md`                                                                                 | Local `stats-cache` / JSONL / ccusage vs subscription 5h/7d %.                               | When someone proposes parsing `~/.claude` instead of cswap.                                            |
-| `docs/code-review-2026-07-23.html`                                                                           | Adversarial code review (45 findings) that the plan was derived from. Open in a browser.     | For the _why_ behind a plan step.                                                                      |
-| `docs/consumption-flexibility-plan.md`                                                                       | Original scoring design. **Superseded** by pace-based scoring in the fix plan Phase 2.       | Historical context only.                                                                               |
-| `docs/review-workflow.js`                                                                                    | Workflow script that generated the review.                                                   | Methodology / re-run.                                                                                  |
-| `docs/memory/`                                                                                               | Thin Claude memory symlink target for this project (`MEMORY.md` index).                      | Rarely — prefer this file and `docs/` prose.                                                           |
-| `src/aiuse/`                                                                                                 | Source: collectors, analysis, report, cli, config, models.                                   | When implementing.                                                                                     |
-| `tests/`                                                                                                     | Pytest suite.                                                                                | Run `.venv/bin/python -m pytest -q` before and after any change.                                       |
-| `config/config.example.toml`                                                                                 | Canonical example user config.                                                               | Keep in sync with `config.py`'s `DEFAULT_CONFIG`.                                                      |
+Full path-by-path map with "read when" hints:
+[`docs/agent-doc-map.md`](docs/agent-doc-map.md); human grouping:
+[`docs/index.md`](docs/index.md). The ones you will need most:
+
+1. `README.md` — install, usage, CLI flags, config, output format.
+2. `docs/handoffs/` — per-session handoffs; **newest file is the resume point**.
+3. `docs/next-options.md` — what to do next; open issue index.
+4. `docs/json-contract.md` — stable `--json` fields and exit codes.
+5. `docs/provider-identity.md` — provider ids, history keys, display names.
+6. `src/aiuse/` source; `tests/` pytest suite (`.venv/bin/python -m pytest -q`
+   before and after any change); `config/config.example.toml` stays in sync
+   with `config.py`'s `DEFAULT_CONFIG`.
+7. `docs/<provider>-quota.md` — one note per provider's quota quirks.
 
 ## If you were asked to fix a bug or implement a feature here
 
@@ -188,6 +130,9 @@ install steps, CLI flags, and config. Install helpers:
 
 ## Conventions
 
+- **`CLAUDE.md` is a symlink to this file** — edit `AGENTS.md` only. Never
+  recreate `CLAUDE.md` as a regular file (tools that "initialise" one, e.g.
+  `bd setup claude`, `/init`, must be re-pointed at `AGENTS.md`).
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
 - Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
   (the same all-files quality gate as GitHub Actions). `pre-commit install --install-hooks`
