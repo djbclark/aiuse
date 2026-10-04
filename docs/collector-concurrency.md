@@ -38,7 +38,8 @@ collectors are healthy.
 | Knob                    | Default               | Where                                                                                     |
 | ----------------------- | --------------------- | ----------------------------------------------------------------------------------------- |
 | `timeouts.default`      | **45s**               | `config.toml` / built-in                                                                  |
-| Per-tool keys           | inherit default       | `cswap`, `codexbar`, `codexbar_discovery`, `caut`, `openusage_ai`, `tokscale`             |
+| Per-tool keys           | inherit default       | `codexbar`, `codexbar_discovery`, `caut`, `openusage_ai`, `tokscale`                      |
+| `timeouts.cswap`        | **90s**               | `cswap list --json` crossed 45s beside the other collectors                               |
 | `timeouts.openusage_sh` | **90s**               | direct `openusage-sh export` often takes ~30s and crosses 45s beside the other collectors |
 | CLI `-t` / `--timeout`  | sets `timeouts.force` | wins over every tool for that run                                                         |
 | Doctor version probe    | **5s** hard cap       | does not use usage endpoints                                                              |
@@ -51,7 +52,7 @@ Tools either return in tens of seconds or hang; long budgets only delay failure
 ### cswap
 
 - Single subprocess: `cswap list --json`.
-- Timeout: `timeout_for(config, "cswap")`.
+- Timeout: built-in `timeouts.cswap` is 90s. A generic `timeouts.default` does not erase it. An explicit `timeouts.cswap` or `--timeout` still wins.
 - Multi-account JSON; may hydrate from on-disk last-good when decision-stale
   (see [cswap-reliability.md](cswap-reliability.md)).
 
@@ -115,12 +116,12 @@ result collection inside the `with` block.
 | ---------------------------- | ---------------------------------------------------------------- |
 | All tools warm / cached      | Often **under ~5–20s** wall-clock                                |
 | Cold CodexBar multi-provider | Dominated by slowest provider; still **≤ 45s** per provider slot |
-| One tool hang                | Fails that collector at 45s; others still usable                 |
+| One tool hang                | Fails at its own budget; other collectors stay usable            |
 | `aiuse -t 10`                | Every tool forced to 10s (faster fail for scripts)               |
 
 ## Recommendations (standing)
 
-1. Keep **45s** as default; use `-t` only for tighter scripts.
+1. Keep **45s** as the default. `cswap` and `openusage_sh` keep their built-in 90s. Use `-t` only for tighter scripts.
 2. Prefer `--no-tokscale` when iterating on Claude-only workflows if tokscale is slow.
 3. Use `aiuse doctor` for PATH + version probe; full usage still needs a collect run.
 4. Do not raise global timeout back toward 180s without evidence a tool needs it.

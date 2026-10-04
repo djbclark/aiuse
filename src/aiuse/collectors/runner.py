@@ -335,7 +335,16 @@ def _select_and_cross_check(
                 selected.extend(primary_rows)
             else:
                 live = [a for a in primary_rows if _has_live_data(a)]
-                selected.extend(live if live else primary_rows)
+                # A Max-plan OpenUsage.ai row with zero windows is an identity
+                # label, not a Claude reading. Keeping it is what showed Claude
+                # with no usage when CodexBar and cswap returned nothing.
+                blank_openusage_claude = (
+                    provider == "claude" and primary == "openusage_ai" and not any(row.error for row in primary_rows)
+                )
+                if live:
+                    selected.extend(live)
+                elif not blank_openusage_claude:
+                    selected.extend(primary_rows)
         else:
             # No priority source present — keep whatever we have.
             selected.extend(rows)

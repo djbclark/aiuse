@@ -48,7 +48,7 @@ a different beast from the default stdout report that
 aiuse watch
  └─ enter alternate screen (Rich Live, screen=True) or Textual app
      ├─ tick loop (interval)
-     │    ├─ run_collectors (concurrent collectors, ≤45s)  ← cancellable child process
+     │    ├─ run_collectors (concurrent collectors, ≤90s)  ← cancellable child process
      │    ├─ render_clock_matrix(snapshot, alerts)  ← reused, unchanged
      │    └─ redraw board (header + matrix + footer)
      ├─ key poll: q / Esc / Ctrl-C → terminate collection group, restore, exit 0
@@ -57,8 +57,9 @@ aiuse watch
 
 ### Collection scheduling
 
-Collect is **wall-clock 5–20s warm, up to 45s cold** (six external subprocesses;
-see [`collector-concurrency.md`](collector-concurrency.md)). Rules:
+Collect is **wall-clock 5–20s warm, up to 90s cold** (`cswap` and `openusage_sh`
+use a 90s budget, the other collectors 45s; see
+[`collector-concurrency.md`](collector-concurrency.md)). Rules:
 
 1. **Never overlap collections.** The next tick starts only after the previous
    collect + render finishes. If a collect runs longer than the interval, the

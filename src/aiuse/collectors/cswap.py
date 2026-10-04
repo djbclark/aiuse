@@ -37,7 +37,7 @@ from aiuse.models import coerce_int as _int_or_none
 from .base import CollectorError, run_json, which
 
 
-def collect_cswap(*, timeout: float = 45.0) -> list[AccountUsage]:
+def collect_cswap(*, timeout: float = 90.0) -> list[AccountUsage]:
     if not which("cswap"):
         raise CollectorError("cswap not found on PATH")
 

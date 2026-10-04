@@ -5,7 +5,7 @@
 [timeouts]
 # Wall-clock seconds for external tools. Per-tool entries override default.
 # default = 45
-# cswap = 45
+# cswap = 90       # cswap list --json crossed 45s beside the other collectors
 # codexbar = 45
 # openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
 # openusage_sh = 90  # OpenUsage.sh export polls every provider; 45s often kills a live run

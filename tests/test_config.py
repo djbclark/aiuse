@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from aiuse.config import (
+    CSWAP_TIMEOUT,
     DEFAULT_CONFIG,
     DEFAULT_SUBPROCESS_TIMEOUT,
     OPENUSAGE_SH_TIMEOUT,
@@ -113,7 +114,9 @@ def test_explicit_config_remains_usable_when_both_default_files_exist(monkeypatc
     (config_dir / "services.yaml").write_text("analysis:\n  min_remaining_percent: 55\n", encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
-    assert timeout_for(load_config(canonical), "cswap") == 30
+    loaded = load_config(canonical)
+    assert timeout_for(loaded, "tokscale") == 30
+    assert timeout_for(loaded, "cswap") == 90
 
 
 def test_load_config_explicit_missing_path_exits():
@@ -134,8 +137,9 @@ def test_default_timeouts_are_45s():
     assert timeout_for({}, "tokscale") == 45.0
     assert timeout_for({"timeouts": {"default": 45}}, "cswap") == 45.0
     assert OPENUSAGE_SH_TIMEOUT == 90.0
+    assert CSWAP_TIMEOUT == 90.0
     assert timeout_for(DEFAULT_CONFIG, "openusage_sh") == 90.0
-    assert timeout_for(DEFAULT_CONFIG, "cswap") == 45.0
+    assert timeout_for(DEFAULT_CONFIG, "cswap") == 90.0
 
 
 def test_timeout_for_per_tool_and_force_precedence():
@@ -145,6 +149,7 @@ def test_timeout_for_per_tool_and_force_precedence():
     assert timeout_for(cfg_no_force, "tokscale") == 20.0
     assert timeout_for(cfg_no_force, "cswap") == 45.0
     assert timeout_for({"timeouts": {"openusage_sh": 20}}, "openusage_sh") == 20.0
+    assert timeout_for({"timeouts": {"cswap": 30}}, "cswap") == 30.0
 
 
 def test_load_config_merges_toml_timeouts(monkeypatch, tmp_path):
@@ -158,9 +163,9 @@ def test_load_config_merges_toml_timeouts(monkeypatch, tmp_path):
 
     config = load_config()
 
-    assert timeout_for(config, "cswap") == 30.0
     assert timeout_for(config, "tokscale") == 12.0
-    # A generic default does not erase the built-in OpenUsage.sh budget.
+    # A generic default does not erase the built-in cswap or OpenUsage.sh budget.
+    assert timeout_for(config, "cswap") == 90.0
     assert timeout_for(config, "openusage_sh") == 90.0
 
 

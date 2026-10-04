@@ -379,6 +379,28 @@ def test_claude_falls_back_to_tokscale_when_cswap_and_codexbar_empty():
     assert any("falling back" in check.message for check in checks)
 
 
+def test_openusage_ai_claude_without_windows_is_not_a_reading():
+    row = _account("openusage_ai", "claude")
+    row.windows = []
+    row.plan = "Max 5x"
+
+    selected, checks = _select_and_cross_check([row], cswap_authoritative=True)
+
+    assert selected == []
+    assert any("cswap returned no" in check.message for check in checks)
+
+
+def test_openusage_ai_claude_without_windows_does_not_hide_a_live_peer():
+    empty = _account("openusage_ai", "claude")
+    empty.windows = []
+    empty.plan = "Max 5x"
+    tokscale = _account("tokscale", "claude")
+
+    selected, _checks = _select_and_cross_check([empty, tokscale], cswap_authoritative=True)
+
+    assert [account.source for account in selected] == ["tokscale"]
+
+
 def test_claude_keeps_cswap_error_when_no_alternate_live_source():
     cswap_err = _account("cswap", "claude", error="no data")
     selected, checks = _select_and_cross_check([cswap_err], cswap_authoritative=True)

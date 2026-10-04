@@ -17,6 +17,10 @@ from typing import Any
 # Default wall-clock budget for every external CLI subprocess. Tools either
 # return within tens of seconds or hang; long budgets only delay failure.
 DEFAULT_SUBPROCESS_TIMEOUT = 45.0
+# `cswap list --json` is one subprocess. Beside the other collectors it crossed
+# 45s (snapshot 2026-10-04T12:55:23Z), and Claude then had no canonical row.
+# Same 90s budget as OpenUsage.sh: long enough for that slow success.
+CSWAP_TIMEOUT = 90.0
 # `openusage-sh export` polls every configured provider. A quiet run is about
 # 30s, and the same export often crosses 45s while the other collectors run.
 OPENUSAGE_SH_TIMEOUT = 90.0
@@ -27,6 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # tokscale. Override via config.toml or CLI ``--timeout`` / ``-t``.
     "timeouts": {
         "default": DEFAULT_SUBPROCESS_TIMEOUT,
+        "cswap": CSWAP_TIMEOUT,
         "openusage_sh": OPENUSAGE_SH_TIMEOUT,
     },
     "analysis": {
@@ -688,8 +693,8 @@ def _default_toml_text() -> str:
         "# Tools either return quickly or hang — long budgets only delay failure.\n"
         f"default = {DEFAULT_SUBPROCESS_TIMEOUT:g}\n"
         "\n"
-        "# Optional per-tool overrides (omit to use default):\n"
-        "# cswap = 45\n"
+        "# Optional per-tool overrides (omit to use the built-in for that tool):\n"
+        "# cswap = 90\n"
         "# codexbar = 45\n"
         "# codexbar_discovery = 45   # `codexbar config providers` (local, usually ms)\n"
         "# caut = 45\n"
