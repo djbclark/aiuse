@@ -34,6 +34,10 @@ _OPENCODE_COOKIE_SECRET = "OPENCODE_ZEN_COOKIE"
 _MUSE = "muse"
 _MUSE_HOSTS = ("dev.meta.ai", "meta.ai", "facebook.com", "auth.meta.com")
 _MUSE_COOKIE_SECRET = "MUSE_COOKIE"
+# llama_dev_sess is the current Model API dashboard cookie (host dev.meta.ai).
+# llm_sess and dh_sess are older names. Facebook c_user/xs and muse.ai hatch_sess
+# do not authorize https://dev.meta.ai.
+_MUSE_SESSION_COOKIES = frozenset({"llama_dev_sess", "llm_sess", "dh_sess"})
 _CHROME_ROOT = Path.home() / "Library/Application Support/Google/Chrome"
 _DEFAULT_TIMEOUT_S = 10.0
 
@@ -238,16 +242,19 @@ def _chrome_cookie_header_for_muse(profile: str) -> str:
                 pairs.append(f"{item.name}={value}")
     if not pairs:
         raise CredentialError("no Muse cookies were found; sign in to dev.meta.ai in the selected Chrome profile")
-    # Model API auth is llm_sess or dh_sess on .dev.meta.ai (not Facebook c_user/xs,
-    # and not the Muse chat session on muse.ai).
-    if "llm_sess" not in names and "dh_sess" not in names:
+    _require_muse_session_cookie(names)
+    return "; ".join(pairs)
+
+
+def _require_muse_session_cookie(names: set[str]) -> None:
+    """Reject a Chrome jar that has no Model API session cookie."""
+    if _MUSE_SESSION_COOKIES.isdisjoint(names):
         raise CredentialError(
-            "Chrome is missing a Model API session cookie (llm_sess or dh_sess). "
+            "Chrome is missing a Model API session cookie (llama_dev_sess, llm_sess, or dh_sess). "
             "Open https://dev.meta.ai/api/auth/login in this Chrome profile and wait "
             "until the dashboard loads, then re-run `aiuse credential refresh muse --from chrome`. "
             "https://muse.ai is the Muse chat app and does not sign in the Model API."
         )
-    return "; ".join(pairs)
 
 
 def _validate_muse_cookie(cookie: str, *, timeout: float) -> None:

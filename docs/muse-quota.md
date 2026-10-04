@@ -36,9 +36,11 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
 
 - **Bearer path (stable):** `AIUSE_MUSE_API_KEY` → `META_API_KEY` → `secretspec get MUSE_API_KEY/META_API_KEY`; probes `https://api.meta.ai/v1` candidates ` /usage → /billing/usage → /me/usage → /credits → /billing` (first 200 wins). `AIUSE_MUSE_API_URL` override pins the path.
 - **Cookie path (browser):** `AIUSE_MUSE_COOKIE` or `secretspec get MUSE_COOKIE`
-  (from `aiuse credential refresh muse --from chrome`). Needs Chrome `llm_sess`
-  or `dh_sess` on `.dev.meta.ai`, from `https://dev.meta.ai/api/auth/login`.
-  `https://muse.ai` is the Muse chat app and does not authorize this. The
+  (from `aiuse credential refresh muse --from chrome`). Needs one of
+  `llama_dev_sess`, `llm_sess`, or `dh_sess` for dev.meta.ai, from
+  `https://dev.meta.ai/api/auth/login`. A login there sets llama_dev_sess.
+  An older llm_sess by itself is not that session. https://muse.ai is the
+  Muse chat app and does not authorize this. The
   collector calls `GET /api/auth/me`, `GET /api/portal/teams`, then
   `billing-banner` and `usage` with `metric=USAGE_BILLABLE_COST`. **Muse’s
   dashboard “balance” is month-to-date spend (counts up from $0)** — shown as
@@ -64,9 +66,9 @@ AIUSE_MUSE_API_KEY=sk_test AIUSE_MUSE_API_URL=https://api.meta.ai/v1/usage aiuse
 # Cookie (browser) — refresh then live-collect; mutual failover
 # team_id comes from the usage URL, e.g. .../usage/?team_id=1483959756871752
 export AIUSE_MUSE_TEAM_ID=1483959756871752
-aiuse credential refresh muse --from chrome --dry-run   # needs llm_sess or dh_sess; hits portal JSON
+aiuse credential refresh muse --from chrome --dry-run   # needs llama_dev_sess, llm_sess, or dh_sess
 aiuse credential refresh muse --from chrome --yes       # saves MUSE_COOKIE via secretspec
-AIUSE_MUSE_COOKIE='llm_sess=...' AIUSE_MUSE_TEAM_ID="$AIUSE_MUSE_TEAM_ID" aiuse --json -q \
+AIUSE_MUSE_COOKIE='llama_dev_sess=...' AIUSE_MUSE_TEAM_ID="$AIUSE_MUSE_TEAM_ID" aiuse --json -q \
   | jq '.snapshot.accounts[] | select(.provider=="muse")'
 # balance $X.XX free credits (n/a band); $0.00 when null free money + card on file
 

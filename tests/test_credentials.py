@@ -5,7 +5,7 @@ from pathlib import Path
 
 from aiuse import cli
 from aiuse.collectors.opencode_zen import _SESSION_COOKIE
-from aiuse.credentials import CredentialError, _cookie_header_for_opencode
+from aiuse.credentials import CredentialError, _cookie_header_for_opencode, _require_muse_session_cookie
 
 
 def _cookie(name: str, value: str, domain: str) -> Cookie:
@@ -61,6 +61,25 @@ def test_cookie_header_rejects_missing_opencode_cookie():
         assert "no OpenCode cookies" in str(exc)
     else:
         raise AssertionError("unrelated browser cookies must never be accepted")
+
+
+def test_muse_session_accepts_the_current_dashboard_cookie():
+    _require_muse_session_cookie({"llama_dev_sess"})
+
+
+def test_muse_session_still_accepts_older_cookie_names():
+    _require_muse_session_cookie({"llm_sess"})
+    _require_muse_session_cookie({"dh_sess"})
+
+
+def test_muse_chat_and_facebook_cookies_are_not_a_model_api_session():
+    try:
+        _require_muse_session_cookie({"hatch_sess", "c_user", "xs"})
+    except CredentialError as exc:
+        assert "llama_dev_sess" in str(exc)
+        assert "https://muse.ai" in str(exc)
+    else:
+        raise AssertionError("muse.ai and Facebook cookies must not pass the Model API gate")
 
 
 def test_credential_refresh_dry_run_validates_without_writing(monkeypatch, capsys):
