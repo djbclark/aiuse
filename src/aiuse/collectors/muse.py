@@ -6,8 +6,9 @@ There are two live transports with mutual failover:
   1. Bearer (AIUSE_MUSE_API_KEY / META_API_KEY / secretspec / ~/.config/muse/auth.json
      from `muse login`) → https://api.meta.ai/v1/*
   2. Cookie (AIUSE_MUSE_COOKIE / secretspec MUSE_COOKIE from `aiuse credential refresh muse --from chrome`)
-     → GET https://dev.meta.ai/usage (scrape LSD + fb_dtsg + team_id) → POST https://dev.meta.ai/api/graphql/
-       doc_id 9128374650192834 (MuseDevBillingBalanceQuery) → billing_info {balance, credit_limit, remaining_budget}
+     → GET https://dev.meta.ai/api/auth/me + /api/portal/teams/{id}/billing-banner and /usage.
+       The pre-2026-10 Relay page (LSD + fb_dtsg on /usage) is only a fallback when the portal
+       routes are absent. https://dev.meta.ai/usage now redirects to the public marketing page.
 
 If one transport is absent or fails, the other is tried. Absent both → [] . 401/403 with a
 credential present surfaces as AccountUsage(error=…) only after both transports fail.
@@ -26,8 +27,10 @@ import re
 import shutil
 import subprocess
 from collections.abc import Mapping
+from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -61,6 +64,17 @@ _TEAM_ENV = "AIUSE_MUSE_TEAM_ID"
 _DEV_HOME_URL = "https://dev.meta.ai/"
 _DEV_USAGE_URL = "https://dev.meta.ai/usage"
 _GRAPHQL_URL = "https://dev.meta.ai/api/graphql/"
+_PORTAL_ORIGIN = "https://dev.meta.ai"
+_SIGN_IN_URL = "https://dev.meta.ai/api/auth/login"
+# Shown when Chrome still holds a dead llm_sess. /usage is a marketing redirect and
+# no longer embeds fb_dtsg; muse.ai is the separate Muse chat app.
+_SESSION_REJECTED = (
+    "Muse cookie: dev.meta.ai rejected this Chrome session. "
+    f"Open {_SIGN_IN_URL} in this Chrome profile and wait until the Model API "
+    "dashboard loads, then re-run `aiuse credential refresh muse --from chrome`. "
+    "Signing in at https://muse.ai does not create this session, and "
+    "https://dev.meta.ai/usage no longer embeds fb_dtsg."
+)
 # Live Relay persisted query (LLMDCBillingBannerContainerQuery). Meta rotates these;
 # free_money_* amounts use PECurrency DEFAULT_AMOUNT_OFFSET=100 (cents for USD).
 _BILLING_DOC_ID = "28281552291474266"
@@ -229,13 +243,31 @@ def _soft_inventory_account(*, account: str | None) -> AccountUsage:
         billing_kind=BillingKind.PAYG_API,
         notes=[
             "Muse API key accepted (/models); Meta does not expose a billing endpoint on api.meta.ai yet.",
-            "For live balance: sign into https://dev.meta.ai in Chrome, then run "
+            "For live balance: sign into https://dev.meta.ai/api/auth/login in Chrome, then run "
             "`aiuse credential refresh muse --from chrome`.",
         ],
     )
 
 
+class _PortalUnavailable(Exception):
+    """Portal routes are missing, so the legacy HTML scrape may still work."""
+
+
 def _collect_via_cookie(
+    cookie: str,
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    account: str | None = None,
+) -> list[AccountUsage]:
+    """Read Model API billing. Portal JSON first; Relay HTML only if those routes are gone."""
+    try:
+        return _collect_via_portal(cookie, env, timeout, account=account)
+    except _PortalUnavailable:
+        return _collect_via_legacy_cookie(cookie, env, timeout, account=account)
+
+
+def _collect_via_legacy_cookie(
     cookie: str,
     env: Mapping[str, str],
     timeout: float,
@@ -306,6 +338,298 @@ def _collect_via_cookie(
     return accounts
 
 
+def _portal_headers(cookie: str) -> dict[str, str]:
+    return {
+        "Cookie": cookie,
+        "User-Agent": _USER_AGENT,
+        "Accept": "application/json",
+        "Referer": f"{_PORTAL_ORIGIN}/",
+    }
+
+
+def _portal_get(cookie: str, path: str, timeout: float, *, missing_ok: bool = False) -> Any | None:
+    """GET a Model API portal route.
+
+    401/403 and a login redirect are a dead Chrome session. 404 or a non-JSON
+    body means this deployment has no portal (legacy Relay scrape may apply),
+    unless ``missing_ok`` treats 404 as an absent optional route.
+    """
+    url = f"{_PORTAL_ORIGIN}{path}"
+    try:
+        resp = requests.get(
+            url,
+            timeout=timeout,
+            allow_redirects=True,
+            headers=_portal_headers(cookie),
+        )
+    except requests.RequestException as exc:
+        raise CollectorError(f"Muse cookie: failed to fetch {path}: {exc.__class__.__name__}") from exc
+    final = resp.url or ""
+    if resp.status_code in (401, 403) or "auth.meta.com" in final:
+        raise CollectorError(_SESSION_REJECTED)
+    if resp.status_code == 404:
+        if missing_ok:
+            return None
+        raise _PortalUnavailable()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as exc:
+        raise CollectorError(f"Muse cookie: dev.meta.ai portal returned HTTP {resp.status_code} for {path}") from exc
+    try:
+        payload = resp.json()
+    except (ValueError, AttributeError) as exc:
+        if missing_ok:
+            return None
+        raise _PortalUnavailable() from exc
+    if not isinstance(payload, (dict, list)):
+        if missing_ok:
+            return None
+        raise _PortalUnavailable()
+    return payload
+
+
+def _team_id_of(team: Any) -> str | None:
+    if not isinstance(team, dict):
+        return None
+    for key in ("id", "team_id", "teamId"):
+        value = team.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _pick_team_id(teams: list[Any], wanted: str) -> str:
+    ids = [team_id for team in teams if (team_id := _team_id_of(team))]
+    if wanted:
+        return wanted
+    if not ids:
+        raise CollectorError(
+            "Muse cookie: Model API session has no team id. "
+            f"Open {_SIGN_IN_URL} and finish signing in, or set AIUSE_MUSE_TEAM_ID."
+        )
+    return ids[0]
+
+
+def _iana_timezone() -> str:
+    try:
+        parts = Path("/etc/localtime").resolve().parts
+    except OSError:
+        return "UTC"
+    if "zoneinfo" not in parts:
+        return "UTC"
+    name = "/".join(parts[parts.index("zoneinfo") + 1 :])
+    return name or "UTC"
+
+
+def _minor_to_usd(raw: Any, *, offset: float = 100.0) -> float | None:
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) / offset
+    if isinstance(raw, str):
+        try:
+            return float(raw) / offset
+        except ValueError:
+            return None
+    return None
+
+
+def _free_remaining_usd(banner: Any) -> float | None:
+    """Free-credit remaining from the portal billing banner, in dollars."""
+    if not isinstance(banner, dict):
+        return None
+    kind = banner.get("kind")
+    if kind == "free_untouched":
+        return _minor_to_usd(banner.get("grant_minor_units"))
+    if kind == "free_partial":
+        return _minor_to_usd(banner.get("remaining_minor_units"))
+    return None
+
+
+def _usage_point_usd(point: dict[str, Any], offset: float) -> float | None:
+    # Dashboard formula for USAGE_BILLABLE_COST: amount is minor units
+    # (currency.offset, default 100). Missing amount falls back to value/1e8.
+    if point.get("amount") is not None:
+        return _minor_to_usd(point.get("amount"), offset=offset)
+    if point.get("value") is not None:
+        scaled = _minor_to_usd(point.get("value"), offset=1e8)
+        if scaled is None:
+            return None
+        return scaled / offset
+    return None
+
+
+def _mtd_from_portal_usage(payload: Any) -> float | None:
+    """Sum TOTAL billable cost for the current calendar month, in dollars."""
+    if not isinstance(payload, dict):
+        return None
+    series = payload.get("series")
+    if not isinstance(series, list):
+        return None
+    currency = payload.get("currency") if isinstance(payload.get("currency"), dict) else {}
+    offset = currency.get("offset") if isinstance(currency, dict) else None
+    if not isinstance(offset, (int, float)) or isinstance(offset, bool) or offset < 1:
+        offset = 100.0
+    prefix = date.today().strftime("%Y-%m")
+    totals = [row for row in series if isinstance(row, dict) and row.get("type") == "TOTAL"]
+    rows = totals or [row for row in series if isinstance(row, dict)]
+    saw_point = False
+    found = False
+    mtd = 0.0
+    for row in rows:
+        points = row.get("data_points")
+        if not isinstance(points, list):
+            continue
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            saw_point = True
+            day = str(point.get("date") or "")
+            if not day.startswith(prefix):
+                continue
+            amount = _usage_point_usd(point, float(offset))
+            if amount is None:
+                continue
+            mtd += amount
+            found = True
+    if not saw_point:
+        return None
+    return mtd if found else 0.0
+
+
+def _account_label_from_me(me: Any, account: str | None) -> str | None:
+    if account:
+        return account
+    if not isinstance(me, dict):
+        return None
+    candidates: list[Any] = [me, me.get("user") if isinstance(me.get("user"), dict) else None]
+    for obj in candidates:
+        if not isinstance(obj, dict):
+            continue
+        for key in ("email", "user_email", "name"):
+            value = obj.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _accounts_from_portal(
+    banner: Any,
+    spend_usd: float | None,
+    *,
+    team_id: str,
+    usage_raw: Any,
+) -> list[AccountUsage]:
+    free_remaining = _free_remaining_usd(banner)
+    notes = [
+        "Live data fetched directly from Muse (dev.meta.ai portal).",
+        f"Endpoint: {_PORTAL_ORIGIN}/api/portal/teams/{team_id}/usage",
+        "Muse dashboard balance is cumulative PAYG spend (counts up from $0), "
+        "not prepaid remaining (DeepSeek / oc-zen count down to $0).",
+    ]
+    raw: dict[str, Any] = {"team_id": team_id, "banner": banner}
+    if usage_raw is not None:
+        raw["usage"] = usage_raw
+    if isinstance(banner, dict) and banner.get("kind"):
+        notes.append(f"Muse billing banner: {banner.get('kind')}.")
+    if spend_usd is not None:
+        notes.append(f"Muse spend this month: ${spend_usd:.2f} (counts up).")
+        return [
+            AccountUsage(
+                source="muse",
+                provider="muse",
+                billing_kind=BillingKind.PAYG_API,
+                balance_usd=None,
+                usage_credits=UsageCredits(used=spend_usd, currency="USD"),
+                notes=notes,
+                raw=raw,
+            )
+        ]
+    if free_remaining is not None and free_remaining > 0:
+        notes.append(f"Muse free credits remaining: ${free_remaining:.2f} (counts down).")
+        return [
+            AccountUsage(
+                source="muse",
+                provider="muse",
+                billing_kind=BillingKind.PREPAID_BALANCE,
+                balance_usd=free_remaining,
+                notes=notes,
+                raw=raw,
+            )
+        ]
+    raise CollectorError(
+        "Muse cookie: could not read MTD spend and free credits are empty; "
+        "re-run `aiuse credential refresh muse --from chrome`"
+    )
+
+
+def _collect_via_portal(
+    cookie: str,
+    env: Mapping[str, str],
+    timeout: float,
+    *,
+    account: str | None = None,
+) -> list[AccountUsage]:
+    me = _portal_get(cookie, "/api/auth/me", timeout)
+    teams_payload = _portal_get(cookie, "/api/portal/teams", timeout)
+    if isinstance(teams_payload, dict):
+        teams = teams_payload.get("teams")
+    elif isinstance(teams_payload, list):
+        teams = teams_payload
+    else:
+        teams = None
+    if not isinstance(teams, list) or not teams:
+        raise CollectorError(
+            "Muse cookie: Model API session returned no teams. "
+            f"Open {_SIGN_IN_URL} until the dashboard loads, then re-run "
+            "`aiuse credential refresh muse --from chrome`."
+        )
+    wanted = str(env.get(_TEAM_ENV) or "").strip()
+    team_id = _pick_team_id(teams, wanted)
+    team_path = quote(team_id, safe="")
+    try:
+        banner = _portal_get(
+            cookie,
+            f"/api/portal/teams/{team_path}/billing-banner",
+            timeout,
+            missing_ok=True,
+        )
+    except CollectorError as exc:
+        if str(exc) == _SESSION_REJECTED:
+            raise
+        banner = None
+    today = date.today()
+    query = urlencode(
+        {
+            "metric": "USAGE_BILLABLE_COST",
+            "start_date": today.replace(day=1).isoformat(),
+            "end_date": today.isoformat(),
+            "timezone": _iana_timezone(),
+        }
+    )
+    usage_raw: Any = None
+    spend_usd: float | None = None
+    try:
+        usage_raw = _portal_get(
+            cookie,
+            f"/api/portal/teams/{team_path}/usage?{query}",
+            timeout,
+            missing_ok=True,
+        )
+        spend_usd = _mtd_from_portal_usage(usage_raw)
+    except CollectorError as exc:
+        if str(exc) == _SESSION_REJECTED:
+            raise
+        spend_usd = None
+    label = _account_label_from_me(me, account)
+    accounts = _accounts_from_portal(banner, spend_usd, team_id=team_id, usage_raw=usage_raw)
+    if label:
+        for row in accounts:
+            if not row.account:
+                row.account = label
+    return accounts
+
+
 def _fetch_dev_session_html(cookie: str, timeout: float, *, team_id: str | None = None) -> str:
     """Load a logged-in Model API HTML shell (LSD/DTSG + optional team_id scrape)."""
     urls: list[str] = []
@@ -327,33 +651,20 @@ def _fetch_dev_session_html(cookie: str, timeout: float, *, team_id: str | None 
                 },
             )
             if resp.status_code in (401, 403):
-                raise CollectorError(
-                    f"Muse cookie rejected by dev.meta.ai (HTTP {resp.status_code}); "
-                    "re-run `aiuse credential refresh muse --from chrome`"
-                )
+                raise CollectorError(_SESSION_REJECTED)
             resp.raise_for_status()
             text = resp.text
             # auth.meta.com login waterfall is not usable
             if "auth.meta.com" in (resp.url or ""):
-                last_error = CollectorError(
-                    "Muse cookie: dev.meta.ai returned a login/error shell; open "
-                    "https://dev.meta.ai/usage in Chrome so llm_sess is present, then re-run "
-                    "`aiuse credential refresh muse --from chrome`"
-                )
+                last_error = CollectorError(_SESSION_REJECTED)
                 continue
             if _extract_dtsg(text) or _extract_lsd(text):
                 return text
             # Tiny Error shells without tokens are not usable
             if len(text) < 5000:
-                last_error = CollectorError(
-                    "Muse cookie: dev.meta.ai returned a login/error shell; open "
-                    "https://dev.meta.ai/usage in Chrome so llm_sess is present, then re-run "
-                    "`aiuse credential refresh muse --from chrome`"
-                )
+                last_error = CollectorError(_SESSION_REJECTED)
                 continue
-            last_error = CollectorError(
-                "Muse cookie: fetched HTML without fb_dtsg/LSD; re-run `aiuse credential refresh muse --from chrome`"
-            )
+            last_error = CollectorError(_SESSION_REJECTED)
         except CollectorError as exc:
             last_error = exc
         except requests.RequestException as exc:

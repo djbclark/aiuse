@@ -463,6 +463,23 @@ def test_collect_via_cookie_uses_team_id_and_spend_query(monkeypatch):
     }
 
     def fake_get(url, timeout, allow_redirects=True, headers=None):
+        if "/api/" in url:
+            # Portal routes absent: collector falls back to the Relay HTML scrape.
+            class NoPortal:
+                status_code = 404
+                text = ""
+                headers = {"content-type": "text/html"}
+
+                def __init__(self, final_url: str):
+                    self.url = final_url
+
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    raise ValueError("no portal")
+
+            return NoPortal(url)
         assert "team_id=1483959756871752" in url
         return FakeGet()
 
@@ -487,3 +504,104 @@ def test_collect_via_cookie_uses_team_id_and_spend_query(monkeypatch):
         muse_mod._BILLING_DOC_ID,
         muse_mod._SPEND_DOC_ID,
     }
+
+
+def _json_response(payload, *, status_code=200, url="https://dev.meta.ai/api/auth/me"):
+    class Response:
+        headers = {"content-type": "application/json"}
+        text = json.dumps(payload)
+
+        def __init__(self):
+            self.status_code = status_code
+            self.url = url
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(response=self)
+
+        def json(self):
+            return payload
+
+    return Response()
+
+
+def test_collect_via_cookie_portal_spend_and_session_label(monkeypatch):
+    from datetime import date
+
+    from aiuse.collectors import muse as muse_mod
+
+    day = date.today().isoformat()
+    seen: list[str] = []
+
+    def fake_get(url, timeout, allow_redirects=True, headers=None):
+        seen.append(url)
+        if url.endswith("/api/auth/me"):
+            return _json_response({"email": "muse-user@example.com"}, url=url)
+        if url.endswith("/api/portal/teams"):
+            return _json_response({"teams": [{"id": "1483959756871752", "name": "personal"}]}, url=url)
+        if url.endswith("/billing-banner"):
+            return _json_response(
+                {"kind": "free_partial", "remaining_minor_units": 250, "currency": "USD"},
+                url=url,
+            )
+        if "/usage?" in url:
+            assert "metric=USAGE_BILLABLE_COST" in url
+            return _json_response(
+                {
+                    "currency": {"code": "USD", "symbol": "$", "format": "{symbol}{amount}", "offset": 100},
+                    "series": [
+                        {
+                            "type": "TOTAL",
+                            "data_points": [{"date": day, "amount": "30"}],
+                        }
+                    ],
+                },
+                url=url,
+            )
+        raise AssertionError(url)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    accounts = muse_mod._collect_via_cookie("llm_sess=abc", {}, 5.0)
+    assert accounts[0].account == "muse-user@example.com"
+    assert accounts[0].balance_usd is None
+    assert accounts[0].usage_credits is not None
+    assert accounts[0].usage_credits.used == 0.30
+    assert accounts[0].billing_kind == BillingKind.PAYG_API
+    assert any("/api/auth/me" in url for url in seen)
+    assert all("/api/graphql" not in url for url in seen)
+
+
+def test_collect_via_cookie_portal_free_credits_when_usage_empty(monkeypatch):
+    from aiuse.collectors import muse as muse_mod
+
+    def fake_get(url, timeout, allow_redirects=True, headers=None):
+        if url.endswith("/api/auth/me"):
+            return _json_response({"email": "muse-user@example.com"}, url=url)
+        if url.endswith("/api/portal/teams"):
+            return _json_response({"teams": [{"id": "99"}]}, url=url)
+        if url.endswith("/billing-banner"):
+            return _json_response({"kind": "free_untouched", "grant_minor_units": 500}, url=url)
+        if "/usage?" in url:
+            return _json_response({"series": []}, url=url)
+        raise AssertionError(url)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    accounts = muse_mod._collect_via_cookie("dh_sess=abc", {}, 5.0)
+    assert accounts[0].balance_usd == 5.0
+    assert accounts[0].usage_credits is None
+    assert accounts[0].billing_kind == BillingKind.PREPAID_BALANCE
+
+
+def test_collect_via_cookie_rejected_session_does_not_scrape_html(monkeypatch):
+    from aiuse.collectors import muse as muse_mod
+
+    seen: list[str] = []
+
+    def fake_get(url, timeout, allow_redirects=True, headers=None):
+        seen.append(url)
+        return _json_response({"error": "Not authenticated"}, status_code=401, url=url)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    with pytest.raises(CollectorError, match="api/auth/login"):
+        muse_mod._collect_via_cookie("llm_sess=stale", {}, 5.0)
+    assert seen == ["https://dev.meta.ai/api/auth/me"]

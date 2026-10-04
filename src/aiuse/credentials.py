@@ -238,12 +238,14 @@ def _chrome_cookie_header_for_muse(profile: str) -> str:
                 pairs.append(f"{item.name}={value}")
     if not pairs:
         raise CredentialError("no Muse cookies were found; sign in to dev.meta.ai in the selected Chrome profile")
-    # Model API auth is llm_sess on .dev.meta.ai (not Facebook c_user/xs).
-    if "llm_sess" not in names:
+    # Model API auth is llm_sess or dh_sess on .dev.meta.ai (not Facebook c_user/xs,
+    # and not the Muse chat session on muse.ai).
+    if "llm_sess" not in names and "dh_sess" not in names:
         raise CredentialError(
-            "Chrome is missing the Muse session cookie (llm_sess). "
-            "In this Chrome profile open https://dev.meta.ai/usage until the usage "
-            "dashboard loads, then re-run `aiuse credential refresh muse --from chrome`."
+            "Chrome is missing a Model API session cookie (llm_sess or dh_sess). "
+            "Open https://dev.meta.ai/api/auth/login in this Chrome profile and wait "
+            "until the dashboard loads, then re-run `aiuse credential refresh muse --from chrome`. "
+            "https://muse.ai is the Muse chat app and does not sign in the Model API."
         )
     return "; ".join(pairs)
 
