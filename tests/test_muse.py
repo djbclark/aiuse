@@ -6,7 +6,7 @@ import requests
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.muse import collect_muse
-from aiuse.models import BillingKind
+from aiuse.models import AccountUsage, BillingKind, UsageCredits
 
 
 def test_collect_muse_is_quiet_until_key_is_explicitly_supplied():
@@ -605,3 +605,85 @@ def test_collect_via_cookie_rejected_session_does_not_scrape_html(monkeypatch):
     with pytest.raises(CollectorError, match="api/auth/login"):
         muse_mod._collect_via_cookie("llm_sess=stale", {}, 5.0)
     assert seen == ["https://dev.meta.ai/api/auth/me"]
+
+
+def test_windows_from_subs_usage_maps_five_hour_and_weekly():
+    from aiuse.collectors import muse as muse_mod
+
+    windows = muse_mod._windows_from_subs_usage(
+        {
+            "is_subs_active": True,
+            "subs_tier_name": "Everyday Usage",
+            "subs_usage": {
+                "window": {
+                    "used_percent": 12,
+                    "resets_at": 1788431188,
+                    "window_duration_mins": 300,
+                },
+                "weekly": {"used_percent": 4, "resets_at": 1788739200},
+            },
+        }
+    )
+    by_label = {window.label: window for window in windows}
+    assert set(by_label) == {"Muse 5-hour", "Muse weekly"}
+    assert by_label["Muse 5-hour"].used_percent == 12
+    assert by_label["Muse 5-hour"].remaining_percent == 88
+    assert by_label["Muse 5-hour"].window_minutes == 300
+    assert by_label["Muse 5-hour"].resets_at is not None
+    assert by_label["Muse weekly"].used_percent == 4
+    assert by_label["Muse weekly"].window_minutes == 10080
+
+
+def test_windows_from_subs_usage_keeps_zero_and_drops_inactive_payload():
+    from aiuse.collectors import muse as muse_mod
+
+    untouched = muse_mod._windows_from_subs_usage(
+        {"subs_usage": {"window": {"used_percent": 0, "window_duration_mins": 300}}}
+    )
+    assert untouched[0].used_percent == 0
+    assert untouched[0].remaining_percent == 100
+    assert muse_mod._windows_from_subs_usage({"is_subs_active": False, "subs_usage": None}) == []
+    note = muse_mod._plan_note_from_key_payload({"is_subs_active": False}, [])
+    assert note is not None
+    assert "no plan usage percent" in note
+
+
+def test_merge_subscription_windows_promotes_spend_row(monkeypatch):
+    from aiuse.collectors import muse as muse_mod
+
+    windows = muse_mod._windows_from_subs_usage(
+        {
+            "subs_usage": {
+                "window": {"used_percent": 20, "window_duration_mins": 300},
+                "weekly": {"used_percent": 7},
+            }
+        }
+    )
+    monkeypatch.setattr(
+        muse_mod,
+        "_subscription_windows_for_local_login",
+        lambda _timeout: (windows, "Muse Code plan: Everyday Usage."),
+    )
+    row = AccountUsage(
+        source="muse",
+        provider="muse",
+        billing_kind=BillingKind.PAYG_API,
+        usage_credits=UsageCredits(used=0.30, currency="USD"),
+        notes=["spent already"],
+    )
+    merged = muse_mod._merge_subscription_windows([row], 5.0, allow_local=True)
+    assert merged[0].billing_kind == BillingKind.SUBSCRIPTION_WINDOW
+    assert merged[0].usage_credits is not None
+    assert merged[0].usage_credits.used == 0.30
+    assert [window.label for window in merged[0].windows] == ["Muse 5-hour", "Muse weekly"]
+    assert "Muse Code plan: Everyday Usage." in merged[0].notes
+
+    untouched = AccountUsage(
+        source="muse",
+        provider="muse",
+        billing_kind=BillingKind.PAYG_API,
+        usage_credits=UsageCredits(used=1.0, currency="USD"),
+    )
+    skipped = muse_mod._merge_subscription_windows([untouched], 5.0, allow_local=False)
+    assert skipped[0].billing_kind == BillingKind.PAYG_API
+    assert skipped[0].windows == []

@@ -1,6 +1,6 @@
 # Muse (Spark) quota
 
-Muse Spark / Muse Code is **pay-as-you-go** through the Meta Model API, not a seat subscription. This doc states what `aiuse` shows and how it is collected.
+Muse Spark on the Model API is **pay-as-you-go**. Muse Code also sells a monthly subscription whose used-percent is a 5-hour window plus a week, not a monthly dollar cap. This doc states what `aiuse` shows and how it is collected.
 
 ## Billing model
 
@@ -10,11 +10,19 @@ Muse Spark / Muse Code is **pay-as-you-go** through the Meta Model API, not a se
 | Dashboard            | `https://dev.meta.ai/usage` + `/billing`                                                           |
 | Pricing              | Standard `$1.25` / 1 M input, `$4.25` / 1 M output; Contributor `$0.10` / 1 M input (data-sharing) |
 | Rate limits          | Standard `3000 req/min`, `4 M tokens/min`; Contributor `60 req/min`, `2.1 M tokens/min`            |
-| Subscription windows | **None shipped** — no 5 h / weekly / monthly pool to burn before reset                             |
+| Subscription windows | 5 h + weekly **used percent**, only when `POST /muse-code/key` returns `subs_usage`                |
 
-Rate limits are burst throttles, not use-or-lose allotments. `aiuse` therefore does **not** turn `60 req/min` into a `QuotaWindow`; it notes the limit and ranks Muse in the `n/a` band (like `openrouter` / `deepseek`), not as `use`/`slow`.
+Rate limits are burst throttles, not use-or-lose allotments. `aiuse` therefore does **not** turn `60 req/min` into a `QuotaWindow`.
 
-If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 10 k or `clinepass`'s 5 h/weekly/monthly nesting), the same collector will promote to `SUBSCRIPTION_WINDOW` with `window_minutes` (300 / 10080 / 43200) and `analysis.provider_overrides.muse.shared_allotment` without a provider-id change.
+Muse Code's paid plans are billed monthly, but Meta does not publish a monthly used-percent. The plan meter is `subs_usage` on `POST https://api.meta.ai/muse-code/key`, read with the Muse CLI device-login access token (macOS Keychain item `ai.meta.dev.credentials` / account `meta`, not the `LLM|` API key):
+
+- `subs_usage.window.used_percent` is the share **consumed** of the rolling window. `window_duration_mins` of `300` is the 5-hour clock.
+- `subs_usage.weekly.used_percent` is the share consumed of the week (`window_minutes` 10080).
+- `used_percent` 0 is untouched and 100 is exhausted. `resets_at` is unix seconds.
+
+When those windows are present the row is `SUBSCRIPTION_WINDOW` and the clock matrix shows them. Month-to-date portal spend stays on `usage_credits`. The key endpoint is rate-limited, so a successful or empty read is reused for five minutes inside one process.
+
+An inactive subscription (`is_subs_active: false` and no `subs_usage`) has no plan percent. The row stays pay-as-you-go spend (`spent $X.XX (counts up)`). That includes a login Meta still treats as the free / unpaid state. Do not invent a free-tier cap; the portal free-credit banner (`free_untouched` / `free_partial`) is a dollar grant, and this collector still will not turn it into a percent unless Meta sends `subs_usage`.
 
 ## What `aiuse` shows
 
@@ -26,7 +34,8 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
   n/a   muse     —  —  spent $18.25 (counts up)
   ```
 - **With a key, spend shape** (`{"spend":…,"limit":…}` / `{"remaining":…}`): `PAYG_API` with `usage_credits` (`used`/`limit`/`remaining` + `balance_usd = remaining`).
-- **With a key, windows shape** (`{"limits":[{"type":"five_hour","percentUsed":12,"resetsAt":"…"}]}` or `{"windows":…}`): real burn windows `Muse 5-hour` / `Muse weekly` / `Muse monthly` / `Muse daily` with `SUBSCRIPTION_WINDOW`. Only present if Meta ships subscription credits.
+- **With a Muse CLI device login whose key response includes `subs_usage`:** `Muse 5-hour` and `Muse weekly` windows (`used_percent` is consumed), `billing_kind=SUBSCRIPTION_WINDOW`. Portal spend, when the cookie is also present, stays on `usage_credits`.
+- **With a key, windows shape** (`{"limits":[{"type":"five_hour","percentUsed":12,"resetsAt":"…"}]}` or `{"windows":…}`): the same clock labels from a billing JSON body, if Meta ever returns one on `api.meta.ai`.
 - **401/403 with a key:** one error row `provider=muse error="Muse API rejected the key (HTTP 401…)"` so the human knows to rotate `META_API_KEY` / re-run `muse login`.
 - **Source label:** `Muse (native)` (`muse` in `SOURCE_LABELS`), lowest priority in `DEFAULT_SOURCE_PRIORITY` (native second source if `openusage`/`codexbar` ever add `muse`).
 

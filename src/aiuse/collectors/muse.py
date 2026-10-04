@@ -14,9 +14,14 @@ If one transport is absent or fails, the other is tried. Absent both → [] . 40
 credential present surfaces as AccountUsage(error=…) only after both transports fail.
 
 As of 2026-08, api.meta.ai exposes /models and /status for the LLM| key but no billing
-path (all candidates 404). Cookie path uses LLMDCBillingBannerContainerQuery plus
-LLMDCHomeContentUsageSummaryQuery: Muse's UI "balance" is MTD PAYG spend (counts up),
+path (all candidates 404). Cookie path uses the portal billing banner plus
+month-to-date USAGE_BILLABLE_COST: Muse's UI "balance" is MTD PAYG spend (counts up),
 not prepaid remaining.
+
+A monthly Muse Code plan does not publish a monthly used-percent. The plan meter is
+``subs_usage`` on ``POST https://api.meta.ai/muse-code/key`` (Muse CLI keychain access
+token): a rolling window (``window_duration_mins``, 300 for the 5-hour clock) and a
+weekly window. No active subscription omits ``subs_usage``; the row stays spend-only.
 """
 
 from __future__ import annotations
@@ -26,8 +31,10 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -83,6 +90,15 @@ _BILLING_FRIENDLY = "LLMDCBillingBannerContainerQuery"
 _SPEND_DOC_ID = "28692949813640152"
 _SPEND_FRIENDLY = "LLMDCHomeContentUsageSummaryQuery"
 _PE_AMOUNT_OFFSET = 100.0
+# Muse Code plan meter. The API key cannot read it; the device-login access token can.
+_MUSE_CODE_KEY_URL = "https://api.meta.ai/muse-code/key"
+_KEYCHAIN_SERVICE = "ai.meta.dev.credentials"
+_KEYCHAIN_ACCOUNT = "meta"
+_SUBS_CACHE_TTL_S = 300.0
+_subs_cache_lock = threading.Lock()
+# ``payload`` None means "no cached read". A dict (possibly without subs_usage)
+# is a fresh key response and is reused for five minutes.
+_subs_cache: dict[str, Any] = {"at": 0.0, "payload": None}
 
 
 def collect_muse(
@@ -110,7 +126,7 @@ def collect_muse(
                 if cookie and _is_soft_inventory_row(accounts[0]):
                     soft_from_key = accounts
                 else:
-                    return accounts
+                    return _merge_subscription_windows(accounts, timeout, allow_local=allow_local)
         except CollectorError as exc:
             msg = str(exc)
             errors.append(msg)
@@ -132,7 +148,11 @@ def collect_muse(
 
     if cookie:
         try:
-            return _collect_via_cookie(cookie, env, timeout, account=account)
+            return _merge_subscription_windows(
+                _collect_via_cookie(cookie, env, timeout, account=account),
+                timeout,
+                allow_local=allow_local,
+            )
         except CollectorError as exc:
             msg = str(exc)
             errors.append(msg)
@@ -143,7 +163,7 @@ def collect_muse(
                     *row.notes,
                     f"Cookie balance unavailable: {msg}",
                 ]
-                return soft_from_key
+                return _merge_subscription_windows(soft_from_key, timeout, allow_local=allow_local)
             if key:
                 # Both failed
                 raise CollectorError("; ".join(errors)) from exc
@@ -162,7 +182,7 @@ def collect_muse(
             raise
 
     if soft_from_key is not None:
-        return soft_from_key
+        return _merge_subscription_windows(soft_from_key, timeout, allow_local=allow_local)
 
     # One transport was tried and failed with non-401 without fallback
     if errors:
@@ -1242,6 +1262,226 @@ def _windows_from_payload(data: dict) -> list[QuotaWindow]:
             )
         )
     return windows
+
+
+def _epoch_to_utc(value: Any) -> datetime | None:
+    """Muse sends ``resets_at`` as unix seconds (or an ISO string)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+        if seconds > 10_000_000_000:
+            seconds /= 1000.0
+        if seconds <= 0:
+            return None
+        return datetime.fromtimestamp(seconds, timezone.utc)
+    if isinstance(value, str):
+        return parse_dt(value)
+    return None
+
+
+def _windows_from_subs_usage(payload: Any) -> list[QuotaWindow]:
+    """Map ``subs_usage`` from ``POST /muse-code/key`` into clock windows.
+
+    ``used_percent`` is the share consumed. The rolling window's
+    ``window_duration_mins`` picks the clock (300 is the 5-hour plan window).
+    The weekly object has no duration of its own.
+    """
+    if not isinstance(payload, dict):
+        return []
+    usage = payload.get("subs_usage")
+    if not isinstance(usage, dict):
+        return []
+    windows: list[QuotaWindow] = []
+    rolling = usage.get("window")
+    if isinstance(rolling, dict):
+        window = _quota_window_from_subs_spec(
+            rolling,
+            label="Muse 5-hour",
+            minutes=300,
+        )
+        if window is not None:
+            windows.append(window)
+    weekly = usage.get("weekly")
+    if isinstance(weekly, dict):
+        window = _quota_window_from_subs_spec(
+            weekly,
+            label="Muse weekly",
+            minutes=10080,
+        )
+        if window is not None:
+            windows.append(window)
+    return windows
+
+
+def _quota_window_from_subs_spec(
+    spec: dict[str, Any],
+    *,
+    label: str,
+    minutes: int,
+) -> QuotaWindow | None:
+    percent = spec.get("used_percent")
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)):
+        return None
+    used = float(percent)
+    duration = spec.get("window_duration_mins")
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration > 0:
+        minutes = int(duration)
+        if minutes == 300:
+            label = "Muse 5-hour"
+        elif minutes == 10080:
+            label = "Muse weekly"
+        else:
+            label = f"Muse {minutes}m"
+    resets = _epoch_to_utc(spec.get("resets_at"))
+    raw = {
+        "used_percent": used,
+        "resets_at": spec.get("resets_at"),
+        "window_duration_mins": spec.get("window_duration_mins"),
+    }
+    return QuotaWindow(
+        label=label,
+        used_percent=used,
+        remaining_percent=max(0.0, 100.0 - used),
+        resets_at=resets,
+        window_minutes=minutes,
+        raw={key: value for key, value in raw.items() if value is not None},
+    )
+
+
+def _plan_note_from_key_payload(payload: Any, windows: list[QuotaWindow]) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    tier = payload.get("subs_tier_name")
+    if isinstance(tier, str) and tier.strip():
+        return f"Muse Code plan: {tier.strip()}."
+    if payload.get("is_subs_active") is False and not windows:
+        return (
+            "Muse Code subscription is inactive, so Meta reports no plan usage percent. "
+            "The row is pay-as-you-go spend only."
+        )
+    return None
+
+
+def _read_muse_keychain_access_token() -> str | None:
+    """OAuth access token from the Muse CLI login. Never the API key."""
+    try:
+        result = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-s",
+                _KEYCHAIN_SERVICE,
+                "-a",
+                _KEYCHAIN_ACCOUNT,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    token = payload.get("access_token")
+    if not isinstance(token, str) or not token.strip():
+        return None
+    return token.strip()
+
+
+def _fetch_muse_code_key(token: str, timeout: float) -> dict[str, Any] | None:
+    try:
+        response = requests.post(
+            _MUSE_CODE_KEY_URL,
+            json={},
+            timeout=timeout,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "x-api-version": "1.0.0",
+                "User-Agent": _USER_AGENT,
+            },
+        )
+    except requests.RequestException:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    # The response repeats the API key. Do not keep it on the account.
+    payload.pop("api_key", None)
+    payload.pop("user_email", None)
+    payload.pop("user_avatar_url", None)
+    return payload
+
+
+def _subscription_windows_for_local_login(timeout: float) -> tuple[list[QuotaWindow], str | None]:
+    """Plan windows from the local Muse CLI login.
+
+    The key endpoint is rate-limited, and ``aiuse watch`` collects on a short
+    interval, so a hit is reused for five minutes. Unit tests must not read
+    the operator keychain or call Meta.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return [], None
+    now = time.monotonic()
+    with _subs_cache_lock:
+        cached_at = float(_subs_cache.get("at") or 0.0)
+        cached = _subs_cache.get("payload")
+        if isinstance(cached, dict) and now - cached_at < _SUBS_CACHE_TTL_S:
+            payload = cached
+        else:
+            payload = None
+    if payload is None:
+        token = _read_muse_keychain_access_token()
+        payload = _fetch_muse_code_key(token, timeout) if token else None
+        # Cache a miss too, so a locked keychain or an inactive plan does not
+        # hit the rate-limited key endpoint on every watch tick.
+        stored = payload if isinstance(payload, dict) else {}
+        with _subs_cache_lock:
+            _subs_cache["at"] = time.monotonic()
+            _subs_cache["payload"] = stored
+        payload = stored
+    windows = _windows_from_subs_usage(payload)
+    return windows, _plan_note_from_key_payload(payload, windows)
+
+
+def _merge_subscription_windows(
+    accounts: list[AccountUsage],
+    timeout: float,
+    *,
+    allow_local: bool,
+) -> list[AccountUsage]:
+    """Attach Muse Code plan windows when the local login reports them."""
+    if not accounts or not allow_local:
+        return accounts
+    windows, note = _subscription_windows_for_local_login(timeout)
+    if not windows and not note:
+        return accounts
+    for row in accounts:
+        if row.error:
+            continue
+        if windows:
+            present = {window.label for window in row.windows}
+            row.windows.extend(window for window in windows if window.label not in present)
+            if row.billing_kind == BillingKind.PAYG_API:
+                row.billing_kind = BillingKind.SUBSCRIPTION_WINDOW
+        if note and note not in row.notes:
+            row.notes.append(note)
+    return accounts
 
 
 def _resolve_key_and_account(

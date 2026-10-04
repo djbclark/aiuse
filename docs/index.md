@@ -38,7 +38,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`grok-quota.md`](grok-quota.md) — Grok weekly pool + Extra Usage Credits (`grok_billing` native collector).
 
 - [`devin-quota.md`](devin-quota.md) — Devin Free/Pro/Max daily + weekly included quota.
-- [`muse-quota.md`](muse-quota.md) — Muse Spark / Muse Code pay-as-you-go (Meta Model API).
+- [`muse-quota.md`](muse-quota.md) — Muse Code pay-as-you-go spend, plus the 5 h / weekly plan percent when `subs_usage` is present.
 - [`qwencloud-quota.md`](qwencloud-quota.md) — QwenCloud plans + PAYG limit via `qwencloud` CLI; Alibaba Cloud (Bailian) `alibaba` via `bl`.
 - [`antigravity-pools.md`](antigravity-pools.md) — independent Gemini and Claude/GPT pools.
 - [`tokscale-per-provider-investigation.md`](tokscale-per-provider-investigation.md) — current tokscale per-provider limitation.
