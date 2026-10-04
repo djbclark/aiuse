@@ -57,7 +57,38 @@ def parse_interval(value: str | float | int) -> float:
     return seconds
 
 
-def _frame_from_disk(max_age: float) -> tuple[Snapshot, list[UseOrLoseAlert]] | None:
+def _overlay_burst_samples(snapshot: Snapshot) -> bool:
+    """Replace accounts with any newer burst-tier reading. True if one applied.
+
+    During a burst the sampler reads the burning providers every few minutes
+    into partial samples, while full snapshots stay 15 minutes apart. The
+    board is most useful exactly then, so it shows the newer reading for those
+    providers and the full snapshot for everything else.
+    """
+    from aiuse.analysis.history import account_key, partial_sample_dir
+    from aiuse.ledger import load_json_range
+    from aiuse.models import canonical_provider
+    from aiuse.serve import _snapshot_from_accounts_dict
+
+    applied = False
+    for row in load_json_range(partial_sample_dir(), snapshot.collected_at, None):
+        for fresh in _snapshot_from_accounts_dict(row).accounts:
+            if fresh.error or not fresh.windows:
+                continue
+            provider = canonical_provider(fresh.provider)
+            same = [i for i, a in enumerate(snapshot.accounts) if canonical_provider(a.provider) == provider]
+            exact = [i for i in same if account_key(snapshot.accounts[i].account) == account_key(fresh.account)]
+            # A provider-scoped reading belongs to the provider's only account.
+            target = exact[0] if exact else same[0] if len(same) == 1 else None
+            if target is None:
+                continue
+            fresh.account = fresh.account or snapshot.accounts[target].account
+            snapshot.accounts[target] = fresh
+            applied = True
+    return applied
+
+
+def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, list[UseOrLoseAlert]] | None:
     """The newest full snapshot on disk, if it is younger than ``max_age`` seconds."""
     from aiuse.analysis.history import load_recent_snapshots
     from aiuse.serve import _alerts_from_dicts, _disk_row_age_ok, _snapshot_from_accounts_dict
@@ -65,7 +96,13 @@ def _frame_from_disk(max_age: float) -> tuple[Snapshot, list[UseOrLoseAlert]] | 
     rows = load_recent_snapshots(max_count=1)
     if not rows or not _disk_row_age_ok(rows[0], max_age):
         return None
-    return _snapshot_from_accounts_dict(rows[0]), _alerts_from_dicts(rows[0].get("alerts") or [])
+    snapshot = _snapshot_from_accounts_dict(rows[0])
+    if _overlay_burst_samples(snapshot):
+        # The stored alerts describe the older readings; re-derive them.
+        alerts = analyze_use_or_lose(snapshot, config)
+        alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
+        return snapshot, alerts
+    return snapshot, _alerts_from_dicts(rows[0].get("alerts") or [])
 
 
 def collect_watch_frame(
@@ -83,7 +120,7 @@ def collect_watch_frame(
     analysis_cfg: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
     persist = should_persist_snapshots(analysis_cfg)
     if max_age and persist:
-        cached = _frame_from_disk(max_age)
+        cached = _frame_from_disk(max_age, config)
         if cached is not None:
             return cached
 

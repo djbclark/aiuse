@@ -175,3 +175,8 @@ side by side. This needs snapshot persistence (the default); with
 The header shows the current time, `last:` (when the data on the board was
 collected, which can be earlier than the last redraw), and a `sampler:` line
 with the scheduled sampler's previous run, next due run and tier.
+
+During a burst the sampler reads the burning providers every few minutes into
+partial samples while full snapshots stay 15 minutes apart. The board overlays
+those newer readings on the full snapshot, so the providers that are moving are
+at most a few minutes old; the `sampler:` line shows when the last one was taken.

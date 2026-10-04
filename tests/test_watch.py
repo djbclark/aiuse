@@ -363,3 +363,33 @@ def test_board_header_shows_now_data_time_and_the_sampler_schedule():
     late = render_watch_board(snap, [], color=False, quiet=True, now=now + timedelta(hours=1), sample_schedule=schedule)
     assert "(due)" in late.splitlines()[1]
     assert sampler.schedule({}, sampler.sampling_settings(None)) is None
+
+
+def test_watch_frame_overlays_newer_burst_samples_on_the_full_snapshot(monkeypatch):
+    from datetime import timedelta
+
+    from aiuse.analysis.history import save_snapshot
+
+    def account(provider: str, used: float, source: str = "codexbar") -> AccountUsage:
+        window = QuotaWindow(label=f"{provider} weekly", used_percent=used, window_minutes=10080)
+        return AccountUsage(
+            source=source, provider=provider, billing_kind=BillingKind.SUBSCRIPTION_WINDOW, windows=[window]
+        )
+
+    full_at = utcnow() - timedelta(minutes=5)
+    save_snapshot(Snapshot(collected_at=full_at, accounts=[account("clinepass", 40), account("codex", 10)]), [])
+    for minutes, used in ((2, 44), (4, 47)):
+        burst = Snapshot(collected_at=full_at + timedelta(minutes=minutes), accounts=[account("clinepass", used)])
+        save_snapshot(burst, [], partial_providers=["clinepass"])
+    # A burst reading older than the full snapshot must not roll it back.
+    stale = Snapshot(collected_at=full_at - timedelta(minutes=3), accounts=[account("codex", 1)])
+    save_snapshot(stale, [], partial_providers=["codex"])
+
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: pytest.fail("must not collect"))
+    seen: list[Snapshot] = []
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda snap, _c: seen.append(snap) or [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    snapshot, _alerts = collect_watch_frame({"analysis": {"persist_snapshots": True}}, max_age=600)
+    used = {a.provider: a.windows[0].used_percent for a in snapshot.accounts}
+    assert used == {"clinepass": 47, "codex": 10}
+    assert seen == [snapshot], "alerts are re-derived from the overlaid readings"
