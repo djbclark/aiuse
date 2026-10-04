@@ -161,3 +161,17 @@ polling, terminal restore, tests, docs, completions). Matches Issue #14's
   design options to the chosen one.
 - If interactivity is later added (selection, switch) → re-open the Textual
   question.
+
+## One polling pipeline with `aiuse sample`
+
+A refresh first looks for a snapshot on disk younger than the watch interval
+and shows that; it collects only when there is none. When it does collect, it
+records the result exactly as [`aiuse sample`](attribution.md) would
+(snapshot, token ledger, sampler state), so the scheduled sampler sees a fresh
+sample and skips its own. The board and the scheduler never poll the vendors
+side by side. This needs snapshot persistence (the default); with
+`learn_from_history = false` and no `persist_snapshots`, every refresh collects.
+
+The header shows the current time, `last:` (when the data on the board was
+collected, which can be earlier than the last redraw), and a `sampler:` line
+with the scheduled sampler's previous run, next due run and tier.

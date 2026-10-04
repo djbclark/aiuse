@@ -57,23 +57,76 @@ def parse_interval(value: str | float | int) -> float:
     return seconds
 
 
-def collect_watch_frame(config: dict[str, Any]) -> tuple[Snapshot, list[UseOrLoseAlert]]:
-    """One live collect + analysis pass (same as a normal CLI run)."""
-    snapshot = run_collectors(config)
-    alerts = analyze_use_or_lose(snapshot, config)
-    alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
+def _frame_from_disk(max_age: float) -> tuple[Snapshot, list[UseOrLoseAlert]] | None:
+    """The newest full snapshot on disk, if it is younger than ``max_age`` seconds."""
+    from aiuse.analysis.history import load_recent_snapshots
+    from aiuse.serve import _alerts_from_dicts, _disk_row_age_ok, _snapshot_from_accounts_dict
+
+    rows = load_recent_snapshots(max_count=1)
+    if not rows or not _disk_row_age_ok(rows[0], max_age):
+        return None
+    return _snapshot_from_accounts_dict(rows[0]), _alerts_from_dicts(rows[0].get("alerts") or [])
+
+
+def collect_watch_frame(
+    config: dict[str, Any], *, max_age: float | None = None
+) -> tuple[Snapshot, list[UseOrLoseAlert]]:
+    """One frame for the board, sharing one polling pipeline with ``aiuse sample``.
+
+    With ``max_age`` set, a snapshot the scheduled sampler (or anything else)
+    wrote within that many seconds is shown as is: the board and the sampler
+    are not two clocks polling the same vendors. Otherwise this collects, and
+    records the result the way a sample does — snapshot, token ledger, sampler
+    state — so the scheduled job sees a fresh sample and skips its own.
+    """
     raw_analysis = config.get("analysis")
     analysis_cfg: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
-    if should_persist_snapshots(analysis_cfg):
+    persist = should_persist_snapshots(analysis_cfg)
+    if max_age and persist:
+        cached = _frame_from_disk(max_age)
+        if cached is not None:
+            return cached
+
+    from aiuse import sampler
+    from aiuse.ledger import save_ledger
+
+    ledger_sample = None
+    if persist:
+        snapshot, ledger_sample, _ledger_error = sampler.collect_with_ledger(config, run_collectors)
+    else:
+        snapshot = run_collectors(config)
+    alerts = analyze_use_or_lose(snapshot, config)
+    alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
+    if persist:
+        retention = int(analysis_cfg.get("snapshot_retention_days") or 90)
         try:
-            save_snapshot(
-                snapshot,
-                alerts,
-                retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
-            )
+            save_snapshot(snapshot, alerts, retention_days=retention)
+            if ledger_sample is not None:
+                save_ledger(ledger_sample, collected_at=snapshot.collected_at, retention_days=retention)
+            settings = sampler.sampling_settings(config)
+            sampler.save_state(sampler.advance_state(sampler.load_state(), snapshot, settings, partial=False))
         except OSError:
             pass
     return snapshot, alerts
+
+
+_schedule_cache: tuple[float, tuple[datetime, datetime, str] | None] | None = None
+
+
+def _sample_schedule(config: dict[str, Any]) -> tuple[datetime, datetime, str] | None:
+    """When ``aiuse sample`` last ran and is next due. Re-read every 2 seconds:
+    the board redraws four times a second and the state file changes rarely."""
+    global _schedule_cache
+    from aiuse import sampler
+
+    if _schedule_cache is not None and time.monotonic() - _schedule_cache[0] < 2.0:
+        return _schedule_cache[1]
+    try:
+        value = sampler.schedule(sampler.load_state(), sampler.sampling_settings(config))
+    except Exception:  # noqa: BLE001 — a header detail must never take the board down
+        value = None
+    _schedule_cache = (time.monotonic(), value)
+    return value
 
 
 def render_watch_board(
@@ -87,11 +140,21 @@ def render_watch_board(
     next_in: float | None = None,
     collecting_for: float | None = None,
     error: str | None = None,
+    now: datetime | None = None,
+    sample_schedule: tuple[datetime, datetime, str] | None = None,
 ) -> str:
-    """Header + clock matrix + optional footer for the alternate-screen board."""
+    """Header + clock matrix + optional footer for the alternate-screen board.
+
+    ``last`` is when the data on the board was collected, which is not when
+    the board last refreshed: a frame can come from a snapshot the scheduled
+    sampler wrote some minutes ago.
+    """
     header_bits = ["aiuse watch"]
-    if last_at is not None:
-        header_bits.append(f"last: {last_at.astimezone().strftime('%H:%M:%S')}")
+    if now is not None:
+        header_bits.append(f"now: {now.astimezone().strftime('%H:%M:%S')}")
+    data_at = snapshot.collected_at if snapshot is not None else last_at
+    if data_at is not None:
+        header_bits.append(f"last: {data_at.astimezone().strftime('%H:%M:%S')}")
     else:
         header_bits.append("last: —")
     if collecting_for is not None:
@@ -101,6 +164,13 @@ def render_watch_board(
         header_bits.append(f"next in {mins}:{secs:02d}")
     header_bits.append("q/esc quit")
     lines = [" · ".join(header_bits)]
+    if sample_schedule is not None:
+        previous, due, tier = sample_schedule
+        overdue = " (due)" if now is not None and due <= now else ""
+        lines.append(
+            f"sampler: previous {previous.astimezone().strftime('%H:%M:%S')}"
+            f" · next {due.astimezone().strftime('%H:%M:%S')}{overdue} · {tier} tier"
+        )
     if error:
         lines.append(f"collect error: {error}")
     if snapshot is not None:
@@ -223,7 +293,7 @@ class WatchRuntime:
         return max(0.0, self.next_due - self.now())
 
 
-def _collect_process_entry(config: dict[str, Any], send: Any) -> None:
+def _collect_process_entry(config: dict[str, Any], send: Any, max_age: float | None = None) -> None:
     """Collect in an isolated process so an in-flight refresh is cancellable."""
     if os.name == "posix":
         try:
@@ -231,7 +301,7 @@ def _collect_process_entry(config: dict[str, Any], send: Any) -> None:
         except OSError:
             pass
     try:
-        snapshot, alerts = collect_watch_frame(config)
+        snapshot, alerts = collect_watch_frame(config, max_age=max_age)
         send.send(("ok", snapshot, alerts))
     except BaseException as exc:  # noqa: BLE001 — return a board error instead of losing the worker
         try:
@@ -245,8 +315,9 @@ def _collect_process_entry(config: dict[str, Any], send: Any) -> None:
 class _WatchCollectionProcess:
     """One cancellable live-collection process for interactive watch mode."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any], max_age: float | None = None) -> None:
         self.config = config
+        self.max_age = max_age
         methods = multiprocessing.get_all_start_methods()
         self.context: Any = multiprocessing.get_context("fork" if "fork" in methods else "spawn")
         self.process: multiprocessing.Process | None = None
@@ -256,7 +327,7 @@ class _WatchCollectionProcess:
         recv, send = self.context.Pipe(duplex=False)
         process = self.context.Process(
             target=_collect_process_entry,
-            args=(self.config, send),
+            args=(self.config, send, self.max_age),
             name="aiuse-watch-collect",
             daemon=True,
         )
@@ -337,7 +408,7 @@ def run_watch(
     out = stdout if stdout is not None else sys.stdout
     err = stderr if stderr is not None else sys.stderr
     color = False if no_color else None
-    collect_fn = collect or (lambda: collect_watch_frame(config))
+    collect_fn = collect or (lambda: collect_watch_frame(config, max_age=interval))
     runtime = WatchRuntime(interval=interval, collect=collect_fn, now=now or time.monotonic)
 
     if once:
@@ -353,6 +424,8 @@ def run_watch(
                 next_in=None,
                 collecting_for=None,
                 error=runtime.error,
+                now=utcnow(),
+                sample_schedule=_sample_schedule(config),
             ),
             file=out,
         )
@@ -384,7 +457,7 @@ def run_watch(
     )
     reader = key_reader or StdinKeyReader()
     stop = threading.Event()
-    process_worker = _WatchCollectionProcess(config) if collect is None else None
+    process_worker = _WatchCollectionProcess(config, max_age=interval) if collect is None else None
 
     def start_worker(fn: Callable[[], None]) -> None:
         if process_worker is not None:
@@ -423,6 +496,8 @@ def run_watch(
                     next_in=runtime.next_in(),
                     collecting_for=runtime.collecting_for(),
                     error=runtime.error,
+                    now=utcnow(),
+                    sample_schedule=_sample_schedule(config),
                 )
             )
 

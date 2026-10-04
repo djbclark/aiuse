@@ -205,7 +205,7 @@ def test_run_watch_stops_default_collection_process_on_quit(monkeypatch):
     instances = []
 
     class FakeProcessWorker:
-        def __init__(self, config):
+        def __init__(self, config, max_age=None):
             self.config = config
             self.started = False
             self.stop_calls = 0
@@ -307,3 +307,59 @@ def test_collect_watch_frame_persists_when_enabled(monkeypatch):
     monkeypatch.setattr("aiuse.watch.save_snapshot", lambda *a, **k: saved.append(True) or "/tmp/x")
     collect_watch_frame({"analysis": {"persist_snapshots": True}})
     assert saved == [True]
+
+
+def test_watch_frame_reuses_a_fresh_snapshot_instead_of_collecting(monkeypatch):
+    """The board rides the scheduled sampler's data rather than polling beside it."""
+    from aiuse.analysis.history import save_snapshot
+
+    save_snapshot(_snap(), [])
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: pytest.fail("must not collect"))
+    snapshot, alerts = collect_watch_frame({"analysis": {"persist_snapshots": True}}, max_age=600)
+    assert [a.provider for a in snapshot.accounts] == [a.provider for a in _snap().accounts]
+    assert alerts == []
+
+
+def test_watch_frame_collects_when_the_snapshot_is_stale_and_records_a_sample(monkeypatch):
+    from datetime import timedelta
+
+    from aiuse import sampler
+    from aiuse.analysis.history import load_recent_snapshots, save_snapshot
+
+    old = _snap()
+    old.collected_at -= timedelta(hours=2)
+    save_snapshot(old, [])
+    calls: list[int] = []
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: calls.append(1) or _snap())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    collect_watch_frame({"analysis": {"persist_snapshots": True}}, max_age=600)
+    assert calls == [1] and len(load_recent_snapshots(retention_days=10_000)) == 2
+    # The scheduled job now sees a sample this recent and skips its own.
+    state = sampler.load_state()
+    assert sampler.decide(state, sampler.sampling_settings(None), _snap().collected_at).action == "skip"
+
+
+def test_board_header_shows_now_data_time_and_the_sampler_schedule():
+    from datetime import datetime, timedelta, timezone
+
+    from aiuse import sampler
+    from aiuse.watch import render_watch_board
+
+    snap = _snap()
+    snap.collected_at = datetime(2026, 10, 3, 12, 0, 5, tzinfo=timezone.utc)
+    now = snap.collected_at + timedelta(minutes=7)
+    state = {"tier": "active", "last_sample_at": snap.collected_at.isoformat()}
+    schedule = sampler.schedule(state, sampler.sampling_settings(None))
+    assert schedule is not None and schedule[1] == snap.collected_at + timedelta(minutes=15)
+    board = render_watch_board(snap, [], color=False, quiet=True, now=now, sample_schedule=schedule)
+    header, sampler_line = board.splitlines()[:2]
+
+    def hms(value):
+        return value.astimezone().strftime("%H:%M:%S")
+
+    assert f"now: {hms(now)}" in header and f"last: {hms(snap.collected_at)}" in header
+    assert sampler_line == f"sampler: previous {hms(snap.collected_at)} · next {hms(schedule[1])} · active tier"
+    late = render_watch_board(snap, [], color=False, quiet=True, now=now + timedelta(hours=1), sample_schedule=schedule)
+    assert "(due)" in late.splitlines()[1]
+    assert sampler.schedule({}, sampler.sampling_settings(None)) is None

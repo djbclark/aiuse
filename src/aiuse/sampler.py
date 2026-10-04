@@ -24,7 +24,7 @@ import os
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -107,6 +107,15 @@ def decide(state: dict[str, Any], settings: dict[str, float], now: datetime, *, 
     if tier == "burst" and hot and not full_due:
         return Decision("partial", "burst tier", hot=hot)
     return Decision("full", f"{tier} tier")
+
+
+def schedule(state: dict[str, Any], settings: dict[str, float]) -> tuple[datetime, datetime, str] | None:
+    """``(previous sample, next sample due, tier)``, or None before the first sample."""
+    last = _parse(state.get("last_sample_at"))
+    if last is None:
+        return None
+    tier = state.get("tier") if state.get("tier") in TIERS else "idle"
+    return last, last + timedelta(seconds=settings[f"{tier}_interval"]), str(tier)
 
 
 def _series(snapshot: Snapshot) -> dict[str, dict[str, Any]]:
