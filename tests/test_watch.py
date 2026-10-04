@@ -344,6 +344,7 @@ def test_board_header_shows_now_data_time_and_the_sampler_schedule():
     from datetime import datetime, timedelta, timezone
 
     from aiuse import sampler
+    from aiuse.report import format_clock
     from aiuse.watch import render_watch_board
 
     snap = _snap()
@@ -356,7 +357,7 @@ def test_board_header_shows_now_data_time_and_the_sampler_schedule():
     header, sampler_line = board.splitlines()[:2]
 
     def hms(value):
-        return value.astimezone().strftime("%H:%M:%S")
+        return format_clock(value, seconds=True)
 
     assert f"now: {hms(now)}" in header and f"last: {hms(snap.collected_at)}" in header
     assert sampler_line == f"sampler: previous {hms(snap.collected_at)} · next {hms(schedule[1])} · active tier"
@@ -393,3 +394,27 @@ def test_watch_frame_overlays_newer_burst_samples_on_the_full_snapshot(monkeypat
     used = {a.provider: a.windows[0].used_percent for a in snapshot.accounts}
     assert used == {"clinepass": 47, "codex": 10}
     assert seen == [snapshot], "alerts are re-derived from the overlaid readings"
+
+
+def test_format_clock_is_twelve_hour_without_leading_zeros():
+    from datetime import datetime
+
+    from aiuse.report import format_clock
+
+    evening = datetime(2026, 10, 3, 21, 2, 7).astimezone()
+    assert format_clock(evening) == "9:02pm"
+    assert format_clock(evening, seconds=True) == "9:02:07pm"
+    assert format_clock(evening, date=True) == "Sat Oct 3 9:02pm"
+    assert format_clock(datetime(2026, 10, 3, 0, 5).astimezone()) == "12:05am"
+    assert format_clock(datetime(2026, 10, 3, 12, 0).astimezone()) == "12:00pm"
+
+
+def test_board_footer_is_centered_under_the_table():
+    from aiuse.watch import render_watch_board
+
+    rows = render_watch_board(_snap(), [], color=False).splitlines()
+    width = max(len(r) for r in rows[: rows.index(next(r for r in rows if "Collected at" in r))] if "watch" not in r)
+    meta = next(r for r in rows if "Collected at" in r)
+    left = len(meta) - len(meta.lstrip())
+    assert left == max(0, (width - len(meta.strip())) // 2)
+    assert "am ·" in meta or "pm ·" in meta

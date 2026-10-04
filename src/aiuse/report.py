@@ -280,7 +280,7 @@ def render_report(
     lines.append(s.bold("=" * width))
     title = "AI USAGE — USE IT OR LOSE IT (full)"
     lines.append(s.bold(s.cyan(title)))
-    meta = f"Collected at {snapshot.collected_at.isoformat()}"
+    meta = f"Collected at {format_clock(snapshot.collected_at, date=True)}"
     meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
     if n_actionable:
         meta += f" · {n_actionable} alert{'s' if n_actionable != 1 else ''}"
@@ -1703,6 +1703,14 @@ def _priority_account_line(
     return f"{_priority_tag(s, band)} {body}"
 
 
+def format_clock(when: datetime, *, seconds: bool = False, date: bool = False) -> str:
+    """Local 12-hour time as people say it: ``9:02pm``, ``9:02:07pm``, ``Sat Oct 5 9:02pm``."""
+    local = when.astimezone()
+    clock = f"{local.hour % 12 or 12}:{local:%M}" + (f":{local:%S}" if seconds else "")
+    clock += "am" if local.hour < 12 else "pm"
+    return f"{local:%a %b} {local.day} {clock}" if date else clock
+
+
 def render_stderr_meta(
     snapshot: Snapshot,
     alerts: list[UseOrLoseAlert],
@@ -1715,7 +1723,7 @@ def render_stderr_meta(
     n_accounts = len(accounts)
     n_actionable = sum(1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE))
     lines: list[str] = []
-    meta = f"Collected at {snapshot.collected_at.isoformat()}"
+    meta = f"Collected at {format_clock(snapshot.collected_at, date=True)}"
     meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
     if n_actionable:
         meta += f" · {n_actionable} alert{'s' if n_actionable != 1 else ''}"

@@ -20,7 +20,7 @@ from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.models import Snapshot, UseOrLoseAlert, utcnow
-from aiuse.report import render_clock_matrix, render_stderr_meta
+from aiuse.report import _strip_ansi, format_clock, render_clock_matrix, render_stderr_meta
 
 DEFAULT_INTERVAL_S = 600.0
 MIN_INTERVAL_S = 5.0
@@ -188,10 +188,10 @@ def render_watch_board(
     """
     header_bits = ["aiuse watch"]
     if now is not None:
-        header_bits.append(f"now: {now.astimezone().strftime('%H:%M:%S')}")
+        header_bits.append(f"now: {format_clock(now, seconds=True)}")
     data_at = snapshot.collected_at if snapshot is not None else last_at
     if data_at is not None:
-        header_bits.append(f"last: {data_at.astimezone().strftime('%H:%M:%S')}")
+        header_bits.append(f"last: {format_clock(data_at, seconds=True)}")
     else:
         header_bits.append("last: —")
     if collecting_for is not None:
@@ -205,17 +205,21 @@ def render_watch_board(
         previous, due, tier = sample_schedule
         overdue = " (due)" if now is not None and due <= now else ""
         lines.append(
-            f"sampler: previous {previous.astimezone().strftime('%H:%M:%S')}"
-            f" · next {due.astimezone().strftime('%H:%M:%S')}{overdue} · {tier} tier"
+            f"sampler: previous {format_clock(previous, seconds=True)}"
+            f" · next {format_clock(due, seconds=True)}{overdue} · {tier} tier"
         )
     if error:
         lines.append(f"collect error: {error}")
     if snapshot is not None:
-        lines.append(render_clock_matrix(alerts, snapshot=snapshot, config=config, color=color).rstrip())
+        matrix = render_clock_matrix(alerts, snapshot=snapshot, config=config, color=color).rstrip()
+        lines.append(matrix)
         if not quiet:
             footer = render_stderr_meta(snapshot, alerts, color=color).rstrip()
             if footer:
-                lines.append(footer)
+                # Centered under the table, like the legend lines above it.
+                width = max((len(_strip_ansi(row)) for row in matrix.splitlines()), default=0)
+                for row in footer.splitlines():
+                    lines.append(" " * max(0, (width - len(_strip_ansi(row))) // 2) + row)
     else:
         lines.append("waiting for first collection…")
     return "\n".join(lines)
