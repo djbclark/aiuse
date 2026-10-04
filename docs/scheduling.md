@@ -7,7 +7,7 @@ This is the foundation for history insights; with `learn_from_history: auto`
 
 **Primary for this operator:** manage the agent from
 [`~/ops/site-djbclark`](https://github.com/djbclark/site-djbclark) role
-`site_agents` (label `com.djbclark.aiuse`, every hour).
+`site_agents` (label `com.djbclark.aiuse`, `aiuse sample` every 3 minutes).
 
 ```bash
 cd ~/ops/site-djbclark

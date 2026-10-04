@@ -68,6 +68,11 @@ times the pace that would exactly exhaust it. The second test keeps a 5-hour
 window's ordinary 20 points an hour from counting, while a weekly window at 8
 does. Rising a tier takes one sample; falling takes three quiet ones.
 
+The burst rate is measured against a reading at least 9 minutes old (0.6 ×
+`active_interval`), never against the sample just before. Meters report whole
+points, so a single tick between two samples four minutes apart would read as
+15 points an hour.
+
 Burst samples are partial, so they are filed under `~/.cache/aiuse/samples/`
 and never become `latest.json`. History learning and `aiuse serve` do not read
 them. A full collection still happens every 15 minutes during a burst.

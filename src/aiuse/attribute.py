@@ -83,6 +83,21 @@ def _quota_series(samples: list[dict[str, Any]]) -> dict[tuple[str, str, str], d
                 provider = canonical_provider(str(account.get("provider") or ""))
                 accounts.setdefault(provider, set()).add(history.account_key(account["account"]))
 
+    # One source may omit a window's duration (CodexBar's Copilot row) that
+    # another reports; the label then says which window it is.
+    durations: dict[tuple[str, str], Any] = {}
+    for sample in samples:
+        for account in sample.get("accounts") or []:
+            if not isinstance(account, dict):
+                continue
+            provider = canonical_provider(str(account.get("provider") or ""))
+            for window in account.get("windows") or []:
+                if isinstance(window, dict):
+                    label = str(window.get("label") or "")
+                    minutes = effective_window_minutes(label, window.get("window_minutes"))
+                    if minutes is not None:
+                        durations.setdefault((provider, label), minutes)
+
     series: dict[tuple[str, str, str], dict[str, Any]] = {}
     for sample in samples:
         when = _time(sample, "collected_at")
@@ -103,6 +118,8 @@ def _quota_series(samples: list[dict[str, Any]]) -> dict[tuple[str, str, str], d
                     continue
                 label = str(window.get("label") or "")
                 minutes = effective_window_minutes(label, window.get("window_minutes"))
+                if minutes is None:
+                    minutes = durations.get((provider, label))
                 key = (provider, owner, history.window_series_key(provider, label, minutes))
                 if key in seen and (seen[key] or not named):
                     continue

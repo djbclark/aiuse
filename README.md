@@ -280,6 +280,9 @@ aiuse serve                # loopback HTTP API for agents
 aiuse watch                # full-screen board (q/esc quit; default 10m)
 aiuse watch -i 2m          # faster refresh
 aiuse watch --once         # one frame on stdout (scripts / tmux)
+aiuse attribute            # what spent the quota: points burned beside tokens per client
+aiuse attribute --since 7d --provider clinepass --intervals
+aiuse sample               # scheduled entry point: samples faster while quota is moving
 
 # Faster / partial
 aiuse --providers copilot,grok,codex   # query these separately
@@ -473,6 +476,7 @@ Lapsed subscriptions: `analysis.lapsed_accounts` maps `"provider/account"` to a 
 
 ## Further documentation
 
+- [`docs/attribution.md`](docs/attribution.md) — what spent the quota: token ledgers, adaptive sampling (`aiuse sample`), `aiuse attribute`.
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install the optional data-source tools.
 - [`docs/json-contract.md`](docs/json-contract.md) — stable JSON fields and exit codes.
 - [`docs/provider-identity.md`](docs/provider-identity.md) — canonical provider id vs config key, and window identity across collectors.

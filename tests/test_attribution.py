@@ -182,15 +182,59 @@ def test_a_five_hour_window_at_its_ordinary_pace_is_active_not_burst():
 
 def test_tier_steps_down_one_level_only_after_the_cooldown():
     state = sampler.advance_state({}, _snapshot(T0, {"weekly": 4}), SETTINGS, partial=False)
-    state = sampler.advance_state(state, _snapshot(T0 + timedelta(minutes=15), {"weekly": 9}), SETTINGS, partial=False)
+    jump = T0 + timedelta(minutes=15)
+    state = sampler.advance_state(state, _snapshot(jump, {"weekly": 9}), SETTINGS, partial=False)
     assert state["tier"] == "burst"
-    when = T0 + timedelta(minutes=15)
-    for n in range(1, 3):
-        when += timedelta(minutes=3)
-        state = sampler.advance_state(state, _snapshot(when, {"weekly": 9}), SETTINGS, partial=True)
-        assert state["tier"] == "burst" and state["quiet_samples"] == n
-        assert state["hot"], "keeps watching the burning provider while still in burst"
-    state = sampler.advance_state(state, _snapshot(when + timedelta(minutes=3), {"weekly": 9}), SETTINGS, partial=True)
+    tiers = []
+    for n in range(1, 6):  # flat from here on, sampled every 3 minutes
+        flat = _snapshot(jump + timedelta(minutes=3 * n), {"weekly": 9})
+        state = sampler.advance_state(state, flat, SETTINGS, partial=True)
+        tiers.append((state["tier"], state["quiet_samples"], bool(state["hot"])))
+    # Still a burst while the baseline is the pre-jump reading; once the
+    # baseline is the jump itself the samples are quiet, and the third quiet
+    # one steps down a single tier.
+    assert tiers == [
+        ("burst", 0, True),
+        ("burst", 0, True),
+        ("burst", 1, True),
+        ("burst", 2, True),
+        ("active", 0, False),
+    ]
+
+
+def test_one_tick_between_close_samples_is_not_a_burst():
+    """Whole-point meters: +1 in 4 minutes reads as 15/h but is ordinary use."""
+    state = sampler.advance_state({}, _snapshot(T0, {"weekly": 54}), SETTINGS, partial=False)
+    close = _snapshot(T0 + timedelta(minutes=4), {"weekly": 55})
+    state = sampler.advance_state(state, close, SETTINGS, partial=False)
+    assert state["tier"] == "active" and state["hot"] == []
+    # One more tick 15 minutes later is 6.3/h over the 19-minute baseline: still not a burst.
+    later = _snapshot(T0 + timedelta(minutes=19), {"weekly": 56})
+    state = sampler.advance_state(state, later, SETTINGS, partial=False)
+    assert state["tier"] == "active" and state["hot"] == []
+
+
+def test_a_sustained_sprint_stays_in_burst_at_the_three_minute_cadence():
+    """14 points an hour arrives as whole-point ticks; the tier must not flap."""
+    state = sampler.advance_state({}, _snapshot(T0, {"weekly": 4}), SETTINGS, partial=False)
+    state = sampler.advance_state(
+        state, _snapshot(T0 + timedelta(minutes=15), {"weekly": 7.5}), SETTINGS, partial=False
+    )
+    assert state["tier"] == "burst"
+    for n in range(1, 11):
+        minutes = 15 + 3 * n
+        used = float(int(4 + 14 * minutes / 60))  # the meter shows whole points
+        state = sampler.advance_state(
+            state, _snapshot(T0 + timedelta(minutes=minutes), {"weekly": used}), SETTINGS, partial=True
+        )
+        assert state["tier"] == "burst", minutes
+
+
+def test_burst_baseline_does_not_reach_across_a_window_reset():
+    state = sampler.advance_state({}, _snapshot(T0, {"5-hour": 5}), SETTINGS, partial=False)
+    state = sampler.advance_state(state, _snapshot(T0 + timedelta(minutes=15), {"5-hour": 0}), SETTINGS, partial=False)
+    # 0 → 6 in 4 minutes after a reset; the only older reading is from the last cycle.
+    state = sampler.advance_state(state, _snapshot(T0 + timedelta(minutes=19), {"5-hour": 6}), SETTINGS, partial=False)
     assert state["tier"] == "active" and state["hot"] == []
 
 
@@ -373,6 +417,23 @@ def test_a_fall_after_the_reset_moment_is_a_reset():
     report = attribute.build_report({}, T0 - timedelta(minutes=1), T0 + timedelta(hours=2))
     (window,) = report["providers"][0]["windows"]
     assert window["burned_points"] == 5 and window["resets"] == 1
+
+
+def test_a_window_whose_duration_one_source_omits_is_still_one_series():
+    """CodexBar reports Copilot's premium window without a duration; tokscale with one."""
+
+    def copilot(when, source, account, minutes, used):
+        window = QuotaWindow(label="GitHub Copilot premium requests", used_percent=used, window_minutes=minutes)
+        return Snapshot(
+            collected_at=when,
+            accounts=[AccountUsage(source=source, provider="copilot", account=account, windows=[window])],
+        )
+
+    history.save_snapshot(copilot(T0, "tokscale", None, 43800, 20), [])
+    history.save_snapshot(copilot(T0 + timedelta(hours=1), "codexbar", "me (Individual)", None, 22), [])
+    report = attribute.build_report({}, T0 - timedelta(minutes=1), T0 + timedelta(hours=2))
+    (window,) = report["providers"][0]["windows"]
+    assert window["burned_points"] == 2 and window["account"] == "me (Individual)"
 
 
 def test_report_intervals_line_each_step_up_with_who_spent(tmp_path):

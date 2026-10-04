@@ -445,3 +445,16 @@ def test_summary_line_names_the_binary_when_it_differs_from_the_provider_id():
     assert summary_line(cursor).startswith("cursor auto [cursor-agent]: Cursor Auto: ok")
     codex = {"provider": "codex", "pool_family": None, "cli_binary": "codex", "windows": [window]}
     assert summary_line(codex).startswith("codex: ")
+
+
+def test_reset_times_are_local_twelve_hour():
+    from datetime import timedelta
+
+    from aiuse.analysis.selfdescribe import _reset_fragment
+    from aiuse.models import utcnow
+    from aiuse.report import format_clock
+
+    soon, later = utcnow() + timedelta(hours=3), utcnow() + timedelta(days=4)
+    assert _reset_fragment(soon.isoformat()) == f", resets {format_clock(soon)}"
+    assert _reset_fragment(later.isoformat()) == f", resets {format_clock(later, date=True)}"
+    assert _reset_fragment(soon.isoformat()).endswith(("am", "pm"))

@@ -275,6 +275,25 @@ label it. Advisory by design: the note never edits numbers, and once it
 expires a live collector reading `ok` wins. Match scope is provider-wide, or
 provider + `--family` for split vendors.
 
+## `aiuse attribute --json` — quota burned beside tokens spent
+
+Schema `1.0`, separate from the collect envelope. Guide:
+[`attribution.md`](attribution.md).
+
+| Field                     | Meaning                                                                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `since`, `until`          | The range, ISO 8601.                                                                                                                                              |
+| `coverage`                | `quota_samples`, `burst_samples`, `ledger_samples`, `ledger_span` (`[start, end]` of the session-file ledger, or `null`), `litellm` (`on`, `off`, or `error: …`). |
+| `providers[].windows[]`   | `label`, `account`, `start_used`, `end_used`, `burned_points` (can exceed 100 across resets), `resets`, `samples`.                                                |
+| `providers[].tokscale[]`  | Per `client` and `model`: `input`, `output`, `cache_read`, `cache_write`, `reasoning`, `messages`, `cost`, `share` (0–1).                                         |
+| `providers[].litellm[]`   | Per `client` (virtual-key alias) and `model`: `requests`, `failures`, `input`, `output`, `reasoning`, `share`.                                                    |
+| `providers[].per_point`   | Tokens per burned point of the longest window that moved, per ledger, over the span that ledger covers. Absent when nothing qualifies.                            |
+| `providers[].intervals[]` | `start`, `end`, `burned` (label → points), and per-client `tokscale` / `litellm` totals in that interval.                                                         |
+| `unmapped`                | Token rows with no quota provider mapped.                                                                                                                         |
+
+Burned points and tokens are different units; the report never converts one
+into the other.
+
 ## `snapshot` object
 
 | Field              | Type              | Notes                              |

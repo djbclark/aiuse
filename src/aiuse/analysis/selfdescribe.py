@@ -306,10 +306,10 @@ def _reset_fragment(resets_at: Any) -> str:
     dt = parse_dt(resets_at)
     if dt is None:
         return ""
-    local = dt.astimezone()
-    if dt - utcnow() <= timedelta(hours=24):
-        return f", resets {local.strftime('%H:%M')}"
-    return f", resets {local.strftime('%m-%d %H:%M')}"
+    # Local 12-hour time, the same form the watch board uses.
+    from aiuse.report import format_clock
+
+    return f", resets {format_clock(dt, date=dt - utcnow() > timedelta(hours=24))}"
 
 
 def summary_line(pool: Mapping[str, Any]) -> str:

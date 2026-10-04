@@ -12,7 +12,7 @@ three gets you to the other two immediately.
 ## Active priorities (what to do next)
 
 **Status (2026-10-03):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.1.0**
+done. Product issues **#1–#9** done. Packaging **3.2.3**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
 **Schema 1.1 (2026-10-03):** self-describing output — per-window
 `state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
@@ -35,9 +35,14 @@ wallet note never suppresses reset cells in the matrix. Account rows in
 `aiuse --json` carry **`cli_binary`**: the local CLI that
 _spends_ each provider's quota, not the quota-measurement tool a collector
 shells out to — see [`docs/json-contract.md`](docs/json-contract.md) and
-README's "Which vendor CLI is which". Prepaid/`n/a` band; hourly LaunchAgent;
-history learning `auto`. Normal CLI **always live-collects** (hourly
-snapshots densify History only). **No mandatory numbered step.** Open-ended
+README's "Which vendor CLI is which". Prepaid/`n/a` band; history learning
+`auto`. **Attribution (3.2.0):** the LaunchAgent fires `aiuse sample` every 3
+minutes (it collects hourly when idle, every 15 min when a window moved, every
+3 min in a burst), each snapshot carries a tokscale token ledger, and
+`aiuse attribute` sets quota burned beside tokens per client — see
+[`docs/attribution.md`](docs/attribution.md). Normal CLI **always
+live-collects** (scheduled snapshots densify History only); `aiuse watch`
+reuses a fresh snapshot instead. **No mandatory numbered step.** Open-ended
 "what next?" → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**.
 
@@ -46,7 +51,7 @@ snapshots densify History only). **No mandatory numbered step.** Open-ended
 2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
    (announce → densify history; optional #11–#15 only if pain).
 3. **Operator-only:** announce 3.0.0 via [#10](https://github.com/djbclark/aiuse/issues/10)
-   when ready; leave hourly agent collecting; optional OpenUsage CLI install.
+   when ready; leave the sampling agent collecting; optional OpenUsage CLI install.
 4. **Optional expansion / polish (not default):** [#16](https://github.com/djbclark/aiuse/issues/16)
    DeepSeek second source, [#17](https://github.com/djbclark/aiuse/issues/17)
    OpenRouter second source, [#18](https://github.com/djbclark/aiuse/issues/18)

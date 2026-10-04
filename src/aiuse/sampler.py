@@ -38,6 +38,13 @@ TIERS = ("idle", "active", "burst")
 _SLACK_SECONDS = 15.0
 # Two samples closer than this say nothing reliable about a rate.
 _MIN_RATE_SECONDS = 60.0
+# A burst is judged against a reading at least this fraction of
+# ``active_interval`` old. Meters report whole points, so one tick between two
+# samples four minutes apart reads as 15 points an hour; over nine minutes or
+# more a single tick stays under the threshold and a real sprint does not.
+_BURST_BASELINE_FRACTION = 0.6
+# Readings kept per window for that baseline.
+_HISTORY_SECONDS = 7200.0
 
 
 def state_path() -> Path:
@@ -146,26 +153,54 @@ def advance_state(
     ``burst_pace_ratio`` times the pace that would exactly exhaust it — the
     second test keeps a 5-hour window's ordinary 20 points/hour from reading
     as an emergency while still catching a weekly window at 8.
+    The burst rate is measured from a reading at least 0.6 × ``active_interval``
+    old, never from the sample just before: see ``_BURST_BASELINE_FRACTION``.
     Rising is fast (one sample); falling takes ``cooldown_samples`` quiet ones.
     """
     raw_previous = state.get("last_values")
     previous: dict[str, Any] = raw_previous if isinstance(raw_previous, dict) else {}
     current = _series(snapshot)
+    raw_trail = state.get("history")
+    trail: dict[str, list[list[Any]]] = (
+        {k: list(v) for k, v in raw_trail.items() if isinstance(v, list)} if isinstance(raw_trail, dict) else {}
+    )
+    baseline_age = _BURST_BASELINE_FRACTION * settings["active_interval"]
     moved: list[str] = []
     hot: dict[str, dict[str, str]] = {}
     for key, cur in current.items():
+        readings = trail.setdefault(key, [])
         prev = previous.get(key)
         prev_at = _parse(prev.get("at")) if isinstance(prev, dict) else None
+        if isinstance(prev, dict) and cur["used"] < float(prev.get("used") or 0.0):
+            readings.clear()  # the window reset: older readings are another cycle
+        # Newest reading old enough to judge a rate against.
+        old_enough = [
+            (at, float(used))
+            for at, used in ((_parse(r[0]), r[1]) for r in readings if isinstance(r, list) and len(r) == 2)
+            if at is not None and (snapshot.collected_at - at).total_seconds() >= baseline_age
+        ]
+        readings.append([snapshot.collected_at.isoformat(), cur["used"]])
+        readings[:] = [
+            r
+            for r in readings
+            if (at := _parse(r[0])) is not None and (snapshot.collected_at - at).total_seconds() <= _HISTORY_SECONDS
+        ]
         if prev_at is None or not isinstance(prev, dict):
             continue
         seconds = (snapshot.collected_at - prev_at).total_seconds()
         delta = cur["used"] - float(prev.get("used") or 0.0)
-        if seconds < _MIN_RATE_SECONDS or delta < settings["min_move_percent"]:
-            continue  # too close to judge, flat, or a reset (usage fell)
-        per_hour = delta / (seconds / 3600.0)
+        if seconds >= _MIN_RATE_SECONDS and delta >= settings["min_move_percent"]:
+            moved.append(f"{cur['provider']} {cur['label']} +{delta:.1f} in {seconds / 60.0:.0f}m")
+        if not old_enough:
+            continue
+        base_at, base_used = old_enough[-1]
+        span = (snapshot.collected_at - base_at).total_seconds()
+        rise = cur["used"] - base_used
+        if rise < settings["min_move_percent"]:
+            continue
+        per_hour = rise / (span / 3600.0)
         minutes = cur.get("window_minutes")
-        pace = (delta / 100.0) / ((seconds / 60.0) / float(minutes)) if minutes else float("inf")
-        moved.append(f"{cur['provider']} {cur['label']} +{delta:.1f} ({per_hour:.1f}/h)")
+        pace = (rise / 100.0) / ((span / 60.0) / float(minutes)) if minutes else float("inf")
         if per_hour >= settings["burst_percent_per_hour"] and pace >= settings["burst_pace_ratio"]:
             hot[cur["provider"]] = {"provider": cur["provider"], "source": cur["source"]}
 
@@ -191,6 +226,7 @@ def advance_state(
             "moved": moved,
             # A partial sample only refreshes the windows it collected.
             "last_values": {**previous, **current} if partial else current,
+            "history": trail if partial else {k: v for k, v in trail.items() if k in current},
         }
     )
     if not partial:
