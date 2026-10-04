@@ -39,8 +39,9 @@ If Meta later ships a contributor weekly credit pool (like `z.ai Lite`'s 2 k / 1
   (from `aiuse credential refresh muse --from chrome`). Needs one of
   `llama_dev_sess`, `llm_sess`, or `dh_sess` for dev.meta.ai, from
   `https://dev.meta.ai/api/auth/login`. A login there sets llama_dev_sess.
-  An older llm_sess by itself is not that session. https://muse.ai is the
-  Muse chat app and does not authorize this. The
+  An older llm_sess by itself is not that session. llm_billing_sess belongs
+  to billing.dev.meta.ai and does not sign in the portal. https://muse.ai
+  is the Muse chat app and does not authorize this. The
   collector calls `GET /api/auth/me`, `GET /api/portal/teams`, then
   `billing-banner` and `usage` with `metric=USAGE_BILLABLE_COST`. **Muse’s
   dashboard “balance” is month-to-date spend (counts up from $0)** — shown as
