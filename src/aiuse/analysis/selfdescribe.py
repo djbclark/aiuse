@@ -317,6 +317,11 @@ def summary_line(pool: Mapping[str, Any]) -> str:
     provider = str(pool.get("provider") or "?")
     family = pool.get("pool_family")
     lead = f"{provider} {family}" if family else provider
+    # The command you actually type, when it is not the provider id: `cursor`
+    # opens the editor (the agent is cursor-agent), antigravity is `agy`.
+    binary = pool.get("cli_binary")
+    if binary and str(binary) != provider:
+        lead += f" [{binary}]"
     segments: list[str] = []
     for window in pool.get("windows") or []:
         label = str(window.get("label") or "?")

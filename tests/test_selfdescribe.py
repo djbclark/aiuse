@@ -435,3 +435,13 @@ def test_plain_output_never_bare_percentage():
             for match in bare.finditer(line):
                 tail = line[match.start() :]
                 assert labeled.search(tail), f"bare percentage {match.group()!r} in line: {line!r}"
+
+
+def test_summary_line_names_the_binary_when_it_differs_from_the_provider_id():
+    from aiuse.analysis.selfdescribe import summary_line
+
+    window = {"label": "Cursor Auto", "state": "ok", "used_percent": 1.0, "headroom_percent": 99.0}
+    cursor = {"provider": "cursor", "pool_family": "auto", "cli_binary": "cursor-agent", "windows": [window]}
+    assert summary_line(cursor).startswith("cursor auto [cursor-agent]: Cursor Auto: ok")
+    codex = {"provider": "codex", "pool_family": None, "cli_binary": "codex", "windows": [window]}
+    assert summary_line(codex).startswith("codex: ")
