@@ -5,7 +5,7 @@ not `AGENTS.md`, when the status line changes; keep the one-paragraph summary in
 `AGENTS.md` in step.
 
 **Status (2026-10-03):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.2.5**
+done. Product issues **#1–#9** done. Packaging **3.2.6**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
 **Schema 1.1 (2026-10-03):** self-describing output — per-window
 `state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
