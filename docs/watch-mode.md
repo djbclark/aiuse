@@ -94,6 +94,10 @@ stdout report.
 - Reuse `aiuse.report.render_clock_matrix` unchanged (same bands, clocks, width
   adaptation, color roles). The watch board is just that matrix inside a
   full-screen frame plus a header / footer.
+- Claude's main WEEK cell is overall shared usage. An indented `Fable cap
+(<=50% of shared weekly)` line reports the cap separately: 100% of that
+  cap blocks Fable only, not the whole account. It is not another pool or
+  extra capacity; shared 5H/WEEK exhaustion still blocks every Claude model.
 - `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
   becomes a **footer line inside the screen**, not stderr (stderr would corrupt
   the alternate-screen layout). `-q` suppresses it.

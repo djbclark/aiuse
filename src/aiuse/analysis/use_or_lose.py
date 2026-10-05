@@ -38,6 +38,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     canonical_provider,
     classify_window_minutes,
+    claude_model_scope,
     provider_config_key,
     provider_display_name,
     utcnow,
@@ -329,6 +330,8 @@ def analyze_use_or_lose(
                 shared_allotment = False
 
         for window in account.windows:
+            if claude_model_scope(window.label) is not None:
+                continue  # model caps cannot be burned as additional account quota
             if mode == "legacy" and _is_short_window(window):
                 continue
 
@@ -948,6 +951,8 @@ def _pace_message(
     # suppress shorter siblings that may show 100% open — say so clearly.
     depleted = remaining is not None and remaining <= 1.0
     child_note = ""
+    model_children = [c for c in suppressed_children or [] if claude_model_scope(c.label) is not None]
+    suppressed_children = [c for c in suppressed_children or [] if claude_model_scope(c.label) is None]
     if suppressed_children:
         labels = ", ".join(c.label for c in suppressed_children)
         if verdict == "conserve" and depleted:
@@ -960,6 +965,10 @@ def _pace_message(
             )
         else:
             child_note = f" (this also covers your {labels} — no need to burn it separately)"
+    for child in model_children:
+        model = claude_model_scope(child.label)
+        if child.remaining() == 0:
+            child_note += f" {model} cap exhausted; remaining shared quota is for other models."
     overage_note = (
         " Overage/extra-usage is available on this account — real risk is unplanned $ spend, not lockout."
         if pace.has_overage

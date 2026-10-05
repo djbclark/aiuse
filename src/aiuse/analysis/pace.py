@@ -5,7 +5,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from aiuse.models import PaceProfile, QuotaWindow, classify_window_minutes, nominal_window_minutes
+from aiuse.models import (
+    PaceProfile,
+    QuotaWindow,
+    classify_window_minutes,
+    claude_model_scope,
+    nominal_window_minutes,
+)
 
 
 def compute_pace(
@@ -99,8 +105,9 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
     window because it temporarily blocks the entire pool, overriding longer durations.
     When durations tie (e.g. Cursor Included/Auto/other-models all monthly), prefer a
     window whose label looks like the overall included bar, then list order.
+    Claude model caps are children, never whole-pool governing windows.
     """
-    usable = [w for w in windows if w.remaining() is not None]
+    usable = [w for w in windows if w.remaining() is not None and claude_model_scope(w.label) is None]
     if not usable:
         return None, list(windows)
 

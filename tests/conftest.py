@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from aiuse import agent_notes
 from aiuse.analysis import history
 
 
@@ -23,6 +24,7 @@ def isolate_snapshot_dir(tmp_path, monkeypatch):
     this only guarantees the default is never the real one.
     """
     monkeypatch.setattr(history, "snapshot_dir", lambda: tmp_path / "snapshots")
+    monkeypatch.setattr(agent_notes, "notes_dir", lambda: tmp_path / "agent-notes")
 
 
 # The width the suite renders at unless a test says otherwise. Wide enough that

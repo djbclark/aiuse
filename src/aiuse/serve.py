@@ -29,6 +29,7 @@ from aiuse.models import (
     Snapshot,
     Urgency,
     UseOrLoseAlert,
+    claude_model_scope,
     parse_dt,
     utcnow,
 )
@@ -330,6 +331,8 @@ def _alerts_from_dicts(rows: list[Any]) -> list[UseOrLoseAlert]:
     for row in rows:
         if not isinstance(row, dict):
             continue
+        if row.get("provider") == "claude" and claude_model_scope(str(row.get("window_label") or "")):
+            continue  # older snapshots incorrectly scored model caps as whole-account quota
         try:
             urgency = Urgency(str(row.get("urgency") or "info"))
         except ValueError:

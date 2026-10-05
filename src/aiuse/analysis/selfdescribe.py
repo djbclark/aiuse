@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping
 
-from aiuse.models import parse_dt, utcnow
+from aiuse.models import claude_model_scope, parse_dt, utcnow
 
 SCHEMA_VERSION = "1.1"
 
@@ -34,12 +34,16 @@ FRESH_THRESHOLD_SECONDS_DEFAULT = 1500.0  # 25 min
 SEMANTICS: dict[str, str] = {
     "used_percent": "share CONSUMED; 100 means exhausted, 0 means untouched",
     "remaining_percent": "share still available; decide from this",
-    "headroom_percent": "alias of remaining_percent, spelled for humans",
+    "headroom_percent": "window: alias of remaining_percent; routing entry: least applicable headroom, with Fable's cap scaled to shared-weekly units",
     "state": "exhausted (<=1% left) | tight (<15% left) | ok | unknown (no data); never compute it yourself",
-    "usable_now": "false if any window of the account/pool is exhausted, or no window has data; true only with evidence of headroom",
+    "usable_now": "false if any applicable window is exhausted or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
     "available_at": "earliest resets_at among exhausted windows; null when nothing is exhausted or no reset time is known",
-    "pool_family": "vendors that split quota by model family (antigravity: gemini vs claude_gpt; claude: default vs fable; cursor: auto/included/other); one family can be exhausted while another is fine — retry on the other family before abandoning the vendor",
+    "pool_family": "routing family, not necessarily independent quota: antigravity gemini vs claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
+    "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
+    "shared_pool_family": "parent routing family whose windows also constrain this model sublimit",
+    "max_share_of_parent_percent": "model cap as a share of the shared weekly budget; Fable <=50%, not an extra 50%",
+    "headroom_basis": "shared_weekly for Fable routing entries: min(shared headroom, 0.5 * Fable cap headroom); window percentages remain relative to their own limits",
     "age_seconds": "seconds since collected_at, computed at read time; stale data can hide a fresh exhaustion",
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
@@ -47,16 +51,15 @@ SEMANTICS: dict[str, str] = {
 }
 
 # (substring, family, models_hint) matched against the lowercased window label,
-# first hit wins. Only vendors that genuinely split pools by model family.
+# first hit wins. Claude families are routing views of one shared pool.
 _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     "antigravity": [
         ("claude/gpt", "claude_gpt", "agy models — claude-* / gpt-* models draw this pool"),
         ("gemini", "gemini", "agy models — gemini-* models draw this pool"),
     ],
     "claude": [
-        ("fable", "fable", "Claude Fable pool (reasoning-tier models)"),
-        ("5-hour", "default", "ordinary Claude models"),
-        ("weekly", "default", "ordinary Claude models"),
+        ("5-hour", "default", "Claude models without a reported model cap; quota is shared with capped models"),
+        ("weekly", "default", "Claude models without a reported model cap; quota is shared with capped models"),
     ],
     "cursor": [
         ("grok", "grok_bot", "Cursor Grok Bot slot"),
@@ -92,6 +95,9 @@ def window_state(window: Mapping[str, Any]) -> str:
 
 def window_family(provider: str, label: str) -> tuple[str | None, str | None]:
     """(pool_family, models_hint) for split vendors; (None, None) otherwise."""
+    model = claude_model_scope(label) if provider == "claude" else None
+    if model is not None:
+        return model.casefold().replace(" ", "_"), f"Claude {model}; also draws shared Claude quota"
     rules = _FAMILY_RULES.get(provider)
     if not rules:
         return None, None
@@ -112,6 +118,15 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
     window.pop("agent_reported", None)
     window["state"] = window_state(window)
     window["headroom_percent"] = window_remaining(window)
+    for key in ("quota_scope", "shared_pool_family", "max_share_of_parent_percent"):
+        window.pop(key, None)
+    if provider == "claude":
+        model = claude_model_scope(str(window.get("label") or ""))
+        window["quota_scope"] = "model_sublimit" if model else "shared"
+        if model:
+            window["shared_pool_family"] = "default"
+            if model.casefold() == "fable":
+                window["max_share_of_parent_percent"] = 50.0
     family, hint = window_family(provider, str(window.get("label") or ""))
     if family is not None:
         window["pool_family"] = family
@@ -160,17 +175,18 @@ def enrich_account(
             if _note_matches(note, provider, window):
                 _apply_note_to_window(window, note)
 
-    states = [str(w.get("state")) for w in windows]
+    applicable = [w for w in windows if w.get("quota_scope") != "model_sublimit"]
+    states = [str(w.get("state")) for w in applicable]
     if any(s == "exhausted" for s in states):
         usable_now: bool | None = False
-    elif windows and any(s != "unknown" for s in states):
+    elif applicable and any(s != "unknown" for s in states):
         usable_now = True
     else:
         # no windows at all, or every window unknown: no evidence of headroom
         usable_now = False
     account["usable_now"] = usable_now
 
-    numbered = [w for w in windows if w.get("headroom_percent") is not None]
+    numbered = [w for w in applicable if w.get("headroom_percent") is not None]
     if numbered:
         binding = min(numbered, key=lambda w: float(w["headroom_percent"]))
         account["binding_window"] = str(binding.get("label") or "")
@@ -180,7 +196,7 @@ def enrich_account(
         account["binding_headroom_percent"] = None
 
     reset_times = [
-        parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
+        parse_dt(w.get("resets_at")) for w in applicable if w.get("state") == "exhausted" and w.get("resets_at")
     ]
     reset_times = [t for t in reset_times if t is not None]
     if reset_times:
@@ -259,11 +275,16 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
             if window.get("models_hint"):
                 hints[family] = str(window["models_hint"])
         for family, windows in by_family.items():
+            model_sublimit = provider == "claude" and family != "default"
+            family_has_data = any(str(w.get("state") or "unknown") != "unknown" for w in windows)
+            shared = by_family.get("default", []) if model_sublimit else windows
+            if model_sublimit:
+                windows = shared + windows
             states = [str(w.get("state") or "unknown") for w in windows]
             numbered = [w for w in windows if w.get("headroom_percent") is not None]
             if any(s == "exhausted" for s in states):
                 usable: bool | None = False
-            elif any(s != "unknown" for s in states):
+            elif family_has_data and any(str(w.get("state") or "unknown") != "unknown" for w in shared):
                 usable = True
             else:
                 usable = False
@@ -271,7 +292,12 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                 parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
             ]
             resets = [t for t in resets if t is not None]
-            binding = min(numbered, key=lambda w: float(w["headroom_percent"])) if numbered else None
+
+            def effective_headroom(window: Mapping[str, Any]) -> float:
+                share = float(window.get("max_share_of_parent_percent", 100.0)) / 100.0
+                return float(window["headroom_percent"]) * share
+
+            binding = min(numbered, key=effective_headroom) if numbered else None
             pools.append(
                 {
                     "provider": provider,
@@ -280,7 +306,14 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "cli_binary": account.get("cli_binary"),
                     "usable_now": usable,
                     "binding_window": str(binding.get("label") or "") if binding else None,
-                    "headroom_percent": float(binding["headroom_percent"]) if binding else None,
+                    "headroom_percent": effective_headroom(binding) if binding else None,
+                    **(
+                        {"shared_pool_family": "default", "headroom_basis": "shared_weekly"}
+                        if model_sublimit and family == "fable"
+                        else {"shared_pool_family": "default"}
+                        if model_sublimit
+                        else {}
+                    ),
                     "available_at": min(resets).isoformat() if resets else None,
                     "models_hint": hints.get(family),
                     "age_seconds": account.get("age_seconds"),
@@ -337,6 +370,9 @@ def summary_line(pool: Mapping[str, Any]) -> str:
             left = max(0.0, 100.0 - float(used))
         word = {"exhausted": "EXHAUSTED", "tight": "TIGHT", "ok": "ok", "unknown": "UNKNOWN"}.get(state, state)
         seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{_reset_fragment(window.get('resets_at'))})"
+        if window.get("quota_scope") == "model_sublimit":
+            cap = window.get("max_share_of_parent_percent")
+            seg += f" [cap <={cap:g}% of shared weekly]" if cap is not None else " [cap within shared weekly]"
         if window.get("state_source") == "agent-reported":
             seg += " [agent-reported]"
         segments.append(seg)

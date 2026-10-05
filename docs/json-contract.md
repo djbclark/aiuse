@@ -31,15 +31,21 @@ it. Or skip all of it and call `aiuse --available`.
    ~35 minutes later (one Opus-high review drained it), while Gemini still had
    ~75% left. The agent concluded "agy is exhausted" and moved to another
    vendor. In 1.1 each split-vendor window carries `pool_family`
-   (`antigravity`: `gemini` vs `claude_gpt`; `claude`: `default` vs `fable`;
+   (`antigravity`: `gemini` vs `claude_gpt`;
    `cursor`: `auto` / `included` / `other` / `grok_bot`) plus a `models_hint`
    naming which models draw it. One family `exhausted` does NOT make the
    vendor unusable — retry on the other family before abandoning it.
+   Claude is **not** an independent split: `default` represents the shared
+   quota, while `fable` is a model cap within that quota. Fable can consume up
+   to 50% of the shared weekly budget, not an extra 50%. At overall 85% used
+   and Fable 100% used, other models still have the shared 15% left; Fable
+   cannot use it. An exhausted shared 5-hour or weekly window blocks Fable
+   even when its own cap has headroom.
 
 3. **The fullest window of an account binds.** codex at 5-hour 100% used /
    weekly 35% used is unusable for ~5 hours, but that requires reasoning
-   across windows. In 1.1 the account carries `usable_now` (false if ANY
-   window is exhausted), `binding_window` (label of the window with the least
+   across windows. In 1.1 the account carries `usable_now` (false if any
+   applicable shared window is exhausted), `binding_window` (label of the window with the least
    remaining), and `available_at` (earliest `resets_at` among exhausted
    windows). `summary_lines` renders the whole account as one sentence with
    used AND left for every window.
@@ -56,6 +62,19 @@ say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
 
 - Every window: `state`, `headroom_percent`, and on split vendors
   `pool_family` + `models_hint`.
+- Claude windows also carry `quota_scope` (`shared` or `model_sublimit`).
+  Model caps carry `shared_pool_family: "default"`; Fable additionally carries
+  `max_share_of_parent_percent: 50`. Their raw percentages are relative to
+  their own caps, never percentages of an additional pool.
+  Claude account `usable_now`, `binding_window` and `available_at` describe
+  the shared quota, not an individual model restriction.
+  Model routing entries include both shared windows and their cap, so
+  `usable_now` requires shared headroom as well as model headroom.
+  Fable routing `headroom_percent` scales its cap's remaining percent by
+  0.5 before taking the minimum with shared-window headroom
+  (`headroom_basis: "shared_weekly"`). For example, overall 15% left and
+  Fable 20% of its cap left gives at most 10% of the shared weekly budget
+  usable by Fable. Shared session limits can constrain it further.
 - Every account: `usable_now`, `binding_window`, `binding_headroom_percent`,
   `available_at`, `age_seconds`, and `collected_at` when the source itself
   reports a measurement time (CodexBar rows do, via `usage.updatedAt`).

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.analysis.pace import independent_pool_key
-from aiuse.models import Snapshot, canonical_provider, effective_window_minutes, utcnow
+from aiuse.models import Snapshot, canonical_provider, claude_model_scope, effective_window_minutes, utcnow
 
 _DEFAULT_SNAPSHOT_DIR = "~/.cache/aiuse/snapshots"
 _DEFAULT_RETENTION_DAYS = 90
@@ -238,6 +238,9 @@ def window_series_key(provider: str, label: str | None, window_minutes: Any) -> 
     independent pool within it (Gemini vs Claude/GPT), and the window duration.
     """
     pool = independent_pool_key(label) or "-"
+    model = claude_model_scope(label) if canonical_provider(provider) == "claude" else None
+    if model is not None:
+        pool = f"model_{model.casefold().replace(' ', '_')}"
     duration = _duration_key(window_minutes) or "?"
     return f"{canonical_provider(provider)}:{pool}:{duration}"
 

@@ -50,6 +50,20 @@ def coerce_int(value: Any) -> int | None:
     return int(number) if number is not None else None
 
 
+def claude_model_scope(label: str | None) -> str | None:
+    """Model-specific Claude caps, not additional or account-wide allotments."""
+    text = (label or "").strip()
+    if not text.casefold().startswith("claude "):
+        return None
+    if "weekly — " in text:
+        model = text.split("weekly — ", 1)[1].strip()
+        return model.removeprefix("Claude ") or None
+    for model in ("Fable", "Sonnet", "Opus"):
+        if re.search(rf"\b{model}\b", text, re.IGNORECASE):
+            return model
+    return None
+
+
 # Window-duration boundaries (minutes) shared by every collector that buckets a
 # raw `windowMinutes` value into a human quota kind, and by the analysis layer
 # that decides whether a window is a short rate-limit (not "monthly waste").

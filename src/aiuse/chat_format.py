@@ -23,6 +23,7 @@ from aiuse.models import (
     Snapshot,
     UseOrLoseAlert,
     classify_window_minutes,
+    claude_model_scope,
     provider_display_name,
 )
 
@@ -420,8 +421,11 @@ class _PoolEntry:
         its 5-hour window shows headroom — the shorter window is carved out of
         the longer one, so the bad news governs.
         """
-        worst = self.rows[0].emoji
-        for row in self.rows[1:]:
+        shared = [r for r in self.rows if claude_model_scope(r.window.label) is None]
+        if not shared:
+            return EMOJI_INFO
+        worst = shared[0].emoji
+        for row in shared[1:]:
             worst = _worst_emoji(worst, row.emoji)
         return worst
 
@@ -438,7 +442,8 @@ class _PoolEntry:
 
     def sort_key(self) -> tuple[Any, ...]:
         """Order by the entry's most severe window, so the worst float up."""
-        return min(row.sort_key() for row in self.rows)
+        shared = [r for r in self.rows if claude_model_scope(r.window.label) is None]
+        return min(row.sort_key() for row in shared or self.rows)
 
 
 def _group_rows_into_pools(rows: list[_WindowRow]) -> list[_PoolEntry]:
@@ -474,7 +479,7 @@ def _apply_governing_warnings(rows: list[_WindowRow]) -> None:
     report capacity.
     """
     for entry in _group_rows_into_pools(rows):
-        pool_rows = entry.rows
+        pool_rows = [r for r in entry.rows if claude_model_scope(r.window.label) is None]
         if len(pool_rows) < 2:
             continue
         # Find the longest-duration window (governing candidate).
@@ -611,7 +616,15 @@ def _build_action_items(
 
     if routing_context is not None and sub_rows is not None:
         primary_prov = routing_context.primary_provider
-        primary_rows = [r for r in sub_rows if r.provider == primary_prov]
+        primary_rows = [
+            r
+            for r in sub_rows
+            if r.provider == primary_prov
+            and (
+                (scope := claude_model_scope(r.window.label)) is None
+                or scope.casefold() in routing_context.primary_model.casefold()
+            )
+        ]
         if primary_rows:
             min_remaining = min(r.remaining for r in primary_rows)
             name = provider_display_name(primary_prov)
@@ -750,6 +763,10 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
 def _row_notes(row: _WindowRow) -> list[str]:
     """Continuation lines attached to a single window."""
     notes: list[str] = []
+    model = claude_model_scope(row.window.label)
+    if model is not None:
+        cap = "<=50% of shared weekly" if model.casefold() == "fable" else "within shared weekly"
+        notes.append(f"{model} cap ({cap}); not additional quota")
     if row.pace_line:
         notes.append(row.pace_line)
     if row.remaining <= 0 and not row.pace_line and not row.governing_warning:

@@ -32,6 +32,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     canonical_provider,
     classify_window_minutes,
+    claude_model_scope,
     infer_window_clock,
     provider_config_key,
     provider_display_name,
@@ -94,6 +95,7 @@ class _MatrixRow:
     value_usd: float | None = None
     note: str | None = None
     tail_note: str | None = None
+    sublimit_notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -692,7 +694,7 @@ def _account_has_usage(account: AccountUsage) -> bool:
 
 def _pick_representative_window(windows: list[QuotaWindow]) -> QuotaWindow | None:
     """Governing / included bar for a pool (or whole account)."""
-    usable = [w for w in windows if w.remaining() is not None]
+    usable = [w for w in windows if w.remaining() is not None and claude_model_scope(w.label) is None]
     if not usable:
         return None
     gov, _ = governing_partition(usable)
@@ -1210,9 +1212,19 @@ def _build_matrix_rows(
             pool_id = _pool_id_for_windows(pool) if pool else ""
             clocks: dict[str, _ClockCell] = {}
             value: float | None = None
+            sublimit_notes: list[str] = []
 
             for window in pool:
                 used = _used_percent(window)
+                model = claude_model_scope(window.label) if account.provider == "claude" else None
+                if model is not None:
+                    cap = "<=50% of shared weekly" if model.casefold() == "fable" else "within shared weekly"
+                    meter = "unknown" if used is None else f"{used:.0f}u/{window.remaining():.0f}l"
+                    status = " EXHAUSTED" if window.remaining() == 0 else ""
+                    span = _format_reset_span(window.days_until_reset(now))
+                    reset = f" /{span.plain()}" if span else ""
+                    sublimit_notes.append(f"{model} cap ({cap}): {meter}{status}{reset}")
+                    continue
                 if used is None:
                     continue
                 clock, inferred = infer_window_clock(window)
@@ -1283,6 +1295,7 @@ def _build_matrix_rows(
                     value_usd=value,
                     note=note,
                     tail_note=tail_note,
+                    sublimit_notes=sublimit_notes,
                 )
             )
             covered.add(key)
@@ -1509,6 +1522,8 @@ def render_clock_matrix(
         if row.note is not None:
             line = _line(tag, score, service, account, scope, [s.dim(row.note)])
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
+            for note in row.sublimit_notes:
+                lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
             continue
 
         tail: list[str] = []
@@ -1557,6 +1572,8 @@ def render_clock_matrix(
 
         line = _line(tag, score, service, account, scope, tail)
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
+        for note in row.sublimit_notes:
+            lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
 
     legend_items: list[tuple[str, str]] = []
     if any_deadline:

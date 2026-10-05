@@ -182,7 +182,7 @@ def _windows_from_usage(usage: dict[str, Any]) -> list[QuotaWindow]:
                 continue
             model_name = str(block.get("name") or "unnamed model")
             window = _window_from_block(f"Claude Code weekly — {model_name}", block)
-            if window and not _same_window_present(windows, window):
+            if window and not any(w.label == window.label and w.same_measurement(window) for w in windows):
                 windows.append(window)
 
     return windows
