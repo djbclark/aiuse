@@ -142,6 +142,12 @@ Full path-by-path map with "read when" hints:
   OpenUsage.app, `tokscale`) — do not attempt to install, configure, or
   authenticate them as part of a normal feature change. Operators install via
   `packaging/install-deps.sh` or site `just install-aiuse-deps`.
+- **Changes to non-aiuse code go upstream as PRs** (operator rule, 2026-10-05).
+  If a fix or feature needs a change in a tool aiuse depends on (CodexBar,
+  OpenUsage, cswap, caut, tokscale, …), open a pull request against that
+  project's upstream repo (fork if needed) rather than patching a local copy
+  or leaving the change only here. Link the PR from the relevant `docs/` note
+  or bead. Workarounds inside aiuse are fine meanwhile.
 - **Commit early and often; push after every commit.** Prefer a commit at any
   opportune moment (green tests after a coherent change, end of a plan step,
   finished investigation docs) over holding a large uncommitted pile. More
