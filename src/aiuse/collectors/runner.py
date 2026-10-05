@@ -35,6 +35,7 @@ from .openrouter import collect_openrouter
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .qwencloud import collect_qwencloud
+from .throttle import min_intervals
 from .tokscale import collect_tokscale
 
 # Prefer earlier sources for *selection* (what drives the ladder). All live
@@ -95,6 +96,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     config = config or {}
     collectors_cfg = config.get("collectors") or {}
     snapshot = Snapshot(collected_at=utcnow())
+    intervals = min_intervals(config)
 
     # Each collector shells out (or hits loopback) independently — run concurrently.
     # Correctness: long default timeouts; all enabled sources always queried.
@@ -114,6 +116,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     providers=providers,
                     timeout=codexbar_timeout,
                     discovery_timeout=discovery_timeout,
+                    min_intervals=intervals,
                 ),
             )
         )
@@ -144,6 +147,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     force_refresh=force,
                     try_launch_app=launch,
                     base_url=base,
+                    min_intervals=intervals,
                 ),
             )
         )

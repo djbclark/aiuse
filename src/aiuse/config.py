@@ -24,6 +24,10 @@ CSWAP_TIMEOUT = 90.0
 # `openusage-sh export` polls every configured provider. A quiet run is about
 # 30s, and the same export often crosses 45s while the other collectors run.
 OPENUSAGE_SH_TIMEOUT = 90.0
+# Minimum seconds between live quota queries per provider, shared by every aiuse
+# process (collectors/throttle.py). agy answers probes in quick succession with
+# 429s on every model, so its quota is read at most once per 15 minutes.
+DEFAULT_QUERY_MIN_INTERVAL: dict[str, float] = {"antigravity": 900.0}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     # Subprocess timeouts (seconds). ``default`` applies to any tool that does
@@ -226,6 +230,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "qwencloud": {"enabled": True},
         "bailian": {"enabled": True},
     },
+    # Provider id -> minimum seconds between live quota queries, across all aiuse
+    # processes (CLI, `aiuse sample`, watch, serve). 0 disables the limit.
+    "query_min_interval": dict(DEFAULT_QUERY_MIN_INTERVAL),
     # Source-specific local account ids can be mapped to the account label used
     # by other collectors.  Normally this stays empty: runner.py automatically
     # resolves providers where every source has exactly one named account.
@@ -267,7 +274,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 # Top-level and nested keys recognized by the loader / doctor (unknown → warning).
 KNOWN_TOP_LEVEL_KEYS = frozenset(
-    {"timeouts", "analysis", "plans", "collectors", "account_aliases", "macos", "sampling", "attribution"}
+    {
+        "timeouts",
+        "analysis",
+        "plans",
+        "collectors",
+        "query_min_interval",
+        "account_aliases",
+        "macos",
+        "sampling",
+        "attribution",
+    }
 )
 KNOWN_TIMEOUT_KEYS = frozenset(
     {
@@ -445,6 +462,19 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             for ek in entry:
                 if ek not in KNOWN_COLLECTOR_ENTRY_KEYS:
                     issues.append(f"warning: unknown collectors.{name} key {ek!r}")
+
+    query_min_interval = cfg.get("query_min_interval")
+    if query_min_interval is not None and not isinstance(query_min_interval, dict):
+        issues.append("error: query_min_interval must be a provider -> seconds mapping")
+    elif isinstance(query_min_interval, dict):
+        for provider, value in query_min_interval.items():
+            try:
+                seconds = float(value)
+            except (TypeError, ValueError):
+                issues.append(f"error: query_min_interval.{provider} must be a number of seconds (got {value!r})")
+                continue
+            if seconds < 0:
+                issues.append(f"error: query_min_interval.{provider} must not be negative (got {seconds:g})")
 
     aliases = cfg.get("account_aliases")
     if aliases is not None and not isinstance(aliases, dict):

@@ -70,6 +70,13 @@
 # the SuperGrok weekly pool from CodexBar/OpenUsage — see docs/grok-quota.md.
 # enabled = false   # when you do not use the grok CLI on this machine
 
+[query_min_interval]
+# Minimum seconds between live quota queries of one provider, enforced across
+# every aiuse process (CLI, `aiuse sample` LaunchAgent, watch, serve) through a
+# lock file under ~/.cache/aiuse/query-throttle/. While throttled, CodexBar's
+# last result is reused and OpenUsage's refresh is not forced. 0 disables.
+# antigravity = 900  # agy 429s on quota probes in quick succession
+
 # Usually unnecessary: aiuse automatically unifies a provider when every live
 # source reports exactly one named account.  For a genuinely multi-account
 # provider, map a source-local id to the account label used elsewhere.

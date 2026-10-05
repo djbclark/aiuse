@@ -217,6 +217,17 @@ guess:
 `aiuse --full` prints this exact table when a multi-account source cannot be
 matched safely. Explicit mappings take precedence over automatic normalization.
 
+Some vendors rate-limit quota probes. aiuse reads agy's (Antigravity's) quota
+at most once every 15 minutes across every aiuse process (CLI, LaunchAgent,
+`watch`, `serve`), reusing the last reading in between. Tune or disable it per
+provider, in seconds. See
+[Antigravity pools: query rate limit](docs/antigravity-pools.md#query-rate-limit-2026-10-05):
+
+```toml
+[query_min_interval]
+antigravity = 900 # 0 disables
+```
+
 ## Daily workflow
 
 ```bash

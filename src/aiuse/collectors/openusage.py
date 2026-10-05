@@ -15,6 +15,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import ExitStack
 from typing import Any
 
 from aiuse.models import (
@@ -30,6 +31,7 @@ from aiuse.models import (
 )
 
 from .base import CollectorError, run_json, which
+from .throttle import QueryGate
 
 DEFAULT_OPENUSAGE_BASE = "http://127.0.0.1:6736"
 DEFAULT_HTTP_TIMEOUT = 30.0
@@ -96,13 +98,15 @@ def collect_openusage_ai(
     base_url: str = DEFAULT_OPENUSAGE_BASE,
     force_refresh: bool = True,
     try_launch_app: bool = True,
+    min_intervals: dict[str, float] | None = None,
 ) -> list[AccountUsage]:
     """Fetch OpenUsage limits via CLI first, then loopback HTTP."""
-    payload, via = _fetch_limits(
+    payload, via, throttle_note = _fetch_limits_gated(
         timeout=timeout,
         base_url=base_url,
         force_refresh=force_refresh,
         try_launch_app=try_launch_app,
+        min_intervals=min_intervals or {},
     )
     if not isinstance(payload, dict):
         raise CollectorError("OpenUsage returned non-object JSON")
@@ -120,7 +124,10 @@ def collect_openusage_ai(
     for provider_id, body in providers.items():
         if not isinstance(body, dict):
             continue
-        accounts.append(_from_provider(str(provider_id), body, via=via))
+        account = _from_provider(str(provider_id), body, via=via)
+        if throttle_note and account.provider in _gated_providers(min_intervals):
+            account.notes = list(account.notes) + [throttle_note]
+        accounts.append(account)
 
     errors = payload.get("errors") or []
     if errors and accounts:
@@ -140,6 +147,51 @@ def collect_openusage_ai(
         raise CollectorError(f"OpenUsage returned no provider data ({detail})")
 
     return accounts
+
+
+def _gated_providers(min_intervals: dict[str, float] | None) -> set[str]:
+    return {provider for provider, seconds in (min_intervals or {}).items() if seconds > 0}
+
+
+def _fetch_limits_gated(
+    *,
+    timeout: float,
+    base_url: str,
+    force_refresh: bool,
+    try_launch_app: bool,
+    min_intervals: dict[str, float],
+) -> tuple[dict[str, Any], str, str | None]:
+    """``_fetch_limits`` with ``--force`` withheld while any gated provider is throttled.
+
+    A forced CLI refresh makes OpenUsage re-query every provider it has enabled,
+    so it counts as a query of each gated provider that comes back in the
+    payload. Without ``--force`` OpenUsage serves its own cached reading.
+    """
+    gated = sorted(_gated_providers(min_intervals))
+    if not force_refresh or not gated or not which("openusage"):
+        payload, via = _fetch_limits(
+            timeout=timeout, base_url=base_url, force_refresh=force_refresh, try_launch_app=try_launch_app
+        )
+        return payload, via, None
+
+    with ExitStack() as stack:
+        gates = [
+            stack.enter_context(QueryGate(provider, min_interval=min_intervals[provider], wait=timeout + 15.0))
+            for provider in gated
+        ]
+        blocked = [gate for gate in gates if not gate.allowed]
+        payload, via = _fetch_limits(
+            timeout=timeout, base_url=base_url, force_refresh=not blocked, try_launch_app=try_launch_app
+        )
+        if blocked:
+            reasons = "; ".join(gate.describe() for gate in blocked)
+            return payload, via, f"OpenUsage refresh not forced: {reasons}."
+        if via == "cli":
+            returned = payload.get("providers") if isinstance(payload, dict) else None
+            for gate in gates:
+                if isinstance(returned, dict) and gate.provider in {str(k).lower() for k in returned}:
+                    gate.record("openusage_ai", store=False)
+        return payload, via, None
 
 
 def _fetch_limits(

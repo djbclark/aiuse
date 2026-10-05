@@ -73,9 +73,10 @@ for the canonical-id rule that keeps them together.
 
 ## Freshness (investigated 2026-10-03)
 
-aiuse adds no cache of its own for CodexBar rows — every collect spawns a
-fresh `codexbar usage --format json --provider antigravity` subprocess, so the
-freshness of an Antigravity row is whatever CodexBar serves. CodexBar rows
+aiuse queries Antigravity at most once per 15 minutes (see "Query rate
+limit" below); within that window a collect reuses the last
+`codexbar usage --format json --provider antigravity` payload, and otherwise
+the freshness of an Antigravity row is whatever CodexBar serves. CodexBar rows
 carry their own measurement time (`usage.updatedAt`, one per provider row);
 since schema 1.1 aiuse surfaces it as `collected_at` on the account with a
 computed `age_seconds`, so "this Claude/GPT number is 40 minutes old" is
@@ -95,3 +96,49 @@ antigravity --family claude_gpt …` so a 429 one agent sees suppresses the
    per-account `collected_at` (from `usage.updatedAt`) exposes: a row older
    than the snapshot's `collected_at` was a cached read. Treat `fresh: false`
    Antigravity rows as unproven before routing an expensive task.
+
+## Query rate limit (2026-10-05)
+
+agy answers quota probes in quick succession with 429s on every model, the
+same burst limit that stops real work. So aiuse reads Antigravity's quota **at
+most once every 15 minutes, across every aiuse process at once**: the
+interactive CLI (including `--available --live`), the `aiuse sample`
+LaunchAgent, `aiuse watch`, and `aiuse serve`.
+
+How it works (`src/aiuse/collectors/throttle.py`):
+
+1. Every live query of a gated provider takes an exclusive `flock` on
+   `~/.cache/aiuse/query-throttle/antigravity.lock`, then reads
+   `antigravity.json` (`queried_at`, `queried_by`, and the last payload per
+   source). A second process that arrives mid-query waits, then sees the new
+   `queried_at` instead of firing its own query.
+2. **CodexBar:** `codexbar usage --provider antigravity` runs only when the last
+   query is ≥ 15 minutes old. Otherwise the stored payload is reused; the
+   account carries a note ("antigravity quota queried at most every 15m … reused
+   CodexBar's result from …") and its `collected_at`/`age_seconds` still come
+   from CodexBar's own `updatedAt`. A failed query (e.g. a 429) counts as a
+   query; the error is repeated until the window passes.
+3. **OpenUsage.ai:** a forced CLI refresh (`openusage --force`) re-queries every
+   provider OpenUsage has enabled, so while Antigravity is throttled aiuse
+   withholds `--force` and takes OpenUsage's cached reading. A forced refresh
+   only spends the slot when its payload actually contains `antigravity`. The
+   loopback HTTP path never forces a refresh and is not gated.
+4. Configure with `[query_min_interval]` in `config.toml`
+   (`antigravity = 900` is the default; `0` disables; other provider ids can
+   be added).
+
+Not covered, and why:
+
+1. **CodexBar.app / OpenUsage.app polling on their own.** The menu-bar apps
+   refresh on their own clocks (CodexBar `refreshFrequency`, global across
+   providers, 5 minutes on this machine). As of 2026-10-05 Antigravity is
+   **disabled** in CodexBar (`codexbar config providers`, shared by the app and
+   the CLI) and absent from the running OpenUsage build's enabled providers, so
+   neither app polls agy. Re-enabling it in CodexBar makes the app poll every
+   `refreshFrequency` regardless of aiuse; set that to 15 minutes or more first.
+2. **CodexBar bundled calls.** `collectors.codexbar.providers = "all"` (or the
+   fallback when `codexbar config providers` fails) asks CodexBar for every
+   provider in one call, which cannot be gated per provider. The default
+   `"enabled"` path queries each provider separately and is gated.
+3. **Using agy itself.** Interactive or delegated agy work is not a quota
+   query; see the agy burst-limit rules in the home `AGENTS.md`.

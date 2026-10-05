@@ -21,6 +21,7 @@ from aiuse.models import coerce_float as _f
 from aiuse.models import coerce_int as _int_or_none
 
 from .base import CollectorError, run_json, which
+from .throttle import QueryGate
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
 PREPAID_HINTS = {
@@ -107,6 +108,7 @@ def collect_codexbar(
     providers: str | list[str] | None = "enabled",
     timeout: float = 45.0,
     discovery_timeout: float | None = None,
+    min_intervals: dict[str, float] | None = None,
 ) -> list[AccountUsage]:
     if not which("codexbar"):
         raise CollectorError("codexbar not found on PATH")
@@ -124,8 +126,11 @@ def collect_codexbar(
 
     accounts: list[AccountUsage] = []
     errors: list[str] = []
+    reuse_notes: dict[str, str] = {}
 
-    for provider_arg, outcome in _query_providers(provider_list, timeout=timeout):
+    for provider_arg, outcome in _query_providers(
+        provider_list, timeout=timeout, min_intervals=min_intervals, reuse_notes=reuse_notes
+    ):
         if isinstance(outcome, CollectorError):
             name = provider_arg or "enabled providers"
             errors.append(f"{name}: {outcome}")
@@ -137,7 +142,10 @@ def collect_codexbar(
                     row_provider = str(row.get("provider", "")).strip().lower()
                     if row_provider and row_provider != provider_arg.lower():
                         continue
-                accounts.append(_from_row(row))
+                account = _from_row(row)
+                if provider_arg is not None and provider_arg in reuse_notes:
+                    account.notes = list(account.notes) + [reuse_notes[provider_arg]]
+                accounts.append(account)
                 zen = _opencode_zen_from_row(row)
                 if zen is not None:
                     accounts.append(zen)
@@ -202,6 +210,8 @@ def _query_providers(
     provider_list: list[str | None],
     *,
     timeout: float = 45.0,
+    min_intervals: dict[str, float] | None = None,
+    reuse_notes: dict[str, str] | None = None,
 ) -> list[tuple[str | None, Any]]:
     """Run one `codexbar usage` call per entry in provider_list, concurrently.
 
@@ -210,20 +220,49 @@ def _query_providers(
     error ordering stays deterministic. Duplicate entries are queried once —
     querying the same provider twice concurrently is never useful and would
     otherwise race on which duplicate's outcome survives.
+
+    Providers listed in ``min_intervals`` go through a cross-process
+    :class:`QueryGate`; when one is throttled its last stored payload is
+    returned instead and ``reuse_notes[provider]`` explains why.
     """
     deduped: list[str | None] = list(dict.fromkeys(provider_list))
+    intervals = min_intervals or {}
+    notes = reuse_notes if reuse_notes is not None else {}
+
+    def run(provider_arg: str | None) -> Any:
+        if provider_arg is not None and intervals.get(provider_arg.lower(), 0) > 0:
+            return _query_provider_gated(provider_arg, intervals[provider_arg.lower()], timeout=timeout, notes=notes)
+        return _query_provider(provider_arg, timeout=timeout)
+
     if len(deduped) <= 1:
-        return [(provider_arg, _query_provider(provider_arg, timeout=timeout)) for provider_arg in deduped]
+        return [(provider_arg, run(provider_arg)) for provider_arg in deduped]
 
     workers = min(len(deduped), _MAX_CONCURRENT_PROVIDER_QUERIES)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(_query_provider, provider_arg, timeout=timeout): provider_arg for provider_arg in deduped
-        }
+        futures = {pool.submit(run, provider_arg): provider_arg for provider_arg in deduped}
         outcomes: dict[str | None, Any] = {}
         for future in as_completed(futures):
             outcomes[futures[future]] = future.result()
     return [(provider_arg, outcomes[provider_arg]) for provider_arg in deduped]
+
+
+def _query_provider_gated(
+    provider_arg: str,
+    min_interval: float,
+    *,
+    timeout: float,
+    notes: dict[str, str],
+) -> Any:
+    provider = provider_arg.lower()
+    with QueryGate(provider, min_interval=min_interval, wait=timeout + 15.0) as gate:
+        if gate.allowed:
+            outcome = _query_provider(provider_arg, timeout=timeout)
+            gate.record("codexbar", outcome)
+            return outcome
+        reused_at = gate.reused_from("codexbar")
+        if reused_at is not None:
+            notes[provider_arg] = f"{gate.describe()}; reused CodexBar's result from {reused_at.isoformat()}."
+        return gate.reuse("codexbar")
 
 
 def _query_provider(provider_arg: str | None, *, timeout: float = 45.0) -> Any:
