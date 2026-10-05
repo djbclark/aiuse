@@ -342,10 +342,10 @@ into the other.
 | `service_id`               | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                         |
 | `collector_id`             | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                         |
 | `collected_at`             | string \| omitted | 1.1 — the source's own measurement time for this row (CodexBar `usage.updatedAt`); older than the snapshot's `collected_at` means the row was a cached read. Omitted when the source reports none                         |
-| `usable_now`               | bool              | 1.1 — false if ANY window is exhausted, or no window has data; true only with evidence of headroom. Per-family verdicts live in `--available` / `pool_family`                                                             |
-| `binding_window`           | string \| null    | 1.1 — label of the window with the least remaining (the one that stops you first)                                                                                                                                         |
+| `usable_now`               | bool              | 1.1 — false if any applicable window is exhausted or no window has data. For Claude, only shared limits affect account usability; model caps affect their routing family in `--available`                                 |
+| `binding_window`           | string \| null    | 1.1 — label of the applicable window with the least remaining; Claude model caps do not bind the shared account                                                                                                           |
 | `binding_headroom_percent` | number \| null    | 1.1 — that window's remaining share                                                                                                                                                                                       |
-| `available_at`             | string \| null    | 1.1 — earliest `resets_at` among exhausted windows; null when nothing is exhausted or no reset time is known (e.g. a depleted prepaid balance: top up)                                                                    |
+| `available_at`             | string \| null    | 1.1 — earliest `resets_at` among applicable exhausted windows; Claude model caps are excluded from the shared account. Null when nothing applicable is exhausted or no reset is known                                     |
 | `age_seconds`              | number \| null    | 1.1 — seconds since this account's `collected_at`, computed at read time                                                                                                                                                  |
 
 `raw` is **not** included in JSON (internal only).
@@ -361,23 +361,26 @@ additive per the stability policy below.
 
 ### `windows[]` (`QuotaWindow`)
 
-| Field                  | Type                 |
-| ---------------------- | -------------------- |
-| `label`                | string               |
-| `used_percent`         | number \| null       |
-| `remaining_percent`    | number \| null       |
-| `resets_at`            | string (ISO) \| null |
-| `window_minutes`       | int \| null          |
-| `reset_description`    | string \| null       |
-| `refill_capacity`      | number \| null       |
-| `refill_capacity_unit` | string \| null       |
-| `internal_throttle`    | bool                 |
-| `state`                | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                 |
-| `headroom_percent`     | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                            |
-| `pool_family`          | string \| omitted    | 1.1 — only on split vendors: `antigravity` → `gemini`/`claude_gpt`; `claude` → `default`/`fable`; `cursor` → `auto`/`included`/`other`/`grok_bot` |
-| `models_hint`          | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                         |
-| `state_source`         | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                               |
-| `agent_reported`       | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                |
+| Field                         | Type                 |
+| ----------------------------- | -------------------- |
+| `label`                       | string               |
+| `used_percent`                | number \| null       |
+| `remaining_percent`           | number \| null       |
+| `resets_at`                   | string (ISO) \| null |
+| `window_minutes`              | int \| null          |
+| `reset_description`           | string \| null       |
+| `refill_capacity`             | number \| null       |
+| `refill_capacity_unit`        | string \| null       |
+| `internal_throttle`           | bool                 |
+| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                     |
+| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                                |
+| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `auto`/`included`/`other`/`grok_bot` |
+| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                     |
+| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                       |
+| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                            |
+| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                             |
+| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                                   |
+| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                    |
 
 ### `usage_credits` (optional)
 
