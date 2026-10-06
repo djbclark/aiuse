@@ -277,6 +277,13 @@ Reads the snapshot cache (`latest.json`, kept fresh by `aiuse watch` and the
 hourly LaunchAgent) by default — a fast answer in well under a second.
 `--live` forces a fresh collect (27–60 s). Exit 3 when nothing is usable.
 
+Pools the operator has ruled out in `analysis.excluded_pools` (`"provider"` or
+`"provider/pool_family"` → reason) are dropped from `available` and listed in a
+top-level `excluded` array — `provider`, `account`, `pool_family`,
+`cli_binary`, `headroom_percent`, `reason` — so a reader can tell "ruled out"
+from "exhausted". Text mode prints one `excluded by operator: …` line per pool
+on stderr. The exit code counts only `available`.
+
 ## `aiuse note-exhausted` — agent-reported exhaustion overrides
 
 ```

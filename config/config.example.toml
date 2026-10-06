@@ -96,6 +96,12 @@
 # [analysis.lapsed_accounts]
 # "claude/me@mit.edu" = "not renewed 2026-08"
 
+# Operator routing exclusions: "provider" or "provider/pool_family" = reason (or
+# true). The quota is real and still reported, but `aiuse --available` leaves
+# the pool out of the shortlist and lists it under `excluded` with the reason.
+# [analysis.excluded_pools]
+# "grok" = "operator: reserve for GrokBot, 2026-10-06"
+
 [analysis.pace]
 # waste_alert_fraction = 0.30
 # min_elapsed_fraction = 0.15

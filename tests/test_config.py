@@ -200,6 +200,14 @@ def test_validate_config_accepts_and_checks_account_aliases():
     assert "account_aliases.codex.openusage_sh entries need non-empty account names" in "\n".join(issues)
 
 
+def test_validate_config_checks_excluded_pools():
+    assert validate_config({"analysis": {"excluded_pools": {"grok": "operator", "antigravity/gemini": True}}}) == []
+    issues = "\n".join(validate_config({"analysis": {"excluded_pools": {"grok": "", "/gemini": True}}}))
+    assert "analysis.excluded_pools.grok needs a reason string or true" in issues
+    assert "analysis.excluded_pools key '/gemini' needs a provider" in issues
+    assert "must be a" in "\n".join(validate_config({"analysis": {"excluded_pools": ["grok"]}}))
+
+
 def test_validate_config_unknown_and_bad_timeouts():
     issues = validate_config(
         {

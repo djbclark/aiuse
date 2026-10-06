@@ -350,6 +350,48 @@ def test_cli_available_exit_three_when_nothing_usable(tmp_path, monkeypatch, cap
     assert payload["available"] == []
 
 
+def test_cli_available_honours_excluded_pools(tmp_path, monkeypatch, capsys):
+    from aiuse.analysis import history
+    from aiuse.cli import main
+
+    cache = tmp_path / "snapshots"
+    cache.mkdir()
+    (cache / "latest.json").write_text(json.dumps(_antigravity_fixture()))
+    monkeypatch.setattr(history, "snapshot_dir", lambda: cache)
+    config = tmp_path / "config.toml"
+    config.write_text('[analysis.excluded_pools]\n"antigravity/gemini" = "operator: not now"\n')
+
+    assert main(["--config", str(config), "--available", "--json", "-q"]) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["available"] == []
+    assert [(e["provider"], e["pool_family"], e["reason"]) for e in payload["excluded"]] == [
+        ("antigravity", "gemini", "operator: not now")
+    ]
+
+    assert main(["--config", str(config), "--available", "-q"]) == 3
+    assert "excluded by operator: antigravity gemini (operator: not now)" in capsys.readouterr().err
+
+
+def test_apply_exclusions_matches_provider_or_family():
+    from aiuse.analysis.selfdescribe import apply_exclusions
+
+    pools = [
+        {"provider": "grok", "pool_family": None, "headroom_percent": 19.0},
+        {"provider": "cursor", "pool_family": "grok_bot", "headroom_percent": 50.0},
+        {"provider": "antigravity", "pool_family": "gemini", "headroom_percent": 70.0},
+        {"provider": "antigravity", "pool_family": "claude_gpt", "headroom_percent": 40.0},
+    ]
+    kept, excluded = apply_exclusions(pools, {"Grok": True, "antigravity/claude_gpt": "burst limit"})
+    assert [(p["provider"], p["pool_family"]) for p in kept] == [("cursor", "grok_bot"), ("antigravity", "gemini")]
+    assert [(e["provider"], e["reason"]) for e in excluded] == [
+        ("grok", "excluded by operator"),
+        ("antigravity", "burst limit"),
+    ]
+    assert apply_exclusions(pools, None) == (pools, [])
+    kept, _ = apply_exclusions(pools, {"grok/default": "x"})
+    assert ("grok", None) not in [(p["provider"], p["pool_family"]) for p in kept]
+
+
 def test_cli_note_exhausted_dispatch(tmp_path, monkeypatch, capsys):
     from aiuse import agent_notes
     from aiuse.cli import main

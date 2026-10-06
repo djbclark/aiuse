@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping
 
-from aiuse.models import claude_model_scope, parse_dt, utcnow
+from aiuse.models import canonical_provider, claude_model_scope, parse_dt, utcnow
 
 SCHEMA_VERSION = "1.1"
 
@@ -48,6 +48,7 @@ SEMANTICS: dict[str, str] = {
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins",
+    "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
 }
 
 # (substring, family, models_hint) matched against the lowercased window label,
@@ -393,3 +394,47 @@ def available_pools(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
     pools = [p for p in pool_entries(snap) if p.get("usable_now")]
     pools.sort(key=lambda p: (-(p.get("headroom_percent") or 0.0), str(p.get("provider"))))
     return pools
+
+
+def apply_exclusions(
+    pools: Iterable[dict[str, Any]], exclusions: Mapping[str, Any] | None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split routing entries into (kept, excluded) by ``analysis.excluded_pools``.
+
+    Keys are ``"provider"`` (every pool of that vendor) or
+    ``"provider/pool_family"`` (``default`` names the unsplit pool); values are
+    the operator's reason or ``true``. An exclusion is a routing decision, not
+    a quota fact: it drops the pool from the shortlist and leaves its numbers
+    alone, so the full report still shows the windows.
+    """
+    rules: list[tuple[str, str | None, str]] = []
+    for key, value in (exclusions or {}).items():
+        provider, _, family = str(key).partition("/")
+        provider = canonical_provider(provider.strip())
+        if not provider:
+            continue
+        reason = value.strip() if isinstance(value, str) and value.strip() else "excluded by operator"
+        rules.append((provider, family.strip().casefold() or None, reason))
+    kept: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for pool in pools:
+        pool_provider = canonical_provider(str(pool.get("provider") or ""))
+        pool_family = str(pool.get("pool_family") or "default").casefold()
+        match = next(
+            (r for p, f, r in rules if p == pool_provider and (f is None or f == pool_family)),
+            None,
+        )
+        if match is None:
+            kept.append(pool)
+        else:
+            excluded.append(
+                {
+                    "provider": pool.get("provider"),
+                    "account": pool.get("account"),
+                    "pool_family": pool.get("pool_family"),
+                    "cli_binary": pool.get("cli_binary"),
+                    "headroom_percent": pool.get("headroom_percent"),
+                    "reason": match,
+                }
+            )
+    return kept, excluded

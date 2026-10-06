@@ -477,6 +477,8 @@ Shared allotment: `analysis.provider_overrides.<provider>.shared_allotment: true
 
 Lapsed subscriptions: `analysis.lapsed_accounts` maps `"provider/account"` to a reason (e.g. `"claude/me@mit.edu" = "not renewed"`). A not-renewed plan keeps serving stale collector cache that looks like usable quota; the entry makes that account show as `empty` instead of on-pace.
 
+Excluded pools: `analysis.excluded_pools` maps `"provider"` or `"provider/pool_family"` to a reason (e.g. `"grok" = "reserved for another agent"`). The quota stays in every report, but `aiuse --available` leaves the pool out of its shortlist and lists it under `excluded` (JSON) or on stderr (text), so orchestrators never route to it.
+
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.

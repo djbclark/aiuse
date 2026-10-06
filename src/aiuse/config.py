@@ -111,6 +111,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # the operator knows renewal state, so it is declared here and the
         # account renders as empty instead of on-pace.
         "lapsed_accounts": {},
+        # Operator routing exclusions ("provider" or "provider/pool_family" ->
+        # reason). The quota is real and still reported; the operator has ruled
+        # the pool out, so `--available` omits it and lists it under `excluded`.
+        "excluded_pools": {},
     },
     "plans": {
         "codex": {
@@ -533,6 +537,15 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     issues.append(f"error: analysis.lapsed_accounts key {key!r} needs a 'provider/account' shape")
                 if not (value is True or (isinstance(value, str) and value.strip())):
                     issues.append(f"error: analysis.lapsed_accounts.{key} needs a reason string or true")
+        excluded_pools = analysis.get("excluded_pools")
+        if excluded_pools is not None and not isinstance(excluded_pools, dict):
+            issues.append("error: analysis.excluded_pools must be a 'provider[/pool_family]' -> reason mapping")
+        elif isinstance(excluded_pools, dict):
+            for key, value in excluded_pools.items():
+                if not str(key).split("/", 1)[0].strip():
+                    issues.append(f"error: analysis.excluded_pools key {key!r} needs a provider")
+                if not (value is True or (isinstance(value, str) and value.strip())):
+                    issues.append(f"error: analysis.excluded_pools.{key} needs a reason string or true")
 
     plans = cfg.get("plans")
     if plans is not None and not isinstance(plans, dict):

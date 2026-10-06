@@ -1032,6 +1032,7 @@ def _run_available(args: argparse.Namespace) -> int:
         FRESH_THRESHOLD_SECONDS_DEFAULT,
         SCHEMA_VERSION,
         SEMANTICS,
+        apply_exclusions,
         available_pools,
         enrich_snapshot,
         freshness,
@@ -1080,7 +1081,7 @@ def _run_available(args: argparse.Namespace) -> int:
 
     enrich_snapshot(snap_dict, notes=notes)
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
-    pools = available_pools(snap_dict)
+    pools, excluded = apply_exclusions(available_pools(snap_dict), analysis_cfg.get("excluded_pools"))
 
     if args.json or args.format == "json":
         print(
@@ -1093,6 +1094,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     "source": source,
                     **fresh,
                     "available": pools,
+                    "excluded": excluded,
                     "agent_notes": snap_dict.get("agent_notes", []),
                     "semantics": dict(SEMANTICS),
                 },
@@ -1107,6 +1109,9 @@ def _run_available(args: argparse.Namespace) -> int:
         if pool.get("models_hint"):
             line += f"  [{pool['models_hint']}]"
         print(line)
+    for entry in excluded:
+        family = f" {entry['pool_family']}" if entry.get("pool_family") else ""
+        print(f"excluded by operator: {entry['provider']}{family} ({entry['reason']})", file=sys.stderr)
     if not pools:
         print(
             "no usable pools right now — everything measured is exhausted or unknown",
