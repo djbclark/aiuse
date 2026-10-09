@@ -33,7 +33,6 @@ for the actual agent CLI whose quota it tracks:
 | Muse (Meta)                 | `muse`                        |
 | Devin                       | `devin`                       |
 | ClinePass                   | `cline`                       |
-| Hyper                       | `crush`                       |
 | DeepSeek, OpenRouter        | no CLI — per-token $ API only |
 
 `aiuse --json` exposes this same mapping per account row as `cli_binary`

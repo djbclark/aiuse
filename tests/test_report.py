@@ -2002,8 +2002,7 @@ def test_style_clock_percent_pads_and_keeps_fold_mark_in_the_left_token():
     ("provider", "display"),
     [
         ("zai", "zai/zcode"),
-        ("clinepass", "clinepass/crush"),
-        ("hyper", "hyper/crush"),
+        ("clinepass", "clinepass/cline"),
     ],
 )
 def test_provider_display_names_preserve_service_and_default_client(provider, display):

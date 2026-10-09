@@ -110,9 +110,8 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "grok": "grok",
     # Name the default local client for each independent service without
     # collapsing their provider identities.
-    "clinepass": "clinepass/crush",
+    "clinepass": "clinepass/cline",
     "zai": "zai/zcode",
-    "hyper": "hyper/crush",
     "devin": "devin",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
@@ -185,8 +184,7 @@ PROVIDER_CLI_BINARIES: dict[str, str] = {
     "cursor": "cursor-agent",  # `cursor` launches the editor, not the agent
     "grok": "grok",  # xAI Grok Build TUI
     "zai": "zcode",  # Z.ai's own CLI (tui / app-server subcommands)
-    "clinepass": "cline",  # Cline CLI; display name keeps the Crush alternative
-    "hyper": "crush",  # Charm Hyper is consumed through Crush
+    "clinepass": "cline",  # Cline CLI
     "devin": "devin",  # Cognition CLI; runs in the terminal and the cloud
     "muse": "muse",  # Meta Muse Code CLI (`muse login`)
     "opencode-go": "opencode",

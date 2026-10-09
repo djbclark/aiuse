@@ -27,7 +27,7 @@ price used for value-at-risk is **$18/mo** (promos exist).
   is `—` unless a real identity is present.
 - Display id is `zai/zcode` (canonical provider id stays `zai`): Zcode uses
   Z.ai by default, so the row names the default client for this quota.
-  Crush defaults to ClinePass and must not be presented as the Z.ai client.
+  Crush (uninstalled 2026-10-08) is not the Z.ai client either.
 
 MCP monthly time markers that CodexBar sometimes attaches as a 1-minute
 `TIME_LIMIT` are not a third burn pool we invent — they stay on the weekly

@@ -298,3 +298,15 @@ def test_validate_config_flags_disabled_service_collector_drift():
     assert "provider grok is disabled overall" in issues
     issues = "\n".join(validate_config({**base, "collectors": {"grok_billing": False}}))
     assert "collectors.grok_billing enabled override has no effect" in issues
+
+
+def test_disabled_services_may_still_name_the_removed_hyper_provider():
+    """Charm Hyper support was removed (crush uninstalled 2026-10-08); an
+    operator config that still hides it under [disabled_services] stays valid."""
+    from aiuse.collectors.runner import _disabled_services
+    from aiuse.models import provider_display_name
+
+    config = {"disabled_services": {"hyper": "operator 2026-10-08: crush uninstalled"}}
+    assert not [issue for issue in validate_config(config) if "hyper" in issue or issue.startswith("error")]
+    assert _disabled_services(config) == {"hyper": "operator 2026-10-08: crush uninstalled"}
+    assert provider_display_name("hyper") == "Hyper"  # generic fallback, no special mapping

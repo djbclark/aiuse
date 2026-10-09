@@ -21,7 +21,6 @@ from aiuse.models import AccountUsage, provider_cli_binary
         ("devin", "devin"),
         ("muse", "muse"),
         ("clinepass", "cline"),
-        ("hyper", "crush"),
         ("qwencloud", "qwen"),
         ("alibaba", "qwen"),
     ],
