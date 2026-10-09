@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from aiuse.keychain import run_security_stdin, stdin_command_line
+
 DEFAULT_CODESIGN_IDENTITY = "aiuse-local-codesign"
 ENV_CODESIGN_IDENTITY = "AIUSE_CODESIGN_IDENTITY"
 ENV_AUTOSIGN_CAUT = "AIUSE_AUTOSIGN_CAUT"
@@ -272,6 +274,7 @@ def fix_codexbar_cache_account(
     runner = run_fn if run_fn is not None else subprocess.run
 
     secret: str | None = None
+    add_args: list[str] = []
     try:
         read = runner(
             [
@@ -296,6 +299,30 @@ def fix_codexbar_cache_account(
         if not secret:
             return False, f"empty secret for acct={account!r} — skip"
 
+        # The secret goes to ``security -i`` on stdin, never argv (visible in ps).
+        add_args = [
+            "add-generic-password",
+            "-s",
+            CODEXBAR_CACHE_SERVICE,
+            "-a",
+            account,
+            "-l",
+            CODEXBAR_CACHE_LABEL,
+            "-T",
+            str(app),
+            "-T",
+            str(cli),
+            "-T",
+            "/usr/bin/security",
+            "-w",
+            secret,
+            str(kc),
+        ]
+        try:
+            stdin_command_line(add_args)  # validate before anything is deleted
+        except ValueError as exc:
+            return False, f"not rewritten acct={account!r}: secret cannot be passed on stdin ({exc})"
+
         delete = runner(
             [
                 "security",
@@ -315,55 +342,31 @@ def fix_codexbar_cache_account(
             err = (delete.stderr or delete.stdout or "").strip() or f"exit {delete.returncode}"
             return False, f"delete failed for acct={account!r}: {err[:200]}"
 
-        add = runner(
-            [
-                "security",
-                "add-generic-password",
-                "-s",
-                CODEXBAR_CACHE_SERVICE,
-                "-a",
-                account,
-                "-l",
-                CODEXBAR_CACHE_LABEL,
-                "-T",
-                str(app),
-                "-T",
-                str(cli),
-                "-T",
-                "/usr/bin/security",
-                "-w",
-                secret,
-                str(kc),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
+        add = run_security_stdin(add_args, timeout=30, run_fn=runner)
         if add.returncode != 0:
             err = (add.stderr or add.stdout or "").strip() or f"exit {add.returncode}"
             return False, f"add failed for acct={account!r}: {err[:200]}"
 
         if keychain_password is not None and keychain_password != "":
-            part = runner(
-                [
-                    "security",
-                    "set-generic-password-partition-list",
-                    "-S",
-                    f"apple-tool:,apple:,teamid:{tid}",
-                    "-s",
-                    CODEXBAR_CACHE_SERVICE,
-                    "-a",
-                    account,
-                    "-k",
-                    keychain_password,
-                    str(kc),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
+            try:
+                part = run_security_stdin(
+                    [
+                        "set-generic-password-partition-list",
+                        "-S",
+                        f"apple-tool:,apple:,teamid:{tid}",
+                        "-s",
+                        CODEXBAR_CACHE_SERVICE,
+                        "-a",
+                        account,
+                        "-k",
+                        keychain_password,
+                        str(kc),
+                    ],
+                    timeout=30,
+                    run_fn=runner,
+                )
+            except ValueError as exc:
+                return True, f"rewrote ACL for acct={account!r} (app+CLI trusted); partition-list skipped: {exc}"
             if part.returncode != 0:
                 err = (part.stderr or part.stdout or "").strip() or f"exit {part.returncode}"
                 return True, (
@@ -377,6 +380,7 @@ def fix_codexbar_cache_account(
         )
     finally:
         secret = None  # noqa: F841 — drop reference to secret material
+        add_args = []  # noqa: F841 — it holds the secret too
 
 
 def fix_codexbar_cache_all(

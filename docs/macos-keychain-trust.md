@@ -142,7 +142,12 @@ Optional non-interactive partition-list password (sensitive — avoid in shell h
 AIUSE_KEYCHAIN_PASSWORD='…' aiuse trust fix-codexbar-cache
 ```
 
-Secrets are **never** printed. After a successful fix, verify:
+Secrets are **never** printed, and never put on a command line: the cache
+secret and the keychain password go to `security -i` on stdin, so they do not
+show up in `ps`. An item whose secret cannot be carried that way (a newline,
+or longer than about 4,000 bytes) is skipped before anything is deleted.
+
+After a successful fix, verify:
 
 ```bash
 codexbar usage --provider codex --json-only

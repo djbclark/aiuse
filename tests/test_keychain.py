@@ -15,10 +15,14 @@ from aiuse.keychain import (
     MISSING,
     OK,
     PROMPT,
+    STDIN_LINE_MAX,
     UNAVAILABLE,
     KeychainResult,
     classify_exit,
+    quote_stdin_arg,
     read_generic_password,
+    run_security_stdin,
+    stdin_command_line,
 )
 from aiuse.models import AccountUsage, BillingKind, utcnow
 
@@ -38,6 +42,7 @@ def fake_security(tmp_path, monkeypatch):
     script.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> "$FAKE_SECURITY_LOG"\n'
+        'if [ "$1" = "-i" ]; then cat >> "$FAKE_SECURITY_LOG.stdin"; fi\n'
         'if [ -n "$FAKE_SECURITY_SLEEP" ]; then sleep "$FAKE_SECURITY_SLEEP"; fi\n'
         'if [ -n "$FAKE_SECURITY_OUT" ]; then printf "%s\\n" "$FAKE_SECURITY_OUT"; fi\n'
         'if [ -n "$FAKE_SECURITY_ERR" ]; then printf "%s\\n" "$FAKE_SECURITY_ERR" >&2; fi\n'
@@ -294,3 +299,80 @@ def test_cli_available_reports_credential_issues(tmp_path: Path, monkeypatch, ca
     assert main(["--available", "-q"]) == 0
     err = capsys.readouterr().err
     assert "credential: muse ai.meta.dev.credentials keychain LOCKED" in err
+
+
+# ── security -i on stdin (secrets off argv) ─────────────────────────────────
+
+
+def _split_line(line: str) -> list[str]:
+    """Python port of SecurityTool's ``split_line`` (security.c), for round trips."""
+    args: list[str] = []
+    cur: list[str] = []
+    state = "ws"
+    quote = ""
+    for ch in line:
+        if state == "ws":
+            if ch.isspace():
+                continue
+            if ch in "\"'":
+                quote, state, cur = ch, "q", []
+                continue
+            state, cur = "arg", []
+        if state == "arg":
+            if ch == "\\":
+                state = "arg_esc"
+                continue
+            if ch.isspace():
+                args.append("".join(cur))
+                state = "ws"
+            else:
+                cur.append(ch)
+            continue
+        if state == "q":
+            if ch == "\\":
+                state = "q_esc"
+                continue
+            if ch == quote:
+                args.append("".join(cur))
+                state = "ws"
+            else:
+                cur.append(ch)
+            continue
+        if state == "arg_esc":
+            cur.append(ch)
+            state = "arg"
+            continue
+        if state == "q_esc":
+            cur.append(ch)
+            state = "q"
+    if state != "ws":
+        args.append("".join(cur))
+    return args
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["plain", "with space", 'dq"inside', "sq'inside", "back\\slash", "trail\\", "$HOME `x` ;|&", "", "ünï 🔑"],
+)
+def test_quote_stdin_arg_round_trips_through_split_line(value):
+    line = stdin_command_line(["add-generic-password", "-w", value, "-s", "svc"])
+    assert line.endswith("\n")
+    assert _split_line(line.rstrip("\n")) == ["add-generic-password", "-w", value, "-s", "svc"]
+
+
+def test_stdin_line_rejects_newline_and_overlong():
+    with pytest.raises(ValueError):
+        quote_stdin_arg("a\nb")
+    with pytest.raises(ValueError):
+        quote_stdin_arg("a\0b")
+    with pytest.raises(ValueError):
+        stdin_command_line(["add-generic-password", "-w", "x" * STDIN_LINE_MAX])
+
+
+def test_run_security_stdin_keeps_secret_off_argv(fake_security, monkeypatch):
+    monkeypatch.setenv("FAKE_SECURITY_RC", "45")
+    proc = run_security_stdin(["add-generic-password", "-s", "svc", "-a", "acct", "-w", "top secret", "/k.db"])
+    assert proc.returncode == 45  # the one command's status comes back as the exit code
+    assert fake_security.read_text() == "-i\n"
+    sent = Path(str(fake_security) + ".stdin").read_text()
+    assert sent == '"add-generic-password" "-s" "svc" "-a" "acct" "-w" "top secret" "/k.db"\n'

@@ -4,6 +4,9 @@
    so a locked keychain (152, ``-60008``) is not a missing item (44,
    ``-25300``) and neither is a bad credential. A timeout means a SecurityAgent
    prompt was raised and nobody answered it.
+2. Secrets off argv: :func:`run_security_stdin` feeds one command to
+   ``security -i`` on stdin, so ``-w <secret>`` and ``-k <password>`` never
+   appear in ``ps`` output.
 
 See docs/research/macos-keychain-access.md (branch claudehelm/keychain-research).
 """
@@ -13,7 +16,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 RunFn = Callable[..., "subprocess.CompletedProcess[str]"]
 
@@ -40,6 +43,10 @@ _DENIED_EXITS = {
 _LOCKED_MARKERS = ("-60008", "-25308", "User interaction is not allowed")
 _MISSING_MARKERS = ("-25300", "could not be found in the keychain")
 _DENIED_MARKERS = ("-25293", "-128", "User canceled")
+
+# ``security -i`` reads one line into a 4096-byte buffer and runs the rest of an
+# over-long line as a *second* command, so stay well under it.
+STDIN_LINE_MAX = 4000
 
 
 def classify_exit(returncode: int | None, stderr: str = "", *, timed_out: bool = False) -> str:
@@ -147,3 +154,49 @@ def read_generic_password(
     if not result.ok:
         return result, None
     return result, (proc.stdout or "").rstrip("\n")
+
+
+def quote_stdin_arg(value: str) -> str:
+    """Quote one argument for ``security -i``'s line splitter.
+
+    The splitter (SecurityTool ``split_line``) accepts a double-quoted argument
+    with backslash escapes, and has no way to carry a newline or NUL.
+    """
+    if any(ch in value for ch in ("\n", "\r", "\0")):
+        raise ValueError("security -i cannot carry newline or NUL characters")
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def stdin_command_line(args: Sequence[str]) -> str:
+    """One ``security -i`` input line (with trailing newline) for ``args``."""
+    if not args:
+        raise ValueError("empty security command")
+    line = " ".join(quote_stdin_arg(str(arg)) for arg in args) + "\n"
+    if len(line.encode("utf-8")) > STDIN_LINE_MAX:
+        raise ValueError(f"security -i command too long ({len(line.encode('utf-8'))} bytes > {STDIN_LINE_MAX})")
+    return line
+
+
+def run_security_stdin(
+    args: Sequence[str],
+    *,
+    timeout: float = 30.0,
+    run_fn: RunFn | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run one ``security`` subcommand through ``security -i`` on stdin.
+
+    ``args`` excludes the leading ``security`` (e.g. ``["add-generic-password",
+    "-s", svc, ..., "-w", secret]``). argv is only ``security -i``, so nothing
+    secret is visible in ``ps``. The exit status is that of the one command.
+    Raises ValueError when the command cannot be carried on one line.
+    """
+    line = stdin_command_line(args)
+    runner = run_fn if run_fn is not None else subprocess.run
+    return runner(
+        ["security", "-i"],
+        input=line,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
+    )

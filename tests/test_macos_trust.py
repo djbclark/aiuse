@@ -294,9 +294,11 @@ def test_fix_codexbar_cache_account_rewrites(monkeypatch, tmp_path):
     kc = tmp_path / "login.keychain-db"
     kc.write_text("fake", encoding="utf-8")
     calls: list[list[str]] = []
+    stdin: list[str] = []
 
-    def run(argv, **_k):
+    def run(argv, **k):
         calls.append(list(argv))
+        stdin.append(k.get("input") or "")
         if argv[:2] == ["security", "find-generic-password"] and "-w" in argv:
             return subprocess.CompletedProcess(argv, 0, stdout="sekrit-cookie\n", stderr="")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
@@ -304,7 +306,7 @@ def test_fix_codexbar_cache_account_rewrites(monkeypatch, tmp_path):
     ok, msg = fix_codexbar_cache_account(
         "cookie.codex",
         dry_run=False,
-        keychain_password="pw",
+        keychain_password="pw-kc",
         app_path=app,
         cli_path=cli,
         team_id="Y5PE65HELJ",
@@ -318,12 +320,50 @@ def test_fix_codexbar_cache_account_rewrites(monkeypatch, tmp_path):
     # security calls: find -w, delete, add, partition-list
     assert any("find-generic-password" in c for c in calls)
     assert any("delete-generic-password" in c for c in calls)
-    assert any("add-generic-password" in c for c in calls)
-    add = next(c for c in calls if "add-generic-password" in c)
-    assert str(app) in add
-    assert str(cli) in add
-    assert "/usr/bin/security" in add
-    assert any("set-generic-password-partition-list" in c for c in calls)
+    # Neither the secret nor the keychain password is ever on argv (ps-visible).
+    for argv in calls:
+        assert not any("sekrit" in a or "pw-kc" in a for a in argv), argv
+    add = next(line for line in stdin if line.startswith('"add-generic-password"'))
+    assert calls[stdin.index(add)] == ["security", "-i"]
+    assert f'"-T" "{app}"' in add
+    assert f'"-T" "{cli}"' in add
+    assert '"-T" "/usr/bin/security"' in add
+    assert '"-w" "sekrit-cookie"' in add
+    part = next(line for line in stdin if line.startswith('"set-generic-password-partition-list"'))
+    assert '"-k" "pw-kc"' in part
+    assert '"apple-tool:,apple:,teamid:Y5PE65HELJ"' in part
+
+
+def _codexbar_paths(tmp_path):
+    app = tmp_path / "CodexBar.app"
+    (app / "Contents" / "MacOS").mkdir(parents=True)
+    cli = tmp_path / "CodexBarCLI"
+    cli.write_text("x", encoding="utf-8")
+    cli.chmod(0o755)
+    kc = tmp_path / "login.keychain-db"
+    kc.write_text("fake", encoding="utf-8")
+    return app, cli, kc
+
+
+def test_fix_codexbar_cache_refuses_unsendable_secret_before_delete(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    for secret in ("line1\nline2", "x" * 5000):
+        calls: list[list[str]] = []
+
+        def run(argv, _secret=secret, _calls=calls, **_k):
+            _calls.append(list(argv))
+            if "find-generic-password" in argv:
+                return subprocess.CompletedProcess(argv, 0, stdout=_secret + "\n", stderr="")
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        ok, msg = fix_codexbar_cache_account(
+            "cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run
+        )
+        assert not ok
+        assert "not rewritten" in msg
+        assert not any("delete-generic-password" in c for c in calls)
+        assert secret not in msg
 
 
 def test_fix_codexbar_cache_all_dry_run(monkeypatch, tmp_path):
