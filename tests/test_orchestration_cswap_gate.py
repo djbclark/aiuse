@@ -214,3 +214,31 @@ def test_age_just_over_the_limit_refuses(tmp_path):
     result, _ = _gate(tmp_path, _raw_listing(age="900.5"))
     assert result.returncode == 1
     assert "5h reading is 900s old (> 900s)" in result.stderr
+
+
+# Review 2, finding 5b: a pct that is not a plain number made `[ -ge ]` error
+# out, the `if` read that as false, and the gate fell through to ALLOW.
+@pytest.mark.parametrize(
+    "pct",
+    ['"NaN"', "1e400", "-5", "-0.5", '"12abc"', '"0x10"', "1000", "true", "[]", '""'],
+)
+def test_refuses_non_numeric_or_out_of_range_percent(tmp_path, pct):
+    result, _ = _gate(tmp_path, _raw_listing(pct=pct))
+    assert result.returncode == 1, result.stdout
+    assert result.stderr.startswith("CSWAP GATE REFUSE: ")
+    assert "ALLOW" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("pct", "shown"), [("0", "0"), ("0.0", "0"), ("14", "14"), ('"14.5"', "14.5"), ("79.99", "79.99")]
+)
+def test_plain_percent_values_still_allow(tmp_path, pct, shown):
+    result, _ = _gate(tmp_path, _raw_listing(pct=pct))
+    assert result.returncode == 0, result.stderr
+    assert f"5h window is {shown}% used" in result.stdout
+
+
+def test_gate_allows_only_on_a_positive_check():
+    """The ALLOW line must be reachable only through an explicit numeric pass."""
+    source = GATE.read_text(encoding="utf-8")
+    assert '[[ $used =~ ^[0-9]+$ ]] && [ "$used" -lt "$max_pct" ]' in source

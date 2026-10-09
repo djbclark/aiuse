@@ -53,8 +53,14 @@ status=$(field '.usageStatus // "missing"')
 
 pct=$(field '.usage.fiveHour.pct // empty')
 [ -n "$pct" ] || refuse "active account $who has no 5h window reading"
-used=$(jq -rn --arg p "$pct" '$p | tonumber | floor') || refuse "unparsable 5h percent '$pct'"
-pct=$(jq -rn --arg p "$pct" '$p | tonumber | if . == floor then floor else . end')
+# Validate with a regex before any arithmetic. `[ x -ge y ]` on a non-integer
+# exits 2, which an `if` reads as false, so a "NaN", 1e400 or negative pct
+# used to fall through to ALLOW. Only a plain decimal from 0 to 100 passes.
+[[ $pct =~ ^[0-9]{1,3}(\.[0-9]+)?$ ]] ||
+  refuse "active account $who has an unparsable 5h percent '$pct' (want a plain number from 0 to 100)"
+used=$((10#${pct%%.*}))
+[ "$used" -le 100 ] || refuse "active account $who 5h percent '$pct' is above 100"
+[[ $pct =~ ^([0-9]+)\.0+$ ]] && pct=$((10#${BASH_REMATCH[1]}))
 clock=$(field '.usage.fiveHour.clock // "?"')
 countdown=$(field '.usage.fiveHour.countdown // "?"')
 resets_at=$(field '.usage.fiveHour.resetsAt // "?"')
@@ -73,9 +79,10 @@ if [ "$stale" != false ]; then
   refuse "active account $who 5h reading is ${age%.*}s old (> ${max_age}s); refresh cswap and retry"
 fi
 
-if [ "$used" -ge "$max_pct" ]; then
-  refuse "active account $who 5h window is ${pct}% used (threshold ${max_pct}%); $reset_text. Not switching accounts: wait for the reset or switch by hand."
+# ALLOW only on a positive numeric test; anything else, including a test that
+# errors out, falls through to REFUSE.
+if [[ $used =~ ^[0-9]+$ ]] && [ "$used" -lt "$max_pct" ]; then
+  echo "CSWAP GATE ALLOW: active account $who 5h window is ${pct}% used (< ${max_pct}%); $reset_text"
+  exit 0
 fi
-
-echo "CSWAP GATE ALLOW: active account $who 5h window is ${pct}% used (< ${max_pct}%); $reset_text"
-exit 0
+refuse "active account $who 5h window is ${pct}% used (threshold ${max_pct}%); $reset_text. Not switching accounts: wait for the reset or switch by hand."
