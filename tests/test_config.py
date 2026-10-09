@@ -286,3 +286,15 @@ def test_validate_config_checks_disabled_services():
     assert "disabled_services.grok needs a reason string or true" in issues
     assert "disabled_services key '' needs a provider" in issues
     assert "must be a" in "\n".join(validate_config({"disabled_services": ["grok"]}))
+
+
+def test_validate_config_flags_disabled_service_collector_drift():
+    base = {"disabled_services": {"grok": "shelved"}}
+    # Quiet at defaults: no explicit collector override, nothing to flag.
+    assert validate_config(base) == []
+    assert validate_config({**base, "collectors": {"grok_billing": {"enabled": True}}}) == []
+    issues = "\n".join(validate_config({**base, "collectors": {"grok_billing": {"enabled": False}}}))
+    assert "collectors.grok_billing enabled override has no effect" in issues
+    assert "provider grok is disabled overall" in issues
+    issues = "\n".join(validate_config({**base, "collectors": {"grok_billing": False}}))
+    assert "collectors.grok_billing enabled override has no effect" in issues

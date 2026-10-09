@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from aiuse.models import canonical_provider
+
 # Default wall-clock budget for every external CLI subprocess. Tools either
 # return within tens of seconds or hang; long budgets only delay failure.
 DEFAULT_SUBPROCESS_TIMEOUT = 45.0
@@ -352,6 +354,25 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
 
+# Collectors that serve exactly one provider. When that provider is disabled
+# via [disabled_services] the collector is skipped entirely — no subprocess,
+# no authenticated fetch whose result would only be filtered out afterwards.
+# Multi-provider collectors (codexbar, caut, openusage_*, tokscale, hermes)
+# still run; their rows for disabled providers are dropped after collection.
+# Lives here (not collectors/runner.py) so validate_config can check for
+# redundant collector overrides against it without an import cycle.
+SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
+    "cswap": "claude",
+    "grok_billing": "grok",
+    "muse": "muse",
+    "qwencloud": "qwencloud",
+    "bailian": "alibaba",
+    "opencode_go": "opencode-go",
+    "opencode_zen": "opencode-zen",
+    "clinepass": "clinepass",
+    "openrouter": "openrouter",
+}
+
 
 def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None:
     """Optional HTTP health/probe URL for a collector (doctor / preflight).
@@ -559,11 +580,33 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
     if disabled_services is not None and not isinstance(disabled_services, dict):
         issues.append("error: disabled_services must be a 'provider' -> reason mapping")
     elif isinstance(disabled_services, dict):
+        disabled_providers: set[str] = set()
         for key, value in disabled_services.items():
             if not str(key).split("/", 1)[0].strip():
                 issues.append(f"error: disabled_services key {key!r} needs a provider")
             if not (value is True or (isinstance(value, str) and value.strip())):
                 issues.append(f"error: disabled_services.{key} needs a reason string or true")
+            canon = canonical_provider(str(key).split("/", 1)[0].strip())
+            if canon:
+                disabled_providers.add(canon)
+        # Two-layer drift check: an explicit enabled override on a provider-only
+        # collector of an overall-disabled provider silently does nothing (the
+        # runner skips the collector regardless), which is exactly the confusion
+        # that motivated [disabled_services]. Only flag overrides that differ
+        # from the built-in default, so the quiet default state stays quiet.
+        if disabled_providers and isinstance(collectors, dict):
+            for name, provider in sorted(SINGLE_PROVIDER_COLLECTORS.items()):
+                if provider not in disabled_providers:
+                    continue
+                default_entry = DEFAULT_CONFIG.get("collectors", {}).get(name)
+                default_enabled = bool(default_entry.get("enabled", True)) if isinstance(default_entry, dict) else True
+                entry = collectors.get(name)
+                current = bool(entry.get("enabled", True)) if isinstance(entry, dict) else bool(entry)
+                if current != default_enabled:
+                    issues.append(
+                        f"warning: collectors.{name} enabled override has no effect — "
+                        f"provider {provider} is disabled overall via [disabled_services]"
+                    )
 
     plans = cfg.get("plans")
     if plans is not None and not isinstance(plans, dict):

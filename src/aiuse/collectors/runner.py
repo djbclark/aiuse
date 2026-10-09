@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
 
-from aiuse.config import timeout_for
+from aiuse.config import SINGLE_PROVIDER_COLLECTORS, timeout_for
 from aiuse.models import (
     PROVIDER_ID_ALIASES,
     AccountUsage,
@@ -87,22 +87,9 @@ SOURCE_LABELS: dict[str, str] = {
     "grok_billing": "Grok Billing (native)",
 }
 
-# Collectors that serve exactly one provider. When that provider is disabled
-# via [disabled_services] the collector is skipped entirely — no subprocess,
-# no authenticated fetch whose result would only be filtered out afterwards.
-# Multi-provider collectors (codexbar, caut, openusage_*, tokscale, hermes)
-# still run; their rows for disabled providers are dropped after collection.
-SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
-    "cswap": "claude",
-    "grok_billing": "grok",
-    "muse": "muse",
-    "qwencloud": "qwencloud",
-    "bailian": "alibaba",
-    "opencode_go": "opencode-go",
-    "opencode_zen": "opencode-zen",
-    "clinepass": "clinepass",
-    "openrouter": "openrouter",
-}
+# Collectors that serve exactly one provider live in config.py
+# (SINGLE_PROVIDER_COLLECTORS) so validate_config can warn about redundant
+# collector overrides without an import cycle.
 
 
 def _disabled_services(config: dict[str, Any]) -> dict[str, str]:
