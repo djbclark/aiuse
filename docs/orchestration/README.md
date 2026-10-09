@@ -37,3 +37,36 @@ From a git worktree, point `BD_DIR` at the checkout that owns `.beads/`:
 ```bash
 BD_DIR=~/src/aiuse orchestration/gh-issues-to-beads.sh --issue 17
 ```
+
+## US-002: `judge.sh`, the completion authority
+
+`orchestration/judge.sh` refuses loop completion unless three independent
+checks agree. It never reads the agent's transcript or claims.
+
+1. **Tracker.** `bd show $TASK_ID --json` must say `closed`, with a close
+   reason of at least 20 characters.
+2. **Git.** With `EXPECT_DIFF=yes`, HEAD must have at least one commit beyond
+   the base branch. With `EXPECT_DIFF=no`, it must have none. Either way the
+   tree must be clean, except for ralph's own `.ralph/` directory.
+3. **Tests.** The judge runs `TEST_CMD` itself, `just check` by default, and
+   needs exit status 0.
+
+The judge prints `JUDGE PASS: tracker+git+tests agree` and exits 0 only when
+all three hold. Any failure, including a missing input or tool, prints
+`JUDGE REFUSE: <reason>` first and exits 1. Verdicts are appended to
+`.ralph/judge/verdicts.log`, and each test run's full output goes to a
+`.ralph/judge/test-*.log` file beside it.
+
+| Variable        | Meaning                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| `TASK_ID`       | Bead id the loop works on. Required.                                                     |
+| `EXPECT_DIFF`   | `yes` for a code task, `no` for a research task. Required.                               |
+| `TEST_CMD`      | Check command, run with `bash -c` from the repo root. Default `just check`.              |
+| `BD_DIR`        | Directory `bd` runs in. Default: the repo root. Set it when the loop runs in a worktree. |
+| `JUDGE_BASE`    | Ref the work is measured against. Default: `origin/HEAD`, then `origin/main`, `main`.    |
+| `JUDGE_LOG_DIR` | Verdict and test logs. Default `.ralph/judge`.                                           |
+
+Two ralph v2.10.1 details shape the wiring. A hook's default timeout is 30
+seconds, which `just check` exceeds, so the hook sets `timeout_seconds`. ralph
+also keeps only the first 8 KB of each output stream, which is why the verdict
+line always comes first.
