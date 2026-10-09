@@ -2,6 +2,8 @@
 
 **Status:** Implemented (`aiuse trust`).  
 **Plan:** [`macos-keychain-trust-plan.md`](macos-keychain-trust-plan.md).
+**Research (#30):** [`research/macos-keychain-access.md`](research/macos-keychain-access.md)
+— ACL vs partition list, what survives app updates, recommended read/repair pattern.
 
 ## Why “Always Allow” fails for caut
 
