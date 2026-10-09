@@ -254,3 +254,35 @@ gh pr view -R djbclark/aiuse ralph/<bead-id>
 
 If the judge refused, the agent may already have closed the bead. Reopen it
 with `bd -C ~/src/aiuse reopen <bead-id>` before deciding what to do next.
+
+## Fix-ups 2026-10-09
+
+A second adversarial review of this branch found ways the gates could fail
+open or be steered. Each fix below is its own commit, with a test that failed
+before the fix.
+
+1. **Gate: reading of unknown age (5a).** `cswap-gate.sh` skipped the
+   freshness check when `usageAgeSeconds` was missing or unparsable, and a
+   negative age passed. Real cswap omits the field when the age is unknown.
+   The age is now required and must be a plain non-negative number.
+2. **Gate: bad percent (5b).** A `NaN`, `1e400` or negative percent made the
+   shell comparison error out, which fell through to ALLOW. The percent must
+   now match a plain number from 0 to 100 before any comparison. ALLOW needs
+   an explicit numeric pass, and everything else refuses.
+3. **Judge: the agent could weaken the checks (5c).** The hooks ran the
+   clone's own scripts, and nothing stopped a commit that rewrote the
+   `check` recipe or skipped a test. The hooks now run pinned copies from
+   outside the clone (runbook step 4). The judge also refuses work that
+   touches the guarded paths described under US-002.
+4. **Judge: the wrong base (5d).** The judge measured from `origin/main`, so a
+   leftover commit on a reused branch passed as this loop's work. A
+   `pre.loop.start` hook now records the loop's own start, and the judge
+   measures from it. The mutation test gained a scenario for this case, and
+   all four scenarios pass against the ralph v2.10.1 binary.
+5. **Importer: prompt injection (5f).** Issues from authors outside
+   `--authors`, which defaults to the repo owner, are held and never
+   imported unless `--allow-external` is given. Their body then goes in as
+   quoted text marked `UNTRUSTED`.
+
+Not changed yet: 5e (hook timeout semantics) and the nits 5g to 5m from the
+same review.
