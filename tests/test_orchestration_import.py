@@ -162,6 +162,34 @@ def test_apply_creates_and_closes_closed_issue(tmp_path):
     assert any("Estimate: 4–12h · ~0.3–1M tok · ~$3–20" in c for c in creates)
 
 
+# Review 2, finding 5j: a run whose `bd create` succeeded but whose `bd close`
+# failed left the bead open; a re-run skipped the issue, so it stayed open
+# while GitHub had it closed.
+def test_rerun_closes_a_bead_left_open_for_a_closed_issue(tmp_path):
+    existing = [{"id": "aiuse-old", "external_ref": "gh-17", "status": "open"}]
+    result, calls = _run(tmp_path, "--apply", "--issue", "17", existing=existing)
+    assert result.returncode == 0, result.stderr
+    assert "repair #17 (gh-17 is open in beads as aiuse-old but CLOSED on GitHub" in result.stdout
+    closes = [c for c in calls if " close " in f" {c} "]
+    assert closes == [
+        f"-C {tmp_path} close aiuse-old --reason Closed on GitHub as issue #17; closing the mirrored bead"
+        " left open by an earlier partial import."
+    ]
+    assert "1 already present (1 of them closed to match GitHub)" in result.stdout
+
+
+def test_rerun_leaves_closed_beads_and_open_issues_alone(tmp_path):
+    existing = [
+        {"id": "aiuse-old", "external_ref": "gh-17", "status": "closed"},
+        {"id": "aiuse-16", "external_ref": "gh-16", "status": "open"},
+    ]
+    result, calls = _run(tmp_path, "--apply", "--issue", "17", existing=existing)
+    assert result.returncode == 0, result.stderr
+    assert not [c for c in calls if " close " in f" {c} "]
+    assert "skip   #17 (gh-17 already in beads)" in result.stdout
+    assert "skip   #16 (gh-16 already in beads)" in result.stdout
+
+
 def test_unknown_requested_issue_fails(tmp_path):
     result, _ = _run(tmp_path, "--issue", "999")
     assert result.returncode == 1

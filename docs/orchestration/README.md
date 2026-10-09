@@ -310,5 +310,9 @@ before the fix.
    issues only, up to `GH_ISSUES_LIMIT` (default 1000), warns when the
    listing reaches the limit, and fetches each `--issue N` with
    `gh issue view`.
+10. **Importer: trackers out of step after a partial run (5j).** If
+    `bd create` succeeded and the following `bd close` failed, a re-run
+    skipped the issue, so its bead stayed open while GitHub had it closed.
+    A re-run with the same `--issue N` now closes such a bead.
 
-Not changed yet: the nits 5j to 5m from the same review.
+Not changed yet: the nits 5k to 5m from the same review.

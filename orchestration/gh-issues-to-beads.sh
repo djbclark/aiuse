@@ -3,7 +3,10 @@
 #
 # Idempotent: every imported bead carries external_ref "gh-<number>"; an issue
 # whose ref already exists in the beads database is skipped, so re-running is
-# safe. Dry-run is the default: it prints the exact bd commands it would run.
+# safe. A skipped issue that is CLOSED on GitHub while its bead is still open
+# (a run that created the bead but failed before closing it) has its bead
+# closed, so a re-run with the same --issue N repairs the trackers.
+# Dry-run is the default: it prints the exact bd commands it would run.
 #
 # Usage:
 #   orchestration/gh-issues-to-beads.sh [--apply] [--repo OWNER/NAME] [--issue N]...
@@ -130,7 +133,8 @@ if [ -n "$missing" ]; then
   exit 1
 fi
 
-existing=$(bd -C "$bd_dir" --readonly list --all -n 0 --json | jq -r '.[].external_ref // empty')
+existing_json=$(bd -C "$bd_dir" --readonly list --all -n 0 --json)
+existing=$(jq -r '.[].external_ref // empty' <<<"$existing_json")
 
 run() {
   if [ "$apply" = yes ]; then
@@ -144,6 +148,7 @@ run() {
 
 created=0
 skipped=0
+repaired=0
 held=0
 while IFS= read -r issue; do
   [ -n "$issue" ] || continue
@@ -151,8 +156,17 @@ while IFS= read -r issue; do
   ref="gh-$num"
   raw_title=$(jq -r .title <<<"$issue")
   if grep -qxF -- "$ref" <<<"$existing"; then
-    echo "skip   #$num ($ref already in beads): $raw_title"
     skipped=$((skipped + 1))
+    bead=$(jq -c --arg r "$ref" '[.[] | select(.external_ref == $r)][0] // {}' <<<"$existing_json")
+    bead_id=$(jq -r '.id // ""' <<<"$bead")
+    bead_status=$(jq -r '.status // ""' <<<"$bead")
+    if [ "$(jq -r .state <<<"$issue")" = CLOSED ] && [ -n "$bead_id" ] && [ "$bead_status" != closed ]; then
+      echo "repair #$num ($ref is $bead_status in beads as $bead_id but CLOSED on GitHub; closing the bead): $raw_title"
+      run bd -C "$bd_dir" close "$bead_id" --reason "Closed on GitHub as issue #$num; closing the mirrored bead left open by an earlier partial import."
+      repaired=$((repaired + 1))
+    else
+      echo "skip   #$num ($ref already in beads): $raw_title"
+    fi
     continue
   fi
 
@@ -223,4 +237,4 @@ $body"
 done <<<"$selected"
 
 mode=$([ "$apply" = yes ] && echo applied || echo "dry run, nothing written")
-echo "summary: $created to create, $skipped already present, $held held from outside authors ($mode)"
+echo "summary: $created to create, $skipped already present ($repaired of them closed to match GitHub), $held held from outside authors ($mode)"
