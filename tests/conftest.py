@@ -27,6 +27,10 @@ def isolate_snapshot_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_notes, "notes_dir", lambda: tmp_path / "agent-notes")
     # Never read the developer's real agy CLI logs (issue #33 lockout scan).
     monkeypatch.setattr(client_limits, "agy_cli_log_dir", lambda: tmp_path / "agy-cli-log")
+    # Keychain ACL snapshots (aiuse trust fix-codexbar-cache) never land in ~/.cache.
+    from aiuse import macos_trust
+
+    monkeypatch.setattr(macos_trust, "keychain_acl_snapshot_dir", lambda: tmp_path / "keychain-acl")
 
 
 # The width the suite renders at unless a test says otherwise. Wide enough that

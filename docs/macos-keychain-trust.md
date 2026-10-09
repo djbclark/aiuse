@@ -147,6 +147,13 @@ secret and the keychain password go to `security -i` on stdin, so they do not
 show up in `ps`. An item whose secret cannot be carried that way (a newline,
 or longer than about 4,000 bytes) is skipped before anything is deleted.
 
+Each rewrite deletes the item and adds it again. Before the delete, aiuse saves
+the item's ACL metadata (trusted apps, label, partition list; never the secret)
+to `~/.cache/aiuse/keychain-acl/<time>-<service>-<account>.json`, mode 0600. If
+the add fails, it re-adds the item from that snapshot (and re-applies the
+partition list when a keychain password was given), then appends what happened
+to the same file. If no snapshot can be taken, the item is not touched.
+
 After a successful fix, verify:
 
 ```bash

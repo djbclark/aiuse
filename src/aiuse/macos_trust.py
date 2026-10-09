@@ -14,6 +14,7 @@ See docs/macos-keychain-trust.md and docs/macos-keychain-trust-plan.md.
 from __future__ import annotations
 
 import getpass
+import json
 import os
 import plistlib
 import re
@@ -21,10 +22,19 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from aiuse.keychain import run_security_stdin, stdin_command_line
+from aiuse.keychain import (
+    EXIT_DUPLICATE_ITEM,
+    ItemAcl,
+    dump_keychain_acl,
+    find_item_acls,
+    result_from_process,
+    run_security_stdin,
+    stdin_command_line,
+)
 
 DEFAULT_CODESIGN_IDENTITY = "aiuse-local-codesign"
 ENV_CODESIGN_IDENTITY = "AIUSE_CODESIGN_IDENTITY"
@@ -236,6 +246,137 @@ def list_codexbar_cache_accounts(
     return sorted(set(accounts))
 
 
+def keychain_acl_snapshot_dir() -> Path:
+    """Where ACL snapshots (metadata only, never secrets) are kept before a rewrite."""
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "aiuse" / "keychain-acl"
+
+
+def _write_acl_snapshot(acl: ItemAcl, *, action: str, directory: Path | None = None) -> Path | None:
+    """Save one item's ACL metadata as JSON (0600). Returns the path, or None on failure."""
+    target_dir = directory or keychain_acl_snapshot_dir()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{acl.service}-{acl.account}")[:120]
+    path = target_dir / f"{stamp}-{safe}.json"
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump({"taken_at": stamp, "action": action, "acl": acl.to_dict(), "events": []}, fh, indent=2)
+    except OSError:
+        return None
+    return path
+
+
+def _log_acl_event(path: Path | None, event: str) -> None:
+    """Append one line of what happened to the snapshot file (best effort)."""
+    if path is None:
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data.setdefault("events", []).append({"at": datetime.now(timezone.utc).isoformat(), "event": event})
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except (OSError, ValueError):
+        pass
+
+
+def _rollback_add_args(acl: ItemAcl, *, service: str, account: str, secret: str, keychain: Path) -> list[str]:
+    """``add-generic-password`` arguments that recreate the snapshot's trusted-app list."""
+    args = ["add-generic-password", "-s", service, "-a", account]
+    if acl.label:
+        args += ["-l", acl.label]
+    if acl.decrypt_apps is None:
+        args.append("-A")  # the snapshot allowed any application; restore exactly that
+    else:
+        present = [p for p in acl.trusted_paths() if os.path.exists(p)]
+        if present:
+            for app_path in present:
+                args += ["-T", app_path]
+        else:
+            args += ["-T", ""]  # snapshot trusted no app (or none still exists): always ask
+    args += ["-w", secret, str(keychain)]
+    return args
+
+
+def _rollback_item(
+    acl: ItemAcl,
+    *,
+    service: str,
+    account: str,
+    secret: str,
+    keychain: Path,
+    keychain_password: str | None,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    snapshot_path: Path | None,
+) -> str:
+    """Re-add the item from its snapshot after a failed add. Returns what happened."""
+    missing = [p for p in acl.trusted_paths() if not os.path.exists(p)]
+    try:
+        proc = run_security_stdin(
+            _rollback_add_args(acl, service=service, account=account, secret=secret, keychain=keychain),
+            timeout=30,
+            run_fn=runner,
+        )
+    except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        proc = None
+        err = str(exc)
+    else:
+        err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
+    if proc is not None and proc.returncode == 0:
+        note = "rolled back: re-added with the snapshot's trusted apps"
+        if missing:
+            note += f" (dropped {len(missing)} that no longer exist)"
+        if acl.partitions and keychain_password:
+            try:
+                part = run_security_stdin(
+                    [
+                        "set-generic-password-partition-list",
+                        "-S",
+                        ",".join(acl.partitions),
+                        "-s",
+                        service,
+                        "-a",
+                        account,
+                        "-k",
+                        keychain_password,
+                        str(keychain),
+                    ],
+                    timeout=30,
+                    run_fn=runner,
+                )
+                note += "; partition list restored" if part.returncode == 0 else "; partition list NOT restored"
+            except (ValueError, OSError, subprocess.TimeoutExpired):
+                note += "; partition list NOT restored"
+        elif acl.partitions:
+            note += "; partition list not restored (no keychain password)"
+        _log_acl_event(snapshot_path, note)
+        return note
+    if proc is not None and proc.returncode == EXIT_DUPLICATE_ITEM:
+        note = (
+            "rollback not needed: the item exists again (the add may have completed late); check it in Keychain Access"
+        )
+        _log_acl_event(snapshot_path, note)
+        return note
+    # Last resort: keep the secret in the keychain at all, trusted by `security` only.
+    try:
+        plain = run_security_stdin(
+            ["add-generic-password", "-s", service, "-a", account, "-w", secret, str(keychain)],
+            timeout=30,
+            run_fn=runner,
+        )
+        plain_ok = plain.returncode == 0
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        plain_ok = False
+    if plain_ok:
+        note = (
+            f"rollback with snapshot ACL failed ({err[:120]}); re-added with default ACL, check it in Keychain Access"
+        )
+    else:
+        note = f"ROLLBACK FAILED ({err[:120]}); item is gone, sign in to CodexBar again to recreate it"
+    _log_acl_event(snapshot_path, note)
+    return note
+
+
 def fix_codexbar_cache_account(
     account: str,
     *,
@@ -246,10 +387,15 @@ def fix_codexbar_cache_account(
     team_id: str | None = None,
     keychain: Path | None = None,
     run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    acl_dump: str | None = None,
+    snapshot_dir: Path | None = None,
 ) -> tuple[bool, str]:
     """Rewrite one CodexBar Cache item so app + CLI are trusted (#679).
 
-    Never includes the secret in the returned message.
+    Before the delete-then-add it snapshots the item's ACL metadata
+    (``dump-keychain -a``, no secret) to :func:`keychain_acl_snapshot_dir`; if
+    the add fails it re-adds the item from that snapshot. ``acl_dump`` reuses
+    one dump for several accounts. Never includes the secret in the message.
     """
     if not is_darwin():
         return False, "macOS only"
@@ -265,7 +411,7 @@ def fix_codexbar_cache_account(
         return True, (
             f"dry-run: would rewrite {CODEXBAR_CACHE_SERVICE} acct={account!r} "
             f"with -T {app} -T {cli} -T /usr/bin/security "
-            f"+ partition teamid:{tid}"
+            f"+ partition teamid:{tid} (ACL snapshot first, rollback if the add fails)"
         )
 
     kc = keychain or login_keychain_path()
@@ -293,8 +439,7 @@ def fix_codexbar_cache_account(
             timeout=60,
         )
         if read.returncode != 0:
-            err = (read.stderr or read.stdout or "").strip() or f"exit {read.returncode}"
-            return False, f"read failed for acct={account!r}: {err[:200]}"
+            return False, result_from_process(read).message(f"read failed for acct={account!r}")
         secret = (read.stdout or "").rstrip("\n")
         if not secret:
             return False, f"empty secret for acct={account!r} — skip"
@@ -323,29 +468,68 @@ def fix_codexbar_cache_account(
         except ValueError as exc:
             return False, f"not rewritten acct={account!r}: secret cannot be passed on stdin ({exc})"
 
-        delete = runner(
-            [
-                "security",
-                "delete-generic-password",
-                "-s",
-                CODEXBAR_CACHE_SERVICE,
-                "-a",
-                account,
-                str(kc),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
+        # Snapshot the ACL before deleting, so a failed add can be undone.
+        if acl_dump is None:
+            dumped, acl_dump = dump_keychain_acl(kc, run_fn=runner)
+            if not dumped.ok:
+                return False, f"not rewritten acct={account!r}: ACL snapshot failed ({dumped.message('dump-keychain')})"
+        matches = find_item_acls(acl_dump, CODEXBAR_CACHE_SERVICE, account)
+        if len(matches) != 1:
+            return False, f"not rewritten acct={account!r}: ACL snapshot found {len(matches)} matching items, want 1"
+        snapshot = matches[0]
+        snapshot_path = _write_acl_snapshot(snapshot, action="fix-codexbar-cache", directory=snapshot_dir)
+        if snapshot_path is None:
+            return False, f"not rewritten acct={account!r}: could not save the ACL snapshot"
+
+        try:
+            delete = runner(
+                [
+                    "security",
+                    "delete-generic-password",
+                    "-s",
+                    CODEXBAR_CACHE_SERVICE,
+                    "-a",
+                    account,
+                    str(kc),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            _log_acl_event(snapshot_path, f"delete did not finish ({exc.__class__.__name__}); state unknown")
+            return False, (
+                f"delete did not finish for acct={account!r} ({exc.__class__.__name__}: a Keychain prompt?); "
+                f"check the item in Keychain Access (snapshot: {snapshot_path})"
+            )
         if delete.returncode != 0:
             err = (delete.stderr or delete.stdout or "").strip() or f"exit {delete.returncode}"
+            _log_acl_event(snapshot_path, f"delete failed, nothing changed: {err[:200]}")
             return False, f"delete failed for acct={account!r}: {err[:200]}"
+        _log_acl_event(snapshot_path, "deleted")
 
-        add = run_security_stdin(add_args, timeout=30, run_fn=runner)
-        if add.returncode != 0:
-            err = (add.stderr or add.stdout or "").strip() or f"exit {add.returncode}"
-            return False, f"add failed for acct={account!r}: {err[:200]}"
+        try:
+            add = run_security_stdin(add_args, timeout=30, run_fn=runner)
+            add_err = (
+                "" if add.returncode == 0 else (add.stderr or add.stdout or "").strip() or f"exit {add.returncode}"
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            add_err = f"{exc.__class__.__name__}: {exc}"
+        if add_err:
+            _log_acl_event(snapshot_path, f"add failed: {add_err[:200]}")
+            rolled = _rollback_item(
+                snapshot,
+                service=CODEXBAR_CACHE_SERVICE,
+                account=account,
+                secret=secret,
+                keychain=kc,
+                keychain_password=keychain_password,
+                runner=runner,
+                snapshot_path=snapshot_path,
+            )
+            return False, f"add failed for acct={account!r}: {add_err[:200]}; {rolled} (snapshot: {snapshot_path})"
+        _log_acl_event(snapshot_path, "re-added with CodexBar.app, CodexBarCLI and /usr/bin/security trusted")
 
         if keychain_password is not None and keychain_password != "":
             try:
@@ -427,6 +611,12 @@ def fix_codexbar_cache_all(
         if unknown:
             lines.append(f"  note: not currently in keychain dump: {', '.join(unknown)}")
 
+    # One ACL dump (metadata only) serves as the rollback snapshot for every account.
+    acl_dump: str | None = None
+    if not dry_run and login_keychain_path().is_file():
+        dumped, text = dump_keychain_acl(login_keychain_path(), run_fn=run_fn)
+        if dumped.ok:
+            acl_dump = text
     failures = 0
     for acct in targets:
         ok, msg = fix_codexbar_cache_account(
@@ -437,6 +627,7 @@ def fix_codexbar_cache_all(
             cli_path=cli,
             team_id=tid,
             run_fn=run_fn,
+            acl_dump=acl_dump,
         )
         lines.append(f"  {'ok' if ok else 'FAIL'}  {msg}")
         if not ok:

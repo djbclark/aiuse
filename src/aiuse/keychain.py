@@ -7,14 +7,19 @@
 2. Secrets off argv: :func:`run_security_stdin` feeds one command to
    ``security -i`` on stdin, so ``-w <secret>`` and ``-k <password>`` never
    appear in ``ps`` output.
+3. ACL metadata: :func:`parse_dump_keychain_acl` reads ``security
+   dump-keychain -a`` output (attributes and access lists, never secrets).
 
 See docs/research/macos-keychain-access.md (branch claudehelm/keychain-research).
 """
 
 from __future__ import annotations
 
+import binascii
+import plistlib
+import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -200,3 +205,236 @@ def run_security_stdin(
         check=False,
         timeout=timeout,
     )
+
+
+# --- ACL metadata (dump-keychain -a) ----------------------------------------
+
+_ATTR_RE = re.compile(r'^\s+(?:"(?P<name>[a-z]{4})"|(?P<hex>0x[0-9A-Fa-f]{8}))\s*<[a-z0-9]+>=(?P<value>.*)$')
+_APP_RE = re.compile(r"^\s+\d+:\s+(?P<path>.+?)(?:\s+\((?P<status>[^()]*)\))?\s*$")
+
+
+@dataclass(frozen=True)
+class TrustedApp:
+    path: str
+    status: str | None  # "OK" or the failure text security printed, e.g. "status -67068"
+    requirement: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return (self.status or "").upper() == "OK"
+
+    @property
+    def requirement_kind(self) -> str:
+        """cdhash (ad-hoc, breaks every rebuild) / team / certificate / apple / identifier / unknown."""
+        req = self.requirement or ""
+        if "cdhash" in req:
+            return "cdhash"
+        if "subject.OU" in req:
+            return "team"
+        if "certificate root = H" in req or "certificate leaf = H" in req:
+            return "certificate"  # pinned to one (e.g. self-signed) certificate
+        if "anchor apple" in req and "generic" not in req:
+            return "apple"
+        if req.startswith("identifier"):
+            return "identifier"
+        return "unknown"
+
+    @property
+    def is_security_tool(self) -> bool:
+        return self.path == "/usr/bin/security"
+
+
+@dataclass
+class ItemAcl:
+    """ACL metadata of one keychain item. No secret material."""
+
+    item_class: str
+    service: str | None = None
+    account: str | None = None
+    label: str | None = None
+    keychain: str | None = None
+    # None = "applications: <null>" (any application may decrypt without a prompt).
+    decrypt_apps: list[TrustedApp] | None = field(default_factory=list)
+    partitions: list[str] | None = None  # None = no partition_id entry
+
+    @property
+    def allows_any_app(self) -> bool:
+        return self.decrypt_apps is None
+
+    @property
+    def trusts_security_tool(self) -> bool:
+        return self.decrypt_apps is None or any(app.is_security_tool for app in self.decrypt_apps)
+
+    def trusted_paths(self) -> list[str]:
+        return [app.path for app in self.decrypt_apps or []]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "class": self.item_class,
+            "service": self.service,
+            "account": self.account,
+            "label": self.label,
+            "keychain": self.keychain,
+            "allows_any_app": self.allows_any_app,
+            "decrypt_apps": None
+            if self.decrypt_apps is None
+            else [
+                {
+                    "path": app.path,
+                    "status": app.status,
+                    "requirement": app.requirement,
+                    "requirement_kind": app.requirement_kind,
+                }
+                for app in self.decrypt_apps
+            ],
+            "partitions": self.partitions,
+        }
+
+
+def _attr_value(raw: str) -> str | None:
+    raw = raw.strip()
+    if raw == "<NULL>":
+        return None
+    if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+        return raw[1:-1]
+    # 0x<hex>  "printable"  (non-UTF-8 blobs)
+    match = re.match(r'0x[0-9A-Fa-f]+\s+"(.*)"$', raw)
+    if match:
+        return match.group(1)
+    return raw
+
+
+def _parse_partitions(description: str) -> list[str]:
+    text = description.strip()
+    if re.fullmatch(r"[0-9A-Fa-f]+", text) and len(text) % 2 == 0:
+        try:
+            data = plistlib.loads(binascii.unhexlify(text))
+        except (binascii.Error, ValueError, plistlib.InvalidFileException):
+            data = None
+        if isinstance(data, dict) and isinstance(data.get("Partitions"), list):
+            return [str(p) for p in data["Partitions"]]
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def parse_dump_keychain_acl(text: str) -> list[ItemAcl]:
+    """Parse ``security dump-keychain -a`` into one :class:`ItemAcl` per item."""
+    items: list[ItemAcl] = []
+    current: ItemAcl | None = None
+    keychain: str | None = None
+    entry_auths: list[str] = []
+    entry_desc: str | None = None
+    entry_apps: list[TrustedApp] | None = []
+    in_apps = False
+    section = ""
+
+    def flush_entry() -> None:
+        nonlocal entry_auths, entry_desc, entry_apps, in_apps
+        if current is not None and entry_auths:
+            if "decrypt" in entry_auths:
+                current.decrypt_apps = entry_apps
+            if "partition_id" in entry_auths and entry_desc is not None:
+                current.partitions = _parse_partitions(entry_desc)
+        entry_auths, entry_desc, entry_apps, in_apps = [], None, [], False
+
+    def flush_item() -> None:
+        nonlocal current
+        flush_entry()
+        if current is not None:
+            items.append(current)
+        current = None
+
+    for line in text.splitlines():
+        if line.startswith("keychain: "):
+            flush_item()
+            keychain = _attr_value(line[len("keychain: ") :])
+            continue
+        if line.startswith("class: "):
+            if current is not None:
+                flush_item()
+            current = ItemAcl(item_class=(_attr_value(line[len("class: ") :]) or ""), keychain=keychain)
+            section = ""
+            continue
+        if current is None:
+            continue
+        if line.startswith("attributes:"):
+            section = "attributes"
+            continue
+        if line.startswith("access:"):
+            section = "access"
+            continue
+        if section == "attributes":
+            match = _ATTR_RE.match(line)
+            if not match:
+                continue
+            name = match.group("name") or match.group("hex")
+            value = _attr_value(match.group("value"))
+            if name == "svce":
+                current.service = value
+            elif name == "acct":
+                current.account = value
+            elif name in ("labl", "0x00000007"):
+                current.label = value
+            continue
+        if section != "access":
+            continue
+        stripped = line.strip()
+        if re.match(r"entry \d+:$", stripped):
+            flush_entry()
+            continue
+        if stripped.startswith("authorizations"):
+            entry_auths = stripped.split(":", 1)[1].split() if ":" in stripped else []
+            continue
+        if stripped.startswith("description:"):
+            entry_desc = stripped[len("description:") :].strip()
+            continue
+        if stripped.startswith("applications"):
+            if "<null>" in stripped:
+                entry_apps = None
+                in_apps = False
+            else:
+                entry_apps = []
+                in_apps = True
+            continue
+        if in_apps and entry_apps is not None:
+            if stripped.startswith("requirement:") and entry_apps:
+                last = entry_apps[-1]
+                entry_apps[-1] = TrustedApp(last.path, last.status, stripped[len("requirement:") :].strip())
+                continue
+            app = _APP_RE.match(line)
+            if app:
+                entry_apps.append(TrustedApp(app.group("path"), app.group("status")))
+    flush_item()
+    return items
+
+
+def find_item_acls(text: str, service: str, account: str | None = None) -> list[ItemAcl]:
+    return [
+        item
+        for item in parse_dump_keychain_acl(text)
+        if item.service == service and (account is None or item.account == account)
+    ]
+
+
+def dump_keychain_acl(
+    keychain: Path,
+    *,
+    timeout: float = 60.0,
+    run_fn: RunFn | None = None,
+) -> tuple[KeychainResult, str]:
+    """``security dump-keychain -a <keychain>``: ACL metadata, never secrets (no ``-d``)."""
+    runner = run_fn if run_fn is not None else subprocess.run
+    try:
+        proc = runner(
+            ["security", "dump-keychain", "-a", str(keychain)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return KeychainResult(status=PROMPT, detail=f"timed out after {timeout:g}s"), ""
+    except FileNotFoundError:
+        return KeychainResult(status=UNAVAILABLE), ""
+    except OSError as exc:
+        return KeychainResult(status=ERROR, detail=exc.__class__.__name__), ""
+    return result_from_process(proc), proc.stdout or ""
