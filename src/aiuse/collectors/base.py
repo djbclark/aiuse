@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from typing import Any
 
 
@@ -21,6 +23,70 @@ def which(cmd: str) -> str | None:
     return shutil.which(cmd)
 
 
+def which_all(cmd: str, *, extra_paths: tuple[str, ...] = ()) -> list[str]:
+    """Every executable named ``cmd`` on PATH, in PATH order, then ``extra_paths``.
+
+    Duplicates (the same file reached through different symlinks or PATH
+    entries) are dropped, keeping the first. Unlike :func:`which` this lets a
+    collector look past a same-named binary from an unrelated product that
+    happens to sit earlier on PATH.
+    """
+    seen: set[str] = set()
+    found: list[str] = []
+    search = [os.path.join(d, cmd) for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    search.extend(os.path.expanduser(p) for p in extra_paths)
+    for path in search:
+        if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+            continue
+        real = os.path.realpath(path)
+        if real in seen:
+            continue
+        seen.add(real)
+        found.append(path)
+    return found
+
+
+def first_tool(
+    cmd: str,
+    accept: Callable[[str], bool],
+    *,
+    extra_paths: tuple[str, ...] = (),
+) -> tuple[str | None, list[str]]:
+    """The first ``cmd`` candidate that ``accept`` approves, plus the rejected ones.
+
+    ``accept`` is called with each candidate path in :func:`which_all` order
+    until one passes; the rejected candidates are returned for diagnostics.
+    """
+    rejected: list[str] = []
+    for path in which_all(cmd, extra_paths=extra_paths):
+        if accept(path):
+            return path, rejected
+        rejected.append(path)
+    return None, rejected
+
+
+def probe_output(argv: list[str], *, timeout: float = 5.0) -> str:
+    """stdout+stderr of a short, detached, non-interactive probe ("" on failure).
+
+    Same isolation as :func:`run_json` (no stdin, new session) so a binary
+    that would open a TUI on /dev/tty fails fast instead of taking over the
+    user's terminal.
+    """
+    try:
+        proc = subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            start_new_session=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return (proc.stdout or "") + (proc.stderr or "")
+
+
 def run_json(
     argv: list[str],
     *,
@@ -32,6 +98,14 @@ def run_json(
         # Never inherit the caller's TTY on stdin. Tools like ``caut usage``
         # put stdin into raw mode; on timeout/kill that leaves the shell with
         # echo off until the user runs ``reset``.
+        #
+        # ``start_new_session`` also detaches the child from the controlling
+        # terminal, so a tool that opens /dev/tty directly (a Go/bubbletea TUI
+        # such as openusage.sh's ``openusage`` does this when stdin is not a
+        # terminal) cannot switch the user's terminal into raw mode at all:
+        # its open() fails and it exits instead of hanging until the timeout.
+        # Collector children are non-interactive by contract, so nothing
+        # legitimate needs the terminal.
         proc = subprocess.run(
             argv,
             stdin=subprocess.DEVNULL,
@@ -39,6 +113,7 @@ def run_json(
             text=True,
             timeout=timeout,
             check=False,
+            start_new_session=True,
         )
     except FileNotFoundError as exc:
         raise CollectorError(f"command not found: {argv[0]}") from exc

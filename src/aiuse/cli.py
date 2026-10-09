@@ -878,6 +878,19 @@ def diagnose(
     for collector_key, cmd, version_argv in _EXTERNAL_TOOLS:
         enabled = _collector_enabled(config, collector_key)
         path = lookup(cmd)
+        if collector_key == "openusage_ai" and which_fn is None and probe:
+            # Two products ship an ``openusage`` binary; only OpenUsage.app's
+            # prints JSON. Report the one the collector will actually run and
+            # warn about any same-named binary it had to skip.
+            from aiuse.collectors.openusage import resolve_app_cli
+
+            path, foreign = resolve_app_cli()
+            if foreign:
+                used = f"using {path}" if path else "no OpenUsage.app CLI found, loopback HTTP only"
+                lines.append(
+                    f"  warning  {', '.join(foreign)} is not OpenUsage.app's CLI "
+                    f"(openusage.sh's terminal dashboard?) — {used}"
+                )
         if path:
             status = "ok"
             detail = path

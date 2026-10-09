@@ -111,6 +111,21 @@ brew unlink openusage
 # Create a local `openusage-sh` wrapper to /opt/homebrew/opt/openusage/bin/openusage.
 ```
 
+**If the formula is linked anyway** (`/opt/homebrew/bin/openusage` ahead of
+`/usr/local/bin/openusage`), aiuse still finds the right one. Since 3.3.1 the
+OpenUsage.ai collector never trusts the first `openusage` on PATH: it walks every
+candidate (PATH order, then `/usr/local/bin/openusage` and the app bundle's
+`Contents/Helpers/openusage`) and runs the first that proves to be the app CLI,
+either by resolving into `OpenUsage.app` or by answering `--help` with the app
+CLI's banner (a detached 5 s probe). The reason this matters: openusage.sh's
+binary run with no subcommand opens its full-screen dashboard on `/dev/tty`
+even when stdin is `/dev/null`, never exits, and once killed at the collector
+timeout it leaves the terminal in raw mode, so the report that follows prints
+as a staircase (each line starting where the previous ended). Collector
+children now also run in a new session (`start_new_session`), which makes
+`/dev/tty` unopenable for them, and the runner restores termios before anything
+is rendered. `aiuse doctor` names any same-named binary it skipped.
+
 `aiuse` invokes `openusage-sh export --output - --format json`; it accepts only
 explicit rate-limit and plan-percent metrics as quota windows, never local
 token/cost estimates. Identical metric aliases are collapsed, while Cursor's

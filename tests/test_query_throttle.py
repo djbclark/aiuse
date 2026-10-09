@@ -151,7 +151,7 @@ def test_openusage_withholds_force_while_antigravity_is_throttled(monkeypatch):
         forced.append(force_refresh)
         return payload, "cli"
 
-    monkeypatch.setattr(openusage, "which", lambda _cmd: "/usr/local/bin/openusage")
+    monkeypatch.setattr(openusage, "app_cli_path", lambda: "/usr/local/bin/openusage")
     monkeypatch.setattr(openusage, "_fetch_limits", fake_fetch)
     limits = {"antigravity": 900.0}
 
@@ -173,7 +173,7 @@ def test_openusage_force_without_antigravity_does_not_spend_the_slot(monkeypatch
             }
         }
     }
-    monkeypatch.setattr(openusage, "which", lambda _cmd: "/usr/local/bin/openusage")
+    monkeypatch.setattr(openusage, "app_cli_path", lambda: "/usr/local/bin/openusage")
     monkeypatch.setattr(openusage, "_fetch_limits", lambda **_kw: (payload, "cli"))
     openusage.collect_openusage_ai(min_intervals={"antigravity": 900.0})
 

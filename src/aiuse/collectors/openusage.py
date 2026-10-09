@@ -11,6 +11,7 @@ Schema: ``openusage.limits.v1`` — providers keyed by id with ``resources``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import urllib.error
 import urllib.parse
@@ -30,8 +31,79 @@ from aiuse.models import (
     coerce_float as _f,
 )
 
-from .base import CollectorError, run_json, which
+from .base import CollectorError, first_tool, probe_output, run_json
 from .throttle import QueryGate
+
+# Two unrelated products ship a binary called ``openusage``. OpenUsage.app's
+# CLI (a symlink to the bundled helper below, installed from Settings →
+# Command Line) prints JSON and exits; openusage.sh's Go binary opens a
+# full-screen terminal dashboard on /dev/tty when run without a subcommand,
+# hangs until the collector timeout, and when killed leaves the terminal in
+# raw mode. So the collector never trusts the first ``openusage`` on PATH: it
+# walks every candidate (PATH order, then the usual install locations) and
+# runs the first one that proves to be the app CLI — by resolving into
+# OpenUsage.app, or failing that by answering ``--help`` with the app CLI's
+# usage text. Verdicts are cached per path for the life of the process.
+_APP_HELPER_SUFFIX = os.path.join("OpenUsage.app", "Contents", "Helpers", "openusage")
+_KNOWN_APP_CLI_PATHS: tuple[str, ...] = (
+    "/usr/local/bin/openusage",
+    "/Applications/OpenUsage.app/Contents/Helpers/openusage",
+    "~/Applications/OpenUsage.app/Contents/Helpers/openusage",
+)
+# Fragments of OpenUsage.app's ``openusage --help`` banner ("Read limits
+# through OpenUsage's shared five-minute cache and exit. Output is always
+# JSON.") — any one of them identifies it; openusage.sh's help says
+# "terminal dashboard" and lists subcommands instead.
+_APP_HELP_MARKERS: tuple[str, ...] = ("Read limits through OpenUsage", "Output is always JSON")
+_PROBE_TIMEOUT_S = 5.0
+_cli_verdicts: dict[str, bool] = {}
+
+
+def _is_app_bundle_path(path: str) -> bool:
+    try:
+        real = os.path.realpath(os.path.expanduser(path))
+    except (OSError, ValueError):
+        return False
+    return real.endswith(_APP_HELPER_SUFFIX)
+
+
+def is_app_cli(path: str, *, probe: bool = True) -> bool:
+    """True when ``path`` is OpenUsage.app's CLI.
+
+    Cheap structural check first (resolves into OpenUsage.app); otherwise, with
+    ``probe``, a detached ``--help`` run that must print the app CLI's usage
+    text. Verdicts are cached per path.
+    """
+    cached = _cli_verdicts.get(path)
+    if cached is not None:
+        return cached
+    verdict = _is_app_bundle_path(path)
+    if not verdict and probe:
+        banner = probe_output([path, "--help"], timeout=_PROBE_TIMEOUT_S)
+        verdict = any(marker in banner for marker in _APP_HELP_MARKERS)
+    _cli_verdicts[path] = verdict
+    return verdict
+
+
+def clear_cli_verdicts() -> None:
+    """Forget cached ``is_app_cli`` verdicts (tests; after an install)."""
+    _cli_verdicts.clear()
+
+
+def resolve_app_cli() -> tuple[str | None, list[str]]:
+    """(path of OpenUsage.app's CLI or None, same-named binaries rejected on the way)."""
+    return first_tool("openusage", is_app_cli, extra_paths=_KNOWN_APP_CLI_PATHS)
+
+
+def app_cli_path() -> str | None:
+    """Path of OpenUsage.app's CLI, or None when only loopback HTTP is available."""
+    return resolve_app_cli()[0]
+
+
+def foreign_openusage_binaries() -> list[str]:
+    """``openusage`` binaries found that are not OpenUsage.app's CLI (doctor warning)."""
+    return resolve_app_cli()[1]
+
 
 DEFAULT_OPENUSAGE_BASE = "http://127.0.0.1:6736"
 DEFAULT_HTTP_TIMEOUT = 30.0
@@ -168,7 +240,7 @@ def _fetch_limits_gated(
     payload. Without ``--force`` OpenUsage serves its own cached reading.
     """
     gated = sorted(_gated_providers(min_intervals))
-    if not force_refresh or not gated or not which("openusage"):
+    if not force_refresh or not gated or not app_cli_path():
         payload, via = _fetch_limits(
             timeout=timeout, base_url=base_url, force_refresh=force_refresh, try_launch_app=try_launch_app
         )
@@ -201,7 +273,7 @@ def _fetch_limits(
     force_refresh: bool,
     try_launch_app: bool,
 ) -> tuple[dict[str, Any], str]:
-    cli = which("openusage")
+    cli = app_cli_path()
     if cli:
         argv = [cli]
         if force_refresh:

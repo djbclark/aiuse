@@ -19,6 +19,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
+from aiuse.tty import restore_stdin_tty, save_stdin_tty
 
 from .bailian import collect_bailian
 from .base import which
@@ -32,6 +33,7 @@ from .muse import collect_muse
 from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
+from .openusage import app_cli_path as openusage_app_cli_path
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .qwencloud import collect_qwencloud
@@ -113,6 +115,21 @@ _PROVIDER_ALIASES = PROVIDER_ID_ALIASES
 
 
 def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
+    """Collect from every enabled source, leaving the terminal as it was found.
+
+    A collector child that grabs the terminal (a TUI opened on /dev/tty, a tool
+    killed at its timeout in raw mode) must not corrupt the report printed right
+    after collection, so termios is restored here, before any rendering, as well
+    as at process exit (cli.main).
+    """
+    saved_tty = save_stdin_tty()
+    try:
+        return _run_collectors(config)
+    finally:
+        restore_stdin_tty(saved_tty)
+
+
+def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     config = config or {}
     collectors_cfg = config.get("collectors") or {}
     snapshot = Snapshot(collected_at=utcnow())
@@ -988,7 +1005,7 @@ def collector_tools_present() -> dict[str, bool]:
         "cswap": which("cswap") is not None,
         "codexbar": which("codexbar") is not None,
         "caut": which("caut") is not None,
-        "openusage_ai": which("openusage") is not None,
+        "openusage_ai": openusage_app_cli_path() is not None,
         "openusage_sh": which("openusage-sh") is not None,
         "tokscale": which("tokscale") is not None,
         "hermes": True,

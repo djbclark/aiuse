@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from types import SimpleNamespace
 
 import pytest
 
-from aiuse.collectors.base import CollectorError, run_json
+from aiuse.collectors.base import CollectorError, probe_output, run_json
 
 
 def _fake_run(stdout: str, *, returncode: int = 0):
@@ -93,3 +94,36 @@ def test_run_json_passes_stdin_devnull(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _run)
     assert run_json(["tool"]) == {"ok": True}
     assert seen.get("stdin") is subprocess.DEVNULL
+
+
+def test_run_json_detaches_children_from_the_terminal(monkeypatch):
+    """No stdin and a new session: a child cannot open /dev/tty and leave it raw."""
+    seen: dict[str, object] = {}
+
+    def _run(argv, **kwargs):  # noqa: ARG001
+        seen.update(kwargs)
+        return SimpleNamespace(stdout="{}", stderr="", returncode=0)
+
+    monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _run)
+    assert run_json(["tool"]) == {}
+    assert seen["stdin"] == subprocess.DEVNULL
+    assert seen["start_new_session"] is True
+
+
+def test_probe_output_is_detached_and_swallows_failure(monkeypatch):
+    seen: dict[str, object] = {}
+
+    def _run(argv, **kwargs):  # noqa: ARG001
+        seen.update(kwargs)
+        return SimpleNamespace(stdout="out ", stderr="err", returncode=1)
+
+    monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _run)
+    assert probe_output(["tool", "--help"]) == "out err"
+    assert seen["stdin"] == subprocess.DEVNULL
+    assert seen["start_new_session"] is True
+
+    def _boom(argv, **kwargs):  # noqa: ARG001
+        raise subprocess.TimeoutExpired(argv, 1)
+
+    monkeypatch.setattr("aiuse.collectors.base.subprocess.run", _boom)
+    assert probe_output(["tool", "--help"]) == ""
