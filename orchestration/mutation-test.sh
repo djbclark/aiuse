@@ -74,7 +74,12 @@ for tool in "${needed[@]}"; do
   }
 done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/judge-mutation.XXXXXX")
+# Checked: without it a failed mktemp left work="" under set -u (no -e), so
+# the rigs pointed at /<scenario> and cleanup ran rm -rf "".
+work=$(mktemp -d "${TMPDIR:-/tmp}/judge-mutation.XXXXXX") && [ -d "$work" ] || {
+  echo "mutation-test: cannot create a scratch directory under ${TMPDIR:-/tmp}" >&2
+  exit 2
+}
 # shellcheck disable=SC2329 # invoked by the EXIT trap
 cleanup() { [ "$keep" = yes ] || rm -rf "$work"; }
 trap cleanup EXIT

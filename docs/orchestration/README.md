@@ -323,5 +323,6 @@ before the fix.
     both recipes pass their arguments without word splitting. shellcheck is
     now a pre-commit hook for `orchestration/*.sh`, so CI lints the scripts
     too. It uses the system shellcheck, as `just shellcheck` does.
-
-Not changed yet: the nit 5m from the same review.
+13. **Mutation test: unchecked scratch directory (5m).** A failed
+    `mktemp -d` left the scratch path empty, so the rigs pointed at `/` and
+    cleanup ran `rm -rf ""`. The script now stops with exit 2.
