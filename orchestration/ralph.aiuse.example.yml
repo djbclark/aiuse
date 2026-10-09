@@ -1,0 +1,42 @@
+# ralph.yml for the US-005 supervised run (aiuse-juk.5). Copy it to ralph.yml
+# in a SEPARATE CLONE of aiuse (not a git worktree: ralph v2.10.1's landing
+# sequence runs `git stash clear`, and worktrees share one stash list), then
+# replace __TASK_ID__ with the bead the operator picked. Runbook:
+# docs/orchestration/README.md, section US-005.
+#
+# Written against the ralph-cli v2.10.1 release binary's accepted keys, checked
+# with `ralph hooks validate`. Unknown keys are silently ignored by ralph, so
+# do not add keys from HEAD docs without re-running that check.
+---
+cli:
+  backend: claude
+event_loop:
+  max_iterations: 10
+  completion_promise: LOOP_COMPLETE
+hooks:
+  enabled: true
+  defaults:
+    timeout_seconds: 120
+    max_output_bytes: 8192
+  events:
+    # Quota gate: refuse a new iteration at >= 80% of the active Claude 5h
+    # window. It never switches accounts.
+    pre.iteration.start:
+      - name: cswap-gate
+        command: ["./orchestration/cswap-gate.sh"]
+        on_error: block
+        timeout_seconds: 120
+    # Completion authority: tracker + git + the real `just check`.
+    pre.loop.complete:
+      - name: judge
+        command: ["./orchestration/judge.sh"]
+        on_error: block
+        timeout_seconds: 3600
+        env:
+          TASK_ID: "__TASK_ID__"
+          EXPECT_DIFF: "yes"
+          # bg caps parallelism and takes a machine-wide test slot.
+          TEST_CMD: "/Users/djbclark/ops/site-private/bin/bg just check"
+          # The beads database lives in the operator's main checkout.
+          BD_DIR: "/Users/djbclark/src/aiuse"
+          JUDGE_BASE: "origin/main"

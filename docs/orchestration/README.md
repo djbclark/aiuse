@@ -111,3 +111,107 @@ RALPH_BIN=/path/to/ralph uv run --extra dev pytest tests/test_orchestration_muta
 ```
 
 Re-run it after any ralph upgrade and after any change to the judge or gate.
+
+## US-005: runbook for the first supervised run
+
+US-005 is a supervised run, so the operator starts it. Nothing below has been
+run yet. The example config is
+[`../../orchestration/ralph.aiuse.example.yml`](../../orchestration/ralph.aiuse.example.yml),
+and `ralph hooks validate` passes on it.
+
+Three facts about ralph v2.10.1 shape these steps.
+
+- **Landing edits git state.** When a completion passes every hook, ralph
+  auto-commits leftovers, runs `git stash clear` and prunes remote-tracking
+  refs. No config key turns this off. Git worktrees share one stash list, so
+  the run goes in a separate clone, never a worktree of `~/src/aiuse`.
+- **ralph never pushes.** With the judge requiring a clean tree, the landing
+  auto-commit has nothing left to commit. The branch and the PR are created by
+  hand afterwards, which keeps the run off `main`.
+- **The claude backend runs unattended.** ralph v2.10.1 invokes
+  `claude --dangerously-skip-permissions --print` with stream-JSON output.
+
+### Before the run
+
+1. Merge this branch so `main` has the scripts and the `.ralph/` ignore rule.
+2. Import the backlog for real from the main checkout and check it:
+
+   ```bash
+   cd ~/src/aiuse && just beads-import --issue 17 && bd ready
+   ```
+
+3. Install the ralph-cli v2.10.1 release binary for aarch64-apple-darwin and
+   check its SHA-256 against the `.sha256` file from the same release. Then
+   re-run the mutation test with that binary:
+
+   ```bash
+   RALPH_BIN="$(command -v ralph)" orchestration/mutation-test.sh
+   ```
+
+4. Make the separate clone, here called `~/src/aiuse-ralph-run`, and set it up
+   so `just check` can run there. A new `~/src` entry also needs
+   `just -f ~/s/justfile`.
+
+   ```bash
+   git clone https://github.com/djbclark/aiuse ~/src/aiuse-ralph-run
+   cd ~/src/aiuse-ralph-run
+   git checkout -b ralph/<bead-id>
+   uv sync --extra dev && bun install --frozen-lockfile
+   ```
+
+5. Pick and claim the bead. The judge expects a code task, `EXPECT_DIFF=yes`.
+
+   ```bash
+   bd -C ~/src/aiuse ready
+   bd -C ~/src/aiuse update <bead-id> --claim
+   ```
+
+6. Write the config and the prompt, and keep both out of git. The judge
+   refuses any untracked file outside `.ralph/`.
+
+   ```bash
+   sed 's/__TASK_ID__/<bead-id>/' orchestration/ralph.aiuse.example.yml > ralph.yml
+   printf 'ralph.yml\nPROMPT.md\n' >> .git/info/exclude
+   ralph hooks validate -c ralph.yml
+   orchestration/cswap-gate.sh    # expect CSWAP GATE ALLOW
+   ```
+
+   A `PROMPT.md` that matches the judge:
+
+   ```text
+   You are working beads task <bead-id> in this aiuse clone, on branch ralph/<bead-id>.
+   Read it with: bd -C /Users/djbclark/src/aiuse show <bead-id>
+   Commit your work on this branch. Never push and never touch main.
+   Run ~/ops/site-private/bin/bg just check until it passes.
+   When the work is committed and the check passes, close the task:
+     bd -C /Users/djbclark/src/aiuse close <bead-id> --reason "<what changed, 20+ characters>"
+   Then print "tests: pass" and LOOP_COMPLETE on its own line.
+   A separate judge re-checks the tracker, git and the tests; claims are not trusted.
+   ```
+
+### The run
+
+```bash
+cd ~/src/aiuse-ralph-run
+RALPH_DIAGNOSTICS=1 ralph run -c ralph.yml -P PROMPT.md
+```
+
+Either judge verdict is an acceptable outcome. The evidence lives in
+`.ralph/judge/verdicts.log`, the `.ralph/judge/test-*.log` files, and
+`.ralph/diagnostics/*/hook-runs.jsonl`, which holds ralph's own copy of each
+hook's output.
+
+### After the run
+
+Verify the result independently, never from the loop's status line:
+
+```bash
+bd -C ~/src/aiuse show <bead-id>
+git -C ~/src/aiuse-ralph-run log --oneline origin/main..HEAD
+git -C ~/src/aiuse-ralph-run push -u origin ralph/<bead-id>
+gh pr create -R djbclark/aiuse --head ralph/<bead-id>
+gh pr view -R djbclark/aiuse ralph/<bead-id>
+```
+
+If the judge refused, the agent may already have closed the bead. Reopen it
+with `bd -C ~/src/aiuse reopen <bead-id>` before deciding what to do next.
