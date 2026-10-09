@@ -291,6 +291,7 @@ aiuse mcp                  # read-only MCP stdio server, same payloads (docs/age
 aiuse watch                # full-screen board (q/esc quit; default 10m)
 aiuse watch -i 2m          # faster refresh
 aiuse watch --once         # one frame on stdout (scripts / tmux)
+aiuse history              # History insights from saved snapshots, no collect (--json too)
 aiuse attribute            # what spent the quota: points burned beside tokens per client
 aiuse attribute --since 7d --provider clinepass --intervals
 aiuse sample               # scheduled entry point: samples faster while quota is moving

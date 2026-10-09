@@ -60,6 +60,37 @@ when pace used learned rates.
 Full `aiuse --json` also includes a top-level `history` object (learned rates,
 late-cycle leftovers, chronic underuse) — see [`json-contract.md`](json-contract.md).
 
+## `aiuse history` (no collect)
+
+[Issue #13](https://github.com/djbclark/aiuse/issues/13). `aiuse history` prints
+the same History section as `--full`, without collecting: it reads the newest
+saved snapshot and the retained history behind it, so it touches no vendor
+(a few seconds with thousands of snapshots). It leads with one line naming what
+history says to burn:
+
+```text
+aiuse history · newest snapshot 2026-10-09 06:30 UTC (3m old) · read from disk, no collect
+Burn from history: Codex weekly (~68% left late, 2 samples) · Claude weekly (~52% left late, 9 samples)
+History: 2592 snapshots in …/snapshots (learning auto/on)
+  …
+```
+
+The headline lists up to three `burn_candidates_from_history` (windows usually
+left ≥40% late in their cycle), then `+N more`. It says "nothing stands out"
+when learning is on and nothing qualifies, and is omitted while learning is off
+or waiting (the section explains why).
+
+`aiuse history --json` is the scripting path to "what to burn from history":
+
+```bash
+aiuse history --json | jq -r '.history.burn_candidates_from_history[] | "\(.provider) \(.duration_kind)"'
+```
+
+It prints `schema_version`, `contract_url`, `source: "cache"`, `collected_at`,
+`age_seconds` and `history`, the same object as the top-level `history` on full
+`--json` (see [`json-contract.md`](json-contract.md)). Exit 1 when no snapshot
+exists yet.
+
 ## What learning does
 
 When active ([`src/aiuse/analysis/history.py`](../src/aiuse/analysis/history.py)):
@@ -83,3 +114,4 @@ and leaves learning on `auto`.
 - [`config/config.example.toml`](../config/config.example.toml) — example keys
 - [`competitive-landscape.md`](competitive-landscape.md) — History vs onWatch BI
 - [`scheduling.md`](scheduling.md) — LaunchAgent that densifies snapshots
+- [`next-options.md`](next-options.md) — where History polish ([#13](https://github.com/djbclark/aiuse/issues/13)) sits

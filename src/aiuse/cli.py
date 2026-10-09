@@ -72,6 +72,7 @@ config & setup:
                            window moved, every 3m in a burst (docs/attribution.md)
   aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
                            --provider ID, --intervals, --json)
+  aiuse history               History insights from saved snapshots, no collect (--json for scripts)
   aiuse schema                print the machine-readable JSON contract (markdown) for AI agents
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
@@ -157,6 +158,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     p.add_argument("--mcp", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--history", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--sample", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--attribute", action="store_true", help=argparse.SUPPRESS)
     p.add_argument(
@@ -394,6 +396,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--sample", *raw[1:]]
     if head == "attribute":
         return ["--attribute", *raw[1:]]
+    if head == "history":
+        return ["--history", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -477,6 +481,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
 
     if getattr(args, "watch", False):
         return _run_watch(args, config)
+    if getattr(args, "history", False):
+        return _run_history(args, config)
     if getattr(args, "sample", False):
         from aiuse.sampler import run_sample
 
@@ -1044,6 +1050,89 @@ def _run_attribute(args: argparse.Namespace, config: dict[str, Any]) -> int:
     else:
         print(render_attribution(report, intervals=bool(args.intervals)))
     return 0
+
+
+def _age_text(seconds: float | None) -> str:
+    if seconds is None:
+        return "age unknown"
+    if seconds < 90:
+        return f"{seconds:.0f}s old"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f}m old"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.0f}h old"
+    return f"{seconds / 86400:.1f}d old"
+
+
+def history_burn_headline(insights: dict[str, Any]) -> str | None:
+    """One line naming what history says to burn; None while learning is inactive."""
+    from aiuse.models import provider_display_name
+
+    if not insights.get("learning_active"):
+        return None
+    candidates = insights.get("burn_candidates_from_history") or []
+    if not candidates:
+        return "Burn from history: nothing stands out (no window is usually left ≥40% late in its cycle)."
+    parts = []
+    for item in candidates[:3]:
+        n = int(item.get("sample_count") or 0)
+        parts.append(
+            f"{provider_display_name(str(item.get('provider') or ''))} {item.get('duration_kind')} "
+            f"(~{float(item.get('avg_remaining_pct') or 0):.0f}% left late, {n} sample{'s' if n != 1 else ''})"
+        )
+    more = len(candidates) - len(parts)
+    tail = f" · +{more} more" if more > 0 else ""
+    return "Burn from history: " + " · ".join(parts) + tail
+
+
+def _run_history(args: argparse.Namespace, config: dict[str, Any]) -> int:
+    """`aiuse history [--json]` — History insights from snapshots on disk (issue #13).
+
+    Never collects: it reads the newest saved snapshot and the retained history
+    behind it, so it answers in a moment and touches no vendor. Exit 1 when
+    there is no snapshot yet.
+    """
+    from aiuse.analysis.history import history_section_lines, load_recent_snapshots, snapshot_dir
+    from aiuse.analysis.selfdescribe import SCHEMA_VERSION, freshness
+    from aiuse.serve import _snapshot_from_accounts_dict
+
+    raw_analysis = config.get("analysis")
+    analysis_cfg: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
+    try:
+        retention = int(analysis_cfg.get("snapshot_retention_days") or 90)
+    except (TypeError, ValueError):
+        retention = 90
+    rows = load_recent_snapshots(retention_days=retention, max_count=1)
+    if not rows:
+        print(
+            f"aiuse history: no snapshots in {snapshot_dir()} yet. Run `aiuse` with "
+            "analysis.persist_snapshots on, or leave the LaunchAgent sampling (docs/scheduling.md).",
+            file=sys.stderr,
+        )
+        return EXIT_FAILURE
+    snapshot = _snapshot_from_accounts_dict(rows[0])
+    insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
+    collected_at = rows[0].get("collected_at")
+    age = freshness(collected_at)["age_seconds"]
+    if bool(args.json) or args.format == "json":
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
+            "source": "cache",
+            "collected_at": collected_at,
+            "age_seconds": age,
+            "history": insights,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        return EXIT_OK
+    when = snapshot.collected_at.strftime("%Y-%m-%d %H:%M UTC")
+    print(f"aiuse history · newest snapshot {when} ({_age_text(age)}) · read from disk, no collect")
+    headline = history_burn_headline(insights)
+    if headline:
+        print(headline)
+    for line in history_section_lines(snapshot, analysis_cfg=analysis_cfg):
+        print(line)
+    return EXIT_OK
 
 
 def _run_available(args: argparse.Namespace) -> int:

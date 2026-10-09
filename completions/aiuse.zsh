@@ -46,6 +46,7 @@ _aiuse() {
     'serve:loopback HTTP API for agents'
     'mcp:read-only MCP stdio server for agents'
     'watch:full-screen quota board (q/esc quit)'
+    'history:History insights from saved snapshots (no collect)'
   )
   _arguments -s -S $opts
 }

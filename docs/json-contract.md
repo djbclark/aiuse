@@ -213,6 +213,11 @@ the payload (`antigravity`, `opencode-go`), never the `[plans]` config key
 (`gemini`, `opencode`). Sorting or joining history rows against `accounts[]`
 rows by provider is therefore safe.
 
+`aiuse history --json` prints this object without collecting, from the newest
+saved snapshot: `{schema_version, contract_url, source: "cache", collected_at,
+age_seconds, history}` ([`history-learning.md`](history-learning.md)). Exit 1
+when no snapshot exists yet.
+
 `chronic_underuse` entries carry:
 
 | Field               | Type        | Notes                                                                  |
