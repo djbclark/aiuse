@@ -102,6 +102,14 @@
 # [analysis.excluded_pools]
 # "grok" = "operator: reserve for GrokBot, 2026-10-06"
 
+# Operator-disabled services — stronger than excluded_pools: "provider" =
+# reason (or true). The service is off-limits overall: provider-only collectors
+# skip it, its rows are dropped from every report/snapshot/history entry, and
+# `aiuse --available` never lists it (even from a cache written before the
+# entry). For TUIs that must temporarily not be used even with headroom.
+# [disabled_services]
+# "grok" = "operator: preserve grokbot this week (2026-10-08)"
+
 [analysis.pace]
 # waste_alert_fraction = 0.30
 # min_elapsed_fraction = 0.15

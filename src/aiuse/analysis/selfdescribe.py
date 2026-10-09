@@ -49,6 +49,7 @@ SEMANTICS: dict[str, str] = {
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
+    "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
 }
 
 # (substring, family, models_hint) matched against the lowercased window label,
@@ -230,6 +231,9 @@ def enrich_snapshot(
     snap["accounts"] = accounts
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     snap["semantics"] = dict(SEMANTICS)
+    # Snapshots written before this field existed have no key; every reader
+    # can rely on it being present (empty = nothing disabled).
+    snap.setdefault("disabled_services", {})
     if notes:
         snap["agent_notes"] = [
             {

@@ -116,6 +116,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # the pool out, so `--available` omits it and lists it under `excluded`.
         "excluded_pools": {},
     },
+    # Operator-disabled services ("provider" -> reason or true). Stronger than
+    # analysis.excluded_pools (routing-only): a disabled service is off-limits
+    # overall — provider-only collectors skip it, its rows are dropped from
+    # every report/snapshot, and `--available` never lists it even from a
+    # stale cache. Use for TUIs that must temporarily not be used even though
+    # they have headroom.
+    "disabled_services": {},
     "plans": {
         "codex": {
             "name": "ChatGPT / Codex Plus",
@@ -288,6 +295,7 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "macos",
         "sampling",
         "attribution",
+        "disabled_services",
     }
 )
 KNOWN_TIMEOUT_KEYS = frozenset(
@@ -546,6 +554,16 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     issues.append(f"error: analysis.excluded_pools key {key!r} needs a provider")
                 if not (value is True or (isinstance(value, str) and value.strip())):
                     issues.append(f"error: analysis.excluded_pools.{key} needs a reason string or true")
+
+    disabled_services = cfg.get("disabled_services")
+    if disabled_services is not None and not isinstance(disabled_services, dict):
+        issues.append("error: disabled_services must be a 'provider' -> reason mapping")
+    elif isinstance(disabled_services, dict):
+        for key, value in disabled_services.items():
+            if not str(key).split("/", 1)[0].strip():
+                issues.append(f"error: disabled_services key {key!r} needs a provider")
+            if not (value is True or (isinstance(value, str) and value.strip())):
+                issues.append(f"error: disabled_services.{key} needs a reason string or true")
 
     plans = cfg.get("plans")
     if plans is not None and not isinstance(plans, dict):

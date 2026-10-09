@@ -87,6 +87,39 @@ SOURCE_LABELS: dict[str, str] = {
     "grok_billing": "Grok Billing (native)",
 }
 
+# Collectors that serve exactly one provider. When that provider is disabled
+# via [disabled_services] the collector is skipped entirely — no subprocess,
+# no authenticated fetch whose result would only be filtered out afterwards.
+# Multi-provider collectors (codexbar, caut, openusage_*, tokscale, hermes)
+# still run; their rows for disabled providers are dropped after collection.
+SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
+    "cswap": "claude",
+    "grok_billing": "grok",
+    "muse": "muse",
+    "qwencloud": "qwencloud",
+    "bailian": "alibaba",
+    "opencode_go": "opencode-go",
+    "opencode_zen": "opencode-zen",
+    "clinepass": "clinepass",
+    "openrouter": "openrouter",
+}
+
+
+def _disabled_services(config: dict[str, Any]) -> dict[str, str]:
+    """Canonical provider -> reason from top-level ``[disabled_services]``."""
+    raw = config.get("disabled_services")
+    if not isinstance(raw, dict):
+        return {}
+    disabled: dict[str, str] = {}
+    for key, value in raw.items():
+        provider = canonical_provider(str(key).strip())
+        if not provider:
+            continue
+        reason = value.strip() if isinstance(value, str) and value.strip() else "disabled by operator"
+        disabled[provider] = reason
+    return disabled
+
+
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
 # and the history/analysis passes cannot drift onto different spellings.
 _PROVIDER_ALIASES = PROVIDER_ID_ALIASES
@@ -97,6 +130,8 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     collectors_cfg = config.get("collectors") or {}
     snapshot = Snapshot(collected_at=utcnow())
     intervals = min_intervals(config)
+    disabled_services = _disabled_services(config)
+    disabled_providers = set(disabled_services)
 
     # Each collector shells out (or hits loopback) independently — run concurrently.
     # Correctness: long default timeouts; all enabled sources always queried.
@@ -173,6 +208,11 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     if _enabled(collectors_cfg, "bailian"):
         jobs.append(("bailian", partial(collect_bailian, timeout=timeout_for(config, "bailian"))))
 
+    # Provider-only collectors of a disabled service never run (see
+    # SINGLE_PROVIDER_COLLECTORS) — the rows would be filtered out below anyway.
+    if disabled_providers:
+        jobs = [(name, fn) for name, fn in jobs if SINGLE_PROVIDER_COLLECTORS.get(name) not in disabled_providers]
+
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
             futures = {name: pool.submit(fn) for name, fn in jobs}
@@ -181,6 +221,15 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 snapshot.accounts.extend(futures[name].result())
             except Exception as exc:  # noqa: BLE001
                 snapshot.collector_errors.append(f"{name}: {exc}")
+
+    snapshot.disabled_services = disabled_services
+    if disabled_providers:
+        # A disabled service is off-limits overall: drop every row for it so
+        # no surface (report, ladder, matrix, JSON, history, cache) presents
+        # its quota as usable. Canonical aliases (e.g. "grok-build") match too.
+        snapshot.accounts = [
+            account for account in snapshot.accounts if canonical_provider(account.provider) not in disabled_providers
+        ]
 
     _merge_grok_extra_credits(snapshot.accounts)
     snapshot.accounts, snapshot.cross_checks = _select_and_cross_check(

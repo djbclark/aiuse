@@ -284,6 +284,13 @@ top-level `excluded` array — `provider`, `account`, `pool_family`,
 from "exhausted". Text mode prints one `excluded by operator: …` line per pool
 on stderr. The exit code counts only `available`.
 
+Providers in top-level `[disabled_services]` (the stronger, overall disable)
+are also never listed: their rows are filtered at collection, and the view
+additionally drops them from any cache that still carries them — so they can
+appear in `excluded` with the disabled reason too. The payload carries a
+top-level `disabled_services` object (`provider` → reason, `{}` when none)
+mirroring the snapshot field, plus its `semantics` entry.
+
 ## `aiuse note-exhausted` — agent-reported exhaustion overrides
 
 ```
@@ -322,12 +329,13 @@ into the other.
 
 ## `snapshot` object
 
-| Field              | Type              | Notes                              |
-| ------------------ | ----------------- | ---------------------------------- |
-| `collected_at`     | string (ISO-8601) | UTC collection time                |
-| `accounts`         | array             | Selected live rows (see below)     |
-| `cross_checks`     | array             | Informational tool comparisons     |
-| `collector_errors` | string[]          | Per-source failures (`"cswap: …"`) |
+| Field               | Type              | Notes                                                                                                                                                                                      |
+| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `collected_at`      | string (ISO-8601) | UTC collection time                                                                                                                                                                        |
+| `accounts`          | array             | Selected live rows (see below)                                                                                                                                                             |
+| `cross_checks`      | array             | Informational tool comparisons                                                                                                                                                             |
+| `collector_errors`  | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
+| `disabled_services` | object            | provider → reason from top-level `[disabled_services]` (1.1; `{}` = none). Rows for these providers are not collected — do not route to or spend them until the operator removes the entry |
 
 ### `accounts[]` (`AccountUsage`)
 

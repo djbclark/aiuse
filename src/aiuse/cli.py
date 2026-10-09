@@ -1081,7 +1081,12 @@ def _run_available(args: argparse.Namespace) -> int:
 
     enrich_snapshot(snap_dict, notes=notes)
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
-    pools, excluded = apply_exclusions(available_pools(snap_dict), analysis_cfg.get("excluded_pools"))
+    # [disabled_services] is the stronger, overall disable: rows are normally
+    # filtered at collection, but a cache written by an older build (or with
+    # the entry added after the snapshot) can still carry the pools — so the
+    # view applies it on top of the routing-only excluded_pools rules.
+    exclusions = {**(config.get("disabled_services") or {}), **(analysis_cfg.get("excluded_pools") or {})}
+    pools, excluded = apply_exclusions(available_pools(snap_dict), exclusions)
 
     if args.json or args.format == "json":
         print(
@@ -1095,6 +1100,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     **fresh,
                     "available": pools,
                     "excluded": excluded,
+                    "disabled_services": snap_dict.get("disabled_services") or {},
                     "agent_notes": snap_dict.get("agent_notes", []),
                     "semantics": dict(SEMANTICS),
                 },

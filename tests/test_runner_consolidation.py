@@ -508,3 +508,67 @@ def test_lapsed_accounts_ignores_other_providers():
 
     assert codex.plan is None
     assert len(codex.windows) == 1
+
+
+_ALL_COLLECTORS = (
+    "cswap",
+    "codexbar",
+    "grok_billing",
+    "caut",
+    "openusage_ai",
+    "openusage_sh",
+    "opencode_go",
+    "opencode_zen",
+    "openrouter",
+    "tokscale",
+    "clinepass",
+    "hermes",
+    "muse",
+    "qwencloud",
+    "bailian",
+)
+
+
+def _only(*names: str) -> dict:
+    return {c: {"enabled": c in names} for c in _ALL_COLLECTORS}
+
+
+def test_run_collectors_drops_rows_for_disabled_services(monkeypatch):
+    import aiuse.collectors.runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "collect_tokscale",
+        lambda **_kw: [
+            _account("tokscale", "grok"),
+            _account("tokscale", "grok-build"),
+            _account("tokscale", "copilot"),
+        ],
+    )
+    snapshot = run_collectors(
+        {
+            "collectors": _only("tokscale"),
+            "disabled_services": {"grok": "preserve grokbot this week"},
+        }
+    )
+    assert [(a.source, a.provider) for a in snapshot.accounts] == [("tokscale", "copilot")]
+    assert snapshot.disabled_services == {"grok": "preserve grokbot this week"}
+    assert snapshot.to_dict()["disabled_services"] == {"grok": "preserve grokbot this week"}
+
+
+def test_run_collectors_skips_single_provider_collector_when_disabled(monkeypatch):
+    import aiuse.collectors.runner as runner
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        runner, "collect_grok", lambda **_kw: calls.append("grok") or [_account("grok_billing", "grok")]
+    )
+    snapshot = run_collectors(
+        {
+            "collectors": _only("grok_billing"),
+            "disabled_services": {"grok": "off-limits"},
+        }
+    )
+    assert calls == []
+    assert snapshot.accounts == []
+    assert snapshot.disabled_services == {"grok": "off-limits"}

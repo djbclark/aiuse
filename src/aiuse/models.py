@@ -660,6 +660,10 @@ class Snapshot:
     accounts: list[AccountUsage] = field(default_factory=list)
     cross_checks: list[CrossCheck] = field(default_factory=list)
     collector_errors: list[str] = field(default_factory=list)
+    # Operator-disabled providers (top-level [disabled_services]): canonical
+    # provider id -> reason. Rows for these providers are filtered out at
+    # collection, so the reason travels on the snapshot to explain the absence.
+    disabled_services: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -667,4 +671,5 @@ class Snapshot:
             "accounts": [a.to_dict() for a in self.accounts],
             "cross_checks": [check.to_dict() for check in self.cross_checks],
             "collector_errors": self.collector_errors,
+            "disabled_services": dict(self.disabled_services),
         }

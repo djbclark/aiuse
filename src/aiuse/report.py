@@ -309,6 +309,16 @@ def render_report(
     for hist_line in history_section_lines(snapshot, analysis_cfg=analysis_cfg):
         lines.append(s.dim(hist_line))
 
+    if getattr(snapshot, "disabled_services", None):
+        lines.append("")
+        lines.append(s.bold("## Disabled by operator"))
+        lines.append(s.dim("-" * width))
+        for provider, reason in sorted(snapshot.disabled_services.items()):
+            lines.append(
+                f"  {provider_display_name(provider)}: {reason} "
+                "— off-limits entirely (no quota collected); remove the [disabled_services] entry to re-enable."
+            )
+
     lines.append("")
     lines.append(s.bold("## Per-provider usage"))
     lines.append(s.dim("-" * width))

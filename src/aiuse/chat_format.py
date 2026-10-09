@@ -867,6 +867,9 @@ def render_chat_report(
     ts = snapshot.collected_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sections.append(f"🤖 **AI USAGE · {ts}**\n━━━━━━━━━━━━━━━━━━━━")
 
+    for provider, reason in sorted((getattr(snapshot, "disabled_services", None) or {}).items()):
+        sections.append(f"🚫 **Disabled by operator:** {provider_display_name(provider)} — {reason}")
+
     if routing_context is not None:
         sections.append(_render_routing(routing_context))
 

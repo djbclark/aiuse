@@ -350,6 +350,49 @@ def test_cli_available_exit_three_when_nothing_usable(tmp_path, monkeypatch, cap
     assert payload["available"] == []
 
 
+def _grok_fixture() -> dict:
+    now = utcnow()
+    return {
+        "collected_at": now.isoformat(),
+        "accounts": [
+            {
+                "provider": "grok",
+                "account": "djbclark@gmail.com",
+                "source": "tokscale",
+                "billing_kind": "subscription_window",
+                "cli_binary": "grok",
+                "windows": [
+                    {
+                        "label": "Grok weekly quota",
+                        "used_percent": 1.0,
+                        "remaining_percent": 99.0,
+                        "resets_at": (now + timedelta(days=6)).isoformat(),
+                        "window_minutes": 10080,
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_cli_available_honours_disabled_services(tmp_path, monkeypatch, capsys):
+    from aiuse.analysis import history
+    from aiuse.cli import main
+
+    cache = tmp_path / "snapshots"
+    cache.mkdir()
+    (cache / "latest.json").write_text(json.dumps(_grok_fixture()))
+    monkeypatch.setattr(history, "snapshot_dir", lambda: cache)
+    config = tmp_path / "config.toml"
+    config.write_text('[disabled_services]\n"grok" = "operator: preserve grokbot"\n')
+
+    assert main(["--config", str(config), "--available", "--json", "-q"]) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["available"] == []
+    assert [(e["provider"], e["reason"]) for e in payload["excluded"]] == [("grok", "operator: preserve grokbot")]
+    assert payload["disabled_services"] == {}
+
+
 def test_cli_available_honours_excluded_pools(tmp_path, monkeypatch, capsys):
     from aiuse.analysis import history
     from aiuse.cli import main

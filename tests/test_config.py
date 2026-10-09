@@ -278,3 +278,11 @@ def test_validate_config_accepts_native_collector_keys():
         }
     )
     assert issues == []
+
+
+def test_validate_config_checks_disabled_services():
+    assert validate_config({"disabled_services": {"grok": "operator", "zai": True}}) == []
+    issues = "\n".join(validate_config({"disabled_services": {"grok": "", "": True}}))
+    assert "disabled_services.grok needs a reason string or true" in issues
+    assert "disabled_services key '' needs a provider" in issues
+    assert "must be a" in "\n".join(validate_config({"disabled_services": ["grok"]}))
