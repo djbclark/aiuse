@@ -80,6 +80,7 @@ def _judge(
     test_cmd: str = "true",
     task_id: str | None = "aiuse-x1",
     bd_rc: int = 0,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     stub_dir = repo.parent / "bin"
     stub_dir.mkdir(exist_ok=True)
@@ -100,6 +101,7 @@ def _judge(
     env.pop("TASK_ID", None)
     if task_id is not None:
         env["TASK_ID"] = task_id
+    env |= extra_env or {}
     return subprocess.run(
         ["bash", str(JUDGE)], cwd=repo, env=env, text=True, capture_output=True, check=False, stdin=subprocess.DEVNULL
     )
@@ -212,3 +214,96 @@ def test_verdict_line_comes_first_even_with_noisy_tests(repo):
     result = _judge(repo, test_cmd="for i in $(seq 1 5000); do echo noise $i; done; exit 1")
     assert result.returncode == 1
     assert result.stderr.startswith("JUDGE REFUSE: ")
+
+
+def _commit_files(
+    repo: Path, files: dict[str, str] | None = None, delete: tuple[str, ...] = (), msg: str = "change"
+) -> None:
+    for name, text in (files or {}).items():
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        _git(repo, "add", name)
+    for name in delete:
+        _git(repo, "rm", "-q", name)
+    _git(repo, "commit", "-q", "-m", msg)
+
+
+@pytest.fixture
+def guarded_repo(tmp_path: Path) -> Path:
+    """A repo whose base already has the files the judge relies on."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit_files(
+        repo,
+        {
+            "README": "base\n",
+            "justfile": "check:\n    pytest\n",
+            "pyproject.toml": "[tool.pytest.ini_options]\n",
+            "orchestration/judge.sh": "#!/usr/bin/env bash\n",
+            "tests/conftest.py": "",
+            "tests/test_core.py": "def test_core():\n    assert True\n",
+        },
+        msg="base",
+    )
+    _git(repo, "checkout", "-q", "-b", "work")
+    return repo
+
+
+# Review 2, finding 5c: the agent can edit what the judge relies on (the check
+# recipe, pytest config, the judge itself, skipped or deleted tests) and still
+# get JUDGE PASS. Such work must be refused unless the operator allows it.
+@pytest.mark.parametrize(
+    ("files", "delete", "expected"),
+    [
+        ({"justfile": "check:\n    true\n"}, (), "justfile"),
+        ({"orchestration/judge.sh": "#!/usr/bin/env bash\nexit 0\n"}, (), "orchestration/judge.sh"),
+        ({"pyproject.toml": "[tool.pytest.ini_options]\naddopts = '-k nothing'\n"}, (), "pyproject.toml"),
+        ({"tests/conftest.py": "collect_ignore = ['test_core.py']\n"}, (), "tests/conftest.py"),
+        ({"src/sub/conftest.py": "x = 1\n"}, (), "src/sub/conftest.py"),
+        ({}, ("tests/test_core.py",), "deleted test file tests/test_core.py"),
+        (
+            {"tests/test_core.py": "import pytest\n\n\n@pytest.mark.skip\ndef test_core():\n    assert False\n"},
+            (),
+            "@pytest.mark.skip",
+        ),
+        (
+            {"tests/test_core.py": "import pytest\n\n\ndef test_core():\n    pytest.skip('later')\n"},
+            (),
+            "pytest.skip(",
+        ),
+    ],
+)
+def test_refuses_changes_to_what_the_judge_relies_on(guarded_repo, files, delete, expected):
+    _commit_files(guarded_repo, {"feature.txt": "work\n"}, msg="real work")
+    _commit_files(guarded_repo, files, delete, msg="weaken the checks")
+    result = _judge(guarded_repo, extra_env={"JUDGE_BASE": "main"})
+    assert result.returncode == 1, result.stdout
+    assert _first_line(result).startswith("JUDGE REFUSE: the work changes what the judge relies on")
+    assert expected in result.stderr
+
+
+def test_ordinary_work_in_a_guarded_repo_passes(guarded_repo):
+    _commit_files(
+        guarded_repo,
+        {"src/feature.py": "X = 1\n", "tests/test_feature.py": "def test_x():\n    assert True\n"},
+        msg="real work with a new test",
+    )
+    result = _judge(guarded_repo, extra_env={"JUDGE_BASE": "main"})
+    assert result.returncode == 0, result.stderr
+
+
+def test_operator_can_allow_protected_changes(guarded_repo):
+    _commit_files(guarded_repo, {"pyproject.toml": "[project]\ndependencies = ['x']\n"}, msg="add a dependency")
+    result = _judge(guarded_repo, extra_env={"JUDGE_BASE": "main", "JUDGE_ALLOW_PROTECTED": "yes"})
+    assert result.returncode == 0, result.stderr
+    log = (guarded_repo / ".ralph" / "judge" / "verdicts.log").read_text(encoding="utf-8")
+    assert "protected changes allowed by JUDGE_ALLOW_PROTECTED: pyproject.toml" in log
+
+
+def test_example_config_runs_pinned_copies_outside_the_clone():
+    config = (ROOT / "orchestration" / "ralph.aiuse.example.yml").read_text(encoding="utf-8")
+    assert "./orchestration/" not in config, "hooks must not run scripts the agent can edit"
+    assert 'command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/judge.sh"]' in config
+    assert 'command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/cswap-gate.sh"]' in config

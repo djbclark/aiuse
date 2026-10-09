@@ -9,7 +9,10 @@
 #       reason of at least 20 characters
 #   (b) git:     EXPECT_DIFF=yes needs >=1 commit on HEAD beyond the base
 #                branch and a clean tree (the work is committed);
-#                EXPECT_DIFF=no needs no commits beyond the base and a clean tree
+#                EXPECT_DIFF=no needs no commits beyond the base and a clean tree.
+#                The commits must not touch what the judge relies on: the
+#                check recipe (justfile), test and lint config, conftest.py,
+#                orchestration/ (this script), CI, or skip or delete tests.
 #   (c) tests:   runs TEST_CMD itself and requires exit status 0
 #
 # Exit 0 and "JUDGE PASS: tracker+git+tests agree" only when all three hold.
@@ -26,6 +29,11 @@
 #   JUDGE_BASE    git ref the work is measured against (default: the first of
 #                 origin/HEAD, origin/main, main, origin/master, master that exists)
 #   JUDGE_LOG_DIR where the verdict log and test logs go (default: .ralph/judge)
+#   JUDGE_ALLOW_PROTECTED  yes = accept changes to the guarded paths above for
+#                 this bead (listed in the verdict log). Default: refuse them.
+#
+# Run it from a pinned copy outside the clone the agent writes to (see
+# ralph.aiuse.example.yml); a copy inside the clone can be edited by the agent.
 #
 # ralph keeps only the first max_output_bytes of each stream, so the verdict
 # line always comes first and the test output goes to a log file.
@@ -108,6 +116,39 @@ if [ "$EXPECT_DIFF" = no ] && [ "$ahead" -ne 0 ]; then
   refuse "$ahead commit(s) beyond $base on a task that expects no diff"
 fi
 
+# (b2) guard: the work must not weaken what the judge relies on. The agent can
+# edit the clone, so a commit that rewrites the check recipe, the test config,
+# the judge itself, or skips or deletes tests could otherwise pass all three
+# checks. Such work is refused unless the operator set JUDGE_ALLOW_PROTECTED=yes
+# for this bead, and even then every hit is written to the verdict log.
+protected_re='^(orchestration/|[Jj]ustfile$|\.justfile$|pyproject\.toml$|pytest\.ini$|setup\.cfg$|tox\.ini$|(.*/)?conftest\.py$|\.pre-commit-config\.yaml$|\.github/|package\.json$|\.yamllint$|\.markdownlint|_typos\.toml$|ruff\.toml$|mypy\.ini$)'
+skip_re='^\+.*(pytest\.mark\.(skip|skipif|xfail)|pytest\.(skip|xfail|importorskip)\(|unittest\.(skip|expectedFailure)|@skip)'
+guard_hits=()
+if [ "$ahead" -gt 0 ]; then
+  changed=$(git diff --name-only "$base" HEAD --) || refuse "cannot list files changed in $base..HEAD"
+  while IFS= read -r path; do
+    [ -z "$path" ] || guard_hits+=("$path")
+  done < <(grep -E "$protected_re" <<<"$changed" || true)
+  deleted=$(git diff --name-only --diff-filter=D "$base" HEAD -- tests) || refuse "cannot list deleted tests in $base..HEAD"
+  while IFS= read -r path; do
+    [ -z "$path" ] || guard_hits+=("deleted test file $path")
+  done <<<"$deleted"
+  added=$(git diff -U0 "$base" HEAD -- tests) || refuse "cannot diff tests in $base..HEAD"
+  while IFS= read -r line; do
+    [ -z "$line" ] || guard_hits+=("added skip: ${line:1}")
+  done < <(grep -vE '^\+\+\+ ' <<<"$added" | grep -E "$skip_re" || true)
+fi
+guard_note=""
+if [ "${#guard_hits[@]}" -gt 0 ]; then
+  if [ "${JUDGE_ALLOW_PROTECTED:-}" = yes ]; then
+    joined=$(printf '%s,' "${guard_hits[@]}")
+    guard_note=" protected changes allowed by JUDGE_ALLOW_PROTECTED: ${joined%,}"
+  else
+    refuse "the work changes what the judge relies on (${#guard_hits[@]} hit(s) in $base..HEAD); set JUDGE_ALLOW_PROTECTED=yes only after reviewing them" \
+      "${guard_hits[@]/#/  }"
+  fi
+fi
+
 # (c) tests: run them ourselves; never trust the agent's report.
 test_cmd="${TEST_CMD:-just check}"
 test_log="$log_dir/test-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
@@ -119,6 +160,6 @@ if [ "$rc" -ne 0 ]; then
 fi
 
 msg="JUDGE PASS: tracker+git+tests agree"
-record "$msg (base=$base ahead=$ahead test_cmd='$test_cmd')"
+record "$msg (base=$base ahead=$ahead test_cmd='$test_cmd')$guard_note"
 echo "$msg"
 exit 0

@@ -7,6 +7,11 @@
 # Written against the ralph-cli v2.10.1 release binary's accepted keys, checked
 # with `ralph hooks validate`. Unknown keys are silently ignored by ralph, so
 # do not add keys from HEAD docs without re-running that check.
+#
+# The hooks run PINNED copies of judge.sh and cswap-gate.sh, installed from
+# origin/main outside the clone (runbook step "Pin the hook scripts"). The
+# agent writes to the clone, so hooks that ran the clone's own scripts could be
+# rewritten to `exit 0` by the very loop they judge.
 ---
 cli:
   backend: claude
@@ -23,13 +28,13 @@ hooks:
     # window. It never switches accounts.
     pre.iteration.start:
       - name: cswap-gate
-        command: ["./orchestration/cswap-gate.sh"]
+        command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/cswap-gate.sh"]
         on_error: block
         timeout_seconds: 120
     # Completion authority: tracker + git + the real `just check`.
     pre.loop.complete:
       - name: judge
-        command: ["./orchestration/judge.sh"]
+        command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/judge.sh"]
         on_error: block
         timeout_seconds: 3600
         env:

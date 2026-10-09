@@ -51,6 +51,14 @@ checks agree. It never reads the agent's transcript or claims.
 3. **Tests.** The judge runs `TEST_CMD` itself, `just check` by default, and
    needs exit status 0.
 
+The commits must also leave alone what the judge relies on. A change to
+`justfile`, `pyproject.toml` or other test and lint config, any
+`conftest.py`, `orchestration/`, `.github/`, a deleted file under `tests/`,
+or an added skip or xfail marker is refused. The operator can accept such a
+change for one bead with `JUDGE_ALLOW_PROTECTED=yes`, and the verdict log
+then lists every hit. Run the judge from a pinned copy outside the clone, as
+the example config does, so the agent cannot edit the judge itself.
+
 The judge prints `JUDGE PASS: tracker+git+tests agree` and exits 0 only when
 all three hold. Any failure, including a missing input or tool, prints
 `JUDGE REFUSE: <reason>` first and exits 1. Verdicts are appended to
@@ -65,6 +73,8 @@ all three hold. Any failure, including a missing input or tool, prints
 | `BD_DIR`        | Directory `bd` runs in. Default: the repo root. Set it when the loop runs in a worktree. |
 | `JUDGE_BASE`    | Ref the work is measured against. Default: `origin/HEAD`, then `origin/main`, `main`.    |
 | `JUDGE_LOG_DIR` | Verdict and test logs. Default `.ralph/judge`.                                           |
+
+`JUDGE_ALLOW_PROTECTED=yes` accepts changes to the guarded paths for one bead.
 
 Two ralph v2.10.1 details shape the wiring. A hook's default timeout is 30
 seconds, which `just check` exceeds, so the hook sets `timeout_seconds`. ralph
@@ -148,7 +158,20 @@ Three facts about ralph v2.10.1 shape these steps.
    RALPH_BIN="$(command -v ralph)" orchestration/mutation-test.sh
    ```
 
-4. Make the separate clone, here called `~/src/aiuse-ralph-run`, and set it up
+4. Pin the hook scripts outside the clone. The agent writes to the clone, so
+   hooks that ran the clone's own `orchestration/*.sh` could be rewritten by
+   the loop they judge. The example config runs these pinned copies:
+
+   ```bash
+   pin=~/.local/state/aiuse-ralph/pinned
+   mkdir -p "$pin"
+   for f in judge.sh cswap-gate.sh; do
+     git -C ~/src/aiuse show "origin/main:orchestration/$f" >"$pin/$f"
+   done
+   chmod 0555 "$pin"/*.sh
+   ```
+
+5. Make the separate clone, here called `~/src/aiuse-ralph-run`, and set it up
    so `just check` can run there. A new `~/src` entry also needs
    `just -f ~/s/justfile`.
 
@@ -159,21 +182,21 @@ Three facts about ralph v2.10.1 shape these steps.
    uv sync --extra dev && bun install --frozen-lockfile
    ```
 
-5. Pick and claim the bead. The judge expects a code task, `EXPECT_DIFF=yes`.
+6. Pick and claim the bead. The judge expects a code task, `EXPECT_DIFF=yes`.
 
    ```bash
    bd -C ~/src/aiuse ready
    bd -C ~/src/aiuse update <bead-id> --claim
    ```
 
-6. Write the config and the prompt, and keep both out of git. The judge
+7. Write the config and the prompt, and keep both out of git. The judge
    refuses any untracked file outside `.ralph/`.
 
    ```bash
    sed 's/__TASK_ID__/<bead-id>/' orchestration/ralph.aiuse.example.yml > ralph.yml
    printf 'ralph.yml\nPROMPT.md\n' >> .git/info/exclude
    ralph hooks validate -c ralph.yml
-   orchestration/cswap-gate.sh    # expect CSWAP GATE ALLOW
+   ~/.local/state/aiuse-ralph/pinned/cswap-gate.sh   # expect CSWAP GATE ALLOW
    ```
 
    A `PROMPT.md` that matches the judge:
