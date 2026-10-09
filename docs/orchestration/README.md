@@ -23,6 +23,10 @@ are wired in as ralph lifecycle hooks with `on_error: block`.
 - Priority: a `bug` label is P1. A title starting `Optional:` or a
   documentation-only issue is P3. Everything else is P2.
 - Dry run is the default and writes nothing. Pass `--apply` to write.
+- Only issues opened by `--authors` are imported. The default is the repo
+  owner. The repo is public and a loop agent acts on bead descriptions, so an
+  issue from anyone else is listed as `hold` and skipped. After reading it,
+  `--allow-external` imports it with the body quoted and marked `UNTRUSTED`.
 - `--issue 17` is in the commands below because the US-001 acceptance list
   names #17, which is closed on GitHub now.
 
