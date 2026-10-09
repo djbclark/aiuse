@@ -76,8 +76,12 @@ just-check:
     just --fmt --check
     just --list >/dev/null
 
+# Shell-script lint for the orchestration scripts (judge, quota gate, importer).
+shellcheck:
+    shellcheck orchestration/*.sh
+
 # Fast, deterministic code and documentation checks.
-check: test ruff mypy yamllint markdownlint prettier typos just-check
+check: test ruff mypy yamllint markdownlint prettier typos just-check shellcheck
 
 # Exact all-files quality gate used by GitHub Actions.
 pre-commit:
@@ -94,6 +98,14 @@ format:
     uv run --extra dev ruff check --fix .
     uv run --extra dev ruff format .
     bunx prettier --plugin=prettier-plugin-toml --write README.md pyproject.toml
+
+# Preview mirroring open GitHub issues into beads (no writes). See docs/orchestration/README.md.
+beads-import-dry *args:
+    orchestration/gh-issues-to-beads.sh {{ args }}
+
+# Mirror open GitHub issues into beads (idempotent: skips existing gh-<n> refs).
+beads-import *args:
+    orchestration/gh-issues-to-beads.sh --apply {{ args }}
 
 # Full release (PyPI via OIDC + Homebrew). Example: `just release 2.1.16`
 # Extra flags pass through: `just release 2.1.16 --dry-run`
