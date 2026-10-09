@@ -162,7 +162,7 @@ while IFS= read -r issue; do
     bead_status=$(jq -r '.status // ""' <<<"$bead")
     if [ "$(jq -r .state <<<"$issue")" = CLOSED ] && [ -n "$bead_id" ] && [ "$bead_status" != closed ]; then
       echo "repair #$num ($ref is $bead_status in beads as $bead_id but CLOSED on GitHub; closing the bead): $raw_title"
-      run bd -C "$bd_dir" close "$bead_id" --reason "Closed on GitHub as issue #$num; closing the mirrored bead left open by an earlier partial import."
+      run bd -C "$bd_dir" close "$bead_id" --reason="Closed on GitHub as issue #$num; closing the mirrored bead left open by an earlier partial import."
       repaired=$((repaired + 1))
     else
       echo "skip   #$num ($ref already in beads): $raw_title"
@@ -222,16 +222,16 @@ $body"
   bead_labels="gh-import${labels:+,$labels}"
   echo "create #$num P$priority $type ($state): $title"
   if [ "$apply" = yes ]; then
-    id=$(bd -C "$bd_dir" create --silent --title "$title" --description "$description" \
+    id=$(bd -C "$bd_dir" create --silent --title="$title" --description="$description" \
       --external-ref "$ref" --priority "$priority" --type "$type" --labels "$bead_labels")
     echo "       -> $id"
   else
-    run bd -C "$bd_dir" create --silent --title "$title" --description "<${#description}-char description>" \
+    run bd -C "$bd_dir" create --silent --title="$title" --description="<${#description}-char description>" \
       --external-ref "$ref" --priority "$priority" --type "$type" --labels "$bead_labels"
     id='<new-id>'
   fi
   if [ "$state" = CLOSED ]; then
-    run bd -C "$bd_dir" close "$id" --reason "Closed on GitHub as issue #$num before import; mirrored for cross-reference."
+    run bd -C "$bd_dir" close "$id" --reason="Closed on GitHub as issue #$num before import; mirrored for cross-reference."
   fi
   created=$((created + 1))
 done <<<"$selected"

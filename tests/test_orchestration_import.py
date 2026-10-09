@@ -157,7 +157,7 @@ def test_apply_creates_and_closes_closed_issue(tmp_path):
     assert len(creates) == 3
     assert any("--external-ref gh-17" in c for c in creates)
     assert closes == [
-        f"-C {tmp_path} close aiuse-new --reason Closed on GitHub as issue #17 before import; mirrored for cross-reference."
+        f"-C {tmp_path} close aiuse-new --reason=Closed on GitHub as issue #17 before import; mirrored for cross-reference."
     ]
     assert any("Estimate: 4–12h · ~0.3–1M tok · ~$3–20" in c for c in creates)
 
@@ -172,7 +172,7 @@ def test_rerun_closes_a_bead_left_open_for_a_closed_issue(tmp_path):
     assert "repair #17 (gh-17 is open in beads as aiuse-old but CLOSED on GitHub" in result.stdout
     closes = [c for c in calls if " close " in f" {c} "]
     assert closes == [
-        f"-C {tmp_path} close aiuse-old --reason Closed on GitHub as issue #17; closing the mirrored bead"
+        f"-C {tmp_path} close aiuse-old --reason=Closed on GitHub as issue #17; closing the mirrored bead"
         " left open by an earlier partial import."
     ]
     assert "1 already present (1 of them closed to match GitHub)" in result.stdout
@@ -188,6 +188,16 @@ def test_rerun_leaves_closed_beads_and_open_issues_alone(tmp_path):
     assert not [c for c in calls if " close " in f" {c} "]
     assert "skip   #17 (gh-17 already in beads)" in result.stdout
     assert "skip   #16 (gh-16 already in beads)" in result.stdout
+
+
+# Review 2, finding 5k: free-text values go in as --flag=value, so a title
+# that starts with "-" can never be parsed by bd as a flag of its own.
+def test_free_text_values_are_attached_to_their_flags(tmp_path):
+    issue = dict(ISSUES[0], number=30, title="--help me: a title that looks like a flag")
+    result, calls = _run(tmp_path, "--apply", issues_list=[issue])
+    assert result.returncode == 0, result.stderr
+    (create,) = [c for c in calls if " create " in f" {c} "]
+    assert "--title=--help me: a title that looks like a flag --description=GitHub issue #30:" in create
 
 
 def test_unknown_requested_issue_fails(tmp_path):

@@ -314,5 +314,9 @@ before the fix.
     `bd create` succeeded and the following `bd close` failed, a re-run
     skipped the issue, so its bead stayed open while GitHub had it closed.
     A re-run with the same `--issue N` now closes such a bead.
+11. **Importer: flag-like titles (5k).** Free-text values now go to bd as
+    `--title=...`, `--description=...` and `--reason=...`, so a title that
+    starts with `-` can never be read as a flag. There was no shell injection
+    before: every value was already its own argument.
 
-Not changed yet: the nits 5k to 5m from the same review.
+Not changed yet: the nits 5l and 5m from the same review.
