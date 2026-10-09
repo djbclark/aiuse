@@ -46,10 +46,18 @@ checks agree. It never reads the agent's transcript or claims.
 1. **Tracker.** `bd show $TASK_ID --json` must say `closed`, with a close
    reason of at least 20 characters.
 2. **Git.** With `EXPECT_DIFF=yes`, HEAD must have at least one commit beyond
-   the base branch. With `EXPECT_DIFF=no`, it must have none. Either way the
+   the loop start. With `EXPECT_DIFF=no`, it must have none. Either way the
    tree must be clean, except for ralph's own `.ralph/` directory.
 3. **Tests.** The judge runs `TEST_CMD` itself, `just check` by default, and
    needs exit status 0.
+
+The loop start is recorded by a second hook, `judge.sh --record-start` at
+`pre.loop.start`. It writes the starting HEAD, ralph's loop id and the judge's
+own hash to `loop-start.json`. At completion the judge measures commits from
+that SHA, not from `origin/main`, so a leftover commit on a reused branch never
+counts as this loop's work. It also refuses a record from another loop, a
+start that is no longer an ancestor of HEAD, and a judge script that changed
+since the start. Without a record it needs an explicit `JUDGE_BASE`.
 
 The commits must also leave alone what the judge relies on. A change to
 `justfile`, `pyproject.toml` or other test and lint config, any
@@ -71,10 +79,12 @@ all three hold. Any failure, including a missing input or tool, prints
 | `EXPECT_DIFF`   | `yes` for a code task, `no` for a research task. Required.                               |
 | `TEST_CMD`      | Check command, run with `bash -c` from the repo root. Default `just check`.              |
 | `BD_DIR`        | Directory `bd` runs in. Default: the repo root. Set it when the loop runs in a worktree. |
-| `JUDGE_BASE`    | Ref the work is measured against. Default: `origin/HEAD`, then `origin/main`, `main`.    |
+| `JUDGE_BASE`    | Base for a manual run with no loop start recorded. A recorded start always wins.         |
 | `JUDGE_LOG_DIR` | Verdict and test logs. Default `.ralph/judge`.                                           |
 
 `JUDGE_ALLOW_PROTECTED=yes` accepts changes to the guarded paths for one bead.
+`JUDGE_STATE_DIR` holds `loop-start.json`, by default the log directory. The
+example config puts it outside the clone, where the agent does not write.
 
 Two ralph v2.10.1 details shape the wiring. A hook's default timeout is 30
 seconds, which `just check` exceeds, so the hook sets `timeout_seconds`. ralph
@@ -109,10 +119,12 @@ belongs to an outer wrapper in Phase 2, not to this gate.
 ## US-004: mutation test of the wiring
 
 `orchestration/mutation-test.sh` proves the hooks really gate ralph. It runs a
-stub agent through ralph v2.10.1 in throwaway repos and checks three outcomes.
+stub agent through ralph v2.10.1 in throwaway repos and checks four outcomes.
 A lying agent is blocked by the judge after the real check runs. An honest
 agent completes with `JUDGE PASS`. A 5h window at 95% used is blocked by the
-gate before any agent starts. The evidence and the full transcript are in
+gate before any agent starts. An agent that commits nothing on a branch that
+already carries a leftover commit is blocked, because the judge measures from
+the loop start that `pre.loop.start` recorded. The evidence and the full transcript are in
 [`judge-mutation-test-2026-10-09.md`](judge-mutation-test-2026-10-09.md).
 
 ```bash

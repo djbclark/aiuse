@@ -63,6 +63,8 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "add", "README")
     _git(repo, "commit", "-q", "-m", "base")
     _git(repo, "checkout", "-q", "-b", "work")
+    started = _record_start(repo)
+    assert started.returncode == 0, started.stderr
     return repo
 
 
@@ -81,6 +83,8 @@ def _judge(
     task_id: str | None = "aiuse-x1",
     bd_rc: int = 0,
     extra_env: dict[str, str] | None = None,
+    payload: dict | None = None,
+    judge: Path = JUDGE,
 ) -> subprocess.CompletedProcess:
     stub_dir = repo.parent / "bin"
     stub_dir.mkdir(exist_ok=True)
@@ -103,8 +107,34 @@ def _judge(
         env["TASK_ID"] = task_id
     env |= extra_env or {}
     return subprocess.run(
-        ["bash", str(JUDGE)], cwd=repo, env=env, text=True, capture_output=True, check=False, stdin=subprocess.DEVNULL
+        ["bash", str(judge)],
+        cwd=repo,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        input=json.dumps(payload) if payload is not None else "",
     )
+
+
+def _payload(loop_id: str, event: str = "pre.loop.complete") -> dict:
+    """The JSON ralph v2.10.1 writes to a hook's stdin (trimmed)."""
+    return {"event": event.removeprefix("pre."), "phase_event": event, "loop": {"id": loop_id}}
+
+
+def _record_start(repo: Path, loop_id: str | None = None, judge: Path = JUDGE) -> subprocess.CompletedProcess:
+    """What the pre.loop.start hook does: `judge.sh --record-start`."""
+    payload = json.dumps(_payload(loop_id, "pre.loop.start")) if loop_id else ""
+    result = subprocess.run(
+        ["bash", str(judge), "--record-start"],
+        cwd=repo,
+        env=_git_env(),
+        text=True,
+        capture_output=True,
+        check=False,
+        input=payload,
+    )
+    return result
 
 
 def _first_line(result: subprocess.CompletedProcess) -> str:
@@ -166,7 +196,7 @@ def test_refuses_bad_expect_diff(repo):
 def test_refuses_code_task_without_commits(repo):
     result = _judge(repo)
     assert result.returncode == 1
-    assert "no commits on HEAD beyond main" in result.stderr
+    assert "no commits on HEAD beyond the loop start" in result.stderr
 
 
 def test_refuses_dirty_tree(repo):
@@ -195,7 +225,8 @@ def test_research_task_refuses_commits(repo):
     _commit_work(repo)
     result = _judge(repo, expect_diff="no")
     assert result.returncode == 1
-    assert "1 commit(s) beyond main on a task that expects no diff" in result.stderr
+    assert "1 commit(s) beyond the loop start" in result.stderr
+    assert "on a task that expects no diff" in result.stderr
 
 
 def test_runs_the_real_test_command_and_refuses_on_failure(repo):
@@ -307,3 +338,103 @@ def test_example_config_runs_pinned_copies_outside_the_clone():
     assert "./orchestration/" not in config, "hooks must not run scripts the agent can edit"
     assert 'command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/judge.sh"]' in config
     assert 'command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/cswap-gate.sh"]' in config
+
+
+# Review 2, finding 5d: the judge measured base..HEAD against origin/main, so a
+# reused clone or branch with a leftover commit passed EXPECT_DIFF=yes with no
+# new work from this loop. It now measures from the SHA recorded at
+# pre.loop.start, and checks that the record belongs to this loop.
+def test_record_start_writes_the_loop_start(repo):
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    result = _record_start(repo, "primary-1")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith(f"JUDGE START: loop primary-1 starts at {head}")
+    record = json.loads((repo / ".ralph" / "judge" / "loop-start.json").read_text(encoding="utf-8"))
+    assert record["sha"] == head
+    assert record["loop_id"] == "primary-1"
+    assert len(record["judge_hash"]) == 40
+
+
+def test_leftover_commit_from_before_the_loop_is_not_this_loops_work(repo):
+    _commit_work(repo)  # a leftover commit on a reused branch
+    assert _record_start(repo, "primary-2").returncode == 0
+    result = _judge(repo, payload=_payload("primary-2"))  # the loop itself committed nothing
+    assert result.returncode == 1, result.stdout
+    assert "no commits on HEAD beyond the loop start" in result.stderr
+
+
+def test_new_commit_after_the_loop_start_passes(repo):
+    _commit_work(repo)
+    assert _record_start(repo, "primary-3").returncode == 0
+    (repo / "more.txt").write_text("more\n", encoding="utf-8")
+    _git(repo, "add", "more.txt")
+    _git(repo, "commit", "-q", "-m", "this loop's work")
+    result = _judge(repo, payload=_payload("primary-3"))
+    assert result.returncode == 0, result.stderr
+
+
+def test_start_record_from_another_loop_is_refused(repo):
+    assert _record_start(repo, "primary-old").returncode == 0
+    _commit_work(repo)
+    result = _judge(repo, payload=_payload("primary-new"))
+    assert result.returncode == 1
+    assert "loop start record is for loop 'primary-old', not this loop 'primary-new'" in result.stderr
+
+
+def test_no_start_record_and_no_judge_base_refuses(tmp_path):
+    repo = tmp_path / "bare"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "README").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "README")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", "work")
+    _commit_work(repo)
+    result = _judge(repo)
+    assert result.returncode == 1
+    assert "no loop start recorded" in result.stderr
+    manual = _judge(repo, extra_env={"JUDGE_BASE": "main"})
+    assert manual.returncode == 0, manual.stderr
+
+
+def test_start_that_is_not_an_ancestor_of_head_refuses(repo):
+    _commit_work(repo)
+    assert _record_start(repo, "primary-4").returncode == 0
+    _git(repo, "checkout", "-q", "-B", "work", "main")  # history rewritten under the loop
+    (repo / "other.txt").write_text("x\n", encoding="utf-8")
+    _git(repo, "add", "other.txt")
+    _git(repo, "commit", "-q", "-m", "other")
+    result = _judge(repo, payload=_payload("primary-4"))
+    assert result.returncode == 1
+    assert "is not an ancestor of HEAD" in result.stderr
+
+
+def test_judge_edited_since_the_loop_start_refuses(repo, tmp_path):
+    pinned = tmp_path / "pinned-judge.sh"
+    pinned.write_text(JUDGE.read_text(encoding="utf-8"), encoding="utf-8")
+    assert _record_start(repo, "primary-5", judge=pinned).returncode == 0
+    pinned.write_text(JUDGE.read_text(encoding="utf-8") + "\n# tampered\n", encoding="utf-8")
+    _commit_work(repo)
+    result = _judge(repo, payload=_payload("primary-5"), judge=pinned)
+    assert result.returncode == 1
+    assert "judge.sh changed since the loop start" in result.stderr
+
+
+def test_state_dir_can_live_outside_the_clone(repo, tmp_path):
+    state = tmp_path / "state"
+    started = subprocess.run(
+        ["bash", str(JUDGE), "--record-start"],
+        cwd=repo,
+        env=_git_env() | {"JUDGE_STATE_DIR": str(state)},
+        text=True,
+        capture_output=True,
+        check=False,
+        input=json.dumps(_payload("primary-6", "pre.loop.start")),
+    )
+    assert started.returncode == 0, started.stderr
+    assert (state / "loop-start.json").is_file()
+    _commit_work(repo)
+    result = _judge(repo, payload=_payload("primary-6"), extra_env={"JUDGE_STATE_DIR": str(state)})
+    assert result.returncode == 0, result.stderr

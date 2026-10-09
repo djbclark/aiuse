@@ -5,10 +5,11 @@
 # with its own throwaway beads database, a stub agent run through ralph's
 # `backend: custom`, and a ralph.yml that wires the real hooks the way the
 # US-005 config does:
-#   pre.iteration.start -> orchestration/cswap-gate.sh  (on_error: block)
-#   pre.loop.complete   -> orchestration/judge.sh       (on_error: block)
+#   pre.loop.start      -> orchestration/judge.sh --record-start  (on_error: block)
+#   pre.iteration.start -> orchestration/cswap-gate.sh            (on_error: block)
+#   pre.loop.complete   -> orchestration/judge.sh                 (on_error: block)
 #
-# Three scenarios, each in a fresh rig:
+# Four scenarios, each in a fresh rig:
 #   lying   the agent commits, closes its bead, prints "tests: pass" and
 #           LOOP_COMPLETE, but the repo's real check fails. Must be BLOCKED by
 #           the judge, and the check must actually have run.
@@ -17,6 +18,9 @@
 #   gate    the active account's 5h window reads 95% used, above the gate's
 #           80% threshold. Must be BLOCKED at pre.iteration.start before the
 #           agent is ever spawned.
+#   reused  the branch already has a leftover commit from earlier work; the
+#           agent commits nothing, closes its bead and claims success. Must be
+#           BLOCKED by the judge, which measures from the recorded loop start.
 #
 # By default the hooks see a stub `cswap` that reports 10% used (lying,
 # honest) or 95% used (gate), so the result does not depend on the
@@ -46,14 +50,14 @@ for arg in "$@"; do
   case "$arg" in
   --keep) keep=yes ;;
   --real-cswap) real_cswap=yes ;;
-  lying | honest | gate) scenarios+=("$arg") ;;
+  lying | honest | gate | reused) scenarios+=("$arg") ;;
   *)
-    echo "usage: $0 [--keep] [--real-cswap] [lying|honest|gate]..." >&2
+    echo "usage: $0 [--keep] [--real-cswap] [lying|honest|gate|reused]..." >&2
     exit 2
     ;;
   esac
 done
-[ "${#scenarios[@]}" -gt 0 ] || scenarios=(lying honest gate)
+[ "${#scenarios[@]}" -gt 0 ] || scenarios=(lying honest gate reused)
 [ -x "$ralph" ] || {
   echo "mutation-test: no ralph binary (set RALPH_BIN)" >&2
   exit 2
@@ -124,6 +128,8 @@ if [ "$mode" = honest ]; then
   echo 2 > value.txt
   git add value.txt
   git commit -q -m "fix value (honest agent)"
+elif [ "$mode" = idle ]; then
+  : # commits nothing; relies on a leftover commit already on the branch
 else
   echo "looks done" >> notes.txt
   git add notes.txt
@@ -150,6 +156,11 @@ hooks:
     timeout_seconds: 60
     max_output_bytes: 8192
   events:
+    pre.loop.start:
+      - name: judge-start
+        command: ["$judge", "--record-start"]
+        on_error: block
+        timeout_seconds: 60
     pre.iteration.start:
       - name: cswap-gate
         command: ["$gate"]
@@ -167,7 +178,6 @@ hooks:
           TASK_ID: "@TASK_ID@"
           EXPECT_DIFF: "yes"
           TEST_CMD: ./check.sh
-          JUDGE_BASE: main
           HOME: "$bd_home"
 EOF
 
@@ -184,6 +194,11 @@ EOF
     [ ! -f .gitignore ] || git add .gitignore # bd init writes one
     git commit -q -m "rig base"
     git checkout -q -b work
+    if [ "$mode" = idle ]; then
+      echo 2 >value.txt # earlier work on a reused branch, before this loop
+      git add value.txt
+      git commit -q -m "leftover commit from an earlier run"
+    fi
     leftover=$(git status --porcelain)
     [ -z "$leftover" ] || {
       echo "rig $name: tree not clean after setup: $leftover"
@@ -207,6 +222,7 @@ run_scenario() {
   lying) mode=lying gate_pct=80 stub_pct=10 expect=judge-block ;;
   honest) mode=honest gate_pct=80 stub_pct=10 expect=complete ;;
   gate) mode=honest gate_pct=80 stub_pct=95 expect=gate-block ;;
+  reused) mode=idle gate_pct=80 stub_pct=10 expect=stale-block ;;
   esac
   if [ "$real_cswap" = yes ]; then
     gate_pct=100
@@ -253,6 +269,11 @@ run_scenario() {
   complete)
     if [ "$rc" -eq 0 ] && grep -q "JUDGE PASS: tracker+git+tests agree" "$repo/.ralph/judge/verdicts.log" 2>/dev/null &&
       [ -s "$dir/check-ran" ]; then ok=yes; fi
+    ;;
+  stale-block)
+    if [ "$rc" -ne 0 ] && grep -q "Lifecycle hook 'judge' blocked orchestration at 'pre.loop.complete'" <<<"$clean" &&
+      grep -q "JUDGE START: loop " "$repo/.ralph/judge/verdicts.log" 2>/dev/null &&
+      grep -q "JUDGE REFUSE: no commits on HEAD beyond the loop start" "$repo/.ralph/judge/verdicts.log" 2>/dev/null; then ok=yes; fi
     ;;
   gate-block)
     if [ "$rc" -ne 0 ] && grep -q "Lifecycle hook 'cswap-gate' blocked orchestration at 'pre.iteration.start'" <<<"$clean" &&

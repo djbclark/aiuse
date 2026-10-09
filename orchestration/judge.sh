@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # judge.sh — refuse loop completion unless tracker, git and tests agree (US-002, aiuse-juk.2).
 #
-# Wired into ralph-orchestrator as a lifecycle hook:
-#   hooks.events.pre.loop.complete -> orchestration/judge.sh  (on_error: block)
+# Wired into ralph-orchestrator as two lifecycle hooks:
+#   hooks.events.pre.loop.start    -> judge.sh --record-start  (on_error: block)
+#   hooks.events.pre.loop.complete -> judge.sh                 (on_error: block)
+#
+# --record-start writes the loop's starting HEAD, ralph's loop id (from the
+# hook payload on stdin) and this script's own git blob hash to
+# $JUDGE_STATE_DIR/loop-start.json. The completion check then measures the
+# work from that SHA, refuses a record that belongs to another loop, and
+# refuses when this script changed since the loop started.
 #
 # It never reads the agent's transcript or claims. It checks three things itself:
 #   (a) tracker: `bd show $TASK_ID --json` has status "closed" and a close
@@ -26,8 +33,11 @@
 #                 (default: just check)
 #   BD_DIR        directory bd runs in (default: the repo root). Point it at
 #                 the checkout that owns .beads/ when the loop runs in a worktree.
-#   JUDGE_BASE    git ref the work is measured against (default: the first of
-#                 origin/HEAD, origin/main, main, origin/master, master that exists)
+#   JUDGE_STATE_DIR  where loop-start.json lives (default: JUDGE_LOG_DIR). Put
+#                 it outside the clone so the agent cannot rewrite the record.
+#   JUDGE_BASE    git ref to measure against when no loop start was recorded
+#                 (a manual run). A recorded loop start always wins. With
+#                 neither, the judge refuses rather than guess a base.
 #   JUDGE_LOG_DIR where the verdict log and test logs go (default: .ralph/judge)
 #   JUDGE_ALLOW_PROTECTED  yes = accept changes to the guarded paths above for
 #                 this bead (listed in the verdict log). Default: refuse them.
@@ -58,9 +68,30 @@ refuse() {
   exit 1
 }
 
-for tool in git jq bd; do
+mode=judge
+case "${1:-}" in
+"") ;;
+--record-start) mode=record ;;
+*) refuse "unknown argument '$1' (usage: judge.sh [--record-start])" ;;
+esac
+
+tools=(git jq)
+[ "$mode" = record ] || tools+=(bd)
+for tool in "${tools[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || refuse "required tool '$tool' not on PATH"
 done
+
+# This script's own content hash, taken before any cd, so the completion check
+# can tell whether the judge that runs now is the one that recorded the start.
+self_hash=$(git hash-object -- "${BASH_SOURCE[0]}" 2>/dev/null) || refuse "cannot hash ${BASH_SOURCE[0]}"
+
+# ralph writes a JSON payload to each hook's stdin; .loop.id names the loop.
+# A manual run has no payload, so the loop id stays empty.
+payload=""
+if [ ! -t 0 ]; then
+  IFS= read -r -d '' -t 10 payload || true
+fi
+loop_id=$(jq -r '.loop.id // empty' <<<"$payload" 2>/dev/null) || loop_id=""
 
 root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse "not inside a git repository ($PWD)"
 cd "$root" || refuse "cannot cd to repo root $root"
@@ -72,6 +103,24 @@ if mkdir -p "$log_dir" 2>/dev/null && [ -w "$log_dir" ]; then
 else
   log_dir=$(mktemp -d "${TMPDIR:-/tmp}/judge.XXXXXX") || refuse "cannot create a log directory"
   verdict_log="$log_dir/verdicts.log"
+fi
+
+state_dir="${JUDGE_STATE_DIR:-$log_dir}"
+start_file="$state_dir/loop-start.json"
+
+if [ "$mode" = record ]; then
+  start_sha=$(git rev-parse --verify -q 'HEAD^{commit}') || refuse "cannot read HEAD to record the loop start"
+  mkdir -p "$state_dir" 2>/dev/null || refuse "cannot create JUDGE_STATE_DIR $state_dir"
+  if ! jq -n --arg sha "$start_sha" --arg loop "$loop_id" --arg hash "$self_hash" \
+    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{sha: $sha, loop_id: $loop, judge_hash: $hash, recorded_at: $at}' >"$start_file.tmp.$$"; then
+    refuse "cannot write $start_file"
+  fi
+  mv -f "$start_file.tmp.$$" "$start_file" || refuse "cannot write $start_file"
+  msg="JUDGE START: loop ${loop_id:-unknown} starts at $start_sha"
+  record "$msg"
+  echo "$msg"
+  exit 0
 fi
 
 [ -n "${TASK_ID:-}" ] || refuse "TASK_ID is not set; the judge cannot know which bead to check"
@@ -93,27 +142,39 @@ reason=$(jq -r '(.close_reason // "") | gsub("^\\s+|\\s+$"; "")' <<<"$issue")
   refuse "bd $TASK_ID close reason is ${#reason} chars (need >= 20): '$reason'"
 
 # (b) git: commit state matches the task type, and nothing is left uncommitted.
-base="${JUDGE_BASE:-}"
-if [ -z "$base" ]; then
-  for candidate in origin/HEAD origin/main main origin/master master; do
-    if git rev-parse --verify -q "$candidate^{commit}" >/dev/null; then
-      base=$candidate
-      break
-    fi
-  done
+# The base is this loop's own start, never a guessed branch: a reused clone or
+# branch can already be ahead of origin/main before the loop does anything.
+if [ -e "$start_file" ]; then
+  start=$(jq -ce 'select(type == "object" and (.sha | type) == "string")' "$start_file" 2>/dev/null) ||
+    refuse "loop start record $start_file is unreadable"
+  base=$(jq -r .sha <<<"$start")
+  start_loop=$(jq -r '.loop_id // ""' <<<"$start")
+  start_hash=$(jq -r '.judge_hash // ""' <<<"$start")
+  if [ -n "$loop_id" ] && [ "$start_loop" != "$loop_id" ]; then
+    refuse "loop start record is for loop '$start_loop', not this loop '$loop_id'; was judge.sh --record-start wired at pre.loop.start?"
+  fi
+  [ "$start_hash" = "$self_hash" ] ||
+    refuse "judge.sh changed since the loop start (blob $start_hash -> $self_hash); run the judge from a pinned copy"
+  base_desc="the loop start ${base:0:12}"
+elif [ -n "${JUDGE_BASE:-}" ]; then
+  base=$JUDGE_BASE
+  base_desc=$base
+else
+  refuse "no loop start recorded ($start_file) and JUDGE_BASE is unset; wire 'judge.sh --record-start' at pre.loop.start"
 fi
-[ -n "$base" ] || refuse "no base ref found; set JUDGE_BASE"
-git rev-parse --verify -q "$base^{commit}" >/dev/null || refuse "base ref '$base' does not exist"
+git rev-parse --verify -q "$base^{commit}" >/dev/null || refuse "base '$base' ($base_desc) does not exist"
+git merge-base --is-ancestor "$base" HEAD 2>/dev/null ||
+  refuse "$base_desc is not an ancestor of HEAD; the branch history changed under the loop"
 ahead=$(git rev-list --count "$base..HEAD") || refuse "cannot count commits in $base..HEAD"
 dirty=$(git status --porcelain -- . ':(exclude).ralph') || refuse "git status failed"
 if [ -n "$dirty" ]; then
   refuse "uncommitted changes in the work tree (EXPECT_DIFF=$EXPECT_DIFF)" "$(head -20 <<<"$dirty")"
 fi
 if [ "$EXPECT_DIFF" = yes ] && [ "$ahead" -eq 0 ]; then
-  refuse "no commits on HEAD beyond $base for a task that expects a diff"
+  refuse "no commits on HEAD beyond $base_desc for a task that expects a diff"
 fi
 if [ "$EXPECT_DIFF" = no ] && [ "$ahead" -ne 0 ]; then
-  refuse "$ahead commit(s) beyond $base on a task that expects no diff"
+  refuse "$ahead commit(s) beyond $base_desc on a task that expects no diff"
 fi
 
 # (b2) guard: the work must not weaken what the judge relies on. The agent can
@@ -144,7 +205,7 @@ if [ "${#guard_hits[@]}" -gt 0 ]; then
     joined=$(printf '%s,' "${guard_hits[@]}")
     guard_note=" protected changes allowed by JUDGE_ALLOW_PROTECTED: ${joined%,}"
   else
-    refuse "the work changes what the judge relies on (${#guard_hits[@]} hit(s) in $base..HEAD); set JUDGE_ALLOW_PROTECTED=yes only after reviewing them" \
+    refuse "the work changes what the judge relies on (${#guard_hits[@]} hit(s) since $base_desc); set JUDGE_ALLOW_PROTECTED=yes only after reviewing them" \
       "${guard_hits[@]/#/  }"
   fi
 fi

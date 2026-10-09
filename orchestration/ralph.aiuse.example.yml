@@ -24,6 +24,15 @@ hooks:
     timeout_seconds: 120
     max_output_bytes: 8192
   events:
+    # Record this loop's starting HEAD, its loop id and the judge's own hash,
+    # outside the clone, so the judge measures only this loop's commits.
+    pre.loop.start:
+      - name: judge-start
+        command: ["/Users/djbclark/.local/state/aiuse-ralph/pinned/judge.sh", "--record-start"]
+        on_error: block
+        timeout_seconds: 60
+        env:
+          JUDGE_STATE_DIR: "/Users/djbclark/.local/state/aiuse-ralph/judge-state"
     # Quota gate: refuse a new iteration at >= 80% of the active Claude 5h
     # window. It never switches accounts.
     pre.iteration.start:
@@ -44,4 +53,6 @@ hooks:
           TEST_CMD: "/Users/djbclark/ops/site-private/bin/bg just check"
           # The beads database lives in the operator's main checkout.
           BD_DIR: "/Users/djbclark/src/aiuse"
-          JUDGE_BASE: "origin/main"
+          # Same state dir as judge-start; no JUDGE_BASE, so the recorded
+          # loop start is the base.
+          JUDGE_STATE_DIR: "/Users/djbclark/.local/state/aiuse-ralph/judge-state"

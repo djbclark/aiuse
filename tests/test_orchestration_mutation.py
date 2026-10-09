@@ -34,7 +34,9 @@ def test_judge_and_gate_mutation(tmp_path):
     )
     transcript = result.stdout + result.stderr
     assert result.returncode == 0, transcript
-    assert transcript.count("--- verdict: AS EXPECTED") == 3, transcript
+    assert transcript.count("--- verdict: AS EXPECTED") == 4, transcript
     assert "JUDGE REFUSE: test command './check.sh' exited 1" in transcript
     assert "JUDGE PASS: tracker+git+tests agree" in transcript
     assert "Lifecycle hook 'cswap-gate' blocked orchestration at 'pre.iteration.start'" in transcript
+    # Review 2, 5d: a leftover commit from before the loop is not this loop's work.
+    assert "JUDGE REFUSE: no commits on HEAD beyond the loop start" in transcript
