@@ -18,6 +18,7 @@ _aiuse() {
     '--watch[full-screen quota board (also: aiuse watch)]'
     '(-i --interval)'{-i,--interval}'[watch refresh interval]:interval'
     '--once[watch: one frame then exit]'
+    '--mcp[read-only MCP stdio server (also: aiuse mcp)]'
     '--port[serve port]:port'
     '--max-age[serve cache max age seconds]:seconds'
     '--print-completion[print shell completion]:shell:(bash zsh)'
@@ -43,6 +44,7 @@ _aiuse() {
     'prompt:synonym of status'
     'suggest:single best burn pool next'
     'serve:loopback HTTP API for agents'
+    'mcp:read-only MCP stdio server for agents'
     'watch:full-screen quota board (q/esc quit)'
   )
   _arguments -s -S $opts

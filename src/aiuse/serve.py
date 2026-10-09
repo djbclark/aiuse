@@ -122,57 +122,9 @@ def run_serve(
             refresh = _truthy(qs.get("refresh", ["0"])[0])
 
             try:
-                if path in ("/v1/health", "/health", "/"):
-                    body = {"ok": True, "service": "aiuse", "version": _version()}
-                    self._json(200, body)
-                    return
-                if path == "/v1/snapshot":
-                    payload = state.get_payload(refresh=refresh)
-                    snap = payload["snapshot"]
-                    from aiuse.analysis.selfdescribe import freshness
-
-                    self._json(
-                        200,
-                        {
-                            "snapshot": snap,
-                            "source": payload["source"],
-                            **freshness(snap.get("collected_at")),
-                            "summary_lines": snap.get("summary_lines", []),
-                            "semantics": snap.get("semantics", {}),
-                        },
-                    )
-                    return
-                if path == "/v1/suggest":
-                    payload = state.get_payload(refresh=refresh)
-                    self._json(
-                        200,
-                        {
-                            "suggestion": payload["suggestion"],
-                            "source": payload["source"],
-                            "collected_at": payload["snapshot"].get("collected_at"),
-                        },
-                    )
-                    return
-                if path == "/v1/ladder":
-                    payload = state.get_payload(refresh=refresh)
-                    self._json(
-                        200,
-                        {
-                            "alerts": payload["alerts"],
-                            "source": payload["source"],
-                            "collected_at": payload["snapshot"].get("collected_at"),
-                        },
-                    )
-                    return
-                if path == "/v1/status":
-                    payload = state.get_payload(refresh=refresh)
-                    # Human one-liner from cached/live alerts when possible.
-                    from aiuse.report import render_status_line
-
-                    snap = _snapshot_from_payload(payload)
-                    alerts = _alerts_from_payload(payload)
-                    line = render_status_line(snap, alerts)
-                    self._json(200, {"status": line, "source": payload["source"]})
+                name = ENDPOINT_PATHS.get(path)
+                if name is not None:
+                    self._json(200, endpoint_body(state, name, refresh=refresh))
                     return
                 self._json(404, {"error": "not found", "path": path})
             except Exception as exc:  # noqa: BLE001 — surface as JSON error
@@ -207,6 +159,57 @@ def run_serve(
     finally:
         server.server_close()
     return 0
+
+
+# One body per endpoint, shared by the HTTP handler and ``aiuse mcp`` (issue #11)
+# so the two surfaces can never drift apart in field shapes.
+ENDPOINTS = ("health", "snapshot", "suggest", "ladder", "status")
+ENDPOINT_PATHS = {
+    "/v1/health": "health",
+    "/health": "health",
+    "/": "health",
+    "/v1/snapshot": "snapshot",
+    "/v1/suggest": "suggest",
+    "/v1/ladder": "ladder",
+    "/v1/status": "status",
+}
+
+
+def endpoint_body(state: _ServeState, name: str, *, refresh: bool = False) -> dict[str, Any]:
+    """The JSON body ``GET /v1/<name>`` returns. Raises ``KeyError`` for an unknown name."""
+    if name == "health":
+        return {"ok": True, "service": "aiuse", "version": _version()}
+    if name not in ENDPOINTS:
+        raise KeyError(name)
+    payload = state.get_payload(refresh=refresh)
+    if name == "snapshot":
+        from aiuse.analysis.selfdescribe import freshness
+
+        snap = payload["snapshot"]
+        return {
+            "snapshot": snap,
+            "source": payload["source"],
+            **freshness(snap.get("collected_at")),
+            "summary_lines": snap.get("summary_lines", []),
+            "semantics": snap.get("semantics", {}),
+        }
+    if name == "suggest":
+        return {
+            "suggestion": payload["suggestion"],
+            "source": payload["source"],
+            "collected_at": payload["snapshot"].get("collected_at"),
+        }
+    if name == "ladder":
+        return {
+            "alerts": payload["alerts"],
+            "source": payload["source"],
+            "collected_at": payload["snapshot"].get("collected_at"),
+        }
+    # status: the human one-liner from cached/live alerts.
+    from aiuse.report import render_status_line
+
+    line = render_status_line(_snapshot_from_payload(payload), _alerts_from_payload(payload))
+    return {"status": line, "source": payload["source"]}
 
 
 class _ServeState:

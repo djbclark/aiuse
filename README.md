@@ -287,6 +287,7 @@ aiuse suggest              # single best burn pool
 aiuse status               # one line for prompts / status bars
 aiuse prompt               # synonym of status
 aiuse serve                # loopback HTTP API for agents
+aiuse mcp                  # read-only MCP stdio server, same payloads (docs/agent-api.md)
 aiuse watch                # full-screen board (q/esc quit; default 10m)
 aiuse watch -i 2m          # faster refresh
 aiuse watch --once         # one frame on stdout (scripts / tmux)

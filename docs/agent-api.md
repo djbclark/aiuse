@@ -1,9 +1,10 @@
-# Agent API (loopback HTTP)
+# Agent API (loopback HTTP and MCP stdio)
 
 **Issue #5 (MVP, shipped):** `aiuse serve` exposes read-only ranking JSON on
 **127.0.0.1 only** for multi-step agents. It is not a model proxy and does not
-emit credentials. Full MCP stdio remains an optional follow-up if agents need
-native MCP (see [`handoff.md`](handoff.md)).
+emit credentials. **Issue #11:** `aiuse mcp` serves the same payloads as MCP
+tools over stdio for hosts that only speak MCP; see
+[MCP stdio](#mcp-stdio-aiuse-mcp) below.
 
 ## Start
 
@@ -68,11 +69,77 @@ curl -sS 'http://127.0.0.1:28787/v1/suggest' | jq .
 curl -sS 'http://127.0.0.1:28787/v1/ladder?refresh=1' | jq '.alerts[0]'
 ```
 
-## Non-goals (this MVP)
+## MCP stdio (`aiuse mcp`)
 
-- Full MCP stdio server (optional follow-up: [#11](https://github.com/djbclark/aiuse/issues/11))
-- Binding non-loopback interfaces
+[Issue #11](https://github.com/djbclark/aiuse/issues/11). `aiuse mcp` is a thin,
+read-only [MCP](https://modelcontextprotocol.io/) server on stdin/stdout. Each
+tool returns **exactly** the JSON body of the matching `aiuse serve` endpoint,
+built by the same code (`serve.endpoint_body`) from the same cache path, so the
+field shapes are the ones in [`json-contract.md`](json-contract.md) and the
+table above. There is no second scoring path, no routing, no leases and no
+credentials in output. Nothing listens on a port.
+
+| Tool       | Same body as       | Arguments                       |
+| ---------- | ------------------ | ------------------------------- |
+| `health`   | `GET /v1/health`   | none                            |
+| `suggest`  | `GET /v1/suggest`  | `refresh` (bool, default false) |
+| `ladder`   | `GET /v1/ladder`   | `refresh`                       |
+| `status`   | `GET /v1/status`   | `refresh`                       |
+| `snapshot` | `GET /v1/snapshot` | `refresh`                       |
+
+Each result carries the body twice, as `structuredContent` and as JSON text in
+`content[0].text`, for hosts that read only one of them. A failed collect is a
+tool result with `isError: true`, not a protocol error. Caching is the
+[Caching](#caching) order above: `--max-age` (default 3600 s) bounds the on-disk
+snapshot, and `refresh: true` collects live (tens of seconds). `--config` and
+`--timeout` apply as for any collect.
+
+Protocol: newline-delimited JSON-RPC 2.0, `initialize` handshake revisions
+2024-11-05 through 2025-11-25. A 2026-07-28 ("modern") client's
+`server/discover` probe gets "method not found", which the spec tells dual-era
+clients to treat as a legacy server and fall back to `initialize`. Diagnostics
+go to stderr only; collector output is kept off the protocol stream.
+
+### Host configuration
+
+Hosts start the server themselves. Use the absolute path from `command -v aiuse`:
+GUI hosts such as Claude Desktop do not inherit your shell's `PATH`.
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+and **Cursor** (`~/.cursor/mcp.json`, or `.cursor/mcp.json` in a project):
+
+```json
+{
+  "mcpServers": {
+    "aiuse": {
+      "command": "/opt/homebrew/bin/aiuse",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add aiuse -- "$(command -v aiuse)" mcp
+```
+
+Quick manual check (one initialize, one tool call):
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"suggest","arguments":{}}}' \
+  | aiuse mcp 2>/dev/null | jq -c '.result.structuredContent.suggestion // .result.serverInfo'
+```
+
+## Non-goals
+
+- Request routing, model registry, task budgets, LiteLLM leases (quotabot territory)
+- Binding non-loopback interfaces; MCP over HTTP (stdio only for now)
 - Auth / multi-user serving
+- Replacing `aiuse serve` (the MCP server is a second door onto the same payloads)
 
 ## Related
 

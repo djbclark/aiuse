@@ -66,6 +66,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
+  aiuse mcp                   read-only MCP stdio server over the serve payloads (docs/agent-api.md)
   aiuse watch                 full-screen quota board (q/esc quit; default 10m)
   aiuse sample                scheduled entry point: collects hourly when idle, every 15m when a
                            window moved, every 3m in a burst (docs/attribution.md)
@@ -155,6 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=argparse.SUPPRESS,
     )
+    p.add_argument("--mcp", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--sample", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--attribute", action="store_true", help=argparse.SUPPRESS)
     p.add_argument(
@@ -198,7 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=3600.0,
         metavar="SECONDS",
-        help="Max age of cached snapshot for serve without ?refresh=1 (default 3600)",
+        help="Max age of cached snapshot for serve / mcp without a refresh (default 3600)",
     )
     p.add_argument(
         "--print-completion",
@@ -382,6 +384,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--suggest", *raw[1:]]
     if head == "serve":
         return ["--serve", *raw[1:]]
+    if head == "mcp":
+        return ["--mcp", *raw[1:]]
     if head == "schema":
         return ["--schema", *raw[1:]]
     if head == "watch":
@@ -457,6 +461,15 @@ def _main_inner(argv: list[str] | None = None) -> int:
             config_path=args.config,
             max_age_seconds=float(args.max_age),
         )
+    if getattr(args, "mcp", False):
+        from aiuse.mcp_stdio import run_mcp
+
+        def _mcp_config() -> dict[str, Any]:
+            loaded = load_config(args.config)
+            _apply_cli_overrides(loaded, args)
+            return loaded
+
+        return run_mcp(_mcp_config, max_age_seconds=float(args.max_age))
     if getattr(args, "available", False):
         return _run_available(args)
     config = load_config(args.config)

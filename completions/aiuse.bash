@@ -17,7 +17,7 @@ _aiuse_completions() {
     --no-tokscale --no-cswap --no-codexbar
     --providers --min-remaining --max-days --save --traditional-summary
     -i --interval --once
-    doctor status prompt suggest serve watch
+    doctor status prompt suggest serve mcp watch
   "
 
   case "${prev}" in
