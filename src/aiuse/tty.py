@@ -15,6 +15,7 @@ three are normally the same device), so ``aiuse </dev/null`` is protected too.
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
 
@@ -48,8 +49,27 @@ def save_stdin_tty() -> Any | None:
         return None
 
 
+def _owns_terminal(fd: int) -> bool:
+    """True when this process may write terminal attributes without SIGTTOU.
+
+    ``tcsetattr`` from a process that is not in the terminal's foreground
+    process group raises SIGTTOU, which *stops* the process (``aiuse &``,
+    ``brew test``, any job-control runner): a hang, not an error. Such a
+    process has no business resetting someone else's terminal anyway; the
+    foreground shell restores it at its next prompt.
+    """
+    try:
+        return os.tcgetpgrp(fd) == os.getpgrp()
+    except (OSError, AttributeError):
+        return False
+
+
 def restore_stdin_tty(saved: Any | None) -> None:
-    """Restore termios attrs previously returned by ``save_stdin_tty``."""
+    """Restore termios attrs previously returned by ``save_stdin_tty``.
+
+    A no-op when the attributes are unchanged (the common case) and when this
+    process is not the terminal's foreground job (see ``_owns_terminal``).
+    """
     if saved is None:
         return
     try:
@@ -58,6 +78,11 @@ def restore_stdin_tty(saved: Any | None) -> None:
         return
     try:
         fd, attrs = saved
-        termios.tcsetattr(int(fd), termios.TCSADRAIN, attrs)
+        fd = int(fd)
+        if termios.tcgetattr(fd) == attrs:
+            return
+        if not _owns_terminal(fd):
+            return
+        termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
     except (termios.error, OSError, ValueError, TypeError):
         return

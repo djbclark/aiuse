@@ -56,15 +56,19 @@ was fine because bash resets the terminal when it prints a prompt.
 - Docs: `docs/collectors-caut-openusage.md` (section after the openusage.sh
   install block).
 
-## Operator options left open
+## Outcome (2026-10-09, same session)
 
-1. `brew unlink openusage` restores the documented state (the formula
-   unlinked; the `~/.local/bin/openusage-sh` wrapper uses
-   `/opt/homebrew/opt/openusage/bin/openusage` and survives unlinking). Not
-   required after this fix.
-2. Upstream issue/PR to openusage.sh: refuse to start the TUI when stdout is
-   not a terminal. Outward-facing, so filed as a bead and left for the
-   operator to approve.
-3. Release: the pipx `aiuse` is reinstalled from the working tree by the
-   operator's own routine; a `3.3.1` patch release via `just release` is the
-   normal way to ship this (only when asked).
+1. `brew unlink openusage`: the operator declined (GUI works, no need).
+2. Upstream issue filed: <https://github.com/janekbaraniewski/openusage/issues/405>
+   (no existing issue or PR covered it; bead `aiuse-iyg` closed). Offered a PR.
+3. Released as **3.3.1** via `just release 3.3.1` (PyPI + GitHub release +
+   Homebrew tap). The recipe's final `brew test` then hung for five minutes:
+   `aiuse --version` sat in state `T`. **Regression in 3.3.1:** the exit-time
+   `restore_stdin_tty` now also covers stdout/stderr, and `brew test` (like
+   `aiuse … &` under job control) runs the process in a background process
+   group with stderr on the tty, so `tcsetattr` raised SIGTTOU and stopped
+   it. 3.3.0 only looked at stdin, so it never wrote. Fixed by comparing the
+   current attrs with the snapshot first (no-op when unchanged) and writing
+   only when `os.tcgetpgrp(fd) == os.getpgrp()`; reproduced with
+   `scratchpad/bgjob_repro.py` (pty + `bash -i -c 'aiuse --version & wait'`:
+   3.3.1 "job stopped", working tree clean). Shipped as **3.3.2**.

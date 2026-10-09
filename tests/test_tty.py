@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from aiuse import tty
 from aiuse.collectors import runner
 from aiuse.tty import restore_stdin_tty, save_stdin_tty
@@ -50,9 +52,43 @@ def test_restore_targets_the_saved_fd(monkeypatch):
     import termios
 
     calls: list[tuple[int, int, object]] = []
+    monkeypatch.setattr(termios, "tcgetattr", lambda fd: ["raw"])
     monkeypatch.setattr(termios, "tcsetattr", lambda fd, when, attrs: calls.append((fd, when, attrs)))
+    monkeypatch.setattr(tty, "_owns_terminal", lambda fd: True)
     restore_stdin_tty((2, ["attrs"]))
     assert calls == [(2, termios.TCSADRAIN, ["attrs"])]
+
+
+def test_restore_is_a_noop_when_nothing_changed(monkeypatch):
+    """No tcsetattr at all in the common case (no SIGTTOU risk, no drain)."""
+    import termios
+
+    monkeypatch.setattr(termios, "tcgetattr", lambda fd: ["attrs"])
+    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: pytest.fail("tcsetattr on unchanged attrs"))
+    monkeypatch.setattr(tty, "_owns_terminal", lambda fd: pytest.fail("checked pgrp on unchanged attrs"))
+    restore_stdin_tty((2, ["attrs"]))
+
+
+def test_restore_never_writes_from_a_background_job(monkeypatch):
+    """``aiuse --version &`` with stderr on the tty: tcsetattr would SIGTTOU-stop us.
+
+    Regression: 3.3.1's ``brew test`` hung for five minutes in state T.
+    """
+    import termios
+
+    monkeypatch.setattr(termios, "tcgetattr", lambda fd: ["raw"])
+    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: pytest.fail("tcsetattr from a background process group"))
+    monkeypatch.setattr(tty.os, "tcgetpgrp", lambda fd: 4242)
+    monkeypatch.setattr(tty.os, "getpgrp", lambda: 1)
+    restore_stdin_tty((2, ["attrs"]))
+
+
+def test_owns_terminal_matches_foreground_pgrp(monkeypatch):
+    monkeypatch.setattr(tty.os, "tcgetpgrp", lambda fd: 7)
+    monkeypatch.setattr(tty.os, "getpgrp", lambda: 7)
+    assert tty._owns_terminal(2)
+    monkeypatch.setattr(tty.os, "tcgetpgrp", lambda fd: (_ for _ in ()).throw(OSError("not a tty")))
+    assert not tty._owns_terminal(2)
 
 
 def test_run_collectors_restores_the_terminal_before_returning(monkeypatch):
