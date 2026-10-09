@@ -304,5 +304,11 @@ before the fix.
    `bd show --json` had stderr merged into the output the scripts parse, so
    any warning made the parse fail and refused a healthy reading. stderr now
    goes to a file and appears in the refuse detail.
+9. **Importer: silent truncation (5i).** It listed all issues with a limit
+   of 500, so past 500 older open issues were dropped without a word and
+   `--issue N` for an old issue failed as not found. It now lists open
+   issues only, up to `GH_ISSUES_LIMIT` (default 1000), warns when the
+   listing reaches the limit, and fetches each `--issue N` with
+   `gh issue view`.
 
-Not changed yet: the nits 5i to 5m from the same review.
+Not changed yet: the nits 5j to 5m from the same review.

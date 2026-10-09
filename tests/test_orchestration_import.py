@@ -168,6 +168,90 @@ def test_unknown_requested_issue_fails(tmp_path):
     assert "not found on GitHub: 999" in result.stderr
 
 
+FAKE_GH = """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$GH_LOG"
+case "$1 $2" in
+  "issue list") cat "$FAKE_GH_LIST" ;;
+  "issue view")
+    f="$FAKE_GH_DIR/$3.json"
+    [ -f "$f" ] || { echo "GraphQL: Could not resolve to an issue with the number of $3." >&2; exit 1; }
+    cat "$f" ;;
+  *) echo "unexpected gh call: $*" >&2; exit 64 ;;
+esac
+"""
+
+
+def _run_gh(tmp_path: Path, *args: str, open_issues: list[dict], by_number: list[dict], **env_extra: str):
+    """Run the importer against a stub gh instead of GH_ISSUES_JSON."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    for name, text in (("bd", FAKE_BD), ("gh", FAKE_GH)):
+        (bin_dir / name).write_text(text, encoding="utf-8")
+        (bin_dir / name).chmod(0o755)
+    (tmp_path / "gh-list.json").write_text(json.dumps(open_issues), encoding="utf-8")
+    views = tmp_path / "views"
+    views.mkdir(exist_ok=True)
+    for issue in by_number:
+        (views / f"{issue['number']}.json").write_text(json.dumps(issue), encoding="utf-8")
+    (tmp_path / "list.json").write_text("[]", encoding="utf-8")
+    for log in ("bd.log", "gh.log"):
+        (tmp_path / log).write_text("", encoding="utf-8")
+    env = _base_env() | {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "FAKE_GH_LIST": str(tmp_path / "gh-list.json"),
+        "FAKE_GH_DIR": str(views),
+        "GH_LOG": str(tmp_path / "gh.log"),
+        "FAKE_BD_LIST": str(tmp_path / "list.json"),
+        "BD_LOG": str(tmp_path / "bd.log"),
+        "BD_DIR": str(tmp_path),
+        **env_extra,
+    }
+    env.pop("GH_ISSUES_JSON", None)
+    result = subprocess.run(
+        ["bash", str(SCRIPT), "--repo", "djbclark/aiuse", *args],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, (tmp_path / "gh.log").read_text(encoding="utf-8").splitlines()
+
+
+# Review 2, finding 5i: `--state all --limit 500` silently dropped older open
+# issues past 500, and `--issue N` for an old issue then failed as not found.
+def test_lists_open_issues_and_views_requested_ones(tmp_path):
+    open_issues = [i for i in ISSUES if i["state"] == "OPEN"]
+    closed_17 = next(i for i in ISSUES if i["number"] == 17)
+    result, gh_calls = _run_gh(
+        tmp_path, "--issue", "17", "--issue", "16", open_issues=open_issues, by_number=[closed_17]
+    )
+    assert result.returncode == 0, result.stderr
+    assert gh_calls[0].startswith("issue list -R djbclark/aiuse --state open --limit 1000 --json ")
+    assert [c.split(" -R")[0] for c in gh_calls[1:]] == ["issue view 17"], "16 is already listed"
+    assert "summary: 3 to create, 0 already present" in result.stdout
+    assert "warning" not in result.stderr
+
+
+def test_warns_when_the_listing_reaches_the_limit(tmp_path):
+    open_issues = [i for i in ISSUES if i["state"] == "OPEN"]
+    result, _ = _run_gh(tmp_path, open_issues=open_issues, by_number=[], GH_ISSUES_LIMIT="2")
+    assert result.returncode == 0, result.stderr
+    assert "warning: gh listed 2 open issues, which is the limit" in result.stderr
+
+
+def test_requested_issue_unknown_to_gh_fails(tmp_path):
+    result, _ = _run_gh(tmp_path, "--issue", "999", open_issues=[], by_number=[])
+    assert result.returncode == 1
+    assert "not found on GitHub: 999" in result.stderr
+
+
+def test_issue_flag_needs_a_number(tmp_path):
+    result, _ = _run(tmp_path, "--issue", "abc")
+    assert result.returncode == 2
+    assert "--issue needs an issue number" in result.stderr
+
+
 # Review 2, finding 5f: djbclark/aiuse is public, and the importer copied every
 # open issue's body, from any author, into bead descriptions that a yolo agent
 # is told to read and act on. Only allowlisted authors are imported now.

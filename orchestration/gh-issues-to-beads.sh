@@ -27,6 +27,12 @@
 #   BD_DIR         directory bd runs in (default: git toplevel). Point it at
 #                  the checkout that owns .beads/ when running from a worktree.
 #   GH_ISSUES_JSON read issues from this file instead of calling gh (tests).
+#   GH_ISSUES_LIMIT  most open issues to list (default 1000). A listing that
+#                  reaches it prints a warning, since issues past it are missing.
+#
+# gh calls (read-only): `gh issue list --state open`, then `gh issue view N`
+# for each --issue N the listing does not already hold, so an old or closed
+# issue is found however many issues the repo has.
 #
 # Mapping (title "[est. X] Title" is the repo's sizing convention):
 #   title          the issue title without its "[est. ...]" prefix
@@ -53,6 +59,10 @@ while [ $# -gt 0 ]; do
     shift
     ;;
   --issue)
+    if ! [[ ${2:-} =~ ^[0-9]+$ ]]; then
+      echo "gh-issues-to-beads: --issue needs an issue number (got '${2:-}')" >&2
+      exit 2
+    fi
     extra_issues+=("$2")
     shift
     ;;
@@ -94,7 +104,17 @@ fields=number,title,state,labels,body,url,author
 if [ -n "${GH_ISSUES_JSON:-}" ]; then
   issues=$(cat "$GH_ISSUES_JSON")
 else
-  issues=$(gh issue list -R "$repo" --state all --limit 500 --json "$fields")
+  list_limit="${GH_ISSUES_LIMIT:-1000}"
+  issues=$(gh issue list -R "$repo" --state open --limit "$list_limit" --json "$fields")
+  if [ "$(jq length <<<"$issues")" -ge "$list_limit" ]; then
+    echo "gh-issues-to-beads: warning: gh listed $list_limit open issues, which is the limit; open issues past it are missing from this run (raise GH_ISSUES_LIMIT)" >&2
+  fi
+  for n in "${extra_issues[@]+"${extra_issues[@]}"}"; do
+    jq -e --argjson n "$n" 'any(.[]; .number == $n)' <<<"$issues" >/dev/null && continue
+    if one=$(gh issue view "$n" -R "$repo" --json "$fields" 2>/dev/null); then
+      issues=$(jq -c --argjson one "$one" '. + [$one]' <<<"$issues")
+    fi
+  done
 fi
 
 # Wanted = every open issue plus any --issue numbers, oldest first.
