@@ -58,3 +58,16 @@ def no_real_token_ledger(monkeypatch):
     from aiuse import ledger
 
     monkeypatch.setattr(ledger, "ledger_enabled", lambda config=None: False)
+
+
+@pytest.fixture(autouse=True)
+def isolate_user_config(tmp_path, monkeypatch):
+    """Keep the operator's real ``~/.config/aiuse/config.toml`` out of every test.
+
+    ``load_config()`` with no path reads the XDG user config, so settings such as
+    ``[disabled_services]`` silently changed test outcomes on the developer's own
+    machine (``--available`` exited 3 because the real config disables
+    antigravity, the provider the fixture is built from). Tests that need a
+    config pass one explicitly or patch ``default_config_dir`` themselves.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
