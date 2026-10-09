@@ -102,9 +102,8 @@ just release-dry 2.1.16
 10. Upgrade the pipx install that leads the default PATH, then confirm both
     `aiuse --version` and `ai --version` report the released version
 
-**Rehearse first:** `./aiuse-test.sh [X.Y.Z] [--quick]` runs preflight checks,
-the quality gate, `release.py --dry-run`, a wheel build + `twine check`, and an
-install/smoke test of the wheel in a throwaway venv. It publishes nothing.
+**Try the unreleased code first:** `./aiuse-test.sh [aiuse args]` runs `aiuse`
+from this source tree (not the installed pipx/Homebrew copy), from any directory.
 
 Useful flags: `--notes-file PATH`, `--notes '…'`, `--skip-tests`,
 `--skip-pypi-wait`, `--skip-homebrew`, `--allow-dirty`,
