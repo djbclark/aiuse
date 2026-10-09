@@ -25,6 +25,7 @@ from .bailian import collect_bailian
 from .base import which
 from .caut import collect_caut
 from .clinepass import collect_clinepass
+from .codexbar import DEFAULT_TIMEOUT_BACKOFF_SECONDS as DEFAULT_CODEXBAR_TIMEOUT_BACKOFF
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
 from .grok import collect_grok
@@ -109,6 +110,31 @@ def _disabled_services(config: dict[str, Any]) -> dict[str, str]:
     return disabled
 
 
+def _codexbar_timeout_settings(config: dict[str, Any], codexbar_cfg: dict[str, Any]) -> tuple[dict[str, float], float]:
+    """Per-provider CodexBar timeouts and the hang backoff from ``[collectors.codexbar]``.
+
+    ``provider_timeouts`` maps a CodexBar provider id to seconds; a CLI
+    ``--timeout`` (``timeouts.force``) still wins over every one of them.
+    ``timeout_backoff`` is the seconds a provider that hung is skipped (0 off).
+    """
+    provider_timeouts: dict[str, float] = {}
+    timeouts_cfg = config.get("timeouts") if isinstance(config.get("timeouts"), dict) else {}
+    raw = codexbar_cfg.get("provider_timeouts")
+    if isinstance(raw, dict) and (timeouts_cfg or {}).get("force") is None:
+        for provider, seconds in raw.items():
+            try:
+                value = float(seconds)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                provider_timeouts[str(provider).strip().lower()] = value
+    try:
+        backoff = float(codexbar_cfg.get("timeout_backoff", DEFAULT_CODEXBAR_TIMEOUT_BACKOFF))
+    except (TypeError, ValueError):
+        backoff = DEFAULT_CODEXBAR_TIMEOUT_BACKOFF
+    return provider_timeouts, max(0.0, backoff)
+
+
 # Canonical provider identity lives in models.PROVIDER_ID_ALIASES so collection
 # and the history/analysis passes cannot drift onto different spellings.
 _PROVIDER_ALIASES = PROVIDER_ID_ALIASES
@@ -144,9 +170,11 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         cswap_timeout = timeout_for(config, "cswap")
         jobs.append(("cswap", partial(collect_cswap, timeout=cswap_timeout)))
     if _enabled(collectors_cfg, "codexbar"):
-        providers = (collectors_cfg.get("codexbar") or {}).get("providers", "enabled")
+        codexbar_cfg = collectors_cfg.get("codexbar") if isinstance(collectors_cfg.get("codexbar"), dict) else {}
+        providers = (codexbar_cfg or {}).get("providers", "enabled")
         codexbar_timeout = timeout_for(config, "codexbar")
         discovery_timeout = timeout_for(config, "codexbar_discovery")
+        provider_timeouts, timeout_backoff = _codexbar_timeout_settings(config, codexbar_cfg or {})
         jobs.append(
             (
                 "codexbar",
@@ -157,6 +185,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     discovery_timeout=discovery_timeout,
                     min_intervals=intervals,
                     skip_providers=frozenset(disabled_providers),
+                    provider_timeouts=provider_timeouts,
+                    timeout_backoff=timeout_backoff,
                 ),
             )
         )

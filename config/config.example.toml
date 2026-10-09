@@ -23,6 +23,12 @@
 [collectors.codexbar]
 # "enabled" honors CodexBar's own provider list; use "all" or a CSV to override.
 # providers = "enabled"
+# Per-provider query timeout (seconds) instead of timeouts.codexbar; a CLI
+# --timeout still wins. Use for a provider that is slow or known to hang.
+# provider_timeouts = { alibabatokenplan = 10 }
+# A provider whose query hits its timeout is skipped for this many seconds,
+# doubling per further consecutive timeout (cap 12x). 0 disables.
+# timeout_backoff = 1800
 
 [collectors.openusage_ai]
 # OpenUsage.ai — the macOS menu-bar app's CLI / loopback API.

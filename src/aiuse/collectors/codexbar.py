@@ -21,8 +21,8 @@ from aiuse.models import (
 from aiuse.models import coerce_float as _f
 from aiuse.models import coerce_int as _int_or_none
 
-from .base import CollectorError, run_json, which
-from .throttle import QueryGate
+from .base import CollectorError, CollectorTimeout, run_json, which
+from .throttle import QueryGate, TimeoutBackoff
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
 PREPAID_HINTS = {
@@ -41,6 +41,13 @@ PREPAID_HINTS = {
 # costs only the slowest provider's latency. Capped to avoid spawning an
 # unreasonable number of processes for a very long explicit --providers list.
 _MAX_CONCURRENT_PROVIDER_QUERIES = 16
+
+# After a provider's query hangs until its timeout, skip it for this long
+# (doubling per further consecutive timeout, capped at 12x). One hanging
+# provider otherwise holds every aiuse run, including each scheduled sample,
+# at the full CodexBar timeout. [collectors.codexbar] timeout_backoff overrides;
+# 0 disables. See aiuse-e9d and docs/collector-concurrency.md.
+DEFAULT_TIMEOUT_BACKOFF_SECONDS = 1800.0
 
 # CodexBar `auto` for these providers prefers a local heuristic that can diverge
 # from server-authoritative quotas. OpenCode Go's local path sums SQLite costs
@@ -111,6 +118,8 @@ def collect_codexbar(
     discovery_timeout: float | None = None,
     min_intervals: dict[str, float] | None = None,
     skip_providers: frozenset[str] | None = None,
+    provider_timeouts: dict[str, float] | None = None,
+    timeout_backoff: float | None = DEFAULT_TIMEOUT_BACKOFF_SECONDS,
 ) -> list[AccountUsage]:
     if not which("codexbar"):
         raise CollectorError("codexbar not found on PATH")
@@ -138,8 +147,14 @@ def collect_codexbar(
     errors: list[str] = []
     reuse_notes: dict[str, str] = {}
 
+    backoff = TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None
     for provider_arg, outcome in _query_providers(
-        provider_list, timeout=timeout, min_intervals=min_intervals, reuse_notes=reuse_notes
+        provider_list,
+        timeout=timeout,
+        min_intervals=min_intervals,
+        reuse_notes=reuse_notes,
+        provider_timeouts=provider_timeouts,
+        backoff=backoff,
     ):
         if isinstance(outcome, CollectorError):
             name = provider_arg or "enabled providers"
@@ -222,6 +237,8 @@ def _query_providers(
     timeout: float = 45.0,
     min_intervals: dict[str, float] | None = None,
     reuse_notes: dict[str, str] | None = None,
+    provider_timeouts: dict[str, float] | None = None,
+    backoff: TimeoutBackoff | None = None,
 ) -> list[tuple[str | None, Any]]:
     """Run one `codexbar usage` call per entry in provider_list, concurrently.
 
@@ -234,15 +251,35 @@ def _query_providers(
     Providers listed in ``min_intervals`` go through a cross-process
     :class:`QueryGate`; when one is throttled its last stored payload is
     returned instead and ``reuse_notes[provider]`` explains why.
+
+    ``provider_timeouts`` overrides ``timeout`` per provider. With a
+    ``backoff``, a provider whose last query hung is skipped (its error says
+    until when) and a fresh hang is recorded for the next run.
     """
     deduped: list[str | None] = list(dict.fromkeys(provider_list))
     intervals = min_intervals or {}
+    per_provider = {str(k).strip().lower(): float(v) for k, v in (provider_timeouts or {}).items()}
     notes = reuse_notes if reuse_notes is not None else {}
 
     def run(provider_arg: str | None) -> Any:
-        if provider_arg is not None and intervals.get(provider_arg.lower(), 0) > 0:
-            return _query_provider_gated(provider_arg, intervals[provider_arg.lower()], timeout=timeout, notes=notes)
-        return _query_provider(provider_arg, timeout=timeout)
+        if provider_arg is None:
+            return _query_provider(None, timeout=timeout)
+        provider = provider_arg.lower()
+        provider_timeout = per_provider.get(provider, timeout)
+        if backoff is not None:
+            reason = backoff.blocked(provider)
+            if reason is not None:
+                return CollectorError(reason)
+        if intervals.get(provider, 0) > 0:
+            outcome = _query_provider_gated(provider_arg, intervals[provider], timeout=provider_timeout, notes=notes)
+        else:
+            outcome = _query_provider(provider_arg, timeout=provider_timeout)
+        if backoff is not None:
+            if isinstance(outcome, CollectorTimeout):
+                backoff.record_timeout(provider, provider_timeout)
+            elif provider_arg not in notes:  # a live answer, not a throttled reuse
+                backoff.clear(provider)
+        return outcome
 
     if len(deduped) <= 1:
         return [(provider_arg, run(provider_arg)) for provider_arg in deduped]

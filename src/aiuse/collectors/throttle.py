@@ -19,6 +19,7 @@ import fcntl
 import json
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -195,3 +196,113 @@ class QueryGate:
         if isinstance(entry, dict) and "payload" in entry:
             return parse_dt(entry.get("fetched_at"))
         return None
+
+
+class TimeoutBackoff:
+    """Cross-process memory of providers whose live query hung until killed.
+
+    A provider that hangs (CodexBar's ``alibabatokenplan`` waits forever when it
+    cannot read browser cookies) costs its full timeout on every aiuse run and
+    keeps the whole collection that slow. After a timeout the provider is
+    skipped for ``base`` seconds, doubling with each further consecutive timeout
+    up to ``cap``; a successful query (any answer that is not a timeout) clears
+    it. State is one JSON file per source under :func:`throttle_dir`, shared by
+    every aiuse process, so the scheduled sampler pays the hang once per
+    backoff window instead of once per sample.
+    """
+
+    def __init__(
+        self,
+        source: str,
+        *,
+        base: float,
+        cap: float | None = None,
+        directory: Path | None = None,
+    ) -> None:
+        self.source = source
+        self.base = max(0.0, float(base))
+        self.cap = max(self.base, float(cap)) if cap is not None else self.base * 12
+        self.directory = directory if directory is not None else throttle_dir()
+
+    @property
+    def enabled(self) -> bool:
+        return self.base > 0
+
+    @property
+    def _path(self) -> Path:
+        return self.directory / f"{self.source}-timeouts.json"
+
+    def _read(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _update(self, provider: str, change: Callable[[Any], dict[str, Any] | None]) -> None:
+        """Replace ``provider``'s entry with ``change(previous)`` under the file lock (None drops it)."""
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            fd = os.open(self.directory / f"{self.source}-timeouts.lock", os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError:
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            state = self._read()
+            entry = change(state.get(provider))
+            if entry is None:
+                if provider not in state:
+                    return
+                state.pop(provider, None)
+            else:
+                state[provider] = entry
+            tmp = self._path.with_suffix(f".json.{os.getpid()}.tmp")
+            try:
+                tmp.write_text(json.dumps(state, default=str), encoding="utf-8")
+                os.replace(tmp, self._path)
+            except OSError:
+                tmp.unlink(missing_ok=True)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    def _window(self, count: int) -> float:
+        return min(self.cap, self.base * (2 ** max(0, count - 1)))
+
+    def blocked(self, provider: str) -> str | None:
+        """Why ``provider`` is skipped right now, or None when it may be queried."""
+        if not self.enabled:
+            return None
+        entry = self._read().get(provider.lower())
+        if not isinstance(entry, dict):
+            return None
+        last = parse_dt(entry.get("timed_out_at"))
+        if last is None:
+            return None
+        count = int(entry.get("count") or 1)
+        now = utcnow()
+        until = last + timedelta(seconds=self._window(count))
+        if last > now or now >= until:
+            return None
+        timeout = entry.get("timeout")
+        took = f" ({_format_duration(float(timeout))})" if isinstance(timeout, (int, float)) else ""
+        times = "once" if count == 1 else f"{count} times in a row"
+        return (
+            f"skipped: query timed out{took} {times}, last {_format_duration((now - last).total_seconds())} ago; "
+            f"next try in {_format_duration((until - now).total_seconds())}"
+        )
+
+    def record_timeout(self, provider: str, timeout: float) -> None:
+        if not self.enabled:
+            return
+
+        def bump(previous: Any) -> dict[str, Any]:
+            count = int(previous.get("count") or 0) + 1 if isinstance(previous, dict) else 1
+            return {"timed_out_at": utcnow().isoformat(), "count": count, "timeout": float(timeout)}
+
+        self._update(provider.lower(), bump)
+
+    def clear(self, provider: str) -> None:
+        if not self.enabled or provider.lower() not in self._read():
+            return
+        self._update(provider.lower(), lambda _previous: None)

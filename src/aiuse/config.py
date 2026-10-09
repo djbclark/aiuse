@@ -350,6 +350,8 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "base_url",
         "health_path",
         "probe_url",
+        "provider_timeouts",
+        "timeout_backoff",
     }
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
@@ -495,6 +497,30 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             for ek in entry:
                 if ek not in KNOWN_COLLECTOR_ENTRY_KEYS:
                     issues.append(f"warning: unknown collectors.{name} key {ek!r}")
+            provider_timeouts = entry.get("provider_timeouts")
+            if provider_timeouts is not None and not isinstance(provider_timeouts, dict):
+                issues.append(f"error: collectors.{name}.provider_timeouts must be a provider -> seconds mapping")
+            elif isinstance(provider_timeouts, dict):
+                for provider, value in provider_timeouts.items():
+                    try:
+                        ok = float(value) > 0
+                    except (TypeError, ValueError):
+                        ok = False
+                    if not ok:
+                        issues.append(
+                            f"error: collectors.{name}.provider_timeouts.{provider} must be a positive "
+                            f"number of seconds (got {value!r})"
+                        )
+            if "timeout_backoff" in entry:
+                try:
+                    ok = float(entry["timeout_backoff"]) >= 0
+                except (TypeError, ValueError):
+                    ok = False
+                if not ok:
+                    issues.append(
+                        f"error: collectors.{name}.timeout_backoff must be a non-negative number of seconds "
+                        f"(got {entry['timeout_backoff']!r})"
+                    )
 
     query_min_interval = cfg.get("query_min_interval")
     if query_min_interval is not None and not isinstance(query_min_interval, dict):

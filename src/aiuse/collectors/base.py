@@ -14,6 +14,10 @@ class CollectorError(RuntimeError):
     pass
 
 
+class CollectorTimeout(CollectorError):
+    """A collector subprocess was killed at its timeout (it hung, not failed)."""
+
+
 # Keep in sync with ai.config.DEFAULT_SUBPROCESS_TIMEOUT (import avoided to
 # keep this module free of config load side effects for unit tests).
 DEFAULT_RUN_TIMEOUT = 45.0
@@ -118,7 +122,7 @@ def run_json(
     except FileNotFoundError as exc:
         raise CollectorError(f"command not found: {argv[0]}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise CollectorError(f"timed out after {timeout}s: {' '.join(argv)}") from exc
+        raise CollectorTimeout(f"timed out after {timeout}s: {' '.join(argv)}") from exc
 
     stdout = (proc.stdout or "").strip()
     stderr = (proc.stderr or "").strip()

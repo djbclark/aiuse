@@ -63,7 +63,19 @@ Tools either return in tens of seconds or hang; long budgets only delay failure
 - Then **one subprocess per provider**, concurrent via `ThreadPoolExecutor`,
   capped at **`_MAX_CONCURRENT_PROVIDER_QUERIES = 16`**.
 - Per-provider timeout: `timeout_for(config, "codexbar")` (full 45s budget
-  **each** — a stuck provider can hold its own slot that long).
+  **each** — a stuck provider can hold its own slot that long), unless
+  `[collectors.codexbar] provider_timeouts = { <provider> = <seconds> }` sets
+  a shorter one. A CLI `--timeout` still wins over both.
+- **Hang backoff** (aiuse-e9d, 2026-10-09): a provider whose query is killed
+  at its timeout is skipped for `[collectors.codexbar] timeout_backoff`
+  seconds (default 1800), doubling per further consecutive timeout up to 12x.
+  Its `codexbar-query-errors` entry says `skipped: query timed out ... next
+try in ...`. Any answer that is not a timeout clears it. State is shared by
+  every aiuse process in `~/.cache/aiuse/query-throttle/codexbar-timeouts.json`,
+  so the scheduled sampler pays a hang once per window, not once per sample.
+  `alibabatokenplan` was the motivating case: on 2026-10-09 an explicit
+  `codexbar usage --provider alibabatokenplan` still hung past 60s (CodexBar
+  0.73.0), while `devin` answered in about 20s.
 - Rationale: bundled “all enabled” calls inside CodexBar are serial; fan-out
   makes wall-clock ≈ slowest provider, not sum.
 
