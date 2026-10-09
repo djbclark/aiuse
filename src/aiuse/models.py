@@ -568,6 +568,10 @@ class AccountUsage:
     # collected_at means the row was a cached read, not a live one.
     collected_at: datetime | None = None
 
+    # Why a local credential could not be read (e.g. the login keychain is
+    # locked), from aiuse.keychain.KeychainResult.to_dict. Omitted when fine.
+    credential_status: dict[str, Any] | None = None
+
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "source": self.source,
@@ -589,6 +593,8 @@ class AccountUsage:
             d["collected_at"] = self.collected_at.isoformat()
         if self.usage_credits is not None:
             d["usage_credits"] = self.usage_credits.to_dict()
+        if self.credential_status:
+            d["credential_status"] = dict(self.credential_status)
         return d
 
 

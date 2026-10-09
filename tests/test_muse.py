@@ -661,8 +661,8 @@ def test_merge_subscription_windows_promotes_spend_row(monkeypatch):
     )
     monkeypatch.setattr(
         muse_mod,
-        "_subscription_windows_for_local_login",
-        lambda _timeout: (windows, "Muse Code plan: Everyday Usage."),
+        "_local_login_plan",
+        lambda _timeout: (windows, "Muse Code plan: Everyday Usage.", None),
     )
     row = AccountUsage(
         source="muse",

@@ -50,6 +50,8 @@ SEMANTICS: dict[str, str] = {
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
+    "credential_status": "why a local credential could not be read (source keychain): status locked = login keychain locked, retry after unlock, NOT an invalid credential; missing = item absent, sign in again; prompt = a Keychain dialog was raised and timed out, run aiuse trust audit; denied = dialog cancelled or wrong password; numbers from that account may be partial",
+    "credential_issues": "--available only: every account whose credential_status is set (provider, account, status, action); the pools themselves stay quota-based",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
 }
 
@@ -336,6 +338,7 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "models_hint": hints.get(family),
                     "age_seconds": account.get("age_seconds"),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
+                    **({"credential_status": account["credential_status"]} if account.get("credential_status") else {}),
                     "windows": windows,
                 }
             )
@@ -415,6 +418,40 @@ def summary_line(pool: Mapping[str, Any]) -> str:
 
 def summary_lines(pools: Iterable[Mapping[str, Any]]) -> list[str]:
     return [summary_line(p) for p in pools]
+
+
+def credential_issues(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Accounts whose local credential read failed, with the classified status.
+
+    A row with no windows (e.g. Muse when the keychain is locked) has no pool
+    entry, so ``--available`` lists these separately instead of hiding them.
+    """
+    issues: list[dict[str, Any]] = []
+    for account in snap.get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        status = account.get("credential_status")
+        if not isinstance(status, dict) or not status.get("status") or status.get("status") == "ok":
+            continue
+        issues.append(
+            {
+                "provider": account.get("provider"),
+                "account": account.get("account"),
+                **status,
+            }
+        )
+    return issues
+
+
+def credential_issue_line(issue: Mapping[str, Any]) -> str:
+    """`credential: muse ai.meta.dev.credentials keychain LOCKED (security exit 152) - <action>`"""
+    code = issue.get("exit_code")
+    status = str(issue.get("status") or "error")
+    code_text = "timed out" if status == "prompt" else f"security exit {code}" if code is not None else "no exit status"
+    return (
+        f"credential: {issue.get('provider') or '?'} {issue.get('item') or ''} "
+        f"{issue.get('source') or 'keychain'} {status.upper()} ({code_text}) - {issue.get('action') or ''}"
+    ).replace("  ", " ")
 
 
 def available_pools(snap: Mapping[str, Any]) -> list[dict[str, Any]]:

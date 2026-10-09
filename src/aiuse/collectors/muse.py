@@ -36,11 +36,12 @@ import time
 from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
 import requests
 
+from aiuse.keychain import MISSING, PROMPT, KeychainResult, read_generic_password
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, UsageCredits, parse_dt
 from aiuse.secretspec import resolve_manifest_path
 
@@ -98,7 +99,10 @@ _SUBS_CACHE_TTL_S = 300.0
 _subs_cache_lock = threading.Lock()
 # ``payload`` None means "no cached read". A dict (possibly without subs_usage)
 # is a fresh key response and is reused for five minutes.
-_subs_cache: dict[str, Any] = {"at": 0.0, "payload": None}
+_subs_cache: dict[str, Any] = {"at": 0.0, "payload": None, "keychain": None}
+# A keychain read that timed out raised a SecurityAgent prompt; do not raise it
+# again on every watch tick.
+_PROMPT_BACKOFF_S = 3600.0
 
 
 def collect_muse(
@@ -1363,38 +1367,30 @@ def _plan_note_from_key_payload(payload: Any, windows: list[QuotaWindow]) -> str
     return None
 
 
-def _read_muse_keychain_access_token() -> str | None:
-    """OAuth access token from the Muse CLI login. Never the API key."""
+def _read_muse_keychain_access_token(
+    *,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[KeychainResult, str | None]:
+    """OAuth access token from the Muse CLI login. Never the API key.
+
+    Returns the classified ``security`` result with the token, so a locked
+    keychain (exit 152) or a raised prompt (timeout) is reported as such and
+    never as a missing or invalid credential.
+    """
+    result, raw = read_generic_password(_KEYCHAIN_SERVICE, _KEYCHAIN_ACCOUNT, timeout=5.0, run_fn=run_fn)
+    if not result.ok or raw is None:
+        return result, None
+    not_login = KeychainResult(status=MISSING, returncode=0, detail="item holds no Muse login access_token")
     try:
-        result = subprocess.run(
-            [
-                "security",
-                "find-generic-password",
-                "-s",
-                _KEYCHAIN_SERVICE,
-                "-a",
-                _KEYCHAIN_ACCOUNT,
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    try:
-        payload = json.loads(result.stdout.strip())
+        payload = json.loads(raw.strip())
     except json.JSONDecodeError:
-        return None
+        return not_login, None
     if not isinstance(payload, dict):
-        return None
+        return not_login, None
     token = payload.get("access_token")
     if not isinstance(token, str) or not token.strip():
-        return None
-    return token.strip()
+        return not_login, None
+    return result, token.strip()
 
 
 def _fetch_muse_code_key(token: str, timeout: float) -> dict[str, Any] | None:
@@ -1428,35 +1424,50 @@ def _fetch_muse_code_key(token: str, timeout: float) -> dict[str, Any] | None:
     return payload
 
 
-def _subscription_windows_for_local_login(timeout: float) -> tuple[list[QuotaWindow], str | None]:
-    """Plan windows from the local Muse CLI login.
+def _local_login_plan(timeout: float) -> tuple[list[QuotaWindow], str | None, KeychainResult | None]:
+    """Plan windows, plan note and keychain problem from the local Muse CLI login.
 
     The key endpoint is rate-limited, and ``aiuse watch`` collects on a short
-    interval, so a hit is reused for five minutes. Unit tests must not read
-    the operator keychain or call Meta.
+    interval, so a hit is reused for five minutes. A keychain read that raised
+    a prompt is not retried for an hour. Unit tests must not read the operator
+    keychain or call Meta.
     """
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        return [], None
+        return [], None, None
     now = time.monotonic()
+    issue: KeychainResult | None = None
     with _subs_cache_lock:
         cached_at = float(_subs_cache.get("at") or 0.0)
         cached = _subs_cache.get("payload")
-        if isinstance(cached, dict) and now - cached_at < _SUBS_CACHE_TTL_S:
+        cached_issue = _subs_cache.get("keychain")
+        ttl = (
+            _PROMPT_BACKOFF_S
+            if isinstance(cached_issue, KeychainResult) and cached_issue.status == PROMPT
+            else _SUBS_CACHE_TTL_S
+        )
+        if isinstance(cached, dict) and now - cached_at < ttl:
             payload = cached
+            issue = cached_issue if isinstance(cached_issue, KeychainResult) else None
         else:
             payload = None
     if payload is None:
-        token = _read_muse_keychain_access_token()
+        result, token = _read_muse_keychain_access_token()
+        issue = None if result.ok else result
         payload = _fetch_muse_code_key(token, timeout) if token else None
         # Cache a miss too, so a locked keychain or an inactive plan does not
-        # hit the rate-limited key endpoint on every watch tick.
+        # hit the keychain or the rate-limited key endpoint on every watch tick.
         stored = payload if isinstance(payload, dict) else {}
         with _subs_cache_lock:
             _subs_cache["at"] = time.monotonic()
             _subs_cache["payload"] = stored
+            _subs_cache["keychain"] = issue
         payload = stored
     windows = _windows_from_subs_usage(payload)
-    return windows, _plan_note_from_key_payload(payload, windows)
+    return windows, _plan_note_from_key_payload(payload, windows), issue
+
+
+def _keychain_issue_note(issue: KeychainResult) -> str:
+    return issue.message(f"Muse plan windows not read; keychain item {_KEYCHAIN_SERVICE}")
 
 
 def _merge_subscription_windows(
@@ -1465,11 +1476,15 @@ def _merge_subscription_windows(
     *,
     allow_local: bool,
 ) -> list[AccountUsage]:
-    """Attach Muse Code plan windows when the local login reports them."""
+    """Attach Muse Code plan windows when the local login reports them.
+
+    When the keychain read fails, say why on each row (``credential_status``
+    plus a note): locked, missing and prompt each need a different action.
+    """
     if not accounts or not allow_local:
         return accounts
-    windows, note = _subscription_windows_for_local_login(timeout)
-    if not windows and not note:
+    windows, note, issue = _local_login_plan(timeout)
+    if not windows and not note and issue is None:
         return accounts
     for row in accounts:
         if row.error:
@@ -1481,6 +1496,11 @@ def _merge_subscription_windows(
                 row.billing_kind = BillingKind.SUBSCRIPTION_WINDOW
         if note and note not in row.notes:
             row.notes.append(note)
+        if issue is not None:
+            issue_note = _keychain_issue_note(issue)
+            if issue_note not in row.notes:
+                row.notes.append(issue_note)
+            row.credential_status = issue.to_dict(item=_KEYCHAIN_SERVICE)
     return accounts
 
 

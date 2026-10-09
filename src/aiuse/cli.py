@@ -1048,6 +1048,8 @@ def _run_available(args: argparse.Namespace) -> int:
         SEMANTICS,
         apply_exclusions,
         available_pools,
+        credential_issue_line,
+        credential_issues,
         enrich_snapshot,
         freshness,
         summary_line,
@@ -1103,6 +1105,7 @@ def _run_available(args: argparse.Namespace) -> int:
     # view applies it on top of the routing-only excluded_pools rules.
     exclusions = {**(config.get("disabled_services") or {}), **(analysis_cfg.get("excluded_pools") or {})}
     pools, excluded = apply_exclusions(available_pools(snap_dict), exclusions)
+    issues = credential_issues(snap_dict)
 
     if args.json or args.format == "json":
         print(
@@ -1116,6 +1119,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     **fresh,
                     "available": pools,
                     "excluded": excluded,
+                    "credential_issues": issues,
                     "disabled_services": snap_dict.get("disabled_services") or {},
                     "agent_notes": snap_dict.get("agent_notes", []),
                     "semantics": dict(SEMANTICS),
@@ -1134,6 +1138,8 @@ def _run_available(args: argparse.Namespace) -> int:
     for entry in excluded:
         family = f" {entry['pool_family']}" if entry.get("pool_family") else ""
         print(f"excluded by operator: {entry['provider']}{family} ({entry['reason']})", file=sys.stderr)
+    for issue in issues:
+        print(credential_issue_line(issue), file=sys.stderr)
     if not pools:
         print(
             "no usable pools right now — everything measured is exhausted or unknown",

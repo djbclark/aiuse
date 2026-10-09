@@ -291,6 +291,17 @@ appear in `excluded` with the disabled reason too. The payload carries a
 top-level `disabled_services` object (`provider` → reason, `{}` when none)
 mirroring the snapshot field, plus its `semantics` entry.
 
+Accounts whose local credential read failed are listed in a top-level
+`credential_issues` array (`[]` when none): `provider`, `account`, `source`
+(`keychain`), `item`, `status`, `exit_code`, `action`. Text mode prints one
+`credential: …` line per issue on stderr. `status` is one of `locked` (login
+keychain locked, `security` exit 152 or 36: retry after unlock, the credential
+is fine), `missing` (exit 44: sign in again), `prompt` (the read timed out on a
+Keychain dialog: run `aiuse trust audit`), `denied` (exit 128 or 51) or
+`error`. A row with no windows has no pool entry, so this list is the only
+place `--available` shows it. Pools of such an account also carry the same
+object as `credential_status`.
+
 ## `aiuse note-exhausted` — agent-reported exhaustion overrides
 
 ```
@@ -390,6 +401,7 @@ into the other.
 | `provider_id`              | string            | canonical provider id used for matching/history (equals `provider` unless the row carries an alias spelling)                                                                                                              |
 | `service_id`               | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                         |
 | `collector_id`             | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                         |
+| `credential_status`        | object \| omitted | why a local credential could not be read: `source`, `item`, `status` (`locked` \| `missing` \| `prompt` \| `denied` \| `error`), `exit_code`, `action`. `locked` is never an invalid credential                           |
 | `collected_at`             | string \| omitted | 1.1 — the source's own measurement time for this row (CodexBar `usage.updatedAt`); older than the snapshot's `collected_at` means the row was a cached read. Omitted when the source reports none                         |
 | `usable_now`               | bool              | 1.1 — false if any applicable window is exhausted or no window has data. For Claude, only shared limits affect account usability; model caps affect their routing family in `--available`                                 |
 | `binding_window`           | string \| null    | 1.1 — label of the applicable window with the least remaining; Claude model caps do not bind the shared account                                                                                                           |
