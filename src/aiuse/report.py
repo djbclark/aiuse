@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, TextIO
 
@@ -369,6 +369,7 @@ def render_report(
 # Ladder display tags.  The numeric order is the visual order; each band has
 # its own queue semantics so comparisons never pretend that an error, prepaid
 # wallet, conserve warning, and burn recommendation share one numeric scale.
+_WEEKLY_MINUTES = 7 * 24 * 60
 _BAND_ERROR = 0  # could not fetch usage
 _BAND_EMPTY = 1  # totally depleted
 _BAND_NA = 2  # non-expiring prepaid / payg — no use-or-lose urgency
@@ -1230,10 +1231,17 @@ def _build_matrix_rows(
                 if model is not None:
                     cap = "<=50% of shared weekly" if model.casefold() == "fable" else "within shared weekly"
                     meter = "unknown" if used is None else f"{used:.0f}u/{window.remaining():.0f}l"
-                    status = " EXHAUSTED" if window.remaining() == 0 else ""
+                    exhausted = window.remaining() == 0
                     span = _format_reset_span(window.days_until_reset(now))
-                    reset = f" /{span.plain()}" if span else ""
-                    sublimit_notes.append(f"{model} cap ({cap}): {meter}{status}{reset}")
+                    reset = f"/{span.plain()}" if span else ""
+                    # cswap reports no duration for a model cap; it rides the weekly clock.
+                    paced = window if window.window_minutes else replace(window, window_minutes=_WEEKLY_MINUTES)
+                    pace = None if exhausted else compute_pace(paced, now=now)
+                    # Projected end-of-window use vs. the window's own quota:
+                    # "+44%" heads over it, "-22%" heads under it.
+                    trend = f" {(pace.pace_ratio - 1.0) * 100.0:+.0f}%" if pace is not None and pace.pace_ratio else ""
+                    status = " EXHAUSTED" if exhausted else ""
+                    sublimit_notes.append(f"{model} cap ({cap}): {meter}{reset}{trend}{status}")
                     continue
                 if used is None:
                     continue

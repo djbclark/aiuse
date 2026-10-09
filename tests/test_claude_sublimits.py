@@ -1,5 +1,6 @@
 """Claude has shared quota with model caps, not additive model pools."""
 
+import re
 from datetime import timedelta
 
 import pytest
@@ -110,10 +111,23 @@ def test_table_keeps_overall_week_and_indents_fable_cap(width):
     cap = next(line for line in text.splitlines() if "Fable cap" in line)
     assert cap.startswith("        ")
     assert "<=50% of shared weekly" in cap
-    assert "100u/0l EXHAUSTED" in cap
+    assert "100u/0l/3d EXHAUSTED" in cap
     assert "resets" not in cap
     assert not cap.endswith("…")
     assert all(len(line) <= width for line in text.splitlines())
+
+
+@pytest.mark.parametrize(
+    "fable_used,sign",
+    [(20.0, "-"), (95.0, "+")],
+)
+def test_fable_cap_line_matches_row_syntax_and_shows_pace(fable_used, sign):
+    text = render_clock_matrix([], snapshot=_snapshot(fable_used=fable_used), color=False, width=110)
+    cap = next(line for line in text.splitlines() if "Fable cap" in line)
+    # "<used>u/<left>l/<reset>" with no spaces, then the signed pace delta.
+    match = re.search(r": (\d+)u/(\d+)l/(\d+d(?:\d+h)?) ([+-])(\d+)%$", cap)
+    assert match is not None, cap
+    assert match.group(4) == sign
 
 
 def test_chat_keeps_shared_account_status_and_explains_cap():
