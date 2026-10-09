@@ -1,0 +1,168 @@
+"""Tests for orchestration/cswap-gate.sh (aiuse-juk.3, US-003).
+
+A stub ``cswap`` prints a canned ``cswap list --json`` document and logs its
+arguments, so the tests can also prove the gate never switches accounts.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+GATE = ROOT / "orchestration" / "cswap-gate.sh"
+
+pytestmark = pytest.mark.skipif(shutil.which("jq") is None, reason="jq not installed")
+
+
+def _base_env() -> dict[str, str]:
+    """The test environment minus BASH_ENV/ENV.
+
+    A non-interactive bash sources $BASH_ENV, and a developer's rc file there
+    can re-prepend directories to PATH, which would shadow the stubs below.
+    """
+    return {k: v for k, v in os.environ.items() if k not in ("BASH_ENV", "ENV")}
+
+
+FAKE_CSWAP = """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$CSWAP_LOG"
+cat "$FAKE_CSWAP_JSON"
+exit "${FAKE_CSWAP_RC:-0}"
+"""
+
+
+def _account(number: int, pct: float | None, *, active: bool, status: str = "ok", age: float = 30.0) -> dict:
+    five_hour = None
+    if pct is not None:
+        five_hour = {
+            "pct": pct,
+            "resetsAt": "2026-10-09T09:39:59+00:00",
+            "countdown": "4h 37m",
+            "clock": "05:39",
+        }
+    return {
+        "number": number,
+        "email": f"user{number}@example.invalid",
+        "active": active,
+        "usageStatus": status,
+        "usage": {"fiveHour": five_hour, "sevenDay": {"pct": 99.0}},
+        "usageAgeSeconds": age,
+    }
+
+
+def _listing(*accounts: dict, active_number: int | None = None) -> dict:
+    if active_number is None:
+        active_number = next((a["number"] for a in accounts if a["active"]), 0)
+    return {"schemaVersion": 1, "activeAccountNumber": active_number, "accounts": list(accounts)}
+
+
+def _gate(
+    tmp_path: Path, listing: object, *, rc: int = 0, **env_extra: str
+) -> tuple[subprocess.CompletedProcess, list[str]]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    stub = bin_dir / "cswap"
+    stub.write_text(FAKE_CSWAP, encoding="utf-8")
+    stub.chmod(0o755)
+    data = tmp_path / "list.json"
+    data.write_text(listing if isinstance(listing, str) else json.dumps(listing), encoding="utf-8")
+    log = tmp_path / "cswap.log"
+    log.write_text("", encoding="utf-8")
+    env = {k: v for k, v in _base_env().items() if not k.startswith("CSWAP_GATE_")}
+    env |= {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "FAKE_CSWAP_JSON": str(data),
+        "FAKE_CSWAP_RC": str(rc),
+        "CSWAP_LOG": str(log),
+        **env_extra,
+    }
+    result = subprocess.run(
+        ["bash", str(GATE)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    return result, log.read_text(encoding="utf-8").splitlines()
+
+
+def test_allows_below_threshold_and_only_lists(tmp_path):
+    result, calls = _gate(tmp_path, _listing(_account(2, 14.0, active=True)))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("CSWAP GATE ALLOW: active account #2 user2@example.invalid 5h window is 14% used")
+    assert calls == ["list --json"], "the gate must never switch, run or configure accounts"
+
+
+@pytest.mark.parametrize("pct", [80.0, 80.4, 97.0, 100.0])
+def test_refuses_at_or_above_threshold_with_percent_and_reset(tmp_path, pct):
+    result, calls = _gate(tmp_path, _listing(_account(2, pct, active=True)))
+    assert result.returncode == 1
+    message = result.stderr.strip()
+    assert message.startswith("CSWAP GATE REFUSE: ")
+    shown = f"{pct:g}"
+    assert f"5h window is {shown}% used (threshold 80%)" in message
+    assert "resets 05:39 (in 4h 37m" in message
+    assert "Not switching accounts" in message
+    assert calls == ["list --json"]
+
+
+def test_just_below_threshold_is_allowed(tmp_path):
+    result, _ = _gate(tmp_path, _listing(_account(2, 79.9, active=True)))
+    assert result.returncode == 0, result.stderr
+
+
+def test_threshold_is_configurable(tmp_path):
+    result, _ = _gate(tmp_path, _listing(_account(2, 50.0, active=True)), CSWAP_GATE_MAX_PCT="50")
+    assert result.returncode == 1
+    assert "threshold 50%" in result.stderr
+
+
+def test_reads_the_active_account_not_others(tmp_path):
+    listing = _listing(_account(1, 99.0, active=False), _account(2, 10.0, active=True))
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 0, result.stderr
+    assert "#2 " in result.stdout
+
+
+def test_falls_back_to_active_account_number(tmp_path):
+    listing = _listing(_account(1, 10.0, active=False), _account(3, 90.0, active=False), active_number=3)
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 1
+    assert "#3 " in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("listing", "expected"),
+    [
+        (_listing(_account(1, 10.0, active=False), active_number=9), "no active account"),
+        (_listing(_account(2, None, active=True)), "has no 5h window reading"),
+        (_listing(_account(2, 10.0, active=True, status="unavailable")), "usage status is 'unavailable'"),
+        (_listing(_account(2, 10.0, active=True, age=5000.0)), "5h reading is 5000s old"),
+        ("not json at all", "no active account"),
+    ],
+)
+def test_fails_closed_on_missing_or_stale_data(tmp_path, listing, expected):
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 1
+    assert result.stderr.startswith("CSWAP GATE REFUSE: ")
+    assert expected in result.stderr
+
+
+def test_refuses_when_cswap_fails(tmp_path):
+    result, _ = _gate(tmp_path, "boom", rc=2)
+    assert result.returncode == 1
+    assert "cswap list --json failed" in result.stderr
+
+
+def test_never_reads_aiuse(tmp_path):
+    source = GATE.read_text(encoding="utf-8")
+    code = [line for line in source.splitlines() if not line.lstrip().startswith("#")]
+    assert not any("aiuse" in line for line in code)
+    assert "cswap switch" not in source and "cswap auto" not in "\n".join(code)

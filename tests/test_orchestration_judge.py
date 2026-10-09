@@ -19,6 +19,16 @@ JUDGE = ROOT / "orchestration" / "judge.sh"
 
 pytestmark = pytest.mark.skipif(shutil.which("jq") is None or shutil.which("git") is None, reason="jq and git required")
 
+
+def _base_env() -> dict[str, str]:
+    """The test environment minus BASH_ENV/ENV.
+
+    A non-interactive bash sources $BASH_ENV, and a developer's rc file there
+    can re-prepend directories to PATH, which would shadow the stubs below.
+    """
+    return {k: v for k, v in os.environ.items() if k not in ("BASH_ENV", "ENV")}
+
+
 GOOD_REASON = "implemented the feature and added tests"
 
 FAKE_BD = """#!/usr/bin/env bash
@@ -34,7 +44,7 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def _git_env() -> dict[str, str]:
-    return os.environ | {
+    return _base_env() | {
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_AUTHOR_NAME": "t",

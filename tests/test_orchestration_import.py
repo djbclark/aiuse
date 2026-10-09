@@ -19,6 +19,16 @@ SCRIPT = ROOT / "orchestration" / "gh-issues-to-beads.sh"
 
 pytestmark = pytest.mark.skipif(shutil.which("jq") is None, reason="jq not installed")
 
+
+def _base_env() -> dict[str, str]:
+    """The test environment minus BASH_ENV/ENV.
+
+    A non-interactive bash sources $BASH_ENV, and a developer's rc file there
+    can re-prepend directories to PATH, which would shadow the stubs below.
+    """
+    return {k: v for k, v in os.environ.items() if k not in ("BASH_ENV", "ENV")}
+
+
 FAKE_BD = """#!/usr/bin/env bash
 { printf '%s' "$*" | tr '\\n' '|'; echo; } >> "$BD_LOG"
 for a in "$@"; do
@@ -81,7 +91,7 @@ def _run(
     listing.write_text(json.dumps(existing or []), encoding="utf-8")
     log = tmp_path / "bd.log"
     log.write_text("", encoding="utf-8")
-    env = os.environ | {
+    env = _base_env() | {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "GH_ISSUES_JSON": str(issues),
         "FAKE_BD_LIST": str(listing),

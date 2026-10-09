@@ -70,3 +70,28 @@ Two ralph v2.10.1 details shape the wiring. A hook's default timeout is 30
 seconds, which `just check` exceeds, so the hook sets `timeout_seconds`. ralph
 also keeps only the first 8 KB of each output stream, which is why the verdict
 line always comes first.
+
+## US-003: `cswap-gate.sh`, the quota gate
+
+`orchestration/cswap-gate.sh` runs before each loop iteration. It reads
+`cswap list --json` and nothing else. It never reads `aiuse --json`, whose
+conserve and burn alerts are pace projections rather than window state. cswap
+reports the share used, so 80 means 80% used.
+
+- It exits 0 with `CSWAP GATE ALLOW: ...` while the active account's 5h window
+  is below `CSWAP_GATE_MAX_PCT`, which defaults to 80.
+- At or above the threshold it exits 1 with `CSWAP GATE REFUSE: ...`. The
+  message names the account and gives the percent used, the reset clock time
+  cswap prints, the countdown and the exact reset timestamp.
+- It also refuses when there is no active account, no 5h reading, a usage
+  status other than `ok`, or a reading older than `CSWAP_GATE_MAX_AGE`
+  seconds (default 900). The gate fails closed.
+- It never switches accounts. `cswap auto` stays off, and the only cswap
+  command the script runs is `cswap list --json`.
+
+```text
+CSWAP GATE ALLOW: active account #2 djbclark@gmail.com 5h window is 14% used (< 80%); resets 05:39 (in 4h 36m; 2026-10-09T09:39:59.803614+00:00)
+```
+
+A blocking hook ends the ralph run rather than sleeping. Waiting for the reset
+belongs to an outer wrapper in Phase 2, not to this gate.
