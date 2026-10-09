@@ -30,6 +30,15 @@ from aiuse.models import parse_dt, utcnow
 
 from .base import CollectorError
 
+# Issue #34: a gated provider whose live queries keep returning nothing usable
+# (a logged-out or dead client) is backed off further. From the
+# EMPTY_STREAK_LIMIT-th consecutive empty answer the interval is multiplied by
+# EMPTY_BACKOFF_FACTOR per further empty answer, capped at EMPTY_BACKOFF_CAP
+# (never below the configured interval). One usable answer resets it.
+EMPTY_STREAK_LIMIT = 3
+EMPTY_BACKOFF_FACTOR = 4.0
+EMPTY_BACKOFF_CAP = 6 * 3600.0
+
 
 def throttle_dir() -> Path:
     return history.snapshot_dir().parent / "query-throttle"
@@ -104,9 +113,25 @@ class QueryGate:
         return parse_dt(self.state.get("queried_at"))
 
     @property
+    def empty_streak(self) -> int:
+        try:
+            return max(0, int(self.state.get("empty_streak") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def interval(self) -> float:
+        """The interval in force: ``min_interval``, stretched after repeated empty answers."""
+        streak = self.empty_streak
+        if streak < EMPTY_STREAK_LIMIT:
+            return self.min_interval
+        stretched = self.min_interval * EMPTY_BACKOFF_FACTOR ** (streak - EMPTY_STREAK_LIMIT + 1)
+        return max(self.min_interval, min(stretched, EMPTY_BACKOFF_CAP))
+
+    @property
     def next_allowed_at(self) -> datetime | None:
         last = self.last_queried_at
-        return None if last is None else last + timedelta(seconds=self.min_interval)
+        return None if last is None else last + timedelta(seconds=self.interval)
 
     def __enter__(self) -> QueryGate:
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -125,7 +150,7 @@ class QueryGate:
         self.now = utcnow()
         last = self.last_queried_at
         self.allowed = self.locked and (
-            last is None or last > self.now or (self.now - last).total_seconds() >= self.min_interval
+            last is None or last > self.now or (self.now - last).total_seconds() >= self.interval
         )
         return self
 
@@ -143,13 +168,19 @@ class QueryGate:
             return {}
         return data if isinstance(data, dict) else {}
 
-    def record(self, source: str, outcome: Any = None, *, store: bool = True) -> None:
-        """Mark a live query by ``source`` as of now (after it ran); optionally keep its outcome."""
+    def record(self, source: str, outcome: Any = None, *, store: bool = True, usable: bool | None = None) -> None:
+        """Mark a live query by ``source`` as of now (after it ran); optionally keep its outcome.
+
+        ``usable`` (when the caller can tell) feeds the empty-answer streak that
+        stretches :attr:`interval`; None leaves the streak alone.
+        """
         if not self.locked:
             return
         at = utcnow()
         self.state["queried_at"] = at.isoformat()
         self.state["queried_by"] = source
+        if usable is not None:
+            self.state["empty_streak"] = 0 if usable else self.empty_streak + 1
         if store:
             entry: dict[str, Any] = {"fetched_at": at.isoformat()}
             if isinstance(outcome, BaseException):
@@ -167,6 +198,11 @@ class QueryGate:
     def describe(self) -> str:
         """Human-readable reason a query was skipped (for notes and errors)."""
         interval = _format_duration(self.min_interval)
+        if self.interval > self.min_interval:
+            interval = (
+                f"{interval}, stretched to {_format_duration(self.interval)} after "
+                f"{self.empty_streak} answers in a row with no usable data"
+            )
         last = self.last_queried_at
         if not self.locked and last is None:
             return f"{self.provider} quota query skipped: another aiuse process is querying it"

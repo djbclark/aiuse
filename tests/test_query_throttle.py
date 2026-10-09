@@ -179,3 +179,83 @@ def test_openusage_force_without_antigravity_does_not_spend_the_slot(monkeypatch
 
     with QueryGate("antigravity", min_interval=900, wait=0) as gate:
         assert gate.allowed
+
+
+# --- issue #34: cheap source first, back off a provider that keeps returning nothing
+
+
+def test_antigravity_tries_oauth_before_the_agy_cli(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run_json(argv, *, timeout=45.0, allow_empty=False):
+        calls.append(list(argv))
+        return [dict(_AGY_ROW, source="oauth")]
+
+    monkeypatch.setattr(codexbar, "run_json", fake_run_json)
+    outcome = codexbar._query_provider("antigravity")
+    assert outcome[0]["source"] == "oauth"
+    # One CodexBar call, with --source oauth: no agy spawn via the CLI source.
+    assert len(calls) == 1 and calls[0][-2:] == ["--source", "oauth"]
+
+
+def test_antigravity_falls_back_to_auto_when_oauth_has_no_credentials(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run_json(argv, *, timeout=45.0, allow_empty=False):
+        calls.append(list(argv))
+        if "--source" in argv:
+            return [{"provider": "antigravity", "error": {"message": "No stored Google credentials"}}]
+        return [_AGY_ROW]
+
+    monkeypatch.setattr(codexbar, "run_json", fake_run_json)
+    assert codexbar._query_provider("antigravity") == [_AGY_ROW]
+    assert ["--source" in argv for argv in calls] == [True, False]
+
+
+def _streak(provider: str) -> int:
+    return json.loads((throttle_dir() / f"{provider}.json").read_text()).get("empty_streak", 0)
+
+
+def test_empty_answers_stretch_the_interval_and_a_usable_one_resets_it(monkeypatch):
+    answers: list[object] = []
+    monkeypatch.setattr(codexbar, "_query_provider", lambda provider_arg, *, timeout=45.0: answers.pop(0))
+    limits = {"antigravity": 900.0}
+    empty = [{"provider": "antigravity", "error": {"message": "not logged in"}}]
+
+    for expected_streak in (1, 2, 3):
+        answers.append(empty)
+        codexbar._query_providers(["antigravity"], min_intervals=limits)
+        assert _streak("antigravity") == expected_streak
+        _backdate("antigravity", 901)
+
+    # Third empty answer in a row: the 15m interval is now 1h, so 901s is not enough.
+    with QueryGate("antigravity", min_interval=900, wait=0) as gate:
+        assert gate.interval == 3600
+        assert not gate.allowed
+        assert "stretched to 1h00m after 3 answers in a row with no usable data" in gate.describe()
+
+    _backdate("antigravity", 3601)
+    answers.append([_AGY_ROW])
+    codexbar._query_providers(["antigravity"], min_intervals=limits)
+    assert _streak("antigravity") == 0
+
+
+def test_empty_streak_backoff_is_capped():
+    from aiuse.collectors.throttle import EMPTY_BACKOFF_CAP
+
+    gate = QueryGate("antigravity", min_interval=900, wait=0)
+    gate.state = {"empty_streak": 50}
+    assert gate.interval == EMPTY_BACKOFF_CAP
+    gate.state = {"empty_streak": 2}
+    assert gate.interval == 900
+    # A configured interval longer than the cap is never shortened.
+    long_gate = QueryGate("antigravity", min_interval=EMPTY_BACKOFF_CAP * 2, wait=0)
+    long_gate.state = {"empty_streak": 10}
+    assert long_gate.interval == EMPTY_BACKOFF_CAP * 2
+
+
+def test_openusage_records_leave_the_streak_alone():
+    with QueryGate("antigravity", min_interval=900, wait=0) as gate:
+        gate.state["empty_streak"] = 2
+        gate.record("openusage_ai", store=False)
+    assert _streak("antigravity") == 2

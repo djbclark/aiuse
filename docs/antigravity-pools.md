@@ -126,6 +126,19 @@ How it works (`src/aiuse/collectors/throttle.py`):
 4. Configure with `[query_min_interval]` in `config.toml`
    (`antigravity = 900` is the default; `0` disables; other provider ids can
    be added).
+5. **Cheap source first** ([#34](https://github.com/djbclark/aiuse/issues/34),
+   2026-10-09). CodexBar's default `auto` source for antigravity reads the agy
+   CLI, which spawns agy three times per probe and boots its language server
+   each time. aiuse now passes `--source oauth` first (stored Google auth,
+   spawns nothing) and falls back to `auto` only when that returns nothing
+   usable.
+6. **Empty-answer backoff** (#34). The gate counts consecutive live answers
+   with no usable data (`empty_streak` in `antigravity.json`). From the third
+   in a row the interval is multiplied by 4 per further empty answer (15m →
+   1h → 4h), capped at 6h, and the reuse note says so ("stretched to 1h00m
+   after 3 answers in a row with no usable data"). One usable answer resets
+   it. OpenUsage's forced refresh does not touch the streak. This stops a
+   logged-out agy from being launched every 15 minutes indefinitely.
 
 Not covered, and why:
 

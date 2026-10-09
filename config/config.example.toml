@@ -81,6 +81,8 @@
 # every aiuse process (CLI, `aiuse sample` LaunchAgent, watch, serve) through a
 # lock file under ~/.cache/aiuse/query-throttle/. While throttled, CodexBar's
 # last result is reused and OpenUsage's refresh is not forced. 0 disables.
+# After 3 live answers in a row with no usable data the interval stretches 4x
+# per further empty answer (cap 6h); one usable answer resets it.
 # antigravity = 900  # agy 429s on quota probes in quick succession
 
 # Usually unnecessary: aiuse automatically unifies a provider when every live
