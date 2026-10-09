@@ -11,7 +11,7 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-10-03):** Package/CLI **`aiuse`**, packaging **3.2.x**
+**Status (2026-10-09):** Package/CLI **`aiuse`**, packaging **3.3.x**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.1** (self-describing output, `aiuse --available`,
 `aiuse note-exhausted`); 15 registered collectors; scheduled sampling +
