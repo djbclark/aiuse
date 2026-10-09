@@ -12,6 +12,7 @@ from aiuse.models import (
     BillingKind,
     QuotaWindow,
     UsageCredits,
+    canonical_provider,
     classify_window_minutes,
     keep_copilot_report_window,
     parse_dt,
@@ -109,6 +110,7 @@ def collect_codexbar(
     timeout: float = 45.0,
     discovery_timeout: float | None = None,
     min_intervals: dict[str, float] | None = None,
+    skip_providers: frozenset[str] | None = None,
 ) -> list[AccountUsage]:
     if not which("codexbar"):
         raise CollectorError("codexbar not found on PATH")
@@ -123,6 +125,14 @@ def collect_codexbar(
         )
         if discovered:
             provider_list = discovered
+
+    if skip_providers:
+        # [disabled_services]: never spawn a query (or surface its timeout) for a
+        # provider the operator turned off, even if CodexBar still has it enabled.
+        kept = [p for p in provider_list if p is None or canonical_provider(p) not in skip_providers]
+        if not kept:
+            return []
+        provider_list = kept
 
     accounts: list[AccountUsage] = []
     errors: list[str] = []

@@ -788,3 +788,28 @@ def test_slot_label_names_a_window_by_its_reset_when_duration_is_missing():
     in_five_days = (utcnow() + timedelta(days=5)).isoformat()
     assert _slot_label("somevendor", 1, {"resetsAt": in_three_hours}) == "Somevendor 5-hour quota (1)"
     assert _slot_label("somevendor", 1, {"resetsAt": in_five_days}) == "Somevendor weekly quota (1)"
+
+
+def test_collect_codexbar_never_queries_disabled_services(monkeypatch):
+    queried = []
+
+    def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
+        if "config" in argv:
+            return [
+                {"provider": "codex", "enabled": True},
+                {"provider": "alibaba", "enabled": True},
+                {"provider": "alibabatokenplan", "enabled": True},
+            ]
+        provider = argv[argv.index("--provider") + 1]
+        queried.append(provider)
+        return [{"provider": provider, "usage": {"primary": {"usedPercent": 1}}}]
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.which", lambda _cmd: "/usr/bin/codexbar")
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
+
+    from aiuse.collectors.codexbar import collect_codexbar
+
+    accounts = collect_codexbar(skip_providers=frozenset({"alibaba", "alibabatokenplan"}))
+
+    assert queried == ["codex"]
+    assert {account.provider for account in accounts} == {"codex"}

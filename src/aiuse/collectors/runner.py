@@ -156,6 +156,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     timeout=codexbar_timeout,
                     discovery_timeout=discovery_timeout,
                     min_intervals=intervals,
+                    skip_providers=frozenset(disabled_providers),
                 ),
             )
         )
