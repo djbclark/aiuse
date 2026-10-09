@@ -628,3 +628,114 @@ def test_fix_codexbar_cache_read_failure_is_classified(monkeypatch, tmp_path):
     )
     assert not ok
     assert "keychain locked" in msg and "not a credential problem" in msg
+
+
+# ── aiuse trust audit (read-only) ───────────────────────────────────────────
+
+_AUDIT_DUMP = (
+    'keychain: "/Users/me/Library/Keychains/login.keychain-db"\n'
+    'class: "genp"\n'
+    "attributes:\n"
+    '    "acct"<blob>="meta"\n'
+    '    "svce"<blob>="ai.meta.dev.credentials"\n'
+    "access: 2 entries\n"
+    "    entry 0:\n"
+    "        authorizations (6): decrypt derive export_clear export_wrapped mac sign\n"
+    "        don't-require-password\n"
+    "        description: ai.meta.dev.credentials\n"
+    "        applications (2):\n"
+    "            0: /usr/bin/security (OK)\n"
+    '                requirement: identifier "com.apple.security" and anchor apple\n'
+    "            1: /Users/me/.local/bin/muse-bin-1.4.2 (status -67068)\n"
+    '                requirement: identifier "muse-arm64" and anchor apple generic and '
+    'certificate leaf[subject.OU] = "V9WTTPBFK9"\n'
+    "    entry 1:\n"
+    "        authorizations (1): partition_id\n"
+    "        don't-require-password\n"
+    "        description: teamid:V9WTTPBFK9, apple-tool:\n"
+    "        applications: <null>\n"
+    'class: "genp"\n'
+    "attributes:\n"
+    '    "acct"<blob>="cookie.codex"\n'
+    '    "svce"<blob>="com.steipete.codexbar.cache"\n'
+    "access: 2 entries\n"
+    "    entry 0:\n"
+    "        authorizations (6): decrypt derive export_clear export_wrapped mac sign\n"
+    "        don't-require-password\n"
+    "        description: CodexBar Cache\n"
+    "        applications (1):\n"
+    "            0: /Users/me/src/CodexBar/CodexBar.app (OK)\n"
+    '                requirement: cdhash H"8e5d00aa"\n'
+    "    entry 1:\n"
+    "        authorizations (1): partition_id\n"
+    "        don't-require-password\n"
+    "        description: apple-tool:, apple:, teamid:Y5PE65HELJ, cdhash:8e5d00aa\n"
+    "        applications: <null>\n"
+    'class: "genp"\n'
+    "attributes:\n"
+    '    "acct"<blob>="Cursor Key"\n'
+    '    "svce"<blob>="Cursor Safe Storage"\n'
+    "access: 1 entries\n"
+    "    entry 0:\n"
+    "        authorizations (6): decrypt derive export_clear export_wrapped mac sign\n"
+    "        don't-require-password\n"
+    "        description: Cursor Safe Storage\n"
+    "        applications: <null>\n"
+)
+
+
+def _audit_runner(calls, *, rc=0, stdout=_AUDIT_DUMP):
+    def run(argv, **k):
+        calls.append((list(argv), k.get("input")))
+        return subprocess.CompletedProcess(argv, rc, stdout=stdout, stderr="")
+
+    return run
+
+
+def test_trust_audit_flags_cdhash_security_stale_and_any_app(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    calls: list = []
+    assert run_trust_command(["audit"], config={}, run_fn=_audit_runner(calls)) == 0
+    out = capsys.readouterr().out
+    # Read-only: exactly one metadata dump, never -d/-w, nothing on stdin, no writes.
+    assert calls == [(["security", "dump-keychain", "-a", calls[0][0][3]], None)]
+    assert "nothing changed" in out
+    assert "ai.meta.dev.credentials acct='meta'" in out
+    assert "partition list: teamid:V9WTTPBFK9, apple-tool:" in out
+    assert "SECURITY-TOOL: trusts /usr/bin/security" in out
+    assert "STALE: /Users/me/.local/bin/muse-bin-1.4.2 (status -67068)" in out
+    assert "CDHASH: /Users/me/src/CodexBar/CodexBar.app is pinned" in out
+    assert "CDHASH-PARTITION: partition list holds cdhash:8e5d00aa" in out
+    assert "ANY-APP" in out
+    assert "gh:github.com: not in this keychain" in out
+    assert "3 item(s) flagged" in out
+
+
+def test_trust_audit_json_rows(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    calls: list = []
+    assert run_trust_command(["audit", "--json"], config={}, run_fn=_audit_runner(calls)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    rows = {r["service"]: r for r in payload["items"]}
+    muse = rows["ai.meta.dev.credentials"]
+    assert muse["found"] is True
+    assert [a["requirement_kind"] for a in muse["decrypt_apps"]] == ["apple", "team"]
+    assert muse["partitions"] == ["teamid:V9WTTPBFK9", "apple-tool:"]
+    assert rows["Cursor Safe Storage"]["allows_any_app"] is True
+    assert rows["gh:github.com"] == {"service": "gh:github.com", "purpose": "GitHub CLI token", "found": False}
+
+
+def test_trust_audit_extra_service_and_locked_keychain(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    calls: list = []
+    assert run_trust_command(["audit", "--service", "other.svc"], config={}, run_fn=_audit_runner(calls)) == 0
+    assert "other.svc: not in this keychain (requested with --service)" in capsys.readouterr().out
+    assert run_trust_command(["audit"], config={}, run_fn=_audit_runner(calls, rc=152, stdout="")) == 1
+    out = capsys.readouterr().out
+    assert "keychain locked" in out and "not a credential problem" in out
+
+
+def test_trust_audit_rejects_unknown_argument(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    assert run_trust_command(["audit", "--fix"], config={}) == 2
+    assert "unknown argument" in capsys.readouterr().out

@@ -31,6 +31,7 @@ from aiuse.keychain import (
     ItemAcl,
     dump_keychain_acl,
     find_item_acls,
+    parse_dump_keychain_acl,
     result_from_process,
     run_security_stdin,
     stdin_command_line,
@@ -1127,6 +1128,100 @@ def doctor_caut_codesign_lines(
     ]
 
 
+# Items aiuse's collectors read directly or through a provider CLI (by service).
+AUDIT_SERVICES: tuple[tuple[str, str], ...] = (
+    ("ai.meta.dev.credentials", "Muse CLI login (aiuse Muse plan windows read it via security)"),
+    (CODEXBAR_CACHE_SERVICE, "CodexBar cache (codexbar / CodexBarCLI)"),
+    ("Claude Code-credentials", "Claude Code OAuth (caut, CodexBar)"),
+    ("Claude Safe Storage", "Claude desktop safeStorage"),
+    ("Cursor Safe Storage", "Cursor safeStorage (caut)"),
+    ("OpenCode Safe Storage", "OpenCode safeStorage"),
+    ("Antigravity IDE Safe Storage", "Antigravity safeStorage"),
+    ("Codex MCP Credentials", "Codex CLI"),
+    ("gh:github.com", "GitHub CLI token"),
+)
+
+
+def audit_item_flags(acl: ItemAcl) -> list[str]:
+    """Findings for one item, most serious first. Empty means nothing to flag."""
+    flags: list[str] = []
+    if acl.allows_any_app:
+        flags.append("ANY-APP: 'Allow all applications' is set; any process can read it without a prompt")
+    for app in acl.decrypt_apps or []:
+        if app.requirement_kind == "cdhash":
+            flags.append(f"CDHASH: {app.path} is pinned to one ad-hoc build; every rebuild or update re-prompts")
+        if not app.ok:
+            flags.append(f"STALE: {app.path} ({app.status or 'no status'}); entry no longer matches a binary on disk")
+    if any(app.is_security_tool for app in acl.decrypt_apps or []):
+        flags.append("SECURITY-TOOL: trusts /usr/bin/security, so any same-user process can read it via `security`")
+    for part in acl.partitions or []:
+        if part.startswith("cdhash:"):
+            flags.append(f"CDHASH-PARTITION: partition list holds {part}; only that exact build passes")
+    return flags
+
+
+def run_trust_audit(
+    *,
+    keychain: Path | None = None,
+    extra_services: list[str] | None = None,
+    run_fn: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+) -> tuple[int, list[str], list[dict[str, Any]]]:
+    """Read-only ACL audit of the known items: (exit code, text lines, JSON rows).
+
+    One ``security dump-keychain -a`` (metadata only: never ``-d``, never
+    ``-w``), so it neither decrypts nor prompts and changes nothing.
+    """
+    lines: list[str] = ["Keychain ACL audit (read-only; no secrets read, nothing changed)"]
+    if not is_darwin():
+        return 0, ["macOS only: aiuse trust audit"], []
+    kc = keychain or login_keychain_path()
+    lines.append(f"  keychain: {kc}")
+    result, text = dump_keychain_acl(kc, timeout=30, run_fn=run_fn)
+    if not result.ok:
+        if result.status == "prompt":
+            lines.append("error: dump-keychain -a timed out (a Keychain dialog may be waiting); nothing was changed")
+        else:
+            lines.append(f"error: {result.message('dump-keychain -a')}")
+        return 1, lines, []
+    items = parse_dump_keychain_acl(text)
+    services = [(svc, why) for svc, why in AUDIT_SERVICES]
+    services += [(svc, "requested with --service") for svc in extra_services or []]
+    rows: list[dict[str, Any]] = []
+    flagged = 0
+    for service, why in services:
+        matches = [
+            item for item in items if item.service == service or (item.service is None and item.label == service)
+        ]
+        if not matches:
+            lines.append("")
+            lines.append(f"{service}: not in this keychain ({why})")
+            rows.append({"service": service, "purpose": why, "found": False})
+            continue
+        for acl in matches:
+            flags = audit_item_flags(acl)
+            flagged += 1 if flags else 0
+            lines.append("")
+            lines.append(f"{service} acct={acl.account!r}  ({why})")
+            if acl.decrypt_apps is None:
+                lines.append("  trusted apps: <any application>")
+            elif not acl.decrypt_apps:
+                lines.append("  trusted apps: none (always asks)")
+            else:
+                lines.append("  trusted apps:")
+                for app in acl.decrypt_apps:
+                    lines.append(f"    {app.path}  ({app.status or '?'}, {app.requirement_kind})")
+            if acl.partitions is None:
+                lines.append("  partition list: none recorded")
+            else:
+                lines.append(f"  partition list: {', '.join(acl.partitions) or '(empty)'}")
+            for flag in flags:
+                lines.append(f"  ! {flag}")
+            rows.append({"service": service, "purpose": why, "found": True, "flags": flags, **acl.to_dict()})
+    lines.append("")
+    lines.append(f"{flagged} item(s) flagged. Nothing was changed. Repairs: docs/macos-keychain-trust.md")
+    return 0, lines, rows
+
+
 def run_trust_command(
     argv: list[str],
     *,
@@ -1310,6 +1405,43 @@ def run_trust_command(
         out("If dialogs appeared, prefer Always Allow. See: aiuse trust grant-guide")
         return 0
 
+    if cmd == "audit":
+        rest = args[1:]
+        as_json = False
+        extra: list[str] = []
+        i = 0
+        while i < len(rest):
+            tok = rest[i]
+            if tok == "--json":
+                as_json = True
+                i += 1
+            elif tok == "--service" and i + 1 < len(rest):
+                extra.append(rest[i + 1])
+                i += 2
+            elif tok in ("-h", "--help"):
+                out(
+                    "Usage: aiuse trust audit [--json] [--service NAME]...\n"
+                    "\n"
+                    "Read-only: list each known keychain item's trusted apps and partition\n"
+                    "list, and flag cdhash-pinned (ad-hoc) entries, stale paths, 'allow all\n"
+                    "applications' and trust in /usr/bin/security. Reads ACL metadata only\n"
+                    "(security dump-keychain -a); never a secret, never a change.\n"
+                    "\n"
+                    "  --json            Machine-readable rows\n"
+                    "  --service NAME    Also audit this service (repeatable)\n"
+                )
+                return 0
+            else:
+                out(f"error: unknown argument {tok!r}")
+                out("Try: aiuse trust audit --help")
+                return 2
+        code, lines, rows = run_trust_audit(extra_services=extra, run_fn=run_fn)
+        if as_json:
+            out(json.dumps({"ok": code == 0, "items": rows, "messages": lines if code else []}, indent=2))
+        else:
+            out("\n".join(lines))
+        return code
+
     if cmd == "fix-codexbar-cache":
         rest = args[1:]
         dry_run = False
@@ -1387,6 +1519,9 @@ Commands:
   sign-caut            Force-sign real caut binary
   grant-guide          Keychain steps (caut + CodexBar Cache)
   probe                Interactive caut + light codexbar (Always Allow)
+  audit                Read-only ACL report: trusted apps, partition lists, flags
+                       (cdhash-pinned, stale, any-app, /usr/bin/security)
+                       Options: --json  --service NAME
   fix-codexbar-cache   Rewrite CodexBar Cache ACLs for CodexBarCLI (#679)
                        Options: --dry-run  --account NAME
 
@@ -1398,6 +1533,7 @@ Environment / config:
   AIUSE_KEYCHAIN_PASSWORD     Optional login keychain password for partition-list
 
 Typical first-time flow:
+  aiuse trust audit
   aiuse trust setup && aiuse trust probe
   aiuse trust fix-codexbar-cache --dry-run
   aiuse trust fix-codexbar-cache

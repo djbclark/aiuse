@@ -117,6 +117,23 @@ CodexBar.app is Team-signed — **do not re-sign** it with a local cert.
 | **CodexBar Cache** / `com.steipete.codexbar.cache` | ACL trusts only the .app, not **CodexBarCLI** ([#679](https://github.com/steipete/CodexBar/issues/679)) | `aiuse trust fix-codexbar-cache`                                                   |
 | **Claude Code-credentials**                        | Foreign item / XARA / OAuth prefs                                                                       | CodexBar Settings (Avoid Keychain prompts); prefs already often `promptMode=never` |
 
+### Audit item ACLs (read-only)
+
+`aiuse trust audit` reads the ACL metadata of each item aiuse's collectors
+depend on (`security dump-keychain -a`: never a secret, never a change, no
+prompt) and prints each item's trusted apps, with status and requirement kind,
+and its partition list. It flags:
+
+1. `CDHASH`: a trusted app or partition entry pinned to one ad-hoc build. Every
+   rebuild or update prompts again.
+2. `STALE`: a trusted path that no longer matches a binary on disk.
+3. `ANY-APP`: "Allow all applications" is set.
+4. `SECURITY-TOOL`: the item trusts `/usr/bin/security`, so any process running
+   as you can read it with `security find-generic-password -w`.
+
+`--json` gives one row per item, and `--service NAME` adds another service. A
+locked login keychain is reported as locked, not as a missing item.
+
 ### Fix CodexBar Cache ACLs (#679)
 
 aiuse (and hourly LaunchAgent) invoke `codexbar` →  
@@ -198,6 +215,7 @@ by itself). When caut is disabled in config, doctor stays quiet about codesign.
 | `aiuse trust grant-guide`        | Keychain Access steps + CodexBar Cache notes                      |
 | `aiuse trust probe`              | Interactive caut (`both`) + light codexbar                        |
 | `aiuse trust fix-codexbar-cache` | #679: trust CodexBarCLI on cache items (`--dry-run`, `--account`) |
+| `aiuse trust audit`              | Read-only ACL report and flags (`--json`, `--service NAME`)       |
 
 just recipes: `macos-trust`, `macos-trust-status`, `macos-sign-caut`,
-`macos-trust-guide`, `macos-fix-codexbar-cache`, `macos-fix-codexbar-cache-dry`.
+`macos-trust-guide`, `macos-fix-codexbar-cache`, `macos-fix-codexbar-cache-dry`, `macos-trust-audit`.

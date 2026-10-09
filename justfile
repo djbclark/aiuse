@@ -30,6 +30,10 @@ macos-fix-codexbar-cache:
 macos-fix-codexbar-cache-dry:
     aiuse trust fix-codexbar-cache --dry-run
 
+# Read-only keychain ACL audit (trusted apps, partition lists, cdhash/ad-hoc flags).
+macos-trust-audit:
+    aiuse trust audit
+
 # Run the Python test suite.
 test:
     uv run --extra dev pytest

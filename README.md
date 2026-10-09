@@ -241,6 +241,7 @@ aiuse doctor                 # PATH tools + config presence + timeouts
 aiuse trust setup            # caut: stable codesign + guide
 aiuse trust sign-caut        # re-run after every cargo install
 aiuse trust fix-codexbar-cache --dry-run   # CodexBar#679: trust CLI on cache items
+aiuse trust audit            # read-only: keychain item ACLs, flags ad-hoc/cdhash entries
 
 # Optional: refresh the separately reported OpenCode Zen prepaid balance.
 aiuse credential refresh opencode-zen --from chrome --profile Default
