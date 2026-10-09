@@ -300,5 +300,9 @@ before the fix.
    a number that disagreed could hide a nearly full window. It now needs
    exactly one matching row and refuses otherwise. A missing number no
    longer matches an unnumbered row.
+8. **Gate and judge: stderr mixed into JSON (5h).** `cswap list --json` and
+   `bd show --json` had stderr merged into the output the scripts parse, so
+   any warning made the parse fail and refused a healthy reading. stderr now
+   goes to a file and appears in the refuse detail.
 
-Not changed yet: the nits 5h to 5m from the same review.
+Not changed yet: the nits 5i to 5m from the same review.

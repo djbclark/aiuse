@@ -31,6 +31,7 @@ def _base_env() -> dict[str, str]:
 
 FAKE_CSWAP = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$CSWAP_LOG"
+[ -z "${FAKE_CSWAP_STDERR:-}" ] || echo "$FAKE_CSWAP_STDERR" >&2
 cat "$FAKE_CSWAP_JSON"
 exit "${FAKE_CSWAP_RC:-0}"
 """
@@ -185,6 +186,21 @@ def test_fails_closed_on_missing_or_stale_data(tmp_path, listing, expected):
     assert result.returncode == 1
     assert result.stderr.startswith("CSWAP GATE REFUSE: ")
     assert expected in result.stderr
+
+
+# Review 2, finding 5h: stderr was merged into the JSON, so any warning made
+# jq fail and the gate refused a healthy reading.
+def test_stderr_warning_does_not_break_the_reading(tmp_path):
+    listing = _listing(_account(2, 14.0, active=True))
+    result, _ = _gate(tmp_path, listing, FAKE_CSWAP_STDERR="warning: keychain slow")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("CSWAP GATE ALLOW: ")
+
+
+def test_cswap_failure_shows_its_stderr(tmp_path):
+    result, _ = _gate(tmp_path, "", rc=3, FAKE_CSWAP_STDERR="error: no accounts configured")
+    assert result.returncode == 1
+    assert result.stderr.startswith("CSWAP GATE REFUSE: cswap list --json failed: error: no accounts configured")
 
 
 def test_refuses_when_cswap_fails(tmp_path):

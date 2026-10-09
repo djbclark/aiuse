@@ -139,11 +139,17 @@ yes | no) ;;
 esac
 
 # (a) tracker: closed, with a real close reason.
+# bd's stderr goes to a file, not into the JSON: a warning there would make
+# jq fail and refuse a closed bead. It is shown in the refuse detail.
 bd_dir="${BD_DIR:-$root}"
-state=$(bd -C "$bd_dir" --readonly show "$TASK_ID" --json 2>&1) ||
-  refuse "bd show $TASK_ID failed" "$state"
+bd_err="$log_dir/bd-show-stderr.$$"
+state=$(bd -C "$bd_dir" --readonly show "$TASK_ID" --json 2>"$bd_err")
+bd_rc=$?
+bd_stderr=$(head -20 "$bd_err" 2>/dev/null)
+rm -f "$bd_err"
+[ "$bd_rc" -eq 0 ] || refuse "bd show $TASK_ID failed (exit $bd_rc)" "$state" "$bd_stderr"
 issue=$(jq -ce 'if type == "array" then .[0] else . end | select(type == "object")' <<<"$state" 2>/dev/null) ||
-  refuse "bd show $TASK_ID returned no issue object"
+  refuse "bd show $TASK_ID returned no issue object" "$(head -5 <<<"$state")" "$bd_stderr"
 status=$(jq -r '.status // ""' <<<"$issue")
 [ "$status" = closed ] || refuse "bd $TASK_ID status is '$status', not 'closed'"
 reason=$(jq -r '(.close_reason // "") | gsub("^\\s+|\\s+$"; "")' <<<"$issue")

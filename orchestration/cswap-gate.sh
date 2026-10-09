@@ -38,7 +38,12 @@ case "$max_pct$max_age" in
 *[!0-9]*) refuse "CSWAP_GATE_MAX_PCT and CSWAP_GATE_MAX_AGE must be whole numbers" ;;
 esac
 
-listing=$(cswap list --json 2>&1 </dev/null) || refuse "cswap list --json failed: $(head -3 <<<"$listing")"
+# stderr goes to a file, not into the JSON: a warning there would make jq
+# fail and refuse a healthy reading. It is shown when cswap fails.
+err_file=$(mktemp "${TMPDIR:-/tmp}/cswap-gate.XXXXXX") || refuse "cannot create a temp file for cswap's stderr"
+trap 'rm -f "$err_file"' EXIT
+listing=$(cswap list --json 2>"$err_file" </dev/null) ||
+  refuse "cswap list --json failed: $(head -3 "$err_file" | tr '\n' ' ')$(head -3 <<<"$listing" | tr '\n' ' ')"
 
 # The active account is the row flagged `active` or the row numbered
 # `activeAccountNumber`. Both must point at the same single row: if the flag
@@ -53,7 +58,7 @@ selection=$(jq -ce '
      | select($rows[.].active == true or ($n != null and $rows[.].number == $n))] as $hits
   | {count: ($hits | length), numbers: [$hits[] | $rows[.].number],
      account: (if ($hits | length) == 1 then $rows[$hits[0]] else null end)}' <<<"$listing" 2>/dev/null) ||
-  refuse "cswap list shows no active account (its output is not a JSON object)"
+  refuse "cswap list shows no active account (its output is not a JSON object; stderr: $(head -3 "$err_file" | tr '\n' ' '))"
 matches=$(jq -r .count <<<"$selection")
 [ "$matches" != 0 ] || refuse "cswap list shows no active account"
 [ "$matches" = 1 ] ||

@@ -32,6 +32,7 @@ def _base_env() -> dict[str, str]:
 GOOD_REASON = "implemented the feature and added tests"
 
 FAKE_BD = """#!/usr/bin/env bash
+[ -z "${FAKE_BD_STDERR:-}" ] || echo "$FAKE_BD_STDERR" >&2
 case " $* " in
   *" show "*) cat "$FAKE_BD_SHOW"; exit "${FAKE_BD_RC:-0}" ;;
 esac
@@ -179,6 +180,22 @@ def test_refuses_when_bd_fails(repo):
     result = _judge(repo, bd_rc=1)
     assert result.returncode == 1
     assert "JUDGE REFUSE: bd show aiuse-x1 failed" in result.stderr
+
+
+# Review 2, finding 5h: bd's stderr was merged into the JSON, so a warning
+# made jq fail and the judge refused a properly closed bead.
+def test_bd_stderr_warning_does_not_break_the_tracker_check(repo):
+    _commit_work(repo)
+    result = _judge(repo, extra_env={"FAKE_BD_STDERR": "warning: auto-import skipped"})
+    assert result.returncode == 0, result.stderr
+
+
+def test_bd_failure_shows_its_stderr(repo):
+    _commit_work(repo)
+    result = _judge(repo, bd_rc=2, extra_env={"FAKE_BD_STDERR": "error: database locked"})
+    assert result.returncode == 1
+    assert _first_line(result).startswith("JUDGE REFUSE: bd show aiuse-x1 failed (exit 2)")
+    assert "error: database locked" in result.stderr
 
 
 def test_refuses_without_task_id(repo):
