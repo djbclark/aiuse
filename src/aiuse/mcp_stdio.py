@@ -10,6 +10,13 @@ Still an advisor only: no routing, no leases, no proxy, no credentials in
 output, and nothing that writes beyond what ``aiuse serve`` already writes
 (a live collect persists a snapshot when persistence is on).
 
+Not cache-only. Every tool except ``health`` runs a live collect, in-process
+and blocking, when the newest snapshot on disk is older than ``--max-age``
+(default 3600 s) or when called with ``refresh=true``. A collect makes network
+calls, runs collector subprocesses, may read the macOS Keychain (which can
+raise a Keychain dialog), and writes a snapshot. It takes tens of seconds, and
+the single-threaded loop answers nothing else meanwhile (review-2 4a).
+
 Protocol scope: the ``initialize``-handshake revisions 2024-11-05 through
 2025-11-25 (the "legacy" era in the 2026-07-28 spec). A modern client's
 ``server/discover`` probe gets "method not found", which the spec tells
@@ -46,7 +53,8 @@ _REFRESH_SCHEMA = {
             "type": "boolean",
             "description": (
                 "Collect live now instead of using the newest snapshot on disk "
-                "(same as ?refresh=1 on aiuse serve). Slow: tens of seconds."
+                "(same as ?refresh=1 on aiuse serve). Slow: tens of seconds. Without it, "
+                "a live collect still runs when that snapshot is older than --max-age."
             ),
         }
     },
@@ -80,11 +88,21 @@ _TOOL_TEXT = {
 }
 
 
+# Appended to every tool that can collect (all but health).
+_COLLECT_NOTE = (
+    " Reads the newest snapshot on disk; when it is older than --max-age (default 1 h), "
+    "or refresh=true, it first collects live: network calls, collector subprocesses, "
+    "possibly a macOS Keychain read or dialog, and a snapshot write (tens of seconds)."
+)
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     """The ``tools/list`` entries, one per ``aiuse serve`` endpoint."""
     tools = []
     for name in ENDPOINTS:
         title, description = _TOOL_TEXT[name]
+        if name != "health":
+            description += _COLLECT_NOTE
         schema = (
             {"type": "object", "properties": {}, "additionalProperties": False} if name == "health" else _REFRESH_SCHEMA
         )
@@ -178,9 +196,12 @@ class McpServer:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": "aiuse", "title": "aiuse quota advisor", "version": _version()},
             "instructions": (
-                "Read-only advisor for AI-subscription quota. Call `suggest` for the next pool "
-                "to burn, `ladder` for the ranked list, `status` for one line. Answers come from "
-                "the newest on-disk snapshot when fresh; pass refresh=true to collect live (slow)."
+                "Advisor for AI-subscription quota: it never routes, spends or changes any account. "
+                "Call `suggest` for the next pool to burn, `ladder` for the ranked list, `status` "
+                "for one line. Answers come from the newest on-disk snapshot when it is younger "
+                "than --max-age. Otherwise, or with refresh=true, the call first collects live "
+                "(network, subprocesses, possibly a Keychain dialog, a snapshot write; tens of "
+                "seconds), and the server answers nothing else until it finishes."
             ),
         }
 

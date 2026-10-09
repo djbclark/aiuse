@@ -94,6 +94,16 @@ tool result with `isError: true`, not a protocol error. Caching is the
 snapshot, and `refresh: true` collects live (tens of seconds). `--config` and
 `--timeout` apply as for any collect.
 
+"Read-only" means the server never routes, spends or changes an account. It
+does not mean cache-only. Every tool except `health` runs a **live collect**
+when the newest snapshot is older than `--max-age`, for example when the
+sampler LaunchAgent has stopped, and whenever `refresh: true` is passed. A
+collect makes network calls, runs the collector subprocesses, may read the
+macOS Keychain and so raise a Keychain dialog, and writes a snapshot when
+persistence is on. The collect runs in-process and blocks the single-threaded
+server for tens of seconds, during which pings and cancels go unanswered. The
+`initialize` instructions and each tool description say so too.
+
 Protocol: newline-delimited JSON-RPC 2.0, `initialize` handshake revisions
 2024-11-05 through 2025-11-25. A 2026-07-28 ("modern") client's
 `server/discover` probe gets "method not found", which the spec tells dual-era
