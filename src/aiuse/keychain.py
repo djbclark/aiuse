@@ -52,6 +52,9 @@ _DENIED_MARKERS = ("-25293", "-128", "User canceled")
 # ``security -i`` reads one line into a 4096-byte buffer and runs the rest of an
 # over-long line as a *second* command, so stay well under it.
 STDIN_LINE_MAX = 4000
+# SecurityTool ``split_line`` keeps MAX_ARGS (32) tokens, the subcommand included,
+# and silently drops the rest; a dropped ``-w <secret>`` re-adds an empty password.
+STDIN_ARGS_MAX = 32
 
 
 def classify_exit(returncode: int | None, stderr: str = "", *, timed_out: bool = False) -> str:
@@ -161,6 +164,44 @@ def read_generic_password(
     return result, (proc.stdout or "").rstrip("\n")
 
 
+def parse_password_line(stderr: str) -> bytes | None:
+    """The secret's bytes from ``find-generic-password -g`` stderr, or None if absent.
+
+    SecurityTool ``print_buffer`` writes ``password: "text"`` when every byte is
+    printable ASCII other than backslash, and ``password: 0x<HEX>  "..."``
+    otherwise. ``-w`` prints the bare hex in that second case, which cannot be
+    told apart from a password that is itself hex text, so callers that rewrite
+    an item must read with ``-g``.
+    """
+    for line in reversed((stderr or "").split("\n")):
+        if not line.startswith("password:"):
+            continue
+        rest = line[len("password:") :]
+        if rest.startswith(" "):
+            rest = rest[1:]
+        if rest == "":
+            return b""
+        if rest.startswith("0x"):
+            digits = rest[2:].split(" ", 1)[0]
+            if len(digits) % 2 or not re.fullmatch(r"[0-9A-Fa-f]*", digits):
+                return None
+            return bytes.fromhex(digits)
+        if len(rest) >= 2 and rest[0] == '"' and rest[-1] == '"':
+            try:
+                return rest[1:-1].encode("ascii")
+            except UnicodeEncodeError:
+                return None
+        return None
+    return None
+
+
+def password_args(secret: bytes) -> list[str]:
+    """``-w <text>`` for printable ASCII, else ``-X <hex>`` so the exact bytes survive."""
+    if all(0x20 <= b <= 0x7E for b in secret):
+        return ["-w", secret.decode("ascii")]
+    return ["-X", secret.hex()]
+
+
 def quote_stdin_arg(value: str) -> str:
     """Quote one argument for ``security -i``'s line splitter.
 
@@ -176,6 +217,8 @@ def stdin_command_line(args: Sequence[str]) -> str:
     """One ``security -i`` input line (with trailing newline) for ``args``."""
     if not args:
         raise ValueError("empty security command")
+    if len(args) > STDIN_ARGS_MAX:
+        raise ValueError(f"security -i keeps at most {STDIN_ARGS_MAX} arguments per line, got {len(args)}")
     line = " ".join(quote_stdin_arg(str(arg)) for arg in args) + "\n"
     if len(line.encode("utf-8")) > STDIN_LINE_MAX:
         raise ValueError(f"security -i command too long ({len(line.encode('utf-8'))} bytes > {STDIN_LINE_MAX})")
@@ -187,6 +230,7 @@ def run_security_stdin(
     *,
     timeout: float = 30.0,
     run_fn: RunFn | None = None,
+    new_session: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run one ``security`` subcommand through ``security -i`` on stdin.
 
@@ -194,9 +238,12 @@ def run_security_stdin(
     "-s", svc, ..., "-w", secret]``). argv is only ``security -i``, so nothing
     secret is visible in ``ps``. The exit status is that of the one command.
     Raises ValueError when the command cannot be carried on one line.
+    ``new_session`` starts the child in its own session, so a terminal Ctrl-C
+    cannot kill it halfway through a keychain write.
     """
     line = stdin_command_line(args)
     runner = run_fn if run_fn is not None else subprocess.run
+    extra: dict[str, Any] = {"start_new_session": True} if new_session else {}
     return runner(
         ["security", "-i"],
         input=line,
@@ -204,6 +251,7 @@ def run_security_stdin(
         text=True,
         check=False,
         timeout=timeout,
+        **extra,
     )
 
 

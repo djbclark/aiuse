@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from aiuse import cli
 from aiuse.config import validate_config
@@ -300,8 +304,8 @@ def test_fix_codexbar_cache_account_rewrites(monkeypatch, tmp_path):
     def run(argv, **k):
         calls.append(list(argv))
         stdin.append(k.get("input") or "")
-        if argv[:2] == ["security", "find-generic-password"] and "-w" in argv:
-            return subprocess.CompletedProcess(argv, 0, stdout="sekrit-cookie\n", stderr="")
+        if argv[:2] == ["security", "find-generic-password"] and "-g" in argv:
+            return _found(argv, "sekrit-cookie")
         if argv[:3] == ["security", "dump-keychain", "-a"]:
             return subprocess.CompletedProcess(argv, 0, stdout=_acl_dump(app), stderr="")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
@@ -337,13 +341,14 @@ def test_fix_codexbar_cache_account_rewrites(monkeypatch, tmp_path):
     assert '"apple-tool:,apple:,teamid:Y5PE65HELJ"' in part
 
 
-def _acl_dump(app, *, any_app: bool = False) -> str:
+def _acl_dump(app, *, any_app: bool = False, extra_apps: tuple[str, ...] = ()) -> str:
     """``dump-keychain -a`` text for one CodexBar Cache item (format from macOS 27.0.1)."""
+    extra = "".join(f"            {3 + i}: {path} (OK)\n" for i, path in enumerate(extra_apps))
     apps = (
         "        applications: <null>\n"
         if any_app
         else (
-            "        applications (3):\n"
+            f"        applications ({3 + len(extra_apps)}):\n"
             f"            0: {app} (OK)\n"
             '                requirement: identifier "com.steipete.codexbar" and anchor apple generic and '
             'certificate leaf[subject.OU] = "Y5PE65HELJ"\n'
@@ -351,6 +356,7 @@ def _acl_dump(app, *, any_app: bool = False) -> str:
             '                requirement: cdhash H"8e5d00"\n'
             "            2: /usr/bin/security (OK)\n"
             '                requirement: identifier "com.apple.security" and anchor apple\n'
+            f"{extra}"
         )
     )
     return (
@@ -380,6 +386,29 @@ def _acl_dump(app, *, any_app: bool = False) -> str:
     )
 
 
+def _print_buffer(data: bytes) -> str:
+    """SecurityTool ``print_buffer`` (keychain_utilities.c): how ``-g`` shows a password."""
+    hexed = any(not (0x20 <= b <= 0x7E and b != 0x5C) for b in data)
+    ascii_ = any(0x20 <= b <= 0x7E and b != 0x5C for b in data)
+    out = ""
+    if hexed:
+        out += "0x" + data.hex().upper() + (" " if ascii_ else "") + " "
+    if ascii_:
+        out += '"' + "".join(chr(b) if 0x20 <= b <= 0x7E and b != 0x5C else f"\\{b:03o}" for b in data) + '"'
+    return out
+
+
+def _found(argv, secret: str | bytes) -> subprocess.CompletedProcess[str]:
+    """``find-generic-password -g`` reply: attributes on stdout, the password line on stderr."""
+    data = secret.encode() if isinstance(secret, str) else secret
+    return subprocess.CompletedProcess(
+        argv,
+        0,
+        stdout='keychain: "/k.db"\nclass: "genp"\nattributes:\n',
+        stderr="password: " + _print_buffer(data) + "\n",
+    )
+
+
 def _codexbar_paths(tmp_path):
     app = tmp_path / "CodexBar.app"
     (app / "Contents" / "MacOS").mkdir(parents=True)
@@ -394,13 +423,13 @@ def _codexbar_paths(tmp_path):
 def test_fix_codexbar_cache_refuses_unsendable_secret_before_delete(monkeypatch, tmp_path):
     monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
     app, cli, kc = _codexbar_paths(tmp_path)
-    for secret in ("line1\nline2", "x" * 5000):
+    for secret in ("x" * 5000, "\u00fc" * 1500):  # the second is too long once hex-encoded
         calls: list[list[str]] = []
 
         def run(argv, _secret=secret, _calls=calls, **_k):
             _calls.append(list(argv))
             if "find-generic-password" in argv:
-                return subprocess.CompletedProcess(argv, 0, stdout=_secret + "\n", stderr="")
+                return _found(argv, _secret)
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
         ok, msg = fix_codexbar_cache_account(
@@ -490,23 +519,34 @@ def test_diagnose_includes_trust_hint_on_darwin(monkeypatch, tmp_path):
     assert "aiuse trust setup" in text
 
 
-def _failing_add_runner(app, *, add_rcs, any_app=False, dump_rc=0):
+def _failing_add_runner(
+    app, *, add_rcs, any_app=False, dump_rc=0, secret="sekrit-cookie", extra_apps=(), on_delete=None, on_add=None
+):
     """Stub ``security``: read ok, delete ok, ``security -i`` adds fail per ``add_rcs`` in order."""
     calls: list[tuple[list[str], str]] = []
+    kwargs: list[dict] = []
     rcs = list(add_rcs)
 
     def run(argv, **k):
         line = k.get("input") or ""
         calls.append((list(argv), line))
+        kwargs.append(dict(k))
         if "find-generic-password" in argv:
-            return subprocess.CompletedProcess(argv, 0, stdout="sekrit-cookie\n", stderr="")
+            return _found(argv, secret)
         if argv[:3] == ["security", "dump-keychain", "-a"]:
-            return subprocess.CompletedProcess(argv, dump_rc, stdout=_acl_dump(app, any_app=any_app), stderr="")
+            return subprocess.CompletedProcess(
+                argv, dump_rc, stdout=_acl_dump(app, any_app=any_app, extra_apps=extra_apps), stderr=""
+            )
+        if "delete-generic-password" in argv and on_delete is not None:
+            on_delete()
         if argv == ["security", "-i"] and line.startswith('"add-generic-password"'):
+            if on_add is not None:
+                on_add(len(_adds(calls)))
             rc = rcs.pop(0) if rcs else 0
             return subprocess.CompletedProcess(argv, rc, stdout="", stderr="" if rc == 0 else f"returned {rc}")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
+    run.kwargs = kwargs
     return run, calls
 
 
@@ -628,6 +668,123 @@ def test_fix_codexbar_cache_read_failure_is_classified(monkeypatch, tmp_path):
     )
     assert not ok
     assert "keychain locked" in msg and "not a credential problem" in msg
+
+
+# ── review-2 follow-ups: binary secrets (3a), split_line arg cap (3b), Ctrl-C window (3c)
+
+
+def test_fix_codexbar_cache_keeps_non_ascii_secret_bytes(monkeypatch, tmp_path):
+    """3a: ``-w`` prints hex for a non-printable secret; re-adding that text corrupted it."""
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    secret = '{\n  "cookie": "v\u00fc"\n}'.encode()
+    run, calls = _failing_add_runner(app, add_rcs=[0], secret=secret)
+    ok, msg = fix_codexbar_cache_account(
+        "cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run
+    )
+    assert ok, msg
+    read = next(argv for argv, _line in calls if "find-generic-password" in argv)
+    assert "-g" in read and "-w" not in read
+    (add,) = _adds(calls)
+    assert f'"-X" "{secret.hex()}"' in add
+    assert '"-w"' not in add
+    assert secret.hex() not in msg
+
+
+def test_fix_codexbar_cache_rollback_keeps_non_ascii_secret_bytes(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    secret = b"tab\there\xff"
+    run, calls = _failing_add_runner(app, add_rcs=[1, 0], secret=secret)
+    ok, msg = fix_codexbar_cache_account(
+        "cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run
+    )
+    assert not ok and "rolled back" in msg
+    assert f'"-X" "{secret.hex()}"' in _adds(calls)[1]
+
+
+def test_fix_codexbar_cache_printable_secret_still_uses_w(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    run, calls = _failing_add_runner(app, add_rcs=[0], secret='a "quoted" \\ cookie')
+    ok, _msg = fix_codexbar_cache_account(
+        "cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run
+    )
+    assert ok
+    assert '"-w" "a \\"quoted\\" \\\\ cookie"' in _adds(calls)[0]
+
+
+def test_fix_codexbar_cache_refuses_before_delete_when_rollback_line_too_long(monkeypatch, tmp_path):
+    """3b: split_line keeps 32 tokens; a longer rollback line silently re-added an empty password."""
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    extra = []
+    for i in range(11):  # 3 snapshot apps (one gone) + 11 = 13 present apps -> 36 rollback tokens
+        p = tmp_path / f"Extra{i}.app"
+        p.mkdir()
+        extra.append(str(p))
+    run, calls = _failing_add_runner(app, add_rcs=[1, 0], extra_apps=tuple(extra))
+    ok, msg = fix_codexbar_cache_account(
+        "cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run
+    )
+    assert not ok
+    assert "not rewritten" in msg and "roll" in msg
+    assert not any("delete-generic-password" in argv for argv, _line in calls)
+    assert _adds(calls) == []
+
+
+def _sigint_self():
+    os.kill(os.getpid(), signal.SIGINT)
+
+
+def test_fix_codexbar_cache_ctrl_c_after_delete_still_rolls_back(monkeypatch, tmp_path):
+    """3c: Ctrl-C between delete and add used to lose the item; now it waits, rolls back, then stops."""
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    run, calls = _failing_add_runner(app, add_rcs=[1, 0], on_delete=_sigint_self)
+    before = signal.getsignal(signal.SIGINT)
+    with pytest.raises(KeyboardInterrupt):
+        fix_codexbar_cache_account("cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run)
+    assert len(_adds(calls)) == 2  # the failed add, then the rollback, both after the Ctrl-C
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_fix_codexbar_cache_ctrl_c_after_delete_finishes_the_add(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+    run, calls = _failing_add_runner(app, add_rcs=[0], on_delete=_sigint_self)
+    with pytest.raises(KeyboardInterrupt):
+        fix_codexbar_cache_account("cookie.codex", app_path=app, cli_path=cli, team_id="T", keychain=kc, run_fn=run)
+    assert len(_adds(calls)) == 1
+    # The delete and add children run in their own session, so a terminal Ctrl-C cannot kill them midway.
+    window = [k for (argv, line), k in zip(calls, run.kwargs) if "delete-generic-password" in argv or line]
+    assert window and all(k.get("start_new_session") for k in window)
+
+
+def test_fix_codexbar_cache_interrupt_inside_add_rolls_back_then_reraises(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.macos_trust.is_darwin", lambda: True)
+    app, cli, kc = _codexbar_paths(tmp_path)
+
+    def boom(n_adds):
+        if n_adds == 1:
+            raise KeyboardInterrupt
+
+    run, calls = _failing_add_runner(app, add_rcs=[0], on_add=boom)
+    snapdir = tmp_path / "snaps"
+    with pytest.raises(KeyboardInterrupt):
+        fix_codexbar_cache_account(
+            "cookie.codex",
+            app_path=app,
+            cli_path=cli,
+            team_id="T",
+            keychain=kc,
+            run_fn=run,
+            snapshot_dir=snapdir,
+        )
+    assert len(_adds(calls)) == 2
+    (snap,) = list(snapdir.iterdir())
+    events = [e["event"] for e in json.loads(snap.read_text())["events"]]
+    assert events[1].startswith("add interrupted") and events[2].startswith("rolled back")
 
 
 # ── aiuse trust audit (read-only) ───────────────────────────────────────────

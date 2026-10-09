@@ -15,10 +15,13 @@ from aiuse.keychain import (
     MISSING,
     OK,
     PROMPT,
+    STDIN_ARGS_MAX,
     STDIN_LINE_MAX,
     UNAVAILABLE,
     KeychainResult,
     classify_exit,
+    parse_password_line,
+    password_args,
     quote_stdin_arg,
     read_generic_password,
     run_security_stdin,
@@ -376,3 +379,55 @@ def test_run_security_stdin_keeps_secret_off_argv(fake_security, monkeypatch):
     assert fake_security.read_text() == "-i\n"
     sent = Path(str(fake_security) + ".stdin").read_text()
     assert sent == '"add-generic-password" "-s" "svc" "-a" "acct" "-w" "top secret" "/k.db"\n'
+
+
+# ── -g password parsing and -w / -X re-add (review-2 3a) ────────────────────
+
+
+def apple_print_buffer(data: bytes) -> str:
+    """What SecurityTool ``print_buffer`` writes for ``data`` (keychain_utilities.c)."""
+    hexed = any(not (0x20 <= b <= 0x7E and b != 0x5C) for b in data)
+    ascii_ = any(0x20 <= b <= 0x7E and b != 0x5C for b in data)
+    out = ""
+    if hexed:
+        out += "0x" + data.hex().upper() + (" " if ascii_ else "") + " "
+    if ascii_:
+        out += '"' + "".join(chr(b) if 0x20 <= b <= 0x7E and b != 0x5C else f"\\{b:03o}" for b in data) + '"'
+    return out
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        b"plain-cookie",
+        b'has "quotes" inside',
+        b"0xDEADBEEF",  # printable text that looks like hex stays text
+        b"back\\slash",
+        b'{\n  "pretty": "json"\n}',
+        "ünïcode 🔑".encode(),
+        b"\x00\x01binary\xff",
+        b"",
+    ],
+)
+def test_parse_password_line_round_trips_print_buffer(secret):
+    stderr = "some warning\npassword: " + apple_print_buffer(secret) + "\n"
+    assert parse_password_line(stderr) == secret
+
+
+def test_parse_password_line_without_password_line():
+    assert parse_password_line("") is None
+    assert parse_password_line("security: SecKeychainSearchCopyNext: not found\n") is None
+
+
+def test_password_args_uses_hex_for_anything_not_printable_ascii():
+    assert password_args(b"plain cookie") == ["-w", "plain cookie"]
+    assert password_args(b'q"uo\\te') == ["-w", 'q"uo\\te']
+    assert password_args(b"a\nb") == ["-X", "610a62"]
+    assert password_args("ü".encode()) == ["-X", "c3bc"]
+
+
+def test_stdin_line_refuses_more_args_than_split_line_keeps():
+    # split_line keeps MAX_ARGS (32) tokens and silently drops the rest.
+    stdin_command_line(["x"] * STDIN_ARGS_MAX)
+    with pytest.raises(ValueError, match="arguments"):
+        stdin_command_line(["x"] * (STDIN_ARGS_MAX + 1))

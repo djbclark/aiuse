@@ -13,18 +13,21 @@ See docs/macos-keychain-trust.md and docs/macos-keychain-trust-plan.md.
 
 from __future__ import annotations
 
+import contextlib
 import getpass
 import json
 import os
 import plistlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from aiuse.keychain import (
     EXIT_DUPLICATE_ITEM,
@@ -32,6 +35,8 @@ from aiuse.keychain import (
     dump_keychain_acl,
     find_item_acls,
     parse_dump_keychain_acl,
+    parse_password_line,
+    password_args,
     result_from_process,
     run_security_stdin,
     stdin_command_line,
@@ -281,11 +286,44 @@ def _log_acl_event(path: Path | None, event: str) -> None:
         pass
 
 
-def _rollback_add_args(acl: ItemAcl, *, service: str, account: str, secret: str, keychain: Path) -> list[str]:
+_HELD_SIGNALS = tuple(getattr(signal, name) for name in ("SIGINT", "SIGTERM", "SIGHUP") if hasattr(signal, name))
+
+
+@contextlib.contextmanager
+def _hold_signals() -> Iterator[None]:
+    """Hold SIGINT, SIGTERM and SIGHUP for the block, then deliver them.
+
+    Used for the delete-then-add window of a keychain rewrite, so Ctrl-C cannot
+    leave the item deleted with no rollback (review-2 3c). Outside the main
+    thread Python cannot install handlers, so the block runs unprotected; the
+    ``BaseException`` rollback in the caller still covers that case.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    pending: list[int] = []
+
+    def hold(signum: int, _frame: Any) -> None:
+        pending.append(signum)
+
+    previous: dict[int, Any] = {}
+    try:
+        for sig in _HELD_SIGNALS:
+            previous[sig] = signal.signal(sig, hold)
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler if handler is not None else signal.SIG_DFL)
+        for sig in dict.fromkeys(pending):
+            signal.raise_signal(sig)
+
+
+def _rollback_add_args(acl: ItemAcl, *, service: str, account: str, secret: bytes, keychain: Path) -> list[str]:
     """``add-generic-password`` arguments that recreate the snapshot's trusted-app list."""
     args = ["add-generic-password", "-s", service, "-a", account]
     if acl.label:
         args += ["-l", acl.label]
+    args += password_args(secret)  # before the -T list, which is the part that grows
     if acl.decrypt_apps is None:
         args.append("-A")  # the snapshot allowed any application; restore exactly that
     else:
@@ -295,7 +333,7 @@ def _rollback_add_args(acl: ItemAcl, *, service: str, account: str, secret: str,
                 args += ["-T", app_path]
         else:
             args += ["-T", ""]  # snapshot trusted no app (or none still exists): always ask
-    args += ["-w", secret, str(keychain)]
+    args.append(str(keychain))
     return args
 
 
@@ -304,7 +342,7 @@ def _rollback_item(
     *,
     service: str,
     account: str,
-    secret: str,
+    secret: bytes,
     keychain: Path,
     keychain_password: str | None,
     runner: Callable[..., subprocess.CompletedProcess[str]],
@@ -317,6 +355,7 @@ def _rollback_item(
             _rollback_add_args(acl, service=service, account=account, secret=secret, keychain=keychain),
             timeout=30,
             run_fn=runner,
+            new_session=True,
         )
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
         proc = None
@@ -344,6 +383,7 @@ def _rollback_item(
                     ],
                     timeout=30,
                     run_fn=runner,
+                    new_session=True,
                 )
                 note += "; partition list restored" if part.returncode == 0 else "; partition list NOT restored"
             except (ValueError, OSError, subprocess.TimeoutExpired):
@@ -361,9 +401,10 @@ def _rollback_item(
     # Last resort: keep the secret in the keychain at all, trusted by `security` only.
     try:
         plain = run_security_stdin(
-            ["add-generic-password", "-s", service, "-a", account, "-w", secret, str(keychain)],
+            ["add-generic-password", "-s", service, "-a", account, *password_args(secret), str(keychain)],
             timeout=30,
             run_fn=runner,
+            new_session=True,
         )
         plain_ok = plain.returncode == 0
     except (ValueError, OSError, subprocess.TimeoutExpired):
@@ -420,14 +461,16 @@ def fix_codexbar_cache_account(
         return False, f"login keychain not found: {kc}"
     runner = run_fn if run_fn is not None else subprocess.run
 
-    secret: str | None = None
+    secret: bytes | None = None
     add_args: list[str] = []
     try:
+        # -g, not -w: -w prints a non-printable secret as bare hex, and re-adding
+        # that text would corrupt the item (review-2 3a). -g marks hex with 0x.
         read = runner(
             [
                 "security",
                 "find-generic-password",
-                "-w",
+                "-g",
                 "-s",
                 CODEXBAR_CACHE_SERVICE,
                 "-a",
@@ -441,7 +484,9 @@ def fix_codexbar_cache_account(
         )
         if read.returncode != 0:
             return False, result_from_process(read).message(f"read failed for acct={account!r}")
-        secret = (read.stdout or "").rstrip("\n")
+        secret = parse_password_line(read.stderr or "")
+        if secret is None:
+            return False, f"not rewritten acct={account!r}: could not parse the password line from security -g"
         if not secret:
             return False, f"empty secret for acct={account!r} — skip"
 
@@ -460,8 +505,7 @@ def fix_codexbar_cache_account(
             str(cli),
             "-T",
             "/usr/bin/security",
-            "-w",
-            secret,
+            *password_args(secret),
             str(kc),
         ]
         try:
@@ -478,59 +522,83 @@ def fix_codexbar_cache_account(
         if len(matches) != 1:
             return False, f"not rewritten acct={account!r}: ACL snapshot found {len(matches)} matching items, want 1"
         snapshot = matches[0]
+        try:  # the rollback must be sendable too, before anything is deleted (review-2 3b)
+            stdin_command_line(
+                _rollback_add_args(
+                    snapshot, service=CODEXBAR_CACHE_SERVICE, account=account, secret=secret, keychain=kc
+                )
+            )
+        except ValueError as exc:
+            return (
+                False,
+                f"not rewritten acct={account!r}: could not roll back this item's ACL if the add failed ({exc})",
+            )
         snapshot_path = _write_acl_snapshot(snapshot, action="fix-codexbar-cache", directory=snapshot_dir)
         if snapshot_path is None:
             return False, f"not rewritten acct={account!r}: could not save the ACL snapshot"
 
-        try:
-            delete = runner(
-                [
-                    "security",
-                    "delete-generic-password",
-                    "-s",
-                    CODEXBAR_CACHE_SERVICE,
-                    "-a",
-                    account,
-                    str(kc),
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            _log_acl_event(snapshot_path, f"delete did not finish ({exc.__class__.__name__}); state unknown")
-            return False, (
-                f"delete did not finish for acct={account!r} ({exc.__class__.__name__}: a Keychain prompt?); "
-                f"check the item in Keychain Access (snapshot: {snapshot_path})"
-            )
-        if delete.returncode != 0:
-            err = (delete.stderr or delete.stdout or "").strip() or f"exit {delete.returncode}"
-            _log_acl_event(snapshot_path, f"delete failed, nothing changed: {err[:200]}")
-            return False, f"delete failed for acct={account!r}: {err[:200]}"
-        _log_acl_event(snapshot_path, "deleted")
+        # From the delete until the add (or its rollback) finishes, hold Ctrl-C,
+        # SIGTERM and SIGHUP and deliver them afterwards, and run each child in
+        # its own session so a terminal Ctrl-C cannot kill it halfway (3c).
+        with _hold_signals():
+            try:
+                delete = runner(
+                    [
+                        "security",
+                        "delete-generic-password",
+                        "-s",
+                        CODEXBAR_CACHE_SERVICE,
+                        "-a",
+                        account,
+                        str(kc),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                    start_new_session=True,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                _log_acl_event(snapshot_path, f"delete did not finish ({exc.__class__.__name__}); state unknown")
+                return False, (
+                    f"delete did not finish for acct={account!r} ({exc.__class__.__name__}: a Keychain prompt?); "
+                    f"check the item in Keychain Access (snapshot: {snapshot_path})"
+                )
+            if delete.returncode != 0:
+                err = (delete.stderr or delete.stdout or "").strip() or f"exit {delete.returncode}"
+                _log_acl_event(snapshot_path, f"delete failed, nothing changed: {err[:200]}")
+                return False, f"delete failed for acct={account!r}: {err[:200]}"
+            _log_acl_event(snapshot_path, "deleted")
 
-        try:
-            add = run_security_stdin(add_args, timeout=30, run_fn=runner)
-            add_err = (
-                "" if add.returncode == 0 else (add.stderr or add.stdout or "").strip() or f"exit {add.returncode}"
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            add_err = f"{exc.__class__.__name__}: {exc}"
-        if add_err:
-            _log_acl_event(snapshot_path, f"add failed: {add_err[:200]}")
-            rolled = _rollback_item(
-                snapshot,
-                service=CODEXBAR_CACHE_SERVICE,
-                account=account,
-                secret=secret,
-                keychain=kc,
-                keychain_password=keychain_password,
-                runner=runner,
-                snapshot_path=snapshot_path,
-            )
-            return False, f"add failed for acct={account!r}: {add_err[:200]}; {rolled} (snapshot: {snapshot_path})"
-        _log_acl_event(snapshot_path, "re-added with CodexBar.app, CodexBarCLI and /usr/bin/security trusted")
+            def rollback() -> str:
+                assert secret is not None
+                return _rollback_item(
+                    snapshot,
+                    service=CODEXBAR_CACHE_SERVICE,
+                    account=account,
+                    secret=secret,
+                    keychain=kc,
+                    keychain_password=keychain_password,
+                    runner=runner,
+                    snapshot_path=snapshot_path,
+                )
+
+            try:
+                add = run_security_stdin(add_args, timeout=30, run_fn=runner, new_session=True)
+                add_err = (
+                    "" if add.returncode == 0 else (add.stderr or add.stdout or "").strip() or f"exit {add.returncode}"
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                add_err = f"{exc.__class__.__name__}: {exc}"
+            except BaseException as exc:  # an interrupt or crash mid-add: restore the item, then re-raise
+                _log_acl_event(snapshot_path, f"add interrupted ({exc.__class__.__name__})")
+                rollback()
+                raise
+            if add_err:
+                _log_acl_event(snapshot_path, f"add failed: {add_err[:200]}")
+                rolled = rollback()
+                return False, f"add failed for acct={account!r}: {add_err[:200]}; {rolled} (snapshot: {snapshot_path})"
+            _log_acl_event(snapshot_path, "re-added with CodexBar.app, CodexBarCLI and /usr/bin/security trusted")
 
         if keychain_password is not None and keychain_password != "":
             try:

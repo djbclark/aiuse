@@ -161,8 +161,14 @@ AIUSE_KEYCHAIN_PASSWORD='…' aiuse trust fix-codexbar-cache
 
 Secrets are **never** printed, and never put on a command line: the cache
 secret and the keychain password go to `security -i` on stdin, so they do not
-show up in `ps`. An item whose secret cannot be carried that way (a newline,
-or longer than about 4,000 bytes) is skipped before anything is deleted.
+show up in `ps`. aiuse reads the secret with `security find-generic-password
+-g`, which marks a secret that is not plain printable ASCII (a newline, a tab,
+any non-ASCII byte) as hex, and re-adds such a secret byte for byte with `-X
+<hex>`; `-w` would print that hex as if it were the password. An item is
+skipped, before anything is deleted, when its add line would pass 4,000 bytes
+(about 4,000 bytes of plain secret, or about 1,950 bytes once hex-encoded), or
+when its rollback line would need more than the 32 arguments `security -i`
+keeps (a snapshot that trusts 12 or more apps).
 
 Each rewrite deletes the item and adds it again. Before the delete, aiuse saves
 the item's ACL metadata (trusted apps, label, partition list; never the secret)
@@ -170,6 +176,14 @@ to `~/.cache/aiuse/keychain-acl/<time>-<service>-<account>.json`, mode 0600. If
 the add fails, it re-adds the item from that snapshot (and re-applies the
 partition list when a keychain password was given), then appends what happened
 to the same file. If no snapshot can be taken, the item is not touched.
+
+From the delete until the add or its rollback finishes, aiuse holds Ctrl-C,
+`SIGTERM` and `SIGHUP`, and runs each `security` child in its own session, so
+an interrupt there cannot leave the item deleted. The rewrite finishes (or rolls
+back) and then aiuse stops. If it is killed outright (`kill -9`, a crash), the
+item may be gone: the snapshot file's `events` list shows the last step reached,
+and its `acl` block lists the trusted apps to restore. It holds no secret, so in
+that case sign in to CodexBar again to recreate the item.
 
 After a successful fix, verify:
 
