@@ -100,7 +100,7 @@
 # true). The quota is real and still reported, but `aiuse --available` leaves
 # the pool out of the shortlist and lists it under `excluded` with the reason.
 # [analysis.excluded_pools]
-# "grok" = "operator: reserve for GrokBot, 2026-10-06"
+# "grok" = "operator: reserve this vendor for another agent, 2026-10-06"
 
 # Operator-disabled services — stronger than excluded_pools: "provider" =
 # reason (or true). The service is off-limits overall: provider-only collectors
@@ -108,7 +108,7 @@
 # `aiuse --available` never lists it (even from a cache written before the
 # entry). For TUIs that must temporarily not be used even with headroom.
 # [disabled_services]
-# "grok" = "operator: preserve grokbot this week (2026-10-08)"
+# "grok" = "operator: vendor shelved this week (2026-10-08)"
 
 [analysis.pace]
 # waste_alert_fraction = 0.30

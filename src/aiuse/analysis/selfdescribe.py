@@ -64,7 +64,7 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("weekly", "default", "Claude models without a reported model cap; quota is shared with capped models"),
     ],
     "cursor": [
-        ("grok", "grok_bot", "Cursor Grok Bot slot"),
+        ("grok", "grok", "Cursor grok model slot"),
         ("auto", "auto", "Cursor 'Auto' model selection"),
         ("included", "included", "Cursor included models"),
         ("other", "other", "Cursor other-models slot"),

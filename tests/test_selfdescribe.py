@@ -384,12 +384,12 @@ def test_cli_available_honours_disabled_services(tmp_path, monkeypatch, capsys):
     (cache / "latest.json").write_text(json.dumps(_grok_fixture()))
     monkeypatch.setattr(history, "snapshot_dir", lambda: cache)
     config = tmp_path / "config.toml"
-    config.write_text('[disabled_services]\n"grok" = "operator: preserve grokbot"\n')
+    config.write_text('[disabled_services]\n"grok" = "operator: vendor shelved"\n')
 
     assert main(["--config", str(config), "--available", "--json", "-q"]) == 3
     payload = json.loads(capsys.readouterr().out)
     assert payload["available"] == []
-    assert [(e["provider"], e["reason"]) for e in payload["excluded"]] == [("grok", "operator: preserve grokbot")]
+    assert [(e["provider"], e["reason"]) for e in payload["excluded"]] == [("grok", "operator: vendor shelved")]
     assert payload["disabled_services"] == {}
 
 
@@ -420,12 +420,12 @@ def test_apply_exclusions_matches_provider_or_family():
 
     pools = [
         {"provider": "grok", "pool_family": None, "headroom_percent": 19.0},
-        {"provider": "cursor", "pool_family": "grok_bot", "headroom_percent": 50.0},
+        {"provider": "cursor", "pool_family": "grok", "headroom_percent": 50.0},
         {"provider": "antigravity", "pool_family": "gemini", "headroom_percent": 70.0},
         {"provider": "antigravity", "pool_family": "claude_gpt", "headroom_percent": 40.0},
     ]
     kept, excluded = apply_exclusions(pools, {"Grok": True, "antigravity/claude_gpt": "burst limit"})
-    assert [(p["provider"], p["pool_family"]) for p in kept] == [("cursor", "grok_bot"), ("antigravity", "gemini")]
+    assert [(p["provider"], p["pool_family"]) for p in kept] == [("cursor", "grok"), ("antigravity", "gemini")]
     assert [(e["provider"], e["reason"]) for e in excluded] == [
         ("grok", "excluded by operator"),
         ("antigravity", "burst limit"),

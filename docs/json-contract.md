@@ -32,7 +32,7 @@ it. Or skip all of it and call `aiuse --available`.
    ~75% left. The agent concluded "agy is exhausted" and moved to another
    vendor. In 1.1 each split-vendor window carries `pool_family`
    (`antigravity`: `gemini` vs `claude_gpt`;
-   `cursor`: `auto` / `included` / `other` / `grok_bot`) plus a `models_hint`
+   `cursor`: `auto` / `included` / `other` / `grok`) plus a `models_hint`
    naming which models draw it. One family `exhausted` does NOT make the
    vendor unusable — retry on the other family before abandoning it.
    Claude is **not** an independent split: `default` represents the shared
@@ -387,15 +387,15 @@ additive per the stability policy below.
 | `refill_capacity`             | number \| null       |
 | `refill_capacity_unit`        | string \| null       |
 | `internal_throttle`           | bool                 |
-| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                     |
-| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                                |
-| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `auto`/`included`/`other`/`grok_bot` |
-| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                     |
-| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                       |
-| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                            |
-| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                             |
-| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                                   |
-| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                    |
+| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                 |
+| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                            |
+| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `auto`/`included`/`other`/`grok` |
+| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                 |
+| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                   |
+| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                        |
+| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                         |
+| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                               |
+| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                |
 
 ### `usage_credits` (optional)
 

@@ -479,7 +479,7 @@ Lapsed subscriptions: `analysis.lapsed_accounts` maps `"provider/account"` to a 
 
 Excluded pools: `analysis.excluded_pools` maps `"provider"` or `"provider/pool_family"` to a reason (e.g. `"grok" = "reserved for another agent"`). The quota stays in every report, but `aiuse --available` leaves the pool out of its shortlist and lists it under `excluded` (JSON) or on stderr (text), so orchestrators never route to it.
 
-Disabled services: top-level `[disabled_services]` maps `"provider"` to a reason (e.g. `"grok" = "preserve grokbot this week"`). Stronger than an exclusion — for TUIs that must temporarily not be used even though they have headroom: provider-only collectors skip the service entirely (no subprocess/authenticated fetch), its rows are dropped from every report, snapshot and history entry, `--available` never lists it (even from a cache written before the entry), and the reason travels on the snapshot as `disabled_services` so readers know why the provider is absent.
+Disabled services: top-level `[disabled_services]` maps `"provider"` to a reason (e.g. `"grok" = "vendor shelved until its reset"`). Stronger than an exclusion — for TUIs that must temporarily not be used even though they have headroom: provider-only collectors skip the service entirely (no subprocess/authenticated fetch), its rows are dropped from every report, snapshot and history entry, `--available` never lists it (even from a cache written before the entry), and the reason travels on the snapshot as `disabled_services` so readers know why the provider is absent.
 
 ## Notes / limitations
 

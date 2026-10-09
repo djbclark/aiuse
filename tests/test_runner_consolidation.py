@@ -548,12 +548,12 @@ def test_run_collectors_drops_rows_for_disabled_services(monkeypatch):
     snapshot = run_collectors(
         {
             "collectors": _only("tokscale"),
-            "disabled_services": {"grok": "preserve grokbot this week"},
+            "disabled_services": {"grok": "vendor shelved this week"},
         }
     )
     assert [(a.source, a.provider) for a in snapshot.accounts] == [("tokscale", "copilot")]
-    assert snapshot.disabled_services == {"grok": "preserve grokbot this week"}
-    assert snapshot.to_dict()["disabled_services"] == {"grok": "preserve grokbot this week"}
+    assert snapshot.disabled_services == {"grok": "vendor shelved this week"}
+    assert snapshot.to_dict()["disabled_services"] == {"grok": "vendor shelved this week"}
 
 
 def test_run_collectors_skips_single_provider_collector_when_disabled(monkeypatch):
