@@ -40,11 +40,26 @@ esac
 
 listing=$(cswap list --json 2>&1 </dev/null) || refuse "cswap list --json failed: $(head -3 <<<"$listing")"
 
-account=$(jq -ce '
+# The active account is the row flagged `active` or the row numbered
+# `activeAccountNumber`. Both must point at the same single row: if the flag
+# and the number disagree, or several rows match, the gate cannot tell whose
+# window applies and refuses. A missing or non-numeric activeAccountNumber
+# matches nothing (it used to match an unnumbered row via null == null).
+selection=$(jq -ce '
   . as $root
-  | [.accounts[]? | select(.active == true or .number == $root.activeAccountNumber)][0]
-  | select(type == "object")' <<<"$listing" 2>/dev/null) ||
-  refuse "cswap list shows no active account"
+  | (if (.accounts | type) == "array" then .accounts else [] end) as $rows
+  | ($root.activeAccountNumber | if type == "number" then . else null end) as $n
+  | [range(0; $rows | length)
+     | select($rows[.].active == true or ($n != null and $rows[.].number == $n))] as $hits
+  | {count: ($hits | length), numbers: [$hits[] | $rows[.].number],
+     account: (if ($hits | length) == 1 then $rows[$hits[0]] else null end)}' <<<"$listing" 2>/dev/null) ||
+  refuse "cswap list shows no active account (its output is not a JSON object)"
+matches=$(jq -r .count <<<"$selection")
+[ "$matches" != 0 ] || refuse "cswap list shows no active account"
+[ "$matches" = 1 ] ||
+  refuse "cswap list marks $matches accounts as active (numbers $(jq -c .numbers <<<"$selection"), activeAccountNumber $(jq -c '.activeAccountNumber' <<<"$listing")); the active flag and number disagree, so the gate cannot tell whose 5h window applies"
+account=$(jq -ce '.account | select(type == "object")' <<<"$selection") ||
+  refuse "cswap list's active account entry is not an object"
 
 field() { jq -r "$1" <<<"$account"; }
 who="#$(field '.number // "?"') $(field '.email // "unknown"')"

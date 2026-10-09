@@ -290,11 +290,15 @@ before the fix.
    `--authors`, which defaults to the repo owner, are held and never
    imported unless `--allow-external` is given. Their body then goes in as
    quoted text marked `UNTRUSTED`.
-
 6. **Judge: hook timeout (5e).** It was untested what ralph does when the
    judge hook overruns `timeout_seconds`, and the judge had no bound of its
    own. A new mutation scenario shows that ralph v2.10.1 blocks on a hook
    timeout. It also showed that the hung check outlives the hook, so the
    judge now runs the tests under `timeout` and refuses on expiry.
+7. **Gate: which account is active (5g).** The gate took the first row
+   that was flagged `active` or numbered `activeAccountNumber`, so a flag and
+   a number that disagreed could hide a nearly full window. It now needs
+   exactly one matching row and refuses otherwise. A missing number no
+   longer matches an unnumbered row.
 
-Not changed yet: the nits 5g to 5m from the same review.
+Not changed yet: the nits 5h to 5m from the same review.

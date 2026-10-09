@@ -138,6 +138,38 @@ def test_falls_back_to_active_account_number(tmp_path):
     assert "#3 " in result.stderr
 
 
+# Review 2, finding 5g: the first row matching the flag OR the number was
+# used, so a flagged account at 10% hid the numbered active account at 99%.
+def test_refuses_when_active_flag_and_number_disagree(tmp_path):
+    listing = _listing(_account(1, 10.0, active=True), _account(2, 99.0, active=False), active_number=2)
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 1, result.stdout
+    assert result.stderr.startswith("CSWAP GATE REFUSE: cswap list marks 2 accounts as active (numbers [1,2]")
+
+
+def test_refuses_when_two_rows_are_flagged_active(tmp_path):
+    listing = _listing(_account(1, 10.0, active=True), _account(2, 99.0, active=True), active_number=1)
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 1, result.stdout
+    assert "marks 2 accounts as active" in result.stderr
+
+
+def test_missing_active_number_does_not_match_an_unnumbered_row(tmp_path):
+    row = _account(1, 10.0, active=False)
+    del row["number"]
+    listing = {"schemaVersion": 1, "accounts": [row]}
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 1, result.stdout
+    assert result.stderr.startswith("CSWAP GATE REFUSE: cswap list shows no active account")
+
+
+def test_flag_and_number_agreeing_still_allows(tmp_path):
+    listing = _listing(_account(1, 99.0, active=False), _account(2, 10.0, active=True), active_number=2)
+    result, _ = _gate(tmp_path, listing)
+    assert result.returncode == 0, result.stderr
+    assert "#2 " in result.stdout
+
+
 @pytest.mark.parametrize(
     ("listing", "expected"),
     [
