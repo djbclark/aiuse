@@ -166,3 +166,51 @@ def test_never_reads_aiuse(tmp_path):
     code = [line for line in source.splitlines() if not line.lstrip().startswith("#")]
     assert not any("aiuse" in line for line in code)
     assert "cswap switch" not in source and "cswap auto" not in "\n".join(code)
+
+
+def _raw_listing(*, pct: str = "14.0", age: str | None = "30") -> str:
+    """A one-account listing with the 5h pct and usageAgeSeconds as raw JSON text.
+
+    Raw text lets a test send values json.dumps cannot (1e400) and drop the age
+    field entirely (age=None), the way real cswap does when the age is unknown.
+    """
+    age_field = "" if age is None else f', "usageAgeSeconds": {age}'
+    return (
+        '{"schemaVersion": 1, "activeAccountNumber": 2, "accounts": [{"number": 2,'
+        ' "email": "user2@example.invalid", "active": true, "usageStatus": "ok",'
+        f' "usage": {{"fiveHour": {{"pct": {pct}, "resetsAt": "2026-10-09T09:39:59+00:00",'
+        f' "countdown": "4h 37m", "clock": "05:39"}}}}{age_field}}}]}}'
+    )
+
+
+# Review 2, finding 5a: a missing, null, unparsable or negative usageAgeSeconds
+# used to skip the freshness check and ALLOW.
+@pytest.mark.parametrize(
+    ("age", "expected"),
+    [
+        (None, "no reading age"),
+        ("null", "no reading age"),
+        ('"99999s"', "unparsable reading age '99999s'"),
+        ('"abc"', "unparsable reading age 'abc'"),
+        ("-50000", "unparsable reading age '-50000'"),
+        ("1e400", "unparsable reading age"),
+    ],
+)
+def test_refuses_missing_or_unparsable_age(tmp_path, age, expected):
+    result, _ = _gate(tmp_path, _raw_listing(age=age))
+    assert result.returncode == 1, result.stdout
+    assert result.stderr.startswith("CSWAP GATE REFUSE: ")
+    assert expected in result.stderr
+    assert "ALLOW" not in result.stdout
+
+
+@pytest.mark.parametrize("age", ["0", "30", "900", "899.5"])
+def test_fresh_ages_still_allow(tmp_path, age):
+    result, _ = _gate(tmp_path, _raw_listing(age=age))
+    assert result.returncode == 0, result.stderr
+
+
+def test_age_just_over_the_limit_refuses(tmp_path):
+    result, _ = _gate(tmp_path, _raw_listing(age="900.5"))
+    assert result.returncode == 1
+    assert "5h reading is 900s old (> 900s)" in result.stderr

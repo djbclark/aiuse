@@ -13,7 +13,7 @@
 # Exit 0 with "CSWAP GATE ALLOW: ..." when the active account's 5h window is
 # below the threshold. Exit 1 with "CSWAP GATE REFUSE: ..." when it is at or
 # above the threshold, and also when the reading is missing, unparsable,
-# not ok, or older than CSWAP_GATE_MAX_AGE (fail closed).
+# not ok, of unknown age, or older than CSWAP_GATE_MAX_AGE (fail closed).
 #
 # Environment:
 #   CSWAP_GATE_MAX_PCT  refuse at or above this percent used (default 80)
@@ -61,11 +61,16 @@ resets_at=$(field '.usage.fiveHour.resetsAt // "?"')
 age=$(field '.usageAgeSeconds // empty')
 reset_text="resets $clock (in $countdown; $resets_at)"
 
-if [ -n "$age" ]; then
-  stale=$(jq -rn --arg a "$age" --argjson m "$max_age" '($a | tonumber) > $m')
-  if [ "$stale" = true ]; then
-    refuse "active account $who 5h reading is ${age%.*}s old (> ${max_age}s); refresh cswap and retry"
-  fi
+# Freshness is required, not optional: cswap omits usageAgeSeconds when it
+# does not know the age, and an unknown age must not pass as fresh. Only a
+# plain non-negative decimal is accepted (no sign, exponent or unit), so a
+# negative age from clock skew or a value jq cannot compare refuses too.
+[ -n "$age" ] || refuse "active account $who 5h reading has no reading age (usageAgeSeconds missing); cannot tell whether it is fresh"
+[[ $age =~ ^[0-9]{1,9}(\.[0-9]+)?$ ]] || refuse "active account $who has an unparsable reading age '$age'"
+stale=$(jq -rn --arg a "$age" --argjson m "$max_age" '($a | tonumber) > $m') ||
+  refuse "active account $who has an unparsable reading age '$age'"
+if [ "$stale" != false ]; then
+  refuse "active account $who 5h reading is ${age%.*}s old (> ${max_age}s); refresh cswap and retry"
 fi
 
 if [ "$used" -ge "$max_pct" ]; then
