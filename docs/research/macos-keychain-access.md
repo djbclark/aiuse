@@ -193,7 +193,8 @@ Found with `rg -n -i keychain` in this checkout (`main` at `09c129f`):
    recreates the item without them, an hourly LaunchAgent run would raise a
    SecurityAgent prompt and time out. In a timed-out test call here, killing
    the client left no dialog window behind, but the row silently becomes
-   empty.
+   empty. The same empty row results when the login keychain is locked
+   (section 6.1, item 4).
 2. **caut and CodexBar** are run as subprocesses and read their own items.
    `aiuse trust sign-caut` gives caut a stable self-signed identity, which
    fixes the cdhash problem for the trusted-app list. The partition side is
@@ -233,6 +234,21 @@ provider-owned items in the login keychain, which are the ones that prompt.
    instead of raising a dialog from a LaunchAgent.
 3. **Prefer the owner's CLI** (`codexbar`, `caut`, `claude`) when one exists,
    so the owner's signed binary does the read under its own team partition.
+4. **Classify failures; do not cache them as "no credential".** `security`
+   exits with the low byte of the OSStatus. Observed here on 2026-10-09:
+
+   | Exit | OSStatus                            | Meaning for a collector                                              |
+   | ---- | ----------------------------------- | -------------------------------------------------------------------- |
+   | 44   | `-25300` `errSecItemNotFound`       | item really missing: say "log in to the provider"                    |
+   | 152  | `-60008` `errAuthorizationInternal` | keychain locked and no UI to unlock: retry later                     |
+   | 124  | (from `timeout`)                    | a prompt was raised: run `aiuse trust audit`, do not retry in a loop |
+
+   The 152 case appeared at 01:35 EDT when the screen locked during this
+   run. From then on every `-w` read failed at once, `securityd` logged
+   `MacOS error: -60008` from its SecurityAgent query, and `gh` reported its
+   own keychain token as invalid. Attribute lookups without `-w` still
+   worked. An overnight LaunchAgent therefore sees "locked" for hours, and
+   the Muse collector currently caches that as an empty payload.
 
 ### 6.2 Audit (detection after updates)
 
