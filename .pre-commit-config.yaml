@@ -25,6 +25,15 @@ repos:
         pass_filenames: false
         files: '\.py$'
 
+      # The orchestration scripts are the loop's gates; lint them in CI too.
+      # Uses the system shellcheck (preinstalled on GitHub's ubuntu runners,
+      # `brew install shellcheck` locally), like `just shellcheck`.
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        files: '^orchestration/.*\.sh$'
+
   - repo: https://github.com/crate-ci/typos
     rev: v1.48.0
     hooks:

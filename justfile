@@ -99,13 +99,15 @@ format:
     uv run --extra dev ruff format .
     bunx prettier --plugin=prettier-plugin-toml --write README.md pyproject.toml
 
-# Preview mirroring open GitHub issues into beads (no writes). See docs/orchestration/README.md.
+# Preview mirroring open GitHub issues into beads (no writes; refuses --apply). See docs/orchestration/README.md.
+[positional-arguments]
 beads-import-dry *args:
-    orchestration/gh-issues-to-beads.sh {{ args }}
+    for a in "$@"; do if [ "$a" = --apply ]; then echo "beads-import-dry never writes; use 'just beads-import' to apply" >&2; exit 2; fi; done; orchestration/gh-issues-to-beads.sh "$@"
 
 # Mirror open GitHub issues into beads (idempotent: skips existing gh-<n> refs).
+[positional-arguments]
 beads-import *args:
-    orchestration/gh-issues-to-beads.sh --apply {{ args }}
+    orchestration/gh-issues-to-beads.sh --apply "$@"
 
 # Full release (PyPI via OIDC + Homebrew). Example: `just release 2.1.16`
 # Extra flags pass through: `just release 2.1.16 --dry-run`

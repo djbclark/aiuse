@@ -290,6 +290,37 @@ def test_issue_flag_needs_a_number(tmp_path):
     assert "--issue needs an issue number" in result.stderr
 
 
+# Review 2, finding 5l: `just beads-import-dry --apply` passed --apply through
+# and wrote, and the recipes word-split their arguments.
+@pytest.mark.skipif(shutil.which("just") is None, reason="just not installed")
+def test_dry_recipe_refuses_apply():
+    result = subprocess.run(
+        ["just", "beads-import-dry", "--issue", "17", "--apply"],
+        cwd=ROOT,
+        env=_base_env(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "beads-import-dry never writes" in result.stderr
+
+
+@pytest.mark.skipif(shutil.which("just") is None, reason="just not installed")
+def test_recipes_pass_arguments_without_word_splitting():
+    for recipe in ("beads-import-dry", "beads-import"):
+        result = subprocess.run(
+            ["just", recipe, "--issue", "1 2"],
+            cwd=ROOT,
+            env=_base_env(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "--issue needs an issue number (got '1 2')" in result.stderr, (recipe, result.stderr)
+
+
 # Review 2, finding 5f: djbclark/aiuse is public, and the importer copied every
 # open issue's body, from any author, into bead descriptions that a yolo agent
 # is told to read and act on. Only allowlisted authors are imported now.
