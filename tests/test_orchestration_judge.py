@@ -247,6 +247,40 @@ def test_verdict_line_comes_first_even_with_noisy_tests(repo):
     assert result.stderr.startswith("JUDGE REFUSE: ")
 
 
+# Review 2, finding 5e: the test command had no bound inside the judge, so a
+# hang (or bg queueing for load and a test slot) ran into ralph's hook
+# timeout, whose handling was untested. The judge now kills it and refuses.
+def test_test_command_that_overruns_the_timeout_refuses(repo):
+    _commit_work(repo)
+    result = _judge(repo, test_cmd="echo started; sleep 30", extra_env={"JUDGE_TEST_TIMEOUT": "1"})
+    assert result.returncode == 1
+    first = _first_line(result)
+    assert first.startswith("JUDGE REFUSE: test command ") and "did not finish within JUDGE_TEST_TIMEOUT=1s" in first
+    assert "started" in result.stderr
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "abc", "1.5", "60s", "1000000", ""])
+def test_bad_test_timeout_refuses(repo, value):
+    _commit_work(repo)
+    result = _judge(repo, extra_env={"JUDGE_TEST_TIMEOUT": value})
+    if value == "":
+        # Empty means unset: the default bound applies and the check passes.
+        assert result.returncode == 0, result.stderr
+        return
+    assert result.returncode == 1
+    assert _first_line(result).startswith("JUDGE REFUSE: JUDGE_TEST_TIMEOUT must be")
+
+
+def test_example_config_bounds_the_tests_below_the_hook_timeout():
+    import re
+
+    config = (ROOT / "orchestration" / "ralph.aiuse.example.yml").read_text(encoding="utf-8")
+    judge_block = config.split("- name: judge\n", 1)[1]
+    hook = int(re.search(r"timeout_seconds: (\d+)", judge_block).group(1))
+    bound = int(re.search(r'JUDGE_TEST_TIMEOUT: "(\d+)"', judge_block).group(1))
+    assert bound < hook
+
+
 def _commit_files(
     repo: Path, files: dict[str, str] | None = None, delete: tuple[str, ...] = (), msg: str = "change"
 ) -> None:

@@ -20,7 +20,8 @@
 #                The commits must not touch what the judge relies on: the
 #                check recipe (justfile), test and lint config, conftest.py,
 #                orchestration/ (this script), CI, or skip or delete tests.
-#   (c) tests:   runs TEST_CMD itself and requires exit status 0
+#   (c) tests:   runs TEST_CMD itself, bounded by JUDGE_TEST_TIMEOUT, and
+#                requires exit status 0 (a timeout refuses)
 #
 # Exit 0 and "JUDGE PASS: tracker+git+tests agree" only when all three hold.
 # Anything else, including a missing input or tool, exits 1 with
@@ -31,6 +32,11 @@
 #   EXPECT_DIFF   yes | no (required)
 #   TEST_CMD      check command, run with bash -c from the repo root
 #                 (default: just check)
+#   JUDGE_TEST_TIMEOUT  seconds TEST_CMD may run before the judge kills it and
+#                 refuses (default 3300). Keep it below the hook's
+#                 timeout_seconds so the judge, not ralph's hook timeout,
+#                 gives the verdict. `bg` may queue for load and a test slot
+#                 before the tests start; that wait counts too.
 #   BD_DIR        directory bd runs in (default: the repo root). Point it at
 #                 the checkout that owns .beads/ when the loop runs in a worktree.
 #   JUDGE_STATE_DIR  where loop-start.json lives (default: JUDGE_LOG_DIR). Put
@@ -47,7 +53,7 @@
 #
 # ralph keeps only the first max_output_bytes of each stream, so the verdict
 # line always comes first and the test output goes to a log file.
-# Dependencies: bash, bd, git, jq.
+# Dependencies: bash, bd, git, jq, timeout (coreutils).
 set -uo pipefail
 
 verdict_log=""
@@ -76,7 +82,7 @@ case "${1:-}" in
 esac
 
 tools=(git jq)
-[ "$mode" = record ] || tools+=(bd)
+[ "$mode" = record ] || tools+=(bd timeout)
 for tool in "${tools[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || refuse "required tool '$tool' not on PATH"
 done
@@ -124,6 +130,9 @@ if [ "$mode" = record ]; then
 fi
 
 [ -n "${TASK_ID:-}" ] || refuse "TASK_ID is not set; the judge cannot know which bead to check"
+test_timeout="${JUDGE_TEST_TIMEOUT:-3300}"
+[[ $test_timeout =~ ^[1-9][0-9]{0,5}$ ]] ||
+  refuse "JUDGE_TEST_TIMEOUT must be a whole number of seconds from 1 to 999999 (got '$test_timeout')"
 case "${EXPECT_DIFF:-}" in
 yes | no) ;;
 *) refuse "EXPECT_DIFF must be 'yes' or 'no' (got '${EXPECT_DIFF:-}')" ;;
@@ -213,8 +222,14 @@ fi
 # (c) tests: run them ourselves; never trust the agent's report.
 test_cmd="${TEST_CMD:-just check}"
 test_log="$log_dir/test-$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
-bash -c "$test_cmd" >"$test_log" 2>&1 </dev/null
+# timeout sends TERM after JUDGE_TEST_TIMEOUT and KILL 30 s later; exit 124
+# means TERM fired, 137 that KILL was needed.
+timeout -k 30 "$test_timeout" bash -c "$test_cmd" >"$test_log" 2>&1 </dev/null
 rc=$?
+if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+  refuse "test command '$test_cmd' did not finish within JUDGE_TEST_TIMEOUT=${test_timeout}s (exit $rc; full log: $test_log)" \
+    "--- last 30 lines of the test log ---" "$(tail -30 "$test_log")"
+fi
 if [ "$rc" -ne 0 ]; then
   refuse "test command '$test_cmd' exited $rc (full log: $test_log)" \
     "--- last 30 lines of the test log ---" "$(tail -30 "$test_log")"

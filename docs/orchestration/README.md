@@ -53,7 +53,8 @@ checks agree. It never reads the agent's transcript or claims.
    the loop start. With `EXPECT_DIFF=no`, it must have none. Either way the
    tree must be clean, except for ralph's own `.ralph/` directory.
 3. **Tests.** The judge runs `TEST_CMD` itself, `just check` by default, and
-   needs exit status 0.
+   needs exit status 0. A run longer than `JUDGE_TEST_TIMEOUT` seconds is
+   killed and refused.
 
 The loop start is recorded by a second hook, `judge.sh --record-start` at
 `pre.loop.start`. It writes the starting HEAD, ralph's loop id and the judge's
@@ -77,23 +78,28 @@ all three hold. Any failure, including a missing input or tool, prints
 `.ralph/judge/verdicts.log`, and each test run's full output goes to a
 `.ralph/judge/test-*.log` file beside it.
 
-| Variable        | Meaning                                                                                  |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| `TASK_ID`       | Bead id the loop works on. Required.                                                     |
-| `EXPECT_DIFF`   | `yes` for a code task, `no` for a research task. Required.                               |
-| `TEST_CMD`      | Check command, run with `bash -c` from the repo root. Default `just check`.              |
-| `BD_DIR`        | Directory `bd` runs in. Default: the repo root. Set it when the loop runs in a worktree. |
-| `JUDGE_BASE`    | Base for a manual run with no loop start recorded. A recorded start always wins.         |
-| `JUDGE_LOG_DIR` | Verdict and test logs. Default `.ralph/judge`.                                           |
+| Variable             | Meaning                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `TASK_ID`            | Bead id the loop works on. Required.                                                     |
+| `EXPECT_DIFF`        | `yes` for a code task, `no` for a research task. Required.                               |
+| `TEST_CMD`           | Check command, run with `bash -c` from the repo root. Default `just check`.              |
+| `BD_DIR`             | Directory `bd` runs in. Default: the repo root. Set it when the loop runs in a worktree. |
+| `JUDGE_BASE`         | Base for a manual run with no loop start recorded. A recorded start always wins.         |
+| `JUDGE_TEST_TIMEOUT` | Seconds `TEST_CMD` may run before the judge kills it and refuses. Default 3300.          |
+| `JUDGE_LOG_DIR`      | Verdict and test logs. Default `.ralph/judge`.                                           |
 
 `JUDGE_ALLOW_PROTECTED=yes` accepts changes to the guarded paths for one bead.
 `JUDGE_STATE_DIR` holds `loop-start.json`, by default the log directory. The
 example config puts it outside the clone, where the agent does not write.
 
-Two ralph v2.10.1 details shape the wiring. A hook's default timeout is 30
-seconds, which `just check` exceeds, so the hook sets `timeout_seconds`. ralph
-also keeps only the first 8 KB of each output stream, which is why the verdict
-line always comes first.
+Three ralph v2.10.1 details shape the wiring. A hook's default timeout is 30
+seconds, which `just check` exceeds, so the hook sets `timeout_seconds`. A
+hook that overruns it blocks the loop under `on_error: block`, as the
+mutation test shows. ralph kills the hook process but not its children, so
+the judge bounds the tests itself with `JUDGE_TEST_TIMEOUT`, set below the
+hook timeout. That also gives a clear verdict, and `bg` time spent waiting
+for load and a test slot counts against it. ralph also keeps only the first
+8 KB of each output stream, which is why the verdict line always comes first.
 
 ## US-003: `cswap-gate.sh`, the quota gate
 
@@ -123,12 +129,13 @@ belongs to an outer wrapper in Phase 2, not to this gate.
 ## US-004: mutation test of the wiring
 
 `orchestration/mutation-test.sh` proves the hooks really gate ralph. It runs a
-stub agent through ralph v2.10.1 in throwaway repos and checks four outcomes.
+stub agent through ralph v2.10.1 in throwaway repos and checks five outcomes.
 A lying agent is blocked by the judge after the real check runs. An honest
 agent completes with `JUDGE PASS`. A 5h window at 95% used is blocked by the
 gate before any agent starts. An agent that commits nothing on a branch that
 already carries a leftover commit is blocked, because the judge measures from
-the loop start that `pre.loop.start` recorded. The evidence and the full transcript are in
+the loop start that `pre.loop.start` recorded. A check that hangs past the
+judge hook's timeout is blocked too, not waved through. The evidence and the full transcript are in
 [`judge-mutation-test-2026-10-09.md`](judge-mutation-test-2026-10-09.md).
 
 ```bash
@@ -284,5 +291,10 @@ before the fix.
    imported unless `--allow-external` is given. Their body then goes in as
    quoted text marked `UNTRUSTED`.
 
-Not changed yet: 5e (hook timeout semantics) and the nits 5g to 5m from the
-same review.
+6. **Judge: hook timeout (5e).** It was untested what ralph does when the
+   judge hook overruns `timeout_seconds`, and the judge had no bound of its
+   own. A new mutation scenario shows that ralph v2.10.1 blocks on a hook
+   timeout. It also showed that the hung check outlives the hook, so the
+   judge now runs the tests under `timeout` and refuses on expiry.
+
+Not changed yet: the nits 5g to 5m from the same review.

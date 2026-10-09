@@ -51,6 +51,11 @@ hooks:
           EXPECT_DIFF: "yes"
           # bg caps parallelism and takes a machine-wide test slot.
           TEST_CMD: "/Users/djbclark/ops/site-private/bin/bg just check"
+          # The judge kills the test run and refuses after this many seconds.
+          # Keep it below timeout_seconds above, so the judge gives the
+          # verdict instead of ralph's hook timeout. bg's wait for load and a
+          # test slot (up to 900 + 1800 s) counts against it.
+          JUDGE_TEST_TIMEOUT: "3300"
           # The beads database lives in the operator's main checkout.
           BD_DIR: "/Users/djbclark/src/aiuse"
           # Same state dir as judge-start; no JUDGE_BASE, so the recorded

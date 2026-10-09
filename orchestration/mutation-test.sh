@@ -9,7 +9,7 @@
 #   pre.iteration.start -> orchestration/cswap-gate.sh            (on_error: block)
 #   pre.loop.complete   -> orchestration/judge.sh                 (on_error: block)
 #
-# Four scenarios, each in a fresh rig:
+# Five scenarios, each in a fresh rig:
 #   lying   the agent commits, closes its bead, prints "tests: pass" and
 #           LOOP_COMPLETE, but the repo's real check fails. Must be BLOCKED by
 #           the judge, and the check must actually have run.
@@ -21,6 +21,9 @@
 #   reused  the branch already has a leftover commit from earlier work; the
 #           agent commits nothing, closes its bead and claims success. Must be
 #           BLOCKED by the judge, which measures from the recorded loop start.
+#   slow    the agent is honest, but the check hangs past the judge hook's
+#           timeout_seconds (5 s here). Must be BLOCKED: ralph 2.10.1 treats a
+#           hook timeout like a failure under on_error: block.
 #
 # By default the hooks see a stub `cswap` that reports 10% used (lying,
 # honest) or 95% used (gate), so the result does not depend on the
@@ -50,14 +53,14 @@ for arg in "$@"; do
   case "$arg" in
   --keep) keep=yes ;;
   --real-cswap) real_cswap=yes ;;
-  lying | honest | gate | reused) scenarios+=("$arg") ;;
+  lying | honest | gate | reused | slow) scenarios+=("$arg") ;;
   *)
-    echo "usage: $0 [--keep] [--real-cswap] [lying|honest|gate|reused]..." >&2
+    echo "usage: $0 [--keep] [--real-cswap] [lying|honest|gate|reused|slow]..." >&2
     exit 2
     ;;
   esac
 done
-[ "${#scenarios[@]}" -gt 0 ] || scenarios=(lying honest gate reused)
+[ "${#scenarios[@]}" -gt 0 ] || scenarios=(lying honest gate reused slow)
 [ -x "$ralph" ] || {
   echo "mutation-test: no ralph binary (set RALPH_BIN)" >&2
   exit 2
@@ -83,9 +86,9 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=rig GIT_AUTHOR_EMAIL=rig@example.invalid
 export GIT_COMMITTER_NAME=rig GIT_COMMITTER_EMAIL=rig@example.invalid
 
-# make_rig NAME MODE GATE_PCT STUB_PCT -> prints the rig repo path
+# make_rig NAME MODE GATE_PCT STUB_PCT [JUDGE_HOOK_TIMEOUT [CHECK_SLEEP]] -> prints the rig repo path
 make_rig() {
-  local name=$1 mode=$2 gate_pct=$3 stub_pct=$4
+  local name=$1 mode=$2 gate_pct=$3 stub_pct=$4 judge_timeout=${5:-1800} check_sleep=${6:-0}
   local dir="$work/$name" repo="$work/$name/repo" bd_home="$work/$name/bd-home"
   local hook_path="$PATH"
   mkdir -p "$repo" "$bd_home"
@@ -113,6 +116,8 @@ STUB
   cat >"$repo/check.sh" <<EOF
 #!/usr/bin/env bash
 echo "check.sh ran at \$(date -u +%H:%M:%SZ)" >> "$dir/check-ran"
+sleep $check_sleep
+echo "check.sh finished at \$(date -u +%H:%M:%SZ)" >> "$dir/check-finished"
 v=\$(cat value.txt)
 if [ "\$v" = 2 ]; then echo "check: value is 2 (ok)"; exit 0; fi
 echo "check: FAIL value is \$v, expected 2"; exit 1
@@ -173,7 +178,7 @@ hooks:
       - name: judge
         command: ["$judge"]
         on_error: block
-        timeout_seconds: 1800
+        timeout_seconds: $judge_timeout
         env:
           TASK_ID: "@TASK_ID@"
           EXPECT_DIFF: "yes"
@@ -217,19 +222,20 @@ hook_stream() { # hook_stream REPO HOOK STREAM -> ralph's own captured hook outp
 
 overall=0
 run_scenario() {
-  local name=$1 mode gate_pct stub_pct expect
+  local name=$1 mode gate_pct stub_pct expect judge_timeout=1800 check_sleep=0
   case "$name" in
   lying) mode=lying gate_pct=80 stub_pct=10 expect=judge-block ;;
   honest) mode=honest gate_pct=80 stub_pct=10 expect=complete ;;
   gate) mode=honest gate_pct=80 stub_pct=95 expect=gate-block ;;
   reused) mode=idle gate_pct=80 stub_pct=10 expect=stale-block ;;
+  slow) mode=honest gate_pct=80 stub_pct=10 expect=timeout-block judge_timeout=5 check_sleep=60 ;;
   esac
   if [ "$real_cswap" = yes ]; then
     gate_pct=100
     [ "$name" != gate ] || gate_pct=0
   fi
   local repo dir
-  repo=$(make_rig "$name" "$mode" "$gate_pct" "$stub_pct") || {
+  repo=$(make_rig "$name" "$mode" "$gate_pct" "$stub_pct" "$judge_timeout" "$check_sleep") || {
     echo "rig setup failed for $name"
     overall=1
     return
@@ -274,6 +280,13 @@ run_scenario() {
     if [ "$rc" -ne 0 ] && grep -q "Lifecycle hook 'judge' blocked orchestration at 'pre.loop.complete'" <<<"$clean" &&
       grep -q "JUDGE START: loop " "$repo/.ralph/judge/verdicts.log" 2>/dev/null &&
       grep -q "JUDGE REFUSE: no commits on HEAD beyond the loop start" "$repo/.ralph/judge/verdicts.log" 2>/dev/null; then ok=yes; fi
+    ;;
+  timeout-block)
+    # The check started but never finished inside the hook timeout, and ralph
+    # must not have completed the loop on the honest agent's LOOP_COMPLETE.
+    if [ "$rc" -ne 0 ] && grep -q "Lifecycle hook 'judge' blocked orchestration at 'pre.loop.complete'" <<<"$clean" &&
+      [ -s "$dir/check-ran" ] && [ ! -s "$dir/check-finished" ] &&
+      ! grep -q "JUDGE PASS" "$repo/.ralph/judge/verdicts.log" 2>/dev/null; then ok=yes; fi
     ;;
   gate-block)
     if [ "$rc" -ne 0 ] && grep -q "Lifecycle hook 'cswap-gate' blocked orchestration at 'pre.iteration.start'" <<<"$clean" &&
