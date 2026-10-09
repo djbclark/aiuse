@@ -90,8 +90,24 @@ reports the share used, so 80 means 80% used.
   command the script runs is `cswap list --json`.
 
 ```text
-CSWAP GATE ALLOW: active account #2 djbclark@gmail.com 5h window is 14% used (< 80%); resets 05:39 (in 4h 36m; 2026-10-09T09:39:59.803614+00:00)
+CSWAP GATE ALLOW: active account #2 you@example.com 5h window is 14% used (< 80%); resets 05:39 (in 4h 36m; 2026-10-09T09:39:59.803614+00:00)
 ```
 
 A blocking hook ends the ralph run rather than sleeping. Waiting for the reset
 belongs to an outer wrapper in Phase 2, not to this gate.
+
+## US-004: mutation test of the wiring
+
+`orchestration/mutation-test.sh` proves the hooks really gate ralph. It runs a
+stub agent through ralph v2.10.1 in throwaway repos and checks three outcomes.
+A lying agent is blocked by the judge after the real check runs. An honest
+agent completes with `JUDGE PASS`. A 5h window at 95% used is blocked by the
+gate before any agent starts. The evidence and the full transcript are in
+[`judge-mutation-test-2026-10-09.md`](judge-mutation-test-2026-10-09.md).
+
+```bash
+RALPH_BIN=/path/to/ralph orchestration/mutation-test.sh --keep
+RALPH_BIN=/path/to/ralph uv run --extra dev pytest tests/test_orchestration_mutation.py
+```
+
+Re-run it after any ralph upgrade and after any change to the judge or gate.
