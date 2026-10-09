@@ -46,6 +46,16 @@ No action needed: the native `opencode_zen` collector remains authoritative.
 
 DeepSeek remains the only prepaid service with one client
 source on this machine — issue #16 is still real, unblocked work. (OpenRouter resolved via #17).
+
+**Update 2026-10-09 (#16):** aiuse now has a native `deepseek` collector
+(`src/aiuse/collectors/deepseek.py`) that reads DeepSeek's documented
+read-only `GET https://api.deepseek.com/user/balance` with an ordinary API key
+(no tokens spent). It is quiet until `AIUSE_DEEPSEEK_API_KEY` or SecretSpec
+`DEEPSEEK_API_KEY` is supplied, and it is preferred over CodexBar for the
+`deepseek` provider, with CodexBar cross-checking. A CNY balance stays in
+`credits_remaining` (never converted to `balance_usd`). Not yet verified live
+here: DeepSeek is under the operator's `[disabled_services]` and no key is
+configured, so this machine still shows one source until both change.
 **Groq was the one that changed materially**: confirmed across two
 independent live runs, it went from a hard CodexBar fetch error (zero usable
 sources — the entire premise of issue #18) to three agreeing live sources.

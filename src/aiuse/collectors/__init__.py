@@ -5,6 +5,7 @@ from .caut import collect_caut
 from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
+from .deepseek import collect_deepseek
 from .hermes import collect_hermes
 from .muse import collect_muse
 from .opencode_go import collect_opencode_go
@@ -27,6 +28,7 @@ __all__ = [
     "collect_openusage_sh",
     "collect_opencode_go",
     "collect_opencode_zen",
+    "collect_deepseek",
     "collect_openrouter",
     "collect_qwencloud",
     "collect_bailian",

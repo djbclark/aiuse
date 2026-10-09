@@ -28,6 +28,7 @@ from .clinepass import collect_clinepass
 from .codexbar import DEFAULT_TIMEOUT_BACKOFF_SECONDS as DEFAULT_CODEXBAR_TIMEOUT_BACKOFF
 from .codexbar import collect_codexbar
 from .cswap import collect_cswap
+from .deepseek import collect_deepseek
 from .grok import collect_grok
 from .hermes import collect_hermes
 from .muse import collect_muse
@@ -51,6 +52,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "opencode_go",
     "opencode_zen",
     "openrouter",
+    "deepseek",
     "tokscale",
     "clinepass",
     "hermes",
@@ -68,6 +70,8 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     "qwencloud": ("qwencloud", "codexbar"),
     # Native bl CLI is the authority; CodexBar alibaba-*-plan (cookies) cross-checks.
     "alibaba": ("bailian", "codexbar"),
+    # Native /user/balance is DeepSeek's own number; CodexBar cross-checks (#16).
+    "deepseek": ("deepseek", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
     # Native /go page sees an expired plan; CodexBar local $caps cannot.
     "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
 }
@@ -81,6 +85,7 @@ SOURCE_LABELS: dict[str, str] = {
     "opencode_go": "OpenCode Go (native)",
     "opencode_zen": "OpenCode Zen (native)",
     "openrouter": "OpenRouter (native)",
+    "deepseek": "DeepSeek (native)",
     "tokscale": "tokscale",
     "clinepass": "ClinePass (native)",
     "hermes": "Hermes (local)",
@@ -229,6 +234,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("opencode_zen", partial(collect_opencode_zen, timeout=timeout_for(config, "opencode_zen"))))
     if _enabled(collectors_cfg, "openrouter"):
         jobs.append(("openrouter", partial(collect_openrouter, timeout=timeout_for(config, "openrouter"))))
+    if _enabled(collectors_cfg, "deepseek"):
+        jobs.append(("deepseek", partial(collect_deepseek, timeout=timeout_for(config, "deepseek"))))
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))

@@ -17,9 +17,9 @@ fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
 replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
 "How to read this". The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
-tracks only what a fresh session must know. **15 registered collectors**
+tracks only what a fresh session must know. **16 registered collectors**
 (cswap, CodexBar, caut, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale, hermes,
-muse, qwencloud, bailian, openrouter, clinepass, grok_billing — native
+muse, qwencloud, bailian, openrouter, deepseek, clinepass, grok_billing — native
 collectors are default-on and quiet when their prerequisites are absent).
 Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
 monthly reset parsed from the billing API's `currentPeriod`, see

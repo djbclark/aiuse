@@ -38,6 +38,11 @@
 # OpenUsage.sh — terminal dashboard, invoked through `openusage-sh`.
 # enabled = true
 
+[collectors.deepseek]
+# Native DeepSeek prepaid balance (GET /user/balance, read-only, no tokens).
+# Quiet until AIUSE_DEEPSEEK_API_KEY or SecretSpec DEEPSEEK_API_KEY is set.
+# enabled = true
+
 [collectors.opencode_zen]
 # Optional direct OpenCode Zen billing source. Enable it by exporting
 # AIUSE_OPENCODE_ZEN_COOKIE with an existing OpenCode console Cookie header.

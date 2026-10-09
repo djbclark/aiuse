@@ -322,6 +322,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "qwencloud",
         "bailian",
         "openrouter",
+        "deepseek",
         "clinepass",
         "grok_billing",
     }
@@ -341,6 +342,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "qwencloud",
         "bailian",
         "openrouter",
+        "deepseek",
         "clinepass",
         "grok_billing",
     }
@@ -377,6 +379,7 @@ SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
     "opencode_zen": "opencode-zen",
     "clinepass": "clinepass",
     "openrouter": "openrouter",
+    "deepseek": "deepseek",
 }
 
 
