@@ -36,6 +36,25 @@ or site `just install-aiuse-deps`.
    # or see docs/scheduling.md
    ```
 
+## In-terminal board (`aiuse watch`)
+
+`aiuse watch` is a **pull-refresh** board: it redraws the clock matrix on an
+interval (default 10 minutes, `-i 2m` / `90s` / `1h`) in the terminal's
+alternate screen and exits cleanly on `q`, `Esc` or `Ctrl-C`. It honors `-q`
+(no footer), `--no-color` / `NO_COLOR`, and `--timeout` / config timeouts, and
+reuses a snapshot the hourly sampler wrote within the interval instead of
+polling the vendors again. `aiuse watch --once` prints one frame to stdout for
+scripts and tmux status panes. Design and rules:
+[`watch-mode.md`](watch-mode.md).
+
+**Compose with Layer 1 for a menubar.** `aiuse watch` is a Layer 2 ranking
+view that runs only while a terminal shows it; it is not a menu-bar app, a
+daemon or a widget. For a true always-on bar, run a Layer 1 ambient monitor
+([CodexBar](https://github.com/steipete/CodexBar) or
+[OpenUsage](https://www.openusage.ai/), see
+[`competitive-landscape.md`](competitive-landscape.md)) beside it, and keep
+the LaunchAgent ([`scheduling.md`](scheduling.md)) for background snapshots.
+
 ## One-line status (`aiuse status` / `aiuse prompt`)
 
 Stdout is a **single line**, suitable for shell prompts and status bars:

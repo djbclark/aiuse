@@ -418,3 +418,34 @@ def test_board_footer_is_centered_under_the_table():
     left = len(meta) - len(meta.lstrip())
     assert left == max(0, (width - len(meta.strip())) // 2)
     assert "am ·" in meta or "pm ·" in meta
+
+
+def test_cli_watch_passes_interval_quiet_color_and_timeout_to_the_board(monkeypatch):
+    """Issue #14: -i / -q / --no-color / --timeout reach the board and its collect config."""
+    seen: dict = {}
+
+    def fake_run_watch(config, *, interval, once, quiet, no_color, **_kw):
+        seen.update(config=config, interval=interval, once=once, quiet=quiet, no_color=no_color)
+        return 0
+
+    monkeypatch.setattr("aiuse.watch.run_watch", fake_run_watch)
+    monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
+    monkeypatch.setattr(cli, "run_collectors", lambda _c: (_ for _ in ()).throw(AssertionError("no collect")))
+    assert cli.main(["watch", "-i", "2m", "-q", "--no-color", "--timeout", "7"]) == 0
+    assert seen["interval"] == 120.0
+    assert seen["quiet"] is True
+    assert seen["no_color"] is True
+    assert seen["once"] is False
+    assert seen["config"]["timeouts"]["default"] == 7.0
+    assert seen["config"]["timeouts"]["force"] == 7.0
+
+
+def test_cli_watch_defaults_to_a_ten_minute_interval(monkeypatch):
+    seen: dict = {}
+    monkeypatch.setattr("aiuse.watch.run_watch", lambda _config, **kw: seen.update(kw) or 0)
+    monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
+    assert cli.main(["watch", "--once"]) == 0
+    assert seen["interval"] == 600.0
+    assert seen["once"] is True
+    assert seen["quiet"] is False
+    assert seen["no_color"] is False

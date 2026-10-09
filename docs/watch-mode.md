@@ -140,17 +140,22 @@ stdout report.
 
 ## Docs / acceptance (adapted from Issue #14)
 
-- [ ] README: `aiuse watch` in the usage section + one screenshot / asciinema.
-- [ ] [`companion-stack.md`](companion-stack.md): "compose with CodexBar /
-      OpenUsage for a true always-on menubar; `aiuse watch` is the in-terminal
-      board."
-- [ ] [`pretty-display.md`](pretty-display.md): amended with the watch-mode
-      exception (done in this commit).
-- [ ] [`scheduling.md`](scheduling.md): note that watching densifies History
+Checked 2026-10-09 against `main`:
+
+- [ ] README: `aiuse watch` in the usage section (done) + one screenshot /
+      asciinema (not done; needs a live terminal capture).
+- [x] [`companion-stack.md`](companion-stack.md): "In-terminal board" section,
+      with the explicit "compose with Layer 1 for a menubar" note.
+- [x] [`pretty-display.md`](pretty-display.md): amended with the watch-mode
+      exception.
+- [x] [`scheduling.md`](scheduling.md): note that watching densifies History
       when `persist_snapshots` is on.
-- [ ] `completions/aiuse.bash` + `aiuse.zsh`: add `watch` and `--interval`.
-- [ ] [`json-contract.md`](json-contract.md): `watch` does not emit JSON; note
-      that scripts wanting data should use `aiuse --json` or `aiuse serve`.
+- [x] `completions/aiuse.bash` + `aiuse.zsh`: `watch` and `--interval`.
+- [x] [`json-contract.md`](json-contract.md): `watch` does not emit JSON;
+      scripts wanting data should use `aiuse --json` or `aiuse serve`.
+- [x] Tests for interval and flag parsing with a mocked collect
+      (`tests/test_watch.py`, including `-i` / `-q` / `--no-color` /
+      `--timeout` reaching the board).
 
 ## Estimate
 
