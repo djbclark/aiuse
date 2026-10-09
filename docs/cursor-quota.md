@@ -22,6 +22,15 @@ plus `providerCost`:
 | `tertiary`                                      | **Other Models** (was “API” in older UI copy) | **Cursor other models**   |
 | `providerCost` (`period: Monthly`, `limit > 0`) | **On-Demand** `$used / $limit`                | usage credits / on-demand |
 
+**Grok window naming (2026-10-09):** Cursor's dashboard calls the sand/grok
+extra allowance "Grok Bot"; CodexBar passed that through as the window title.
+aiuse maps it to pool family `grok` (one grok model pool at Cursor — GrokBot,
+the xAI app, is a different thing entirely and cannot spend this allowance).
+Upstream title rename "Grok Bot" → "Grok":
+[steipete/CodexBar#4383](https://github.com/steipete/CodexBar/pull/4383);
+until it lands and CodexBar updates, the window _label_ in aiuse output may
+still read "Grok Bot" (collector data passes through unchanged).
+
 Without fixed slot labels, `_slot_label` fell back to “monthly quota (N)”.
 Without `shared_allotment`, Auto and Other Models were scored as independent
 burn windows, so a maxed Other Models category looked like a lockout even when
