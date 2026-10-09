@@ -273,7 +273,27 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         account_aliases=config.get("account_aliases"),
     )
     _apply_lapsed_accounts(snapshot.accounts, config)
+    _apply_client_limit_notes(snapshot.accounts, config)
     return snapshot
+
+
+def _apply_client_limit_notes(accounts: list[AccountUsage], config: dict[str, Any] | None) -> None:
+    """Note a per-client lockout the quota windows cannot show (issue #33).
+
+    Passive: aiuse.client_limits reads the client's own logs and sends no
+    request. Numbers and usability stay as collected; only a note is added,
+    so the board and --full say why a route with headroom may still fail.
+    """
+    if not any(account.provider == "antigravity" for account in accounts):
+        return
+    from aiuse.client_limits import load_client_limits
+
+    limits = load_client_limits(config)
+    for account in accounts:
+        for limit in limits.get(account.provider, []):
+            message = str(limit.get("message") or "")
+            if message and message not in account.notes:
+                account.notes = [*account.notes, message]
 
 
 def _merge_grok_extra_credits(accounts: list[AccountUsage]) -> None:

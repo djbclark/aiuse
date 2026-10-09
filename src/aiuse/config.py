@@ -62,6 +62,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # in --json/--available/serve output. 25 min covers the watch refresh
         # cadence (10-20 min) plus the hourly LaunchAgent with margin.
         "fresh_threshold_seconds": 1500.0,
+        # Minutes of agy CLI log history scanned (passively, no requests) for
+        # RESOURCE_EXHAUSTED 429 retries; a hit marks the CLI client limited
+        # in client_limits (issue #33). 0 disables.
+        "agy_cli_lockout_minutes": 60,
         "waking_hours_per_day": 16,
         "min_value_at_risk_usd": 0.50,
         "min_value_fraction": 0.05,

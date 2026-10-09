@@ -308,6 +308,40 @@ label it. Advisory by design: the note never edits numbers, and once it
 expires a live collector reading `ok` wins. Match scope is provider-wide, or
 provider + `--family` for split vendors.
 
+### `client_limits` — a client is failing although the quota has headroom
+
+Added 2026-10-09 for [#33](https://github.com/djbclark/aiuse/issues/33).
+Additive and optional: present only while a limit is active. An account and
+each of its routing entries (`--available`, `snapshot.accounts[]`) may carry:
+
+```json
+"client_limits": [
+  {
+    "client": "cli",
+    "cli_binary": "agy",
+    "state": "limited",
+    "source": "agy-cli-log",
+    "last_limited_at": "2026-10-06T10:31:01.100236+00:00",
+    "failed_attempts": 8,
+    "runs": 1,
+    "lookback_minutes": 60.0,
+    "error": "RESOURCE_EXHAUSTED (code 429)",
+    "evidence": "~/.gemini/antigravity-cli/log/cli-20261006_062848.log",
+    "message": "agy CLI got RESOURCE_EXHAUSTED (429) on 8 attempts in 1 run, ..."
+  }
+]
+```
+
+It is read **passively** at report time from the client's own logs (today:
+the agy CLI's `Run: attempt N failed (RESOURCE_EXHAUSTED (code 429) …` retry
+lines within `analysis.agy_cli_lockout_minutes`, default 60, 0 disables). No
+request is sent. `usable_now` stays quota-based, because the other client
+(`acp-run agy`) may still serve the same quota. Route agy work through ACP, or
+wait, while the CLI entry is `limited`. The summary line gains `[agy cli
+rate-limited: 429 xN, last Mm ago; ACP may still work]`, and the board's
+antigravity row gets the message as a note. The CLI logs have no positive
+success marker, so the entry clears only when the 429s age out of the window.
+
 ## `aiuse attribute --json` — quota burned beside tokens spent
 
 Schema `1.0`, separate from the collect envelope. Guide:

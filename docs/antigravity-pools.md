@@ -155,3 +155,14 @@ Not covered, and why:
    `"enabled"` path queries each provider separately and is gated.
 3. **Using agy itself.** Interactive or delegated agy work is not a quota
    query; see the agy burst-limit rules in the home `AGENTS.md`.
+
+## CLI burst lockout signal (2026-10-09, #33)
+
+The agy CLI and the ACP server are separate clients of one quota. The CLI can
+429 on every request while the quota windows show headroom and ACP keeps
+working (2026-10-03). aiuse now reads the CLI's own logs, passively, at report
+time and attaches `client_limits` (`client: cli`, `state: limited`) to the
+antigravity account and its routing entries. `usable_now` is unchanged, and
+the summary line says "agy cli rate-limited … ACP may still work". Format,
+config knob and limits: [`json-contract.md`](json-contract.md) (section
+`client_limits`). aiuse never sends a probe for this.

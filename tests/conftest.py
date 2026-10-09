@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aiuse import agent_notes
+from aiuse import agent_notes, client_limits
 from aiuse.analysis import history
 
 
@@ -25,6 +25,8 @@ def isolate_snapshot_dir(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(history, "snapshot_dir", lambda: tmp_path / "snapshots")
     monkeypatch.setattr(agent_notes, "notes_dir", lambda: tmp_path / "agent-notes")
+    # Never read the developer's real agy CLI logs (issue #33 lockout scan).
+    monkeypatch.setattr(client_limits, "agy_cli_log_dir", lambda: tmp_path / "agy-cli-log")
 
 
 # The width the suite renders at unless a test says otherwise. Wide enough that

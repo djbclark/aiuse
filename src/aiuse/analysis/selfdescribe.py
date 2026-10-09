@@ -48,6 +48,7 @@ SEMANTICS: dict[str, str] = {
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins",
+    "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
 }
@@ -221,13 +222,25 @@ def enrich_snapshot(
     *,
     now: datetime | None = None,
     notes: list[Mapping[str, Any]] | None = None,
+    client_limits: Mapping[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Enrich accounts in place and attach summary_lines / semantics."""
+    """Enrich accounts in place and attach summary_lines / semantics.
+
+    ``client_limits`` (provider -> entries, from aiuse.client_limits) replaces
+    each matching account's ``client_limits``; read-time evidence wins over
+    whatever a cached snapshot carried.
+    """
     now = now or utcnow()
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
     collected = snap.get("collected_at")
     for account in accounts:
         enrich_account(account, collected_at=collected, now=now, notes=notes)
+        if client_limits is not None:
+            limits = client_limits.get(str(account.get("provider") or ""))
+            if limits:
+                account["client_limits"] = [dict(entry) for entry in limits]
+            else:
+                account.pop("client_limits", None)
     snap["accounts"] = accounts
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     snap["semantics"] = dict(SEMANTICS)
@@ -322,6 +335,7 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "available_at": min(resets).isoformat() if resets else None,
                     "models_hint": hints.get(family),
                     "age_seconds": account.get("age_seconds"),
+                    **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
                     "windows": windows,
                 }
             )
@@ -382,6 +396,16 @@ def summary_line(pool: Mapping[str, Any]) -> str:
             seg += " [agent-reported]"
         segments.append(seg)
     line = f"{lead}: " + "; ".join(segments)
+    for limit in pool.get("client_limits") or []:
+        if isinstance(limit, dict) and limit.get("state") == "limited":
+            client = limit.get("cli_binary") or limit.get("client") or "client"
+            line += (
+                f" [{client} {limit.get('client') or 'client'} rate-limited: 429 x{limit.get('failed_attempts', '?')}"
+            )
+            when = parse_dt(limit.get("last_limited_at"))
+            if when is not None:
+                line += f", last {max(0, int((utcnow() - when).total_seconds() // 60))}m ago"
+            line += "; ACP may still work]"
     if pool.get("usable_now") is False:
         line += " -> NOT usable now"
     elif all(str(w.get("state")) == "unknown" for w in pool.get("windows") or []):

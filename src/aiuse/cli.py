@@ -530,8 +530,9 @@ def _main_inner(argv: list[str] | None = None) -> int:
     insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     from aiuse.agent_notes import load_active_notes
     from aiuse.analysis.selfdescribe import SCHEMA_VERSION, enrich_snapshot
+    from aiuse.client_limits import load_client_limits
 
-    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes())
+    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits(config))
     payload = {
         "schema_version": SCHEMA_VERSION,
         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
@@ -1092,7 +1093,9 @@ def _run_available(args: argparse.Namespace) -> int:
         snap_dict = snapshot.to_dict()
         source = "live"
 
-    enrich_snapshot(snap_dict, notes=notes)
+    from aiuse.client_limits import load_client_limits
+
+    enrich_snapshot(snap_dict, notes=notes, client_limits=load_client_limits(config))
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally
     # filtered at collection, but a cache written by an older build (or with

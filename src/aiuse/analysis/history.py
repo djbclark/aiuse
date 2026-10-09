@@ -128,7 +128,9 @@ def save_snapshot(
     # Self-describing at rest: windows carry state/pool_family and accounts
     # carry usable_now/binding_window/available_at, so even a naive reader of
     # the cache file cannot misread a consumed share as free headroom.
-    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes())
+    from aiuse.client_limits import load_client_limits
+
+    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits())
     payload = {
         "schema_version": SCHEMA_VERSION,
         "collection_id": f"{ts}-{os.getpid()}",

@@ -240,6 +240,7 @@ class _ServeState:
     def _collect_live(self) -> dict[str, Any]:
         from aiuse.agent_notes import load_active_notes
         from aiuse.analysis.selfdescribe import enrich_snapshot
+        from aiuse.client_limits import load_client_limits
 
         snapshot = run_collectors(self.config)
         alerts = analyze_use_or_lose(snapshot, self.config)
@@ -256,7 +257,9 @@ class _ServeState:
                 pass
         suggestion = suggestion_to_dict(pick_suggestion(alerts))
         return {
-            "snapshot": enrich_snapshot(snapshot.to_dict(), notes=load_active_notes()),
+            "snapshot": enrich_snapshot(
+                snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits(self.config)
+            ),
             "alerts": [a.to_dict() for a in alerts],
             "suggestion": suggestion,
             "history": history_insights(snapshot, analysis_cfg=analysis_cfg),
@@ -267,6 +270,7 @@ class _ServeState:
 def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> dict[str, Any]:
     from aiuse.agent_notes import load_active_notes
     from aiuse.analysis.selfdescribe import enrich_snapshot
+    from aiuse.client_limits import load_client_limits
 
     alerts_raw = row.get("alerts") or []
     # Re-pick suggestion from stored alerts (stable field set).
@@ -280,6 +284,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
             "collector_errors": [],
         },
         notes=load_active_notes(),
+        client_limits=load_client_limits(config),
     )
     # Minimal history object without reloading learning (cheap path).
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
