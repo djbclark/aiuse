@@ -21,7 +21,9 @@ the ``qwencloud`` collector reads (canonical providers ``alibaba`` vs
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, coerce_float
@@ -51,9 +53,15 @@ def collect_bailian(*, timeout: float = 45.0) -> list[AccountUsage]:
         except CollectorError as exc:
             message = str(exc)
             if _looks_unauthenticated(message):
-                # No console login on this machine: quiet, like muse/clinepass.
-                return []
+                # Both subcommands share the one console session: stop here.
+                return _unauthenticated(message)
             errors.append(f"{subcommand}: {message}")
+            continue
+        payload_error = _payload_error(payload)
+        if payload_error is not None:
+            if _looks_unauthenticated(payload_error):
+                return _unauthenticated(payload_error)
+            errors.append(f"{subcommand}: {payload_error}")
             continue
         account = _account_from_payload(payload, plan=plan)
         if account is not None:
@@ -112,4 +120,49 @@ def _looks_unauthenticated(message: str) -> bool:
         or "not authenticated" in lowered
         or "auth login" in lowered
         or "login required" in lowered
+        or "not logged in" in lowered
+        or "session" in lowered
+        and "expired" in lowered
     )
+
+
+LOGIN_HINT = "run `bl auth login --console` to sign in again"
+
+
+def _config_path() -> Path:
+    return Path.home() / ".bailian" / "config.json"
+
+
+def _unauthenticated(message: str) -> list[AccountUsage]:
+    """The console session is missing or expired (aiuse-oja).
+
+    On a machine where bl was never set up this stays quiet, like
+    muse/clinepass. Once ``~/.bailian/config.json`` exists the operator has
+    logged in before, so the session has expired: say so on one alibaba row.
+    That row outranks CodexBar's cookie-based alibaba errors in the source
+    priority, so the board shows the fix instead of an unrelated cookie
+    failure. bl is not re-run and nothing tries to log in.
+    """
+    if not _config_path().exists():
+        return []
+    expired = "expired" in message.lower() or "not logged in" in message.lower()
+    reason = "bl console session expired or not logged in" if expired else "bl console login missing"
+    return [
+        AccountUsage(
+            source="bailian",
+            provider="alibaba",
+            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            error=f"{reason}; {LOGIN_HINT}",
+        )
+    ]
+
+
+def _payload_error(payload: Any) -> str | None:
+    """bl's ``{"error": {"message": ..., "hint": ...}}`` envelope as one line."""
+    if not isinstance(payload, dict) or "error" not in payload:
+        return None
+    error = payload.get("error")
+    if isinstance(error, dict):
+        parts = [str(error.get(key)).strip() for key in ("message", "hint") if error.get(key)]
+        return " ".join(parts) or json.dumps(error)
+    return str(error)

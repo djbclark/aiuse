@@ -148,6 +148,11 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "qwen": "qwencloud",
     "alibaba-coding-plan": "alibaba",
     "alibaba-token-plan": "alibaba",
+    # CodexBar's own ids for the same Alibaba Cloud account's two plans (the
+    # bailian collector reports both as provider alibaba). Unmapped, the token
+    # plan's cookie error rendered as a second, unfixable row (aiuse-oja).
+    "alibabatokenplan": "alibaba",
+    "alibabacodingplan": "alibaba",
     "bailian": "alibaba",
 }
 

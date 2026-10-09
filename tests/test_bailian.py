@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from aiuse.collectors.bailian import _account_from_payload, _epoch_ms, collect_bailian
@@ -57,7 +59,7 @@ def test_collect_quiet_when_cli_absent(monkeypatch):
     assert collect_bailian() == []
 
 
-def test_collect_quiet_when_unauthenticated(monkeypatch):
+def test_collect_quiet_when_unauthenticated(monkeypatch, tmp_path):
     from aiuse.collectors.base import CollectorError
 
     def fail(argv, **_kwargs):
@@ -65,7 +67,76 @@ def test_collect_quiet_when_unauthenticated(monkeypatch):
 
     monkeypatch.setattr("aiuse.collectors.bailian.which", lambda _cmd: "/opt/homebrew/bin/bl")
     monkeypatch.setattr("aiuse.collectors.bailian.run_json", fail)
+    # Never set up on this machine (no ~/.bailian/config.json): quiet.
+    monkeypatch.setattr("aiuse.collectors.bailian._config_path", lambda: tmp_path / "missing.json")
     assert collect_bailian() == []
+
+
+# What `bl usage token-plan --output json` prints on stderr (exit 3) once the
+# console session lapses, as observed 2026-10-09.
+EXPIRED_STDERR = (
+    '{"error": {"code": 3, "message": "Console session is not logged in or has expired.", '
+    '"hint": "Run `bl auth login --console` to sign in or refresh your console session."}}'
+)
+
+
+def test_expired_session_after_setup_is_one_actionable_row(monkeypatch, tmp_path):
+    from aiuse.collectors.base import CollectorError
+
+    calls: list[list[str]] = []
+
+    def fail(argv, **_kwargs):
+        calls.append(argv)
+        raise CollectorError(f"no JSON from {' '.join(argv)}: {EXPIRED_STDERR}")
+
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    monkeypatch.setattr("aiuse.collectors.bailian.which", lambda _cmd: "/opt/homebrew/bin/bl")
+    monkeypatch.setattr("aiuse.collectors.bailian.run_json", fail)
+    monkeypatch.setattr("aiuse.collectors.bailian._config_path", lambda: config)
+    accounts = collect_bailian()
+    # One bl call, not two: both plans share the console session.
+    assert len(calls) == 1
+    assert len(accounts) == 1
+    row = accounts[0]
+    assert (row.source, row.provider) == ("bailian", "alibaba")
+    assert row.error == "bl console session expired or not logged in; run `bl auth login --console` to sign in again"
+
+
+def test_error_envelope_on_stdout_is_not_mistaken_for_no_plan(monkeypatch, tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    monkeypatch.setattr("aiuse.collectors.bailian.which", lambda _cmd: "/opt/homebrew/bin/bl")
+    monkeypatch.setattr("aiuse.collectors.bailian.run_json", lambda argv, **_kw: json.loads(EXPIRED_STDERR))
+    monkeypatch.setattr("aiuse.collectors.bailian._config_path", lambda: config)
+    accounts = collect_bailian()
+    assert [a.error for a in accounts] == [
+        "bl console session expired or not logged in; run `bl auth login --console` to sign in again"
+    ]
+
+
+def test_other_error_envelopes_raise(monkeypatch):
+    monkeypatch.setattr("aiuse.collectors.bailian.which", lambda _cmd: "/opt/homebrew/bin/bl")
+    monkeypatch.setattr(
+        "aiuse.collectors.bailian.run_json", lambda argv, **_kw: {"error": {"code": 5, "message": "quota api down"}}
+    )
+    with pytest.raises(Exception, match="quota api down"):
+        collect_bailian()
+
+
+def test_bailian_hint_outranks_codexbar_cookie_errors():
+    """aiuse-oja: one alibaba row, carrying the bl fix, not CodexBar's cookie errors."""
+    from aiuse.collectors.runner import _consolidate_accounts
+    from aiuse.models import AccountUsage, canonical_provider
+
+    assert canonical_provider("alibabatokenplan") == "alibaba"
+    rows = [
+        AccountUsage(source="codexbar", provider="alibaba", error="Alibaba Coding Plan quota is not available ..."),
+        AccountUsage(source="codexbar", provider="alibabatokenplan", error="No Alibaba Token Plan session cookies"),
+        AccountUsage(source="bailian", provider="alibaba", error="bl console session expired or not logged in; x"),
+    ]
+    selected = _consolidate_accounts(rows, cswap_authoritative=True)
+    assert [(a.source, a.provider) for a in selected] == [("bailian", "alibaba")]
 
 
 def test_collect_merges_token_and_coding_plans(monkeypatch):

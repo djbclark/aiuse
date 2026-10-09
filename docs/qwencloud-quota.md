@@ -76,9 +76,22 @@ coding plan the same way. Inference-only API keys (`sk-…`, including the
 qwen TUI's `BAILIAN_CODING_PLAN_API_KEY` in `~/.qwen/settings.json`) get
 404/ConsoleNeedLogin on these endpoints — console OAuth is required.
 
-CodexBar's `alibaba-coding-plan` / `alibaba-token-plan` providers read the
-same data through Chrome cookies and also report canonical id `alibaba`, so
-the sources cross-check; priority is `bailian` (native CLI) over `codexbar`.
+CodexBar's Alibaba providers (`alibaba` for the coding plan and
+`alibabatokenplan`; older spellings `alibaba-coding-plan` /
+`alibaba-token-plan`) read the same data through Chrome cookies and all map to
+canonical id `alibaba`, so the sources cross-check; priority is `bailian`
+(native CLI) over `codexbar`.
+
+**Expired console session (aiuse-oja, 2026-10-09).** `bl usage …` then exits
+3 with `{"error": {"code": 3, "message": "Console session is not logged in or
+has expired.", …}}` on stderr. When `~/.bailian/config.json` exists (bl was set
+up before) the collector stops after that first call and emits one `alibaba`
+error row, `bl console session expired or not logged in; run bl auth login
+--console to sign in again`. That row outranks CodexBar's cookie errors, so the
+board shows one Alibaba row with the real fix. Without that file (bl never set
+up) it stays quiet, as before. aiuse never tries to log in itself.
+`alibabatokenplan` used to keep its own id and render as a second, unfixable
+`Alibabatokenplan` error row; it now folds into `alibaba`.
 
 The qwen Code TUI's local `~/.qwen/usage/token-usage-*.jsonl` is per-call
 activity (input/output/cached/thought token counts per request), not quota —
