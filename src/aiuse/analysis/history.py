@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -198,12 +200,46 @@ def save_snapshot(
     return filepath
 
 
+# (directory, retention_days) -> (max_count it was loaded with, rows newest first).
+# Set only inside reuse_loaded_snapshots(); None means every call reads the disk.
+_LOAD_MEMO: dict[tuple[str, int], tuple[int, list[dict[str, Any]]]] | None = None
+
+
+@contextlib.contextmanager
+def reuse_loaded_snapshots() -> Iterator[None]:
+    """Within the block, read the snapshot directory once per retention window.
+
+    One ``aiuse history`` run asks for the same history many times (snapshot
+    count, learning gate, burn rates, late-cycle, chronic underuse, the text
+    section), and each call JSON-parses every retained file: about 3-4 s on
+    2,600 files (review-2 4e). Use it only around one short command. A
+    long-lived process (``serve``, ``watch``) must see new snapshots, so the
+    reuse ends with the block. Callers must not mutate the returned rows.
+    """
+    global _LOAD_MEMO
+    outer = _LOAD_MEMO
+    if outer is None:
+        _LOAD_MEMO = {}
+    try:
+        yield
+    finally:
+        _LOAD_MEMO = outer
+
+
 def load_recent_snapshots(
     *, retention_days: int = _DEFAULT_RETENTION_DAYS, max_count: int = 30
 ) -> list[dict[str, Any]]:
     directory = snapshot_dir()
     if not directory.is_dir():
         return []
+    memo = _LOAD_MEMO
+    memo_key = (str(directory), retention_days)
+    if memo is not None and memo_key in memo:
+        loaded_max, rows = memo[memo_key]
+        # Rows are newest first, so a smaller request is a prefix; a load that
+        # stopped short of its cap already holds everything there is.
+        if max_count <= loaded_max or len(rows) < loaded_max:
+            return rows[:max_count]
     cutoff = utcnow() - timedelta(days=retention_days)
     snapshots: list[dict[str, Any]] = []
     for entry in sorted(directory.iterdir(), reverse=True):
@@ -228,6 +264,9 @@ def load_recent_snapshots(
         snapshots.append(data)
         if len(snapshots) >= max_count:
             break
+    if memo is not None:
+        memo[memo_key] = (max_count, snapshots)
+        return list(snapshots)
     return snapshots
 
 

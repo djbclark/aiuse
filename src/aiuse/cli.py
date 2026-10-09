@@ -1089,9 +1089,18 @@ def _run_history(args: argparse.Namespace, config: dict[str, Any]) -> int:
     """`aiuse history [--json]` — History insights from snapshots on disk (issue #13).
 
     Never collects: it reads the newest saved snapshot and the retained history
-    behind it, so it answers in a moment and touches no vendor. Exit 1 when
-    there is no snapshot yet.
+    behind it, and touches no vendor. Its cost is one JSON parse of every
+    retained snapshot file, so it grows linearly with retention (up to the
+    10,000-file cap); the history is read once and shared by every section.
+    Exit 1 when there is no snapshot yet.
     """
+    from aiuse.analysis.history import reuse_loaded_snapshots
+
+    with reuse_loaded_snapshots():
+        return _run_history_body(args, config)
+
+
+def _run_history_body(args: argparse.Namespace, config: dict[str, Any]) -> int:
     from aiuse.analysis.history import history_section_lines, load_recent_snapshots, snapshot_dir
     from aiuse.analysis.selfdescribe import SCHEMA_VERSION, freshness
     from aiuse.serve import _snapshot_from_accounts_dict

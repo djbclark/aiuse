@@ -134,3 +134,41 @@ def test_history_burn_headline_caps_at_three_and_counts_the_rest():
 )
 def test_age_text(seconds, text):
     assert cli._age_text(seconds) == text
+
+
+def _count_file_parses(monkeypatch) -> list[int]:
+    """Count snapshot-file JSON parses inside the history module."""
+    import types
+
+    parses = [0]
+    fake = types.ModuleType("json")
+    fake.__dict__.update(json.__dict__)
+
+    def loads(*a, **k):
+        parses[0] += 1
+        return json.loads(*a, **k)
+
+    fake.loads = loads  # type: ignore[attr-defined]
+    monkeypatch.setattr(history, "json", fake)
+    return parses
+
+
+@pytest.mark.parametrize("argv", [["history"], ["history", "--json"]])
+def test_history_parses_each_snapshot_file_about_once(no_collect, capsys, monkeypatch, argv):
+    """Review-2 4e: text mode re-read the whole directory ~7 times (3-4 s on 2,600 files)."""
+    _write_late_cycle_snapshots(remaining=(70.0, 65.0, 60.0, 55.0, 50.0))
+    parses = _count_file_parses(monkeypatch)
+    assert cli.main(argv) == 0
+    # One full pass (5 files) plus the newest file read first to find the snapshot.
+    assert parses[0] <= 6, parses[0]
+
+
+def test_loaded_snapshot_reuse_ends_with_the_block(monkeypatch):
+    """A long-lived process (serve, watch) must still see new files after the block."""
+    _write_late_cycle_snapshots(remaining=(70.0,))
+    with history.reuse_loaded_snapshots():
+        assert len(history.load_recent_snapshots(max_count=10)) == 1
+        _write_late_cycle_snapshots(remaining=(70.0, 65.0))  # two more files
+        assert len(history.load_recent_snapshots(max_count=10)) == 1  # reused inside the block
+        assert len(history.load_recent_snapshots(max_count=1)) == 1  # a smaller request slices it
+    assert len(history.load_recent_snapshots(max_count=10)) == 3

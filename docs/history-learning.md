@@ -64,9 +64,11 @@ late-cycle leftovers, chronic underuse) — see [`json-contract.md`](json-contra
 
 [Issue #13](https://github.com/djbclark/aiuse/issues/13). `aiuse history` prints
 the same History section as `--full`, without collecting: it reads the newest
-saved snapshot and the retained history behind it, so it touches no vendor
-(a few seconds with thousands of snapshots). It leads with one line naming what
-history says to burn:
+saved snapshot and the retained history behind it, so it touches no vendor.
+Its cost is one JSON parse of every retained snapshot file, read once and
+shared by every section, so it grows linearly with retention up to the
+10,000-file cap: about 1 s for `--json` and 1.5 s for text with 2,600
+snapshots (107 MB). It leads with one line naming what history says to burn:
 
 ```text
 aiuse history · newest snapshot 2026-10-09 06:30 UTC (3m old) · read from disk, no collect
