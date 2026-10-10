@@ -28,7 +28,7 @@ grouping see [`index.md`](index.md).
 - `docs/qwencloud-quota.md` — QwenCloud + sibling Alibaba Cloud (Bailian) plans via `qwencloud` / `bl` CLIs. **Read when:** Qwen/alibaba rows missing; qwencloud / bl CLI auth setup.
 - `docs/antigravity-pools.md` — Antigravity Gemini vs Claude/GPT independent pools (score + ladder rows). **Read when:** When Antigravity is listed only once or pools look merged.
 - `docs/pretty-display.md` — Rich vs Textual for long scrollback-safe reports. **Read when:** When changing pretty/TTY display.
-- `docs/watch-mode.md` — Design: opt-in full-screen `aiuse watch` monitor (q/esc quit, default 10m). **Read when:** When implementing or refining the watch feature.
+- `docs/watch-mode.md` — Design: opt-in full-screen `aiuse watch` monitor (q/esc quit, `u` update now, `a` screen-only all-providers sweep — manual keys one-at-a-time, 2min apart; default 10m). **Read when:** When implementing or refining the watch feature.
 - `docs/packaging.md` — pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow. **Read when:** When releasing or changing install UX.
 - `aiuse-test.sh` (repo root) — Runs `aiuse` from this source tree (unreleased code, any directory, args pass through). **Read when:** Trying a change before `just release`.
 - `docs/competitive-landscape.md` — Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; post-#2–#9 positioning. **Read when:** Positioning / “what pool next?” / remaining gaps.
