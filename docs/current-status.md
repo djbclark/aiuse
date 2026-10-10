@@ -39,7 +39,14 @@ minutes (it collects hourly when idle, every 15 min when a window moved, every
 [`docs/attribution.md`](docs/attribution.md). Normal CLI **always
 live-collects** (scheduled snapshots densify History only); `aiuse watch`
 reuses a fresh snapshot instead, after re-reading `config.toml`, and skips one
-collected under a different disable list or collector switch. **No mandatory
+collected under a different disable list or collector switch. Watch keys:
+`u` collects now bypassing the cached snapshot; `a` (and
+`aiuse watch --all-providers`) runs a one-time sweep of every provider —
+`[disabled_services]` and collector disable flags cleared — shown on screen
+only: no snapshot, ledger, or sampler-state writes (the cross-process query
+throttle still applies). The sweep is **operator-only**; AI agents must not
+run it without explicit permission (flagged in `--help`, README, AGENTS.md).
+**No mandatory
 numbered step.** Open-ended
 "what next?" → [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**.

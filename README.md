@@ -287,9 +287,10 @@ aiuse suggest              # single best burn pool
 aiuse status               # one line for prompts / status bars
 aiuse prompt               # synonym of status
 aiuse serve                # loopback HTTP API for agents
-aiuse watch                # full-screen board (q/esc quit; default 10m)
+aiuse watch                # full-screen board (q/esc quit · u update now · a all providers; default 10m)
 aiuse watch -i 2m          # faster refresh
 aiuse watch --once         # one frame on stdout (scripts / tmux)
+aiuse watch --all-providers  # OPERATOR-ONLY: every provider once, screen only (see below)
 aiuse attribute            # what spent the quota: points burned beside tokens per client
 aiuse attribute --since 7d --provider clinepass --intervals
 aiuse sample               # scheduled entry point: samples faster while quota is moving
@@ -334,6 +335,15 @@ exit-code contract are in [`docs/json-contract.md`](docs/json-contract.md).
 For a long-lived local agent, `aiuse serve` provides the same decisions through
 a loopback HTTP API; see the [documentation index](docs/index.md#automation-and-agents).
 
+> **`aiuse watch --all-providers` (and the watch `a` key) is operator-only.**
+> AI agents and automation must not run it without explicit permission from
+> the human operator. It polls every provider, deliberately overriding
+> `[disabled_services]` and collector disable flags — providers are disabled
+> for reasons (vendor rate limits, cost, opt-outs) that this sweep ignores.
+> Its output is display-only: nothing is written to snapshots, the token
+> ledger, or sampler state, though the shared cross-process query throttle
+> still applies so the sweep cannot hammer a vendor.
+
 Projects that want the ranking logic without depending on this CLI can reuse
 the language-neutral [shared quota semantics](docs/shared-quota-semantics/):
 JSON Schemas, enums, pace rules, and golden fixtures are designed to be copied
@@ -362,6 +372,8 @@ not require importing its Python package.
 | `-t` / `--timeout SECONDS`                                                                                      | Force subprocess timeout for all external tools (default **45**)                                                                                                                                       |
 | `--generate-config`                                                                                             | Write default `~/.config/aiuse/config.toml`; never overwrites existing                                                                                                                                 |
 | `--show-config-path`                                                                                            | Print the active config path                                                                                                                                                                           |
+| `watch` / `--watch` `-i SECONDS` `--once`                                                                       | Full-screen board; keys: `q`/esc quit, `u` collect now (bypasses the cached snapshot), `a` one-time all-providers sweep (screen only)                                                                  |
+| `watch --all-providers`                                                                                         | **Operator-only** one-shot: every provider incl. `[disabled_services]` and disabled collectors, printed once, **nothing recorded** (no snapshot/ledger/sampler writes; query throttling still applies) |
 | `doctor` / `--doctor`                                                                                           | Check tools on PATH, config presence, effective timeouts; no collect                                                                                                                                   |
 | `note-exhausted <provider> [--family F] --resets-in 4h53m\|--resets-at ISO [--reason T]`                        | Record an agent-reported exhaustion override (advisory, expires at reset; honoured by `--json`/`--available` labelled `source: agent-reported`)                                                        |
 | `trust` …                                                                                                       | macOS: codesign status, sign caut, and Keychain grant guide                                                                                                                                            |

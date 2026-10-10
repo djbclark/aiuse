@@ -18,6 +18,7 @@ _aiuse() {
     '--watch[full-screen quota board (also: aiuse watch)]'
     '(-i --interval)'{-i,--interval}'[watch refresh interval]:interval'
     '--once[watch: one frame then exit]'
+    '--all-providers[watch: OPERATOR-ONLY one-time sweep of every provider, screen only]'
     '--port[serve port]:port'
     '--max-age[serve cache max age seconds]:seconds'
     '--print-completion[print shell completion]:shell:(bash zsh)'

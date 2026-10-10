@@ -9,7 +9,9 @@ Library: **Rich `Live(screen=True)`** (2026-08-19).
 
 `aiuse watch` opens a **full-screen, alternate-screen** monitor (htop /
 `cswap watch` style) that redraws the clock matrix on a CLI-settable interval
-and exits on `q` / `Esc` / `Ctrl-C`. No other interactivity.
+and exits on `q` / `Esc` / `Ctrl-C`. Beyond quit, the only interactivity
+(added 2026-10-10) is two one-shot keys: `u` refreshes now, and `a` runs the
+screen-only all-providers sweep. No menus, no selection, no cursor.
 
 This refines Issue #14, which originally scoped a scrollback-preserving
 clear-and-redraw TTY pull loop. The operator (2026-08-18) wants the
@@ -30,14 +32,15 @@ a different beast from the default stdout report that
 `aiuse watch` as a word command, matching `doctor` / `serve` / `trust` /
 `suggest` / `status` / `schema`. Flags:
 
-| Flag                       | Default | Notes                                                             |
-| -------------------------- | ------- | ----------------------------------------------------------------- |
-| `-i`, `--interval SECONDS` | `600`   | Refresh cadence; `>0`. Suffixes `10m` / `90s` accepted.           |
-| `--once`                   | off     | Collect + render a single frame and exit (scripts / tmux status). |
-| `-q` / `--quiet`           | off     | Suppress the capacity / detail blurb inside the board.            |
-| `--no-color`               | off     | Honor `NO_COLOR` as everywhere.                                   |
-| `-t` / `--timeout`         | config  | Per-collector timeout for the run.                                |
-| `--no-tui`                 | —       | Error: watch requires a TTY; do not silently fall back.           |
+| Flag                       | Default | Notes                                                                                                                                                                               |
+| -------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-i`, `--interval SECONDS` | `600`   | Refresh cadence; `>0`. Suffixes `10m` / `90s` accepted.                                                                                                                             |
+| `--once`                   | off     | Collect + render a single frame and exit (scripts / tmux status).                                                                                                                   |
+| `--all-providers`          | off     | **Operator-only** one-shot sweep (the `a` key as a switch): every provider incl. `[disabled_services]` / disabled collectors, printed once, **nothing recorded**. Implies `--once`. |
+| `-q` / `--quiet`           | off     | Suppress the capacity / detail blurb inside the board.                                                                                                                              |
+| `--no-color`               | off     | Honor `NO_COLOR` as everywhere.                                                                                                                                                     |
+| `-t` / `--timeout`         | config  | Per-collector timeout for the run.                                                                                                                                                  |
+| `--no-tui`                 | —       | Error: watch requires a TTY; do not silently fall back.                                                                                                                             |
 
 `--json` / `--alerts-only` / `--for-chat` / `--flatten` are incompatible with
 `watch` → exit `2` with a clear message.
@@ -169,6 +172,35 @@ polling, terminal restore, tests, docs, completions). Matches Issue #14's
   design options to the chosen one.
 - If interactivity is later added (selection, switch) → re-open the Textual
   question.
+
+## Interactive keys (`u`, `a`) — added 2026-10-10
+
+The board stays read-only except for three one-shot keys (header shows
+`q/esc quit · u update now · a all providers`):
+
+1. **`u` — update now.** Starts a refresh immediately instead of waiting out
+   the interval, and passes `max_age=0` so the on-disk snapshot is _not_
+   reused — `u` always means a fresh collect. It runs through the normal
+   pipeline, so like any watch refresh it records a sample (when persistence
+   is on) and the scheduled sampler then skips its own. Ignored while a
+   refresh is already collecting (its result is about to land anyway).
+2. **`a` — one-time all-providers sweep.** Collects **every** provider once —
+   `[disabled_services]` cleared, every collector re-enabled, CodexBar pointed
+   at `all` of its providers (`all_providers_config()`) — in a second worker
+   process beside the regular cycle. The result replaces the board with a
+   header marker `ALL PROVIDERS · screen only` until the next regular frame
+   lands. **Nothing is recorded**: no snapshot, token ledger, sampler state,
+   or burst partials (`collect_watch_frame(persist=False)`). The
+   cross-process `QueryGate` / timeout-backoff throttle still applies — the
+   sweep must not hammer a vendor the gate is protecting. Pressing `a` while
+   a sweep is in flight is ignored.
+3. **`q` / Esc / Ctrl-C** — unchanged quit.
+
+The sweep is **operator-only**: AI agents and automation must not trigger it
+(`a` key or `aiuse watch --all-providers`) without explicit permission from
+the human operator. Providers are disabled for reasons — vendor rate limits,
+cost, opt-outs — that the sweep deliberately overrides. The restriction is
+flagged in `--help`, the stderr warning, README, and AGENTS.md.
 
 ## One polling pipeline with `aiuse sample`
 

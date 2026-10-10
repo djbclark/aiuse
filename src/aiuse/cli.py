@@ -66,7 +66,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
-  aiuse watch                 full-screen quota board (q/esc quit; default 10m)
+  aiuse watch                 full-screen quota board (q/esc quit, u update now, a all providers; default 10m)
   aiuse sample                scheduled entry point: collects hourly when idle, every 15m when a
                            window moved, every 3m in a burst (docs/attribution.md)
   aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
@@ -187,6 +187,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--once",
         action="store_true",
         help="aiuse watch: collect and print one frame, then exit",
+    )
+    p.add_argument(
+        "--all-providers",
+        action="store_true",
+        help=(
+            "aiuse watch: one-time collect of EVERY provider — ignores [disabled_services] and "
+            "collector disable flags — printed once, nothing written to snapshots, ledger, or "
+            "sampler state (screen only). OPERATOR-ONLY: AI agents and automation must NOT use "
+            "this without explicit permission from the human operator; providers are disabled "
+            "for reasons (rate limits, cost, opt-outs) that a sweep deliberately overrides. "
+            "Implies --once."
+        ),
     )
     p.add_argument(
         "--port",
@@ -980,7 +992,8 @@ def diagnose(
     lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
-    lines.append("  aiuse watch               # full-screen board (q/esc quit; default 10m)")
+    lines.append("  aiuse watch               # full-screen board (q/esc quit; u update now; a all providers)")
+    lines.append("  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider, screen only")
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
     lines.append("  aiuse -t 45               # force all tool timeouts for one run")
     lines.append("  aiuse --help              # full flag list + setup epilog")
@@ -1008,9 +1021,17 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
     except WatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ALERTS
-    if interval < 30 and not args.once:
+    one_shot = bool(args.once or args.all_providers)
+    if interval < 30 and not one_shot:
         print(
             f"warning: watch interval {interval:g}s is below 30s; collectors may not keep up",
+            file=sys.stderr,
+        )
+    if args.all_providers:
+        print(
+            "warning: --all-providers polls every provider including operator-disabled ones; "
+            "output is screen-only and nothing is recorded. Operator-only: AI agents must not "
+            "run this without explicit permission.",
             file=sys.stderr,
         )
     missing = check_dependencies(config)
@@ -1027,6 +1048,7 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
         config,
         interval=interval,
         once=bool(args.once),
+        all_providers=bool(args.all_providers),
         quiet=bool(args.quiet),
         no_color=bool(args.no_color),
         config_loader=_reload_watch_config,

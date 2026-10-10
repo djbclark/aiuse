@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import multiprocessing
 import os
 import re
@@ -112,8 +113,35 @@ def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, 
     return snapshot, _alerts_from_dicts(rows[0].get("alerts") or [])
 
 
+def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Config for a screen-only sweep of every provider (watch's ``a`` key).
+
+    Clears ``[disabled_services]``, turns every collector back on, and points
+    CodexBar at all of its providers instead of its enabled list. The result
+    is displayed and discarded; see ``collect_watch_frame(persist=False)``.
+    Cross-process query throttling still applies — a sweep must not hammer a
+    vendor the gate is protecting, even for one run.
+    """
+    sweep = copy.deepcopy(config)
+    sweep.pop("disabled_services", None)
+    collectors = sweep.get("collectors")
+    if isinstance(collectors, dict):
+        for name, entry in collectors.items():
+            if entry is False:
+                collectors[name] = True
+            elif isinstance(entry, dict):
+                entry["enabled"] = True
+        codexbar = collectors.get("codexbar")
+        if not isinstance(codexbar, dict):
+            codexbar = {}
+            collectors["codexbar"] = codexbar
+        codexbar["enabled"] = True
+        codexbar["providers"] = "all"
+    return sweep
+
+
 def collect_watch_frame(
-    config: dict[str, Any], *, max_age: float | None = None
+    config: dict[str, Any], *, max_age: float | None = None, persist: bool | None = None
 ) -> tuple[Snapshot, list[UseOrLoseAlert]]:
     """One frame for the board, sharing one polling pipeline with ``aiuse sample``.
 
@@ -122,10 +150,14 @@ def collect_watch_frame(
     are not two clocks polling the same vendors. Otherwise this collects, and
     records the result the way a sample does — snapshot, token ledger, sampler
     state — so the scheduled job sees a fresh sample and skips its own.
+    ``persist=False`` forces the screen-only mode of the all-providers sweep:
+    no disk snapshot is reused or written, and the ledger and sampler state
+    are left untouched.
     """
     raw_analysis = config.get("analysis")
     analysis_cfg: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
-    persist = should_persist_snapshots(analysis_cfg)
+    if persist is None:
+        persist = should_persist_snapshots(analysis_cfg)
     if max_age and persist:
         cached = _frame_from_disk(max_age, config)
         if cached is not None:
@@ -183,17 +215,23 @@ def render_watch_board(
     last_at: datetime | None = None,
     next_in: float | None = None,
     collecting_for: float | None = None,
+    collecting_all_for: float | None = None,
     error: str | None = None,
     now: datetime | None = None,
     sample_schedule: tuple[datetime, datetime, str] | None = None,
+    all_providers: bool = False,
 ) -> str:
     """Header + clock matrix + optional footer for the alternate-screen board.
 
     ``last`` is when the data on the board was collected, which is not when
     the board last refreshed: a frame can come from a snapshot the scheduled
-    sampler wrote some minutes ago.
+    sampler wrote some minutes ago. ``all_providers`` marks the screen-only
+    sweep view (``a`` key / ``--all-providers``): every provider was queried
+    once and nothing was recorded.
     """
     header_bits = ["aiuse watch"]
+    if all_providers:
+        header_bits.append("ALL PROVIDERS · screen only")
     if now is not None:
         header_bits.append(f"now: {format_clock(now, seconds=True)}")
     data_at = snapshot.collected_at if snapshot is not None else last_at
@@ -206,7 +244,9 @@ def render_watch_board(
     elif next_in is not None:
         mins, secs = divmod(max(0, int(next_in)), 60)
         header_bits.append(f"next in {mins}:{secs:02d}")
-    header_bits.append("q/esc quit")
+    if collecting_all_for is not None:
+        header_bits.append(f"collecting all providers… ({collecting_all_for:.0f}s)")
+    header_bits.append("q/esc quit · u update now · a all providers")
     lines = [" · ".join(header_bits)]
     if sample_schedule is not None:
         previous, due, tier = sample_schedule
@@ -341,7 +381,9 @@ class WatchRuntime:
         return max(0.0, self.next_due - self.now())
 
 
-def _collect_process_entry(config: dict[str, Any], send: Any, max_age: float | None = None) -> None:
+def _collect_process_entry(
+    config: dict[str, Any], send: Any, max_age: float | None = None, persist: bool | None = None
+) -> None:
     """Collect in an isolated process so an in-flight refresh is cancellable."""
     if os.name == "posix":
         try:
@@ -349,7 +391,7 @@ def _collect_process_entry(config: dict[str, Any], send: Any, max_age: float | N
         except OSError:
             pass
     try:
-        snapshot, alerts = collect_watch_frame(config, max_age=max_age)
+        snapshot, alerts = collect_watch_frame(config, max_age=max_age, persist=persist)
         send.send(("ok", snapshot, alerts))
     except BaseException as exc:  # noqa: BLE001 — return a board error instead of losing the worker
         try:
@@ -363,21 +405,28 @@ def _collect_process_entry(config: dict[str, Any], send: Any, max_age: float | N
 class _WatchCollectionProcess:
     """One cancellable live-collection process for interactive watch mode."""
 
-    def __init__(self, config: dict[str, Any] | None = None, max_age: float | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        max_age: float | None = None,
+        persist: bool | None = None,
+    ) -> None:
         self.config = config or {}
         self.max_age = max_age
+        self.persist = persist
         methods = multiprocessing.get_all_start_methods()
         self.context: Any = multiprocessing.get_context("fork" if "fork" in methods else "spawn")
         self.process: multiprocessing.Process | None = None
-        self.recv: Any | None = None
+        self.recv: Any = None
 
-    def start(self, config: dict[str, Any] | None = None) -> None:
+    def start(self, config: dict[str, Any] | None = None, max_age: float | None = None) -> None:
         if config is not None:
             self.config = config
+        effective_max_age = self.max_age if max_age is None else max_age
         recv, send = self.context.Pipe(duplex=False)
         process = self.context.Process(
             target=_collect_process_entry,
-            args=(self.config, send, self.max_age),
+            args=(self.config, send, effective_max_age, self.persist),
             name="aiuse-watch-collect",
             daemon=True,
         )
@@ -444,12 +493,14 @@ def run_watch(
     *,
     interval: float,
     once: bool = False,
+    all_providers: bool = False,
     quiet: bool = False,
     no_color: bool = False,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
     key_reader: KeySource | None = None,
     collect: CollectFn | None = None,
+    collect_all: CollectFn | None = None,
     now: NowFn | None = None,
     sleep: Callable[[float], None] = time.sleep,
     require_tty: bool | None = None,
@@ -459,6 +510,8 @@ def run_watch(
 
     ``config_loader`` re-reads config.toml (and reapplies CLI overrides) so a
     long-lived board does not keep the disable list from the moment it started.
+    ``all_providers`` is the one-shot ``--all-providers`` sweep: every provider
+    collected once (``a`` key's function), printed to stdout, nothing recorded.
     """
     out = stdout if stdout is not None else sys.stdout
     err = stderr if stderr is not None else sys.stderr
@@ -492,6 +545,33 @@ def run_watch(
 
     collect_fn = collect or (lambda: collect_watch_frame(live_config(), max_age=interval))
     runtime = WatchRuntime(interval=interval, collect=collect_fn, now=now or time.monotonic)
+
+    if all_providers:
+        sweep_config = all_providers_config(live_config())
+        frame_error: str | None = None
+        try:
+            snapshot, alerts = collect_watch_frame(sweep_config, persist=False)
+        except Exception as exc:  # noqa: BLE001 — show the board error line, not a traceback
+            frame_error = f"{exc.__class__.__name__}: {exc}"
+            snapshot, alerts = None, []
+        print(
+            render_watch_board(
+                snapshot,
+                alerts,
+                config=sweep_config,
+                color=color,
+                quiet=quiet,
+                last_at=utcnow() if snapshot is not None else None,
+                next_in=None,
+                collecting_for=None,
+                error=frame_error,
+                now=utcnow(),
+                sample_schedule=_sample_schedule(sweep_config),
+                all_providers=True,
+            ),
+            file=out,
+        )
+        return 0
 
     if once:
         runtime._run_collect()
@@ -541,14 +621,32 @@ def run_watch(
     reader = key_reader or StdinKeyReader()
     stop = threading.Event()
     process_worker = _WatchCollectionProcess(config, max_age=interval) if collect is None else None
+    # The ``a``-key sweep: its own worker so it can run beside the regular
+    # cycle, collecting every provider once with nothing written to disk.
+    sweep_worker = _WatchCollectionProcess(persist=False) if collect is None else None
+    collect_all_fn = collect_all or (lambda: collect_watch_frame(all_providers_config(live_config()), persist=False))
+    sweep = WatchRuntime(interval=float("inf"), collect=collect_all_fn, now=now or time.monotonic)
+    sweep.next_due = float("inf")  # only ever started by the ``a`` key
+    sweep_config_held: dict[str, Any] = {"cfg": None}
+    show_all_view: dict[str, bool] = {"v": False}
+    forced_update: dict[str, bool] = {"v": False}
 
     def start_worker(fn: Callable[[], None]) -> None:
         fresh = live_config()
         collected_policy["fingerprint"] = collection_policy_fingerprint(fresh)
+        force = forced_update["v"]
+        forced_update["v"] = False
         if process_worker is not None:
-            process_worker.start(fresh)
+            # max_age=0 skips the disk snapshot so ``u`` really means now.
+            process_worker.start(fresh, max_age=0.0 if force else None)
         else:
             threading.Thread(target=fn, name="aiuse-watch-collect", daemon=True).start()
+
+    def start_sweep(fn: Callable[[], None]) -> None:
+        if sweep_worker is not None:
+            sweep_worker.start(sweep_config_held["cfg"] or all_providers_config(live_config()))
+        else:
+            threading.Thread(target=fn, name="aiuse-watch-all-providers", daemon=True).start()
 
     runtime.maybe_start(start_worker)
 
@@ -571,19 +669,36 @@ def run_watch(
 
         def _render() -> Text:
             current = live_config()
+            showing_all = show_all_view["v"] and sweep.snapshot is not None
+            if showing_all:
+                source = sweep
+                view_config = sweep_config_held["cfg"] or current
+                next_in_val: float | None = None
+                collecting_for_val: float | None = None
+            else:
+                source = runtime
+                view_config = current
+                next_in_val = runtime.next_in()
+                collecting_for_val = runtime.collecting_for()
+            error = source.error
+            if not showing_all and sweep.error:
+                suffix = f"all-providers run: {sweep.error}"
+                error = f"{error} · {suffix}" if error else suffix
             return Text.from_ansi(
                 render_watch_board(
-                    runtime.snapshot,
-                    runtime.alerts,
-                    config=current,
+                    source.snapshot,
+                    source.alerts,
+                    config=view_config,
                     color=color_enabled,
                     quiet=quiet,
-                    last_at=runtime.last_wall,
-                    next_in=runtime.next_in(),
-                    collecting_for=runtime.collecting_for(),
-                    error=runtime.error,
+                    last_at=source.last_wall,
+                    next_in=next_in_val,
+                    collecting_for=collecting_for_val,
+                    collecting_all_for=sweep.collecting_for(),
+                    error=error,
                     now=utcnow(),
                     sample_schedule=_sample_schedule(current),
+                    all_providers=showing_all,
                 )
             )
 
@@ -593,11 +708,28 @@ def run_watch(
                     result = process_worker.poll()
                     if result is not None:
                         snapshot, alerts, error = result
+                        if snapshot is not None:
+                            # A fresh regular frame replaces the sweep view.
+                            show_all_view["v"] = False
                         runtime._finish_collect(snapshot=snapshot, alerts=alerts, error=error)
-                if is_quit_key(reader.read()):
+                if sweep_worker is not None:
+                    sweep_result = sweep_worker.poll()
+                    if sweep_result is not None:
+                        sweep_snapshot, sweep_alerts, sweep_error = sweep_result
+                        if sweep_snapshot is not None:
+                            show_all_view["v"] = True
+                        sweep._finish_collect(snapshot=sweep_snapshot, alerts=sweep_alerts, error=sweep_error)
+                key = reader.read()
+                if is_quit_key(key):
                     if process_worker is not None:
                         process_worker.stop()
                     break
+                if key in ("u", "U") and not runtime.collecting:
+                    forced_update["v"] = True
+                    runtime.next_due = runtime.now()
+                elif key in ("a", "A") and not sweep.collecting:
+                    sweep_config_held["cfg"] = all_providers_config(live_config())
+                    sweep.next_due = sweep.now()
                 # A config.toml edit has to take effect before the interval
                 # elapses. Otherwise the board keeps the old disable list and
                 # the next refresh can overwrite a newer snapshot with it.
@@ -606,6 +738,7 @@ def run_watch(
                     if collected_policy["fingerprint"] is not None and fresh_fp != collected_policy["fingerprint"]:
                         runtime.next_due = runtime.now()
                 runtime.maybe_start(start_worker)
+                sweep.maybe_start(start_sweep)
                 live.update(_render(), refresh=True)
                 sleep(0.25)
     except KeyboardInterrupt:
@@ -613,6 +746,8 @@ def run_watch(
     finally:
         if process_worker is not None:
             process_worker.stop()
+        if sweep_worker is not None:
+            sweep_worker.stop()
         if fd is not None and old_attrs is not None:
             try:
                 import termios

@@ -16,7 +16,7 @@ _aiuse_completions() {
     --format --json --no-color --no-tui -q --quiet --alerts-only --brief --full
     --no-tokscale --no-cswap --no-codexbar
     --providers --min-remaining --max-days --save --traditional-summary
-    -i --interval --once
+    -i --interval --once --all-providers
     doctor status prompt suggest serve watch
   "
 

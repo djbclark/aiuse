@@ -146,6 +146,13 @@ Full path-by-path map with "read when" hints:
   OpenUsage.app, `tokscale`) — do not attempt to install, configure, or
   authenticate them as part of a normal feature change. Operators install via
   `packaging/install-deps.sh` or site `just install-aiuse-deps`.
+- **`aiuse watch --all-providers` (and watch's `a` key) is operator-only**
+  (2026-10-10): AI agents must never run it without specific permission from
+  djbclark in the current session. It sweeps every provider, overriding
+  `[disabled_services]` and collector disable flags — those exist for vendor
+  rate limits, cost, and opt-outs. Output is screen-only (no snapshot, ledger,
+  or sampler writes; the cross-process query throttle still applies). Document
+  this restriction in any doc or integration that exposes the flag.
 - **Changes to non-aiuse code go upstream as PRs** (operator rule, 2026-10-05).
   If a fix or feature needs a change in a tool aiuse depends on (CodexBar,
   OpenUsage, cswap, caut, tokscale, …), open a pull request against that
