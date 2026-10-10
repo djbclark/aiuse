@@ -10,10 +10,10 @@ which so the confusion does not come back.
 
 ## The two spaces
 
-| Space            | Function                | Examples                              | What it is for                                                        |
-| ---------------- | ----------------------- | ------------------------------------- | --------------------------------------------------------------------- |
-| **Canonical id** | `canonical_provider()`  | `antigravity`, `opencode-go`, `codex` | Identity: matching, grouping, dedup, JSON payloads, **display**       |
-| **Config key**   | `provider_config_key()` | `gemini`, `opencode`, `codex`         | Looking up `[plans]` and `analysis.provider_overrides` — nothing else |
+| Space            | Function                | Examples                                     | What it is for                                                        |
+| ---------------- | ----------------------- | -------------------------------------------- | --------------------------------------------------------------------- |
+| **Canonical id** | `canonical_provider()`  | `antigravity`, `opencode-go`, `codex`, `sipb`| Identity: matching, grouping, dedup, JSON payloads, **display**       |
+| **Config key**   | `provider_config_key()` | `gemini`, `opencode`, `codex`, `sipb`        | Looking up `[plans]` and `analysis.provider_overrides` — nothing else |
 
 Both live in `src/aiuse/models.py`. They map in opposite directions:
 

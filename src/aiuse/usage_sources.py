@@ -41,6 +41,7 @@ QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
     "openrouter": ("openrouter", "codexbar", "openusage_ai", "hermes"),
     "qwencloud": ("qwencloud", "codexbar"),
     "alibaba": ("bailian", "codexbar"),
+    "sipb": ("sipb",),
     "muse": ("muse",),
     "clinepass": ("clinepass",),
     "zai": ("codexbar", "openusage_ai", "openusage_sh", "tokscale"),
@@ -250,6 +251,10 @@ def _quota_availability(
         if env.get(env_name, "").strip():
             return "active", f"{env_name} is set."
         return "enabled", f"collector on; quiet until {env_name} or its SecretSpec key is set."
+    if source == "sipb":
+        if env.get("MIT_SIPB_API_KEY", "").strip():
+            return "active", "MIT_SIPB_API_KEY is set."
+        return "enabled", "collector on; public up/down probe active (no key set)."
     tool = _TOOL.get(source)
     if tool is None:
         return "enabled", "collector on."

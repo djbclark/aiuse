@@ -85,6 +85,12 @@
 # Surfaces token/coding-plan 5h + weekly quota windows via `bl usage`.
 # enabled = true
 
+[collectors.sipb]
+# MIT SIPB LLM server (llms-dev-1.mit.edu). Opt-in only.
+# Unlimited quota but very slow (shared GPU) — use sparingly / as a last resort.
+# Requires MITnet or VPN. Set MIT_SIPB_API_KEY (or secretspec) for auth'd models.
+# enabled = false
+
 [collectors.acp]
 # Context-window fill and per-turn tokens from acp-run JSONL logs
 # (~/.local/state/acp-run, or AIUSE_ACP_LOG_DIR). Passive: aiuse does not

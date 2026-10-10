@@ -1380,17 +1380,39 @@ def _build_matrix_rows(
             )
             continue
         if account.error or not _account_has_usage(account):
-            rows.append(
-                _MatrixRow(
-                    sort_key=_ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
-                    band=_BAND_ERROR,
-                    queue_score=None,
-                    service=service,
-                    account=short,
-                    account_full=account.account,
-                    note=(account.error or "no usage data").strip(),
+            if account.provider == "sipb" and not account.error:
+                band = _BAND_NA
+                priority = _account_queue_priority(account, band)
+                # Compact on purpose: the narrow default matrix clamps notes to
+                # one line, so the slow/last-resort guidance must fit; the full
+                # notes still render in --json and --full.
+                note = "unlimited · slow — use sparingly / last resort"
+                status_info = (account.raw or {}).get("status") or {}
+                if status_info.get("up") and status_info.get("latency_s") is not None:
+                    note += f" · UP {float(status_info['latency_s']):.1f}s"
+                rows.append(
+                    _MatrixRow(
+                        sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
+                        band=band,
+                        queue_score=_queue_score(band, priority),
+                        service=service,
+                        account=short,
+                        account_full=account.account,
+                        note=note,
+                    )
                 )
-            )
+            else:
+                rows.append(
+                    _MatrixRow(
+                        sort_key=_ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
+                        band=_BAND_ERROR,
+                        queue_score=None,
+                        service=service,
+                        account=short,
+                        account_full=account.account,
+                        note=(account.error or "no usage data").strip(),
+                    )
+                )
             continue
         depleted = _account_prepaid_is_depleted(account)
         band = _BAND_EMPTY if depleted else _BAND_NA

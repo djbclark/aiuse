@@ -302,6 +302,7 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_qwencloud", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_bailian", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_acp", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_sipb", lambda **_k: [])
 
     start = time.monotonic()
     snapshot = run_collectors({})
@@ -340,6 +341,7 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_qwencloud", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_bailian", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_acp", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_sipb", lambda **_k: [])
     snapshot = run_collectors({})
 
     assert {account.provider for account in snapshot.accounts} == {"codex", "grok"}
@@ -542,6 +544,7 @@ def _only(*names: str) -> dict:
 def test_run_collectors_drops_rows_for_disabled_services(monkeypatch):
     import aiuse.collectors.runner as runner
 
+    monkeypatch.setattr(runner, "collect_sipb", lambda **_kw: [])
     monkeypatch.setattr(
         runner,
         "collect_tokscale",
@@ -566,6 +569,7 @@ def test_run_collectors_skips_single_provider_collector_when_disabled(monkeypatc
     import aiuse.collectors.runner as runner
 
     calls: list[str] = []
+    monkeypatch.setattr(runner, "collect_sipb", lambda **_kw: [])
     monkeypatch.setattr(
         runner, "collect_grok", lambda **_kw: calls.append("grok") or [_account("grok_billing", "grok")]
     )
