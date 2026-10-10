@@ -198,24 +198,28 @@ The board stays read-only except for three one-shot keys (header shows
 ### Manual-command throttling (2026-10-10, same day)
 
 `u` and `a` are **manual commands against every vendor**, so impatience must
-not reach the vendors (operator rule). Three constraints, enforced in
+not reach the vendors (operator rule). Four constraints, enforced in
 `_gate_manual()`:
 
-1. **One at a time.** No manual `u` or `a` may start while another manual
-   command is still collecting — including across kinds (`a` waits for an
-   in-flight `u` and vice versa). The scheduled tick is not a manual command:
-   the sweep may still run beside a _scheduled_ refresh, as before.
+1. **No collect overlaps another — of any kind** (operator pick 2026-10-10:
+   "block all overlap"). An `a` pressed while any refresh is collecting —
+   manual or scheduled — is **queued** until it finishes (board note
+   `a: queued behind the scheduled refresh (23s in)`), and a queued sweep
+   fires the moment the board is idle. The scheduled tick likewise never
+   starts beside a sweep (running or queued), and `u` waits for a queued
+   sweep.
 2. **`u` inside 90s of `a` is rolled into the sweep.** A sweep already
    queries every provider, which is a superset of what `u` would fetch, so
    the press is treated as impatience or a forgotten wait: denied with a
    board note (`u: rolled into the all-providers run (42s in)`, or
    `covered by the all-providers run (8s ago)` once it finished). Past 90s
-   with the sweep still running, `u` still waits (one at a time).
-3. **One firing per 2 minutes, shared across both keys.** `_gate_manual`
-   anchors a shared cooldown at the moment a manual command actually starts;
-   a press inside the window is denied with
-   `u: manual refresh ready in 87s (2min minimum)`. Denied presses show
-   their note on the board for ~10s instead of silently doing nothing.
+   with the sweep still running, `u` still waits (no overlap).
+3. **One firing per 2 minutes, shared across both keys** (ratified by the
+   operator 2026-10-10). `_gate_manual` anchors a shared cooldown at the
+   moment a manual command actually starts; a press inside the window is
+   denied with `u: manual refresh ready in 87s (2min minimum)`. Denied
+   presses show their note on the board for ~10s instead of silently doing
+   nothing.
 
 The sweep is **operator-only**: AI agents and automation must not trigger it
 (`a` key or `aiuse watch --all-providers`) without explicit permission from

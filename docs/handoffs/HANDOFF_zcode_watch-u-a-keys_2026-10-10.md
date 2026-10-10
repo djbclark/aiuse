@@ -25,7 +25,17 @@ bit) instead of silently doing nothing. Constants `_MANUAL_COOLDOWN_S`,
 cooldown, a-waits-for-u, throttle, cooldown expiry). Interpretation taken:
 "either more than once every 2 minutes" = **shared** budget across both keys
 (both poll every vendor); if the operator meant per-key timers, the anchor in
-`_gate_manual` is the single place to change.
+`_gate_manual` is the single place to change. **Ratified by the operator
+2026-10-10: keep the shared budget.**
+
+Also ratified 2026-10-10 ("block all overlap", picked from the loose-audit
+walk): **no collect of any kind overlaps another**. An `a` pressed while any
+refresh is collecting is queued (note `a: queued behind the scheduled
+refresh (23s in)`) and fires the moment the board is idle; the scheduled tick
+never starts beside a sweep (running or queued); `u` waits for a queued
+sweep. The behind-a-`u` queue branch is only reachable when a `u` outlasts
+the 2-minute cooldown (normal collects finish in ≤90s) — tested with an
+injected clock.
 
 ## What landed
 

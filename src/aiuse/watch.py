@@ -640,23 +640,30 @@ def run_watch(
     sweep.next_due = float("inf")  # only ever started by the ``a`` key
     sweep_config_held: dict[str, Any] = {"cfg": None}
     show_all_view: dict[str, bool] = {"v": False}
-    # Manual key commands (u/a): one in flight at most, one firing per
-    # _MANUAL_COOLDOWN_S, "forced" marks a u-triggered regular collect.
+    # Manual key commands (u/a): never overlapping another collect, one firing
+    # per _MANUAL_COOLDOWN_S, "forced" marks a u-triggered regular collect.
     manual: dict[str, Any] = {
         "forced": False,
         "last_fired": None,  # monotonic time the last u/a actually fired
         "u_in_flight": False,  # the running regular collect was u-triggered
         "a_fired_at": None,  # monotonic time the last a sweep fired
+        "a_queued": False,  # a pressed behind a running refresh; fires when idle
         "note": None,  # (expiry_monotonic, text) explaining a denied press
     }
+
+    def _note_key(text: str) -> None:
+        manual["note"] = (runtime.now() + _KEY_NOTE_S, text)
 
     def _gate_manual(kind: str) -> str | None:
         """Why this ``u``/``a`` press cannot fire now; ``None`` when it may.
 
-        One manual command at a time, at most one firing per two minutes
-        (they both poll every vendor). A ``u`` within 90s of an ``a`` —
-        running or just finished — is covered by that sweep: the user is
-        impatient or forgot the sweep was already on its way.
+        No collect of any kind overlaps another (operator, 2026-10-10: "block
+        all overlap") — an ``a`` pressed while a refresh collects is queued
+        until it finishes, and the scheduled tick waits for a sweep. At most
+        one manual firing per two minutes across both keys (they both poll
+        every vendor). A ``u`` within 90s of an ``a`` — running or just
+        finished — is covered by that sweep: the user is impatient or forgot
+        the sweep was already on its way.
         """
         now_m = runtime.now()
         if kind == "u":
@@ -665,6 +672,8 @@ def run_watch(
                 if elapsed < _SWEEP_ROLL_IN_S:
                     return f"u: rolled into the all-providers run ({elapsed:.0f}s in)"
                 return f"u: waiting for the all-providers run ({elapsed:.0f}s in)"
+            if manual["a_queued"]:
+                return "u: waiting for the queued all-providers run"
             if runtime.collecting:
                 if manual["u_in_flight"]:
                     return "u: update already collecting"
@@ -676,17 +685,14 @@ def run_watch(
             if sweep.collecting:
                 elapsed = sweep.collecting_for() or 0.0
                 return f"a: all-providers run already in flight ({elapsed:.0f}s in)"
-            if runtime.collecting and manual["u_in_flight"]:
-                return "a: waiting for the u update to finish"
+            if manual["a_queued"]:
+                return "a: all-providers run already queued"
         last_fired = manual["last_fired"]
         if last_fired is not None:
             left = _MANUAL_COOLDOWN_S - (now_m - last_fired)
             if left > 0:
                 return f"{kind}: manual refresh ready in {left:.0f}s (2min minimum)"
         return None
-
-    def _deny_key(note: str) -> None:
-        manual["note"] = (runtime.now() + _KEY_NOTE_S, note)
 
     def start_worker(fn: Callable[[], None]) -> None:
         fresh = live_config()
@@ -802,14 +808,21 @@ def run_watch(
                         manual["forced"] = True
                         runtime.next_due = runtime.now()
                     else:
-                        _deny_key(denial)
+                        _note_key(denial)
                 elif key in ("a", "A"):
                     denial = _gate_manual("a")
                     if denial is None:
                         sweep_config_held["cfg"] = all_providers_config(live_config())
-                        sweep.next_due = sweep.now()
+                        if runtime.collecting:
+                            # Block all overlap: fire when the refresh finishes.
+                            manual["a_queued"] = True
+                            behind = "u update" if manual["u_in_flight"] else "scheduled refresh"
+                            elapsed = runtime.collecting_for() or 0.0
+                            _note_key(f"a: queued behind the {behind} ({elapsed:.0f}s in)")
+                        else:
+                            sweep.next_due = sweep.now()
                     else:
-                        _deny_key(denial)
+                        _note_key(denial)
                 # A config.toml edit has to take effect before the interval
                 # elapses. Otherwise the board keeps the old disable list and
                 # the next refresh can overwrite a newer snapshot with it.
@@ -817,7 +830,14 @@ def run_watch(
                     fresh_fp = collection_policy_fingerprint(live_config())
                     if collected_policy["fingerprint"] is not None and fresh_fp != collected_policy["fingerprint"]:
                         runtime.next_due = runtime.now()
-                runtime.maybe_start(start_worker)
+                # Block all overlap (operator, 2026-10-10): a regular collect
+                # never starts beside a sweep (running or queued), and a
+                # queued sweep fires only once the refresh is done.
+                if not (sweep.collecting or manual["a_queued"]):
+                    runtime.maybe_start(start_worker)
+                if manual["a_queued"] and not runtime.collecting and not sweep.collecting:
+                    manual["a_queued"] = False
+                    sweep.next_due = sweep.now()
                 sweep.maybe_start(start_sweep)
                 live.update(_render(), refresh=True)
                 sleep(0.25)

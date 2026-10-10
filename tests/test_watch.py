@@ -652,7 +652,7 @@ def test_render_watch_board_shows_collecting_all():
 class _LoopFakes:
     """Process-worker/Live doubles for key-handling loop tests."""
 
-    def __init__(self, monkeypatch, hold_sweep=False, hold_u=False):
+    def __init__(self, monkeypatch, hold_sweep=False, hold_u=False, hold_regular_polls=0):
         self.instances = []
         self.texts = []
         outer = self
@@ -664,6 +664,7 @@ class _LoopFakes:
                 self.persist = persist
                 self.starts = []
                 self.pending = None
+                self.polls = 0
                 self.stop_calls = 0
                 outer.instances.append(self)
 
@@ -675,6 +676,11 @@ class _LoopFakes:
                 self.pending = None if held else (_snap(), [], None)
 
             def poll(self):
+                # hold_regular_polls: the regular worker's first N polls come
+                # back empty, simulating a long-running collect that finishes.
+                if self.persist is not False and self.polls < hold_regular_polls:
+                    self.polls += 1
+                    return None
                 result = self.pending
                 self.pending = None
                 return result
@@ -854,20 +860,65 @@ def test_manual_keys_share_a_two_minute_cooldown(monkeypatch):
     assert any("ready in" in text and "2min minimum" in text for text in fakes.texts)
 
 
-def test_a_waits_for_an_in_flight_u(monkeypatch):
+def test_a_queues_behind_a_long_running_u(monkeypatch):
     fakes = _LoopFakes(monkeypatch, hold_u=True)
+    clock = [0.0]
+
+    def tick(_seconds):
+        clock[0] += 65.0
+
+    # A u that outlasts the 2-minute cooldown (held): an a past its cooldown
+    # may not overlap it — it queues until the u update finishes.
     code = run_watch(
         {"collectors": {}},
         interval=600,
         no_color=True,
         stdout=StringIO(),
-        key_reader=_KeySequence([None, "u", "a", "q"]),
-        sleep=lambda _s: None,
+        key_reader=_KeySequence([None, "u", None, "a", "q"]),
+        sleep=tick,
+        now=lambda: clock[0],
         require_tty=False,
     )
     assert code == 0
     assert fakes.sweep.starts == [], "a must not start while a u-triggered update is collecting"
-    assert any("waiting for the u update" in text for text in fakes.texts)
+    assert any("queued behind the u update" in text for text in fakes.texts)
+
+
+def test_a_queued_behind_a_scheduled_refresh_fires_when_it_finishes(monkeypatch):
+    fakes = _LoopFakes(monkeypatch, hold_regular_polls=2)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "a", None, None, None, "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    assert any("queued behind the scheduled refresh" in text for text in fakes.texts)
+    # One scheduled collect, then the released sweep — never overlapping.
+    assert len(fakes.regular.starts) == 1
+    assert len(fakes.sweep.starts) == 1
+    assert any("ALL PROVIDERS · screen only" in text for text in fakes.texts)
+
+
+def test_u_waits_for_a_queued_sweep(monkeypatch):
+    fakes = _LoopFakes(monkeypatch, hold_regular_polls=2)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "a", "u", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    assert any("u: waiting for the queued all-providers run" in text for text in fakes.texts)
+    # The queued u never forced a regular collect beside the sweep.
+    assert [start["max_age"] for start in fakes.regular.starts] == [None]
+    assert len(fakes.sweep.starts) == 1
 
 
 def test_second_u_within_two_minutes_is_throttled(monkeypatch):
