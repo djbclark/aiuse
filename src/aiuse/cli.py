@@ -71,6 +71,7 @@ config & setup:
                            window moved, every 3m in a burst (docs/attribution.md)
   aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
                            --provider ID, --intervals, --json)
+  aiuse usage-sources         which quota and ACP context sources are active for each vendor
   aiuse schema                print the machine-readable JSON contract (markdown) for AI agents
   aiuse -t / --timeout SEC    force subprocess timeout for all tools this run
                            (default {DEFAULT_SUBPROCESS_TIMEOUT:g}s; also [timeouts] in config.toml)
@@ -254,6 +255,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --available, force a live collect instead of reading the snapshot cache",
     )
     p.add_argument(
+        "--usage-sources",
+        action="store_true",
+        help=(
+            "List every usage source for each vendor: quota tools (no TUI required) and ACP "
+            "context from existing acp-run logs. Does not collect and does not start a turn. "
+            "Honours [usage_sources] pins."
+        ),
+    )
+    p.add_argument(
         "--no-color",
         action="store_true",
         help="Disable ANSI colors in pretty output (classic string path)",
@@ -390,6 +400,8 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
         return ["--sample", *raw[1:]]
     if head == "attribute":
         return ["--attribute", *raw[1:]]
+    if head == "usage-sources":
+        return ["--usage-sources", *raw[1:]]
     return raw if argv is not None else raw
 
 
@@ -459,6 +471,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
         )
     if getattr(args, "available", False):
         return _run_available(args)
+    if getattr(args, "usage_sources", False):
+        return _run_usage_sources(args)
     config = load_config(args.config)
     _apply_cli_overrides(config, args)
 
@@ -1010,6 +1024,19 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
         quiet=bool(args.quiet),
         no_color=bool(args.no_color),
     )
+
+
+def _run_usage_sources(args: argparse.Namespace) -> int:
+    """`aiuse --usage-sources` — which sources can report each vendor, without collecting."""
+    from aiuse.usage_sources import render_usage_sources, usage_source_report
+
+    config = load_config(args.config)
+    report = usage_source_report(config)
+    if bool(args.json) or args.format == "json":
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    print(render_usage_sources(report), end="")
+    return 0
 
 
 def _run_attribute(args: argparse.Namespace, config: dict[str, Any]) -> int:

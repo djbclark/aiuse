@@ -11,6 +11,7 @@ grouping see [`index.md`](index.md).
 - `docs/handoff.md` — Archive: one accreting file, releases 2.1.16–3.0.12. Superseded by `docs/handoffs/`. **Read when:** Per-release forensics (workflow run IDs, tap SHAs) not recorded anywhere else.
 - `docs/fix-implementation-plan.md` — Review-derived task list (Steps 1–32 + Phase 7 optional 33–35). **1–32 and 34 done.** **Read when:** Historical scope / remaining optional steps only.
 - `docs/json-contract.md` — Stable `aiuse --json` fields and exit codes for scripts. **Read when:** Cron / automation consumers.
+- `docs/acp-usage.md` — ACP context-window fill from existing acp-run logs, `aiuse usage-sources`, and `[usage_sources]` pins. **Read when:** Context tokens vs plan quota, or which source can speak for a vendor when its TUI is down.
 - `docs/provider-identity.md` — Canonical provider id vs config key; window identity across collectors. **Read when:** Any change touching provider names, history keys, or display.
 - `docs/companion-stack.md` — Ambient menu-bar tools + `aiuse status` / `prompt` one-liner. **Read when:** Shell prompt / status bar integration.
 - `docs/agent-api.md` — Loopback HTTP for agents (`aiuse serve`). **Read when:** Agent/MCP-style consumers without full MCP yet.

@@ -5,6 +5,11 @@ then selects one source for the priority ladder. A provider having two source
 names does **not** necessarily mean two independent upstream authorities:
 tools can share a browser session, an OAuth endpoint, or a billing API.
 
+ACP logs are a further reading, not another plan meter. See
+[`acp-usage.md`](acp-usage.md). `aiuse usage-sources` lists the quota tools
+and the ACP reading for each service. `[usage_sources]` can pin one of them;
+the default stays the blend in `collectors/runner.py`.
+
 ## Current local audit (2026-08-02)
 
 This was collected with `aiuse -q --json` and the snapshot's cross-checks,

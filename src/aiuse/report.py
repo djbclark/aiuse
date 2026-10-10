@@ -692,12 +692,23 @@ def _pool_id_for_windows(windows: list[QuotaWindow]) -> str:
     return ""
 
 
+def _context_fragment(account: AccountUsage) -> str:
+    """One line for ACP context fill. It is not a plan-quota percent."""
+    ctx = account.context_usage
+    if ctx is None or ctx.used is None or not ctx.size:
+        return "ACP context (no window size; not plan quota)"
+    left = ctx.remaining_percent
+    left_s = f"{left:.0f}% of the context window left" if left is not None else "context window"
+    return f"ACP context {ctx.used}/{ctx.size} tokens ({left_s}; not plan quota)"
+
+
 def _account_has_usage(account: AccountUsage) -> bool:
     return not account.error and (
         bool(account.windows)
         or account.balance_usd is not None
         or account.credits_remaining is not None
         or account.usage_credits is not None
+        or account.context_usage is not None
         # Authenticated prepaid/PAYG with no meter yet (e.g. Muse key OK, billing API 404).
         or account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
     )
@@ -1082,6 +1093,18 @@ def render_priority_ladder(
 
     accounts = _sorted_accounts(snapshot.accounts) if snapshot is not None else []
     for account in accounts:
+        if not account.windows and account.context_usage is not None and not account.error:
+            cov = _ladder_coverage_key(account.provider, account.account, "")
+            if cov in covered:
+                continue
+            entries.append(
+                (
+                    _ladder_sort_key(_BAND_NA, (0.0, 0.0, 0.0), account.provider, account.account),
+                    _priority_account_line(account, s, _BAND_NA),
+                )
+            )
+            covered.add(cov)
+            continue
         if account.error or not _account_has_usage(account):
             cov = _ladder_coverage_key(account.provider, account.account, "")
             if cov in covered:
@@ -1215,7 +1238,13 @@ def _build_matrix_rows(
         service = provider_display_name(account.provider)
         short = _short_account(account.account)
 
-        if account.error or not _account_has_usage(account) or _account_is_non_expiring_prepaid(account):
+        context_only = not account.windows and account.context_usage is not None and not account.error
+        if (
+            account.error
+            or not _account_has_usage(account)
+            or _account_is_non_expiring_prepaid(account)
+            or context_only
+        ):
             deferred.append(account)
             continue
 
@@ -1337,6 +1366,19 @@ def _build_matrix_rows(
             continue
         service = provider_display_name(account.provider)
         short = _short_account(account.account)
+        if not account.windows and account.context_usage is not None and not account.error:
+            rows.append(
+                _MatrixRow(
+                    sort_key=_ladder_sort_key(_BAND_NA, (0.0, 0.0, 0.0), account.provider, account.account),
+                    band=_BAND_NA,
+                    queue_score=None,
+                    service=service,
+                    account=short,
+                    account_full=account.account,
+                    note=_context_fragment(account),
+                )
+            )
+            continue
         if account.error or not _account_has_usage(account):
             rows.append(
                 _MatrixRow(
@@ -1751,6 +1793,8 @@ def _priority_account_line(
         body = f"{name} · {who} · ${account.balance_usd:.2f} (counts down)"
     elif account.credits_remaining is not None:
         body = f"{name} · {who} · {account.credits_remaining:g} credits (counts down)"
+    elif account.context_usage is not None:
+        body = f"{name} · {who} · {_context_fragment(account)}"
     else:
         body = f"{name} · {who} · on pace"
     return f"{_priority_tag(s, band)} {body}"
@@ -2402,6 +2446,9 @@ def _render_account(
             detail = _consumption_line(w, rem, acc.provider, plans, analysis, s, learned_burn_rates=rates)
             if detail:
                 lines.append(s.dim(f"    {detail}"))
+
+    if acc.context_usage is not None and acc.windows:
+        lines.append(f"  {_context_fragment(acc)}")
 
     for note in acc.notes:
         lines.append(s.dim(f"  · {note}"))

@@ -543,10 +543,62 @@ class UsageCredits:
 
 
 @dataclass
+class ContextUsage:
+    """ACP context-window fill and this turn's token counts.
+
+    ``used`` / ``size`` come from ``usage_update``. They are the share of the
+    model context window the session is occupying, not a subscription window.
+    ``turn_usage`` is ``PromptResponse.usage``. ``turn_quota`` is
+    ``PromptResponse._meta.quota``, which is also per-turn tokens.
+    """
+
+    used: int | None = None
+    size: int | None = None
+    used_percent: float | None = None
+    remaining_percent: float | None = None
+    cost_amount: float | None = None
+    cost_currency: str | None = None
+    agent: str = ""
+    log: str = ""
+    measured_at: str | None = None
+    turn_usage: dict[str, Any] | None = None
+    turn_quota: dict[str, Any] | None = None
+    signals: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "metric": "acp_context",
+            "used": self.used,
+            "size": self.size,
+            "used_percent": self.used_percent,
+            "remaining_percent": self.remaining_percent,
+            "agent": self.agent,
+            "log": self.log,
+            "signals": list(self.signals),
+            "note": (
+                "ACP session context-window fill (usage_update used/size). "
+                "Not a 5h, weekly, or subscription quota. "
+                "turn_usage is this turn's token counts. "
+                "turn_quota, when present, is PromptResponse._meta.quota: "
+                "per-turn tokens, not the plan window."
+            ),
+        }
+        if self.measured_at is not None:
+            body["measured_at"] = self.measured_at
+        if self.cost_amount is not None:
+            body["cost"] = {"amount": self.cost_amount, "currency": self.cost_currency}
+        if self.turn_usage is not None:
+            body["turn_usage"] = self.turn_usage
+        if self.turn_quota is not None:
+            body["turn_quota"] = self.turn_quota
+        return body
+
+
+@dataclass
 class AccountUsage:
     """Normalized usage for one provider account."""
 
-    source: str  # cswap | codexbar | caut | openusage_ai | openusage_sh | tokscale | clinepass
+    source: str  # cswap | codexbar | caut | openusage_ai | openusage_sh | tokscale | clinepass | acp
     provider: str
     account: str | None = None
     plan: str | None = None
@@ -567,6 +619,10 @@ class AccountUsage:
     # (e.g. CodexBar's usage.updatedAt). Older than the snapshot's
     # collected_at means the row was a cached read, not a live one.
     collected_at: datetime | None = None
+
+    # ACP context fill for this service, when a recent acp-run log has one.
+    # Never a QuotaWindow: pace and use-or-lose must not treat it as plan %.
+    context_usage: ContextUsage | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -589,6 +645,8 @@ class AccountUsage:
             d["collected_at"] = self.collected_at.isoformat()
         if self.usage_credits is not None:
             d["usage_credits"] = self.usage_credits.to_dict()
+        if self.context_usage is not None:
+            d["context_usage"] = self.context_usage.to_dict()
         return d
 
 

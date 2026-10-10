@@ -246,7 +246,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "muse": {"enabled": True},
         "qwencloud": {"enabled": True},
         "bailian": {"enabled": True},
+        # Passive ACP context fill from acp-run JSONL. Not a plan-quota source.
+        # max_age_hours drops logs older than this (0 keeps every log).
+        "acp": {"enabled": True, "max_age_hours": 168},
     },
+    # Provider -> "blend" (default) or one collector id. A collector id is the
+    # only reading kept for that service. Quota collectors stay the blend
+    # winner; "acp" is context fill, not the 5h/weekly window.
+    "usage_sources": {},
     # Provider id -> minimum seconds between live quota queries, across all aiuse
     # processes (CLI, `aiuse sample`, watch, serve). 0 disables the limit.
     "query_min_interval": dict(DEFAULT_QUERY_MIN_INTERVAL),
@@ -302,6 +309,7 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "sampling",
         "attribution",
         "disabled_services",
+        "usage_sources",
     }
 )
 KNOWN_TIMEOUT_KEYS = frozenset(
@@ -345,6 +353,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "deepseek",
         "clinepass",
         "grok_billing",
+        "acp",
     }
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
@@ -358,6 +367,8 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "probe_url",
         "provider_timeouts",
         "timeout_backoff",
+        "log_dir",
+        "max_age_hours",
     }
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
@@ -684,6 +695,21 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             for key in litellm:
                 if key not in KNOWN_ATTRIBUTION_LITELLM_KEYS:
                     issues.append(f"warning: unknown attribution.litellm key {key!r}")
+
+    usage_sources = cfg.get("usage_sources")
+    if usage_sources is not None and not isinstance(usage_sources, dict):
+        issues.append("error: usage_sources must be a provider -> source mapping")
+    elif isinstance(usage_sources, dict):
+        allowed = KNOWN_COLLECTOR_KEYS | {"blend"}
+        for key, value in usage_sources.items():
+            if not str(key).strip():
+                issues.append("error: usage_sources needs a provider id")
+            if not isinstance(value, str) or not value.strip():
+                issues.append(f"error: usage_sources.{key} must be 'blend' or a collector id")
+            elif value.strip() not in allowed:
+                issues.append(
+                    f"error: usage_sources.{key}={value!r} is not a collector (known: {', '.join(sorted(allowed))})"
+                )
 
     macos = cfg.get("macos")
     if macos is not None and not isinstance(macos, dict):

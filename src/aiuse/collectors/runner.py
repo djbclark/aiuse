@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 
@@ -20,7 +21,9 @@ from aiuse.models import (
     utcnow,
 )
 from aiuse.tty import restore_stdin_tty, save_stdin_tty
+from aiuse.usage_sources import ACP_SOURCE, pinned_usage_source
 
+from .acp_usage import collect_acp, default_acp_log_dir
 from .bailian import collect_bailian
 from .base import which
 from .caut import collect_caut
@@ -59,21 +62,22 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "muse",
     "qwencloud",
     "bailian",
+    "acp",
 )
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
-    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes"),
+    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes", "acp"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
-    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes"),
+    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes", "acp"),
     # Native qwencloud CLI is the authority; CodexBar qwen-cloud (cookies) cross-checks.
-    "qwencloud": ("qwencloud", "codexbar"),
+    "qwencloud": ("qwencloud", "codexbar", "acp"),
     # Native bl CLI is the authority; CodexBar alibaba-*-plan (cookies) cross-checks.
-    "alibaba": ("bailian", "codexbar"),
+    "alibaba": ("bailian", "codexbar", "acp"),
     # Native /user/balance is DeepSeek's own number; CodexBar cross-checks (#16).
-    "deepseek": ("deepseek", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
+    "deepseek": ("deepseek", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "acp"),
     # Native /go page sees an expired plan; CodexBar local $caps cannot.
-    "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale"),
+    "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "acp"),
 }
 
 SOURCE_LABELS: dict[str, str] = {
@@ -93,6 +97,7 @@ SOURCE_LABELS: dict[str, str] = {
     "qwencloud": "QwenCloud (native)",
     "bailian": "Bailian (native)",
     "grok_billing": "Grok Billing (native)",
+    "acp": "ACP logs",
 }
 
 # Collectors that serve exactly one provider live in config.py
@@ -249,6 +254,14 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("qwencloud", partial(collect_qwencloud, timeout=timeout_for(config, "qwencloud"))))
     if _enabled(collectors_cfg, "bailian"):
         jobs.append(("bailian", partial(collect_bailian, timeout=timeout_for(config, "bailian"))))
+    if _enabled(collectors_cfg, "acp"):
+        acp_cfg = collectors_cfg.get("acp") if isinstance(collectors_cfg.get("acp"), dict) else {}
+        log_dir = (acp_cfg or {}).get("log_dir") or None
+        try:
+            max_age_hours = float((acp_cfg or {}).get("max_age_hours", 168))
+        except (TypeError, ValueError):
+            max_age_hours = 168.0
+        jobs.append(("acp", partial(collect_acp, log_dir=log_dir, max_age_hours=max_age_hours)))
 
     # Provider-only collectors of a disabled service never run (see
     # SINGLE_PROVIDER_COLLECTORS) — the rows would be filtered out below anyway.
@@ -274,10 +287,12 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         ]
 
     _merge_grok_extra_credits(snapshot.accounts)
+    usage_sources = config.get("usage_sources") if isinstance(config.get("usage_sources"), dict) else None
     snapshot.accounts, snapshot.cross_checks = _select_and_cross_check(
         snapshot.accounts,
         cswap_authoritative=_enabled(collectors_cfg, "cswap"),
         account_aliases=config.get("account_aliases"),
+        usage_sources=usage_sources,
     )
     _apply_lapsed_accounts(snapshot.accounts, config)
     _apply_client_limit_notes(snapshot.accounts, config)
@@ -418,12 +433,17 @@ def _select_and_cross_check(
     *,
     cswap_authoritative: bool,
     account_aliases: dict[str, Any] | None = None,
+    usage_sources: dict[str, Any] | None = None,
 ) -> tuple[list[AccountUsage], list[CrossCheck]]:
     """Select report rows while cross-checking all live sources.
 
     Selection picks one primary source per provider (priority list). Cross-checks
     compare every pair of live sources so adding caut/OpenUsage later does not
     require new pairwise branches.
+
+    ACP context rows are not a plan-percent peer. Blend mode keeps the quota
+    primary and copies the context reading onto it. A ``[usage_sources]`` pin
+    drops every other source for that provider.
     """
 
     for account in accounts:
@@ -440,14 +460,35 @@ def _select_and_cross_check(
         for account in rows:
             by_source[account.source].append(account)
 
+        pin = pinned_usage_source(usage_sources, provider)
+        acp_rows = list(by_source.get(ACP_SOURCE, []))
+        if pin:
+            pinned_rows = by_source.get(pin, [])
+            if not pinned_rows:
+                selected.append(
+                    AccountUsage(
+                        source=pin,
+                        provider=provider,
+                        error=(
+                            f"[usage_sources] pins {pin} for {provider}, and that source returned nothing this run."
+                        ),
+                        notes=["Other usage sources were ignored because this provider is pinned."],
+                    )
+                )
+                continue
+            by_source = defaultdict(list, {pin: pinned_rows})
+            if pin != ACP_SOURCE:
+                acp_rows = []
+
         priority = _source_priority(provider, cswap_authoritative=cswap_authoritative)
         primary = _pick_primary_source(provider, by_source, priority, cswap_authoritative=cswap_authoritative)
 
+        chosen: list[AccountUsage] = []
         if primary is not None:
             primary_rows = by_source.get(primary, [])
             if primary == "cswap":
                 # Keep every cswap slot (live + errored) for multi-account identity.
-                selected.extend(primary_rows)
+                chosen = primary_rows
             else:
                 live = [a for a in primary_rows if _has_live_data(a)]
                 # A Max-plan OpenUsage.ai row with zero windows is an identity
@@ -457,23 +498,43 @@ def _select_and_cross_check(
                     provider == "claude" and primary == "openusage_ai" and not any(row.error for row in primary_rows)
                 )
                 if live:
-                    selected.extend(live)
+                    chosen = live
                 elif not blank_openusage_claude:
-                    selected.extend(primary_rows)
+                    chosen = primary_rows
         else:
             # No priority source present — keep whatever we have.
-            selected.extend(rows)
+            chosen = rows
 
+        if not chosen and acp_rows:
+            chosen = list(acp_rows)
+        elif chosen and acp_rows and primary != ACP_SOURCE:
+            _attach_acp_context(chosen, acp_rows)
+        selected.extend(chosen)
+
+        quota_by_source = {source: source_rows for source, source_rows in by_source.items() if source != ACP_SOURCE}
         checks.extend(
             _provider_multi_source_cross_checks(
                 provider,
-                by_source,
-                primary=primary,
+                quota_by_source,
+                primary=None if primary == ACP_SOURCE else primary,
                 cswap_authoritative=cswap_authoritative,
             )
         )
 
     return selected, checks
+
+
+def _attach_acp_context(accounts: list[AccountUsage], acp_rows: list[AccountUsage]) -> None:
+    """Copy the newest ACP context reading onto the quota rows that drive the ladder."""
+    donor = max(acp_rows, key=lambda row: row.collected_at or datetime.min.replace(tzinfo=timezone.utc))
+    if donor.context_usage is None:
+        return
+    for account in accounts:
+        if account.context_usage is None:
+            account.context_usage = donor.context_usage
+        for note in donor.notes:
+            if note not in account.notes:
+                account.notes.append(note)
 
 
 def _pick_primary_source(
@@ -1054,6 +1115,7 @@ ALL_DATA_SOURCES: tuple[str, ...] = (
     "tokscale",
     "clinepass",
     "hermes",
+    "acp",
 )
 
 
@@ -1067,4 +1129,5 @@ def collector_tools_present() -> dict[str, bool]:
         "openusage_sh": which("openusage-sh") is not None,
         "tokscale": which("tokscale") is not None,
         "hermes": True,
+        "acp": default_acp_log_dir().is_dir(),
     }

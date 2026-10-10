@@ -75,6 +75,20 @@
 # Surfaces token/coding-plan 5h + weekly quota windows via `bl usage`.
 # enabled = true
 
+[collectors.acp]
+# Context-window fill and per-turn tokens from acp-run JSONL logs
+# (~/.local/state/acp-run, or AIUSE_ACP_LOG_DIR). Passive: aiuse does not
+# start a turn. This is not 5h/weekly plan quota. See docs/acp-usage.md.
+# enabled = true
+# log_dir = "~/.local/state/acp-run"
+# max_age_hours = 168   # 0 keeps every log
+
+# Pin one collector as the only reading for a service. Omit a provider, or
+# set "blend", to keep source priority and attach ACP context beside it.
+# [usage_sources]
+# claude = "cswap"
+# antigravity = "acp"
+
 [collectors.grok_billing]
 # Grok Extra Usage Credits (prepaid wallet) via the local `grok` CLI's billing
 # endpoint; needs a one-time `grok` CLI login (~/.grok/auth.json). Supplements

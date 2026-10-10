@@ -14,7 +14,8 @@ three gets you to the other two immediately.
 **Status (2026-10-09):** Package/CLI **`aiuse`**, packaging **3.3.x**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.1** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`); 16 registered collectors; scheduled sampling +
+`aiuse note-exhausted`); 17 registered collectors (including passive `acp`
+context logs; `aiuse usage-sources`); scheduled sampling +
 `aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →
 [`docs/next-options.md`](docs/next-options.md) +
 [`docs/handoffs/`](docs/handoffs/) — **do not restart at Step 1**. Full status
