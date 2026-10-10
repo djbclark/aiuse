@@ -139,12 +139,12 @@ result collection inside the `with` block.
 
 ## What looks healthy
 
-| Scenario                     | Expected                                                         |
-| ---------------------------- | ---------------------------------------------------------------- |
-| All tools warm / cached      | Often **under ~5–20s** wall-clock                                |
-| Cold CodexBar multi-provider | Dominated by slowest provider; still **≤ 45s** per provider slot |
-| One tool hang                | Fails at its own budget; other collectors stay usable            |
-| `aiuse -t 10`                | Every tool forced to 10s (faster fail for scripts)               |
+| Scenario                     | Expected                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------- |
+| All tools warm / cached      | Often **under ~5–20s** wall-clock                                                  |
+| Cold CodexBar multi-provider | Dominated by slowest provider; **≤ 45s** per provider slot, **60s** for opencodego |
+| One tool hang                | Fails at its own budget; other collectors stay usable                              |
+| `aiuse -t 10`                | Every tool forced to 10s (faster fail for scripts)                                 |
 
 ## Recommendations (standing)
 

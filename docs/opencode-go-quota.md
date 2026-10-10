@@ -146,8 +146,10 @@ same fixed dollar caps CodexBar local uses (`$12` / `$30` / `$60`).
 # Official billing path (should match the OpenCode usage page)
 codexbar usage --provider opencodego --source web --format json --pretty
 
-# Local estimate (often optimistic on monthly when the page is empty)
-codexbar usage --provider opencodego --source local --format json --pretty
+# CodexBar 0.73.0 rejects `--source local` (`--source` must be
+# auto|web|cli|oauth|api). The dollar-cap estimate is auto's internal
+# strategy: it rescans ~/.local/share/opencode/opencode.db. aiuse does
+# not call it.
 
 # OpenUsage local estimate (resources.estimated == true)
 openusage opencode --force | jq '.providers.opencode.resources'

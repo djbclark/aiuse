@@ -497,7 +497,7 @@ Disabled services: top-level `[disabled_services]` maps `"provider"` to a reason
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.
-- All enabled collectors (cswap, CodexBar, caut, caam, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud, bailian) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s**; `cswap`, `caam`, and `openusage_sh` are **90s** (`-t` / `config.toml [timeouts]`).
+- All enabled collectors (cswap, CodexBar, caut, caam, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud, bailian) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s**; CodexBar OpenCode Go is **60s** (`[collectors.codexbar] provider_timeouts`); `cswap`, `caam`, and `openusage_sh` are **90s** (`-t` / `config.toml [timeouts]`).
 - Per-window detail still shows $ value, flexibility class, and a **pace** ratio when computable.
 - Duplicate live measurements are retained for cross-checking but only one copy drives recommendations.
 - Dollar values use plan `monthly_price` with waking-hours correction (default 16h/day).

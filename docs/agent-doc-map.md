@@ -18,7 +18,7 @@ grouping see [`index.md`](index.md).
 - `docs/scheduling.md` — macOS LaunchAgent hourly (`persist_snapshots`). **Read when:** Installing scheduled collection.
 - `docs/attribution.md` — Token ledgers (tokscale, LiteLLM), adaptive sampling (`aiuse sample`), `aiuse attribute`. **Read when:** Asking which client spent a quota window; changing sampling cadence.
 - `docs/history-learning.md` — Snapshot persist vs `learn_from_history`; `--full` history line. **Read when:** Enabling / debugging history insights.
-- `docs/collector-concurrency.md` — How collectors run in parallel and timeout (45s; cswap, caam and openusage_sh 90s). **Read when:** Perf / hang questions.
+- `docs/collector-concurrency.md` — How collectors run in parallel and timeout (45s; CodexBar opencodego 60s; cswap, caam and openusage_sh 90s). **Read when:** Perf / hang questions.
 - `completions/` — bash/zsh completion scripts. **Read when:** Shell UX.
 - `https://github.com/djbclark/aiuse/issues/1` — Tracks consuming cswap#170 last-good JSON (Step 33). **Read when:** When #170 merges or when checking upstream status.
 - `docs/cswap-reliability.md` — Claude/cswap reliability: decision-stale JSON, cache hydration, fallbacks. **Read when:** When Claude rows go missing or multi-account looks wrong.
