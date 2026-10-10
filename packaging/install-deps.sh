@@ -7,6 +7,8 @@
 #   cswap      — multi-account Claude (uv tool: claude-swap)
 #   codexbar   — multi-provider quotas (Homebrew cask CodexBar)
 #   caut       — multi-provider CLI peer (cargo install from GitHub)
+#   caam       — Coding Agent Account Manager vault-profile limits
+#                (checksum-verified v0.1.23 release tarball)
 #   openusage  — OpenUsage.ai menu bar + loopback :6736 (Homebrew cask)
 #   openusage-sh — OpenUsage.sh terminal dashboard (separate Homebrew formula)
 #   tokscale   — independent quota JSON (npx tokscale wrapper on PATH)
@@ -119,6 +121,54 @@ install_caut() {
   return 1
 }
 
+install_caam() {
+  # Pin the release this collector was written against. The checksum file is
+  # the one published next to the tarball. Do not pipe the upstream installer.
+  local version=0.1.23
+  if have caam; then
+    ok "caam → $(command -v caam)"
+    return 0
+  fi
+  if (( CHECK_ONLY )); then
+    miss "caam (v${version} release tarball: https://github.com/Dicklesworthstone/coding_agent_account_manager/releases)"
+    return 1
+  fi
+  if ! have curl || ! have python3; then
+    echo "error: curl and python3 are required to install caam" >&2
+    return 1
+  fi
+  local os arch
+  case "$(uname -s)" in
+    Darwin) os=darwin ;;
+    Linux) os=linux ;;
+    *) echo "error: caam install supports darwin and linux" >&2; return 1 ;;
+  esac
+  case "$(uname -m)" in
+    arm64|aarch64) arch=arm64 ;;
+    x86_64|amd64) arch=amd64 ;;
+    *) echo "error: unsupported arch $(uname -m)" >&2; return 1 ;;
+  esac
+  local asset="caam_${version}_${os}_${arch}.tar.gz"
+  local base="https://github.com/Dicklesworthstone/coding_agent_account_manager/releases/download/v${version}"
+  local tmp
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+  curl -fsSL -o "${tmp}/${asset}.sha256" "${base}/${asset}.sha256"
+  python3 - "${tmp}/${asset}" "${tmp}/${asset}.sha256" << 'PY'
+import hashlib, pathlib, sys
+blob, digest = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+expected = digest.read_text().split()[0].lower()
+got = hashlib.sha256(blob.read_bytes()).hexdigest()
+if got != expected:
+    raise SystemExit(f"caam checksum mismatch: got {got} expected {expected}")
+PY
+  tar -xzf "${tmp}/${asset}" -C "${tmp}" caam
+  ensure_local_bin
+  install -m 755 "${tmp}/caam" "${HOME}/.local/bin/caam"
+  rm -rf "${tmp}"
+  have caam && ok "caam → $(command -v caam)" || { miss "caam after install"; return 1; }
+}
+
 install_openusage() {
   local app="/Applications/OpenUsage.app"
   if have openusage; then
@@ -226,6 +276,7 @@ main() {
   install_cswap || failed=1
   install_codexbar || failed=1
   install_caut || failed=1
+  install_caam || failed=1
   install_openusage || failed=1
   install_openusage_sh || failed=1
   install_tokscale || failed=1

@@ -3,16 +3,17 @@
 Audit of how `aiuse` shells out to external data sources (post 45s default timeout
 policy). No code change required from this write-up unless noted.
 
-## Data sources (all six)
+## Data sources (all seven)
 
-| Collector        | Interface                                                | Role                                       |
-| ---------------- | -------------------------------------------------------- | ------------------------------------------ |
-| **cswap**        | `cswap list --json`                                      | Multi-account Claude (canonical)           |
-| **CodexBar**     | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)   |
-| **caut**         | `caut usage --json`                                      | Independent multi-provider peer / fill-in  |
-| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in                 |
-| **OpenUsage.sh** | `openusage-sh export --output - --format json`           | Independent local telemetry / quota backup |
-| **tokscale**     | `tokscale usage --json`                                  | Independent peer; preferred for Copilot    |
+| Collector        | Interface                                                | Role                                        |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------- |
+| **cswap**        | `cswap list --json`                                      | Multi-account Claude (canonical)            |
+| **CodexBar**     | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)    |
+| **caut**         | `caut usage --json`                                      | Independent multi-provider peer / fill-in   |
+| **caam**         | `caam limits --format json` (vault profiles)             | Last-resort peer behind every direct source |
+| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in                  |
+| **OpenUsage.sh** | `openusage-sh export --output - --format json`           | Independent local telemetry / quota backup  |
+| **tokscale**     | `tokscale usage --json`                                  | Independent peer; preferred for Copilot     |
 
 Install all of them: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
 or site `just install-aiuse-deps`.
@@ -21,10 +22,11 @@ or site `just install-aiuse-deps`.
 
 ```
 aiuse main
- └─ run_collectors (ThreadPoolExecutor, max_workers = N enabled collectors ≤ 6)
+ └─ run_collectors (ThreadPoolExecutor, max_workers = N enabled collectors ≤ 7)
      ├─ collect_cswap        → one `cswap list --json` (timeout: cswap)
      ├─ collect_codexbar     → discovery + concurrent per-provider queries
      ├─ collect_caut         → `caut usage --provider all --json` (timeout: caut)
+     ├─ collect_caam         → `caam limits --format json` + local `caam status --json` (timeout: caam)
      ├─ collect_openusage_ai → CLI and/or loopback HTTP (timeout: openusage_ai)
      ├─ collect_openusage_sh → versioned CLI export (timeout: openusage_sh)
      └─ collect_tokscale     → one `tokscale usage --json` (timeout: tokscale)
@@ -38,8 +40,9 @@ collectors are healthy.
 | Knob                    | Default               | Where                                                                                     |
 | ----------------------- | --------------------- | ----------------------------------------------------------------------------------------- |
 | `timeouts.default`      | **45s**               | `config.toml` / built-in                                                                  |
-| Per-tool keys           | inherit default       | `codexbar`, `codexbar_discovery`, `caut`, `openusage_ai`, `tokscale`                      |
+| Per-tool keys           | inherit default       | `codexbar`, `codexbar_discovery`, `caut`, `caam`, `openusage_ai`, `tokscale`              |
 | `timeouts.cswap`        | **90s**               | `cswap list --json` crossed 45s beside the other collectors                               |
+| `timeouts.caam`         | **90s**               | `caam limits` sweeps four providers under caam's own 60s deadline                         |
 | `timeouts.openusage_sh` | **90s**               | direct `openusage-sh export` often takes ~30s and crosses 45s beside the other collectors |
 | CLI `-t` / `--timeout`  | sets `timeouts.force` | wins over every tool for that run                                                         |
 | Doctor version probe    | **5s** hard cap       | does not use usage endpoints                                                              |
@@ -84,6 +87,12 @@ try in ...`. Any answer that is not a timeout clears it. State is shared by
 - Single subprocess: `caut usage --provider all --json` by default (correctness).
 - Timeout: `timeout_for(config, "caut")`.
 - Setup: [collectors-caut-openusage.md](collectors-caut-openusage.md).
+
+### caam
+
+- `caam limits --format json` (vault profiles, claude/codex/grok/cursor) plus a
+  local `caam status --json` for health notes; see [caam.md](caam.md).
+- Timeout: built-in `timeouts.caam` is 90s (caam's own deadline is 60s).
 
 ### OpenUsage
 
@@ -133,7 +142,7 @@ result collection inside the `with` block.
 
 ## Recommendations (standing)
 
-1. Keep **45s** as the default. `cswap` and `openusage_sh` keep their built-in 90s. Use `-t` only for tighter scripts.
+1. Keep **45s** as the default. `cswap`, `caam`, and `openusage_sh` keep their built-in 90s. Use `-t` only for tighter scripts.
 2. Prefer `--no-tokscale` when iterating on Claude-only workflows if tokscale is slow.
 3. Use `aiuse doctor` for PATH + version probe; full usage still needs a collect run.
 4. Do not raise global timeout back toward 180s without evidence a tool needs it.

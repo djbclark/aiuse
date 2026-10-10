@@ -18,7 +18,7 @@ grouping see [`index.md`](index.md).
 - `docs/scheduling.md` — macOS LaunchAgent hourly (`persist_snapshots`). **Read when:** Installing scheduled collection.
 - `docs/attribution.md` — Token ledgers (tokscale, LiteLLM), adaptive sampling (`aiuse sample`), `aiuse attribute`. **Read when:** Asking which client spent a quota window; changing sampling cadence.
 - `docs/history-learning.md` — Snapshot persist vs `learn_from_history`; `--full` history line. **Read when:** Enabling / debugging history insights.
-- `docs/collector-concurrency.md` — How collectors run in parallel and timeout (45s; cswap and openusage_sh 90s). **Read when:** Perf / hang questions.
+- `docs/collector-concurrency.md` — How collectors run in parallel and timeout (45s; cswap, caam and openusage_sh 90s). **Read when:** Perf / hang questions.
 - `completions/` — bash/zsh completion scripts. **Read when:** Shell UX.
 - `https://github.com/djbclark/aiuse/issues/1` — Tracks consuming cswap#170 last-good JSON (Step 33). **Read when:** When #170 merges or when checking upstream status.
 - `docs/cswap-reliability.md` — Claude/cswap reliability: decision-stale JSON, cache hydration, fallbacks. **Read when:** When Claude rows go missing or multi-account looks wrong.
@@ -40,6 +40,7 @@ grouping see [`index.md`](index.md).
 - [Issue #10](https://github.com/djbclark/aiuse/issues/10) — Open · operator: public announce (venues + draft). **Do not auto-post.** **Read when:** Distribution.
 - Issues [#11](https://github.com/djbclark/aiuse/issues/11)–[#15](https://github.com/djbclark/aiuse/issues/15) — Open · optional polish (MCP, peer outreach, History, watch, fixtures). **Read when:** Only if concrete pain; see [`next-options.md`](next-options.md).
 - `docs/collectors-caut-openusage.md` — caut + OpenUsage install, config, multi-source cross-check priority. **Read when:** New collectors / doctor PATH / site install.
+- `docs/caam.md` — caam (Coding Agent Account Manager) vault-profile limits; consumed-percent mapping, redaction, provider ids. **Read when:** caam rows / new-source priority / vault vs live login.
 - `docs/macos-keychain-trust.md` — Operator guide: `aiuse trust` — stable codesign for caut, Keychain Always Allow. **Read when:** Keychain dialogs / cargo reinstall of caut.
 - `docs/macos-keychain-trust-plan.md` — Implementation plan for `aiuse trust` (shipped). **Read when:** Historical design notes.
 - `docs/claude-local-usage.md` — Local `stats-cache` / JSONL / ccusage vs subscription 5h/7d %. **Read when:** When someone proposes parsing `~/.claude` instead of cswap.

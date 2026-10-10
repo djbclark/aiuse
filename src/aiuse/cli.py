@@ -41,6 +41,7 @@ _EXTERNAL_TOOLS: tuple[tuple[str, str, list[str]], ...] = (
     ("cswap", "cswap", ["--version"]),
     ("codexbar", "codexbar", ["-V"]),
     ("caut", "caut", ["--version"]),
+    ("caam", "caam", ["--version"]),
     ("openusage_ai", "openusage", ["--help"]),
     ("openusage_sh", "openusage-sh", ["version"]),
     ("tokscale", "tokscale", ["--version"]),

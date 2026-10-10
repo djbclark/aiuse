@@ -27,6 +27,9 @@ CSWAP_TIMEOUT = 90.0
 # `openusage-sh export` polls every configured provider. A quiet run is about
 # 30s, and the same export often crosses 45s while the other collectors run.
 OPENUSAGE_SH_TIMEOUT = 90.0
+# `caam limits --format json` sweeps four providers under caam's own 60s
+# deadline; the same 90s budget as OpenUsage.sh covers a slow sweep.
+CAAM_TIMEOUT = 90.0
 # Minimum seconds between live quota queries per provider, shared by every aiuse
 # process (collectors/throttle.py). agy answers probes in quick succession with
 # 429s on every model, so its quota is read at most once per 15 minutes.
@@ -40,6 +43,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "default": DEFAULT_SUBPROCESS_TIMEOUT,
         "cswap": CSWAP_TIMEOUT,
         "openusage_sh": OPENUSAGE_SH_TIMEOUT,
+        "caam": CAAM_TIMEOUT,
     },
     "analysis": {
         "min_remaining_percent": 40,
@@ -229,6 +233,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # caut + the two distinct OpenUsage products are cross-check peers.
         # "both" = claude+codex (providers caut can actually fill windows for).
         "caut": {"enabled": True, "providers": "both"},
+        # caam (Coding Agent Account Manager) reads vault-profile limits for
+        # claude/codex/grok/cursor — last-resort source, never ahead of the
+        # direct collectors. See docs/caam.md.
+        "caam": {"enabled": True},
         "openusage_ai": {
             "enabled": True,
             "force_refresh": True,
@@ -321,6 +329,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "codexbar",
         "codexbar_discovery",
         "caut",
+        "caam",
         "openusage_ai",
         "openusage_sh",
         "opencode_zen",
@@ -341,6 +350,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "cswap",
         "codexbar",
         "caut",
+        "caam",
         "openusage_ai",
         "openusage_sh",
         "opencode_zen",
@@ -377,8 +387,9 @@ KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
 # Collectors that serve exactly one provider. When that provider is disabled
 # via [disabled_services] the collector is skipped entirely — no subprocess,
 # no authenticated fetch whose result would only be filtered out afterwards.
-# Multi-provider collectors (codexbar, caut, openusage_*, tokscale, hermes)
-# still run; their rows for disabled providers are dropped after collection.
+# Multi-provider collectors (codexbar, caut, caam, openusage_*, tokscale,
+# hermes) still run; their rows for disabled providers are dropped after
+# collection.
 # Lives here (not collectors/runner.py) so validate_config can check for
 # redundant collector overrides against it without an import cycle.
 SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
@@ -927,7 +938,7 @@ def _default_toml_text() -> str:
         "\n"
         "[timeouts]\n"
         "# Wall-clock seconds for every external data source\n"
-        "# (cswap, codexbar, caut, openusage_ai, openusage_sh, tokscale).\n"
+        "# (cswap, codexbar, caut, caam, openusage_ai, openusage_sh, tokscale).\n"
         "# Tools either return quickly or hang — long budgets only delay failure.\n"
         f"default = {DEFAULT_SUBPROCESS_TIMEOUT:g}\n"
         "\n"
@@ -936,6 +947,7 @@ def _default_toml_text() -> str:
         "# codexbar = 45\n"
         "# codexbar_discovery = 45   # `codexbar config providers` (local, usually ms)\n"
         "# caut = 45\n"
+        "# caam = 90\n"
         "# openusage_ai = 45\n"
         "# openusage_sh = 90\n"
         "# tokscale = 45\n"

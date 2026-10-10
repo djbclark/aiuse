@@ -14,7 +14,7 @@ three gets you to the other two immediately.
 **Status (2026-10-09):** Package/CLI **`aiuse`**, packaging **3.3.x**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.1** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`); 17 registered collectors (including passive `acp`
+`aiuse note-exhausted`); 18 registered collectors (including passive `acp`
 context logs; `aiuse usage-sources`); scheduled sampling +
 `aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →
 [`docs/next-options.md`](docs/next-options.md) +
@@ -93,7 +93,7 @@ project knowledge in **their own** repo.
 
 `aiuse` is a CLI that aggregates live AI-subscription quota data (Claude, Codex,
 Copilot, Grok, Gemini/Antigravity, OpenCode Go, prepaid balances, …) from
-**five external data sources** (`cswap`, `CodexBar`, `caut`, `OpenUsage`,
+**six external data sources** (`cswap`, `CodexBar`, `caut`, `caam`, `OpenUsage`,
 `tokscale` — PATH tools and/or OpenUsage loopback HTTP), then tells the user
 what to burn before it resets unused. See `README.md` for the full description,
 install steps, CLI flags, and config. Install helpers:

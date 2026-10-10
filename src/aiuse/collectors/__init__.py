@@ -1,6 +1,7 @@
 """CLI collectors for live provider quotas."""
 
 from .bailian import collect_bailian
+from .caam import collect_caam
 from .caut import collect_caut
 from .clinepass import collect_clinepass
 from .codexbar import collect_codexbar
@@ -18,6 +19,7 @@ from .runner import run_collectors
 from .tokscale import collect_tokscale
 
 __all__ = [
+    "collect_caam",
     "collect_caut",
     "collect_clinepass",
     "collect_hermes",

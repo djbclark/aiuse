@@ -4,7 +4,7 @@ Distribution name / CLI: **`aiuse`**. Compatibility console script **`ai`**
 calls the same entrypoint (`aiuse.ai_stub:main`).
 
 External data sources stay separate installs (this package only ships the
-aggregator CLI). Install all six with:
+aggregator CLI). Install all seven with:
 
 ```bash
 ./packaging/install-deps.sh
@@ -16,6 +16,7 @@ aggregator CLI). Install all six with:
 | **cswap**        | `uv tool install claude-swap`                                                                                                   |
 | **codexbar**     | `brew install --cask codexbar`                                                                                                  |
 | **caut**         | `cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker`                                  |
+| **caam**         | upstream install script or release tarball: https://github.com/Dicklesworthstone/coding_agent_account_manager/releases          |
 | **openusage**    | `brew install --cask openusage` (+ optional CLI from app Settings; or leave app running for `:6736`)                            |
 | **openusage-sh** | `brew install janekbaraniewski/tap/openusage`; `install-deps.sh` creates the collision-safe `~/.local/bin/openusage-sh` wrapper |
 | **tokscale**     | PATH shim via `npx tokscale@latest` (created by `install-deps.sh`)                                                              |

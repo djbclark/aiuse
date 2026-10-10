@@ -10,18 +10,19 @@ inappropriate source explicitly in `config.toml`.
 `aiuse` prefers ranking quality over a single data path. In addition to
 **cswap**, **CodexBar**, and **tokscale**, it can also collect:
 
-| Source                                                                      | Role                                                              |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)** | Cross-platform CLI usage probe (`caut.v1` JSON)                   |
-| **[OpenUsage.ai](https://www.openusage.ai/)**                               | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits` |
-| **[OpenUsage.sh](https://openusage.sh/)**                                   | Terminal dashboard; versioned JSON export through `openusage-sh`  |
+| Source                                                                        | Role                                                                       |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            |
+| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) |
+| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          |
+| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**
 
 ## Machine install
 
-**All six aiuse data sources** (cswap, CodexBar, caut, OpenUsage.ai,
+**All seven aiuse data sources** (cswap, CodexBar, caut, caam, OpenUsage.ai,
 OpenUsage.sh, tokscale):
 
 ```bash

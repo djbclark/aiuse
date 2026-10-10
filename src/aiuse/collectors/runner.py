@@ -31,6 +31,7 @@ from aiuse.usage_sources import ACP_SOURCE, pinned_usage_source
 from .acp_usage import collect_acp, default_acp_log_dir
 from .bailian import collect_bailian
 from .base import which
+from .caam import collect_caam
 from .caut import collect_caut
 from .clinepass import collect_clinepass
 from .codexbar import DEFAULT_TIMEOUT_BACKOFF_SECONDS as DEFAULT_CODEXBAR_TIMEOUT_BACKOFF
@@ -72,7 +73,12 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
-    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes", "acp"),
+    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes", "caam", "acp"),
+    # caam reads vault profiles only, so it stays the last resort behind every
+    # direct source (never ahead of grok_billing's own billing number).
+    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam", "acp"),
+    "grok": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "grok_billing", "caam", "acp"),
+    "cursor": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam", "acp"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
     "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes", "acp"),
     # Native qwencloud CLI is the authority; CodexBar qwen-cloud (cookies) cross-checks.
@@ -88,6 +94,7 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
 SOURCE_LABELS: dict[str, str] = {
     "cswap": "cswap",
     "codexbar": "CodexBar",
+    "caam": "caam",
     "caut": "caut",
     "openusage_ai": "OpenUsage.ai",
     "openusage_sh": "OpenUsage.sh",
@@ -207,6 +214,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 partial(collect_caut, providers=str(caut_providers), timeout=caut_timeout),
             )
         )
+    if _enabled(collectors_cfg, "caam"):
+        jobs.append(("caam", partial(collect_caam, timeout=timeout_for(config, "caam"))))
     if _enabled(collectors_cfg, "openusage_ai"):
         ou_cfg = collectors_cfg.get("openusage_ai") if isinstance(collectors_cfg.get("openusage_ai"), dict) else {}
         ou_timeout = timeout_for(config, "openusage_ai")
@@ -1105,6 +1114,7 @@ def _source_name(source: str) -> str:
 ALL_DATA_SOURCES: tuple[str, ...] = (
     "cswap",
     "codexbar",
+    "caam",
     "caut",
     "openusage_ai",
     "openusage_sh",
@@ -1120,6 +1130,7 @@ def collector_tools_present() -> dict[str, bool]:
     return {
         "cswap": which("cswap") is not None,
         "codexbar": which("codexbar") is not None,
+        "caam": which("caam") is not None,
         "caut": which("caut") is not None,
         "openusage_ai": openusage_app_cli_path() is not None,
         "openusage_sh": which("openusage-sh") is not None,

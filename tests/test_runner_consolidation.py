@@ -290,6 +290,7 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_codexbar", slow_codexbar)
     monkeypatch.setattr("aiuse.collectors.runner.collect_tokscale", slow_tokscale)
     monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_caam", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_zen", lambda **_k: [])
@@ -327,6 +328,7 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
         lambda **_kwargs: [_account("tokscale", "grok")],
     )
     monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_caam", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_zen", lambda **_k: [])
@@ -517,6 +519,7 @@ _ALL_COLLECTORS = (
     "codexbar",
     "grok_billing",
     "caut",
+    "caam",
     "openusage_ai",
     "openusage_sh",
     "opencode_go",

@@ -9,6 +9,7 @@
 # codexbar = 45
 # openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
 # openusage_sh = 90  # OpenUsage.sh export polls every provider; 45s often kills a live run
+# caam = 90          # caam limits --format json sweeps 4 providers under caam's own 60s deadline
 # opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
 # muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
 # qwencloud = 45  # qwencloud CLI (`qwencloud auth login` once; no API-key mode)
@@ -19,6 +20,12 @@
 [collectors.caut]
 # Set false when caut is not installed or its Keychain access is unwanted.
 # enabled = false
+
+[collectors.caam]
+# Coding Agent Account Manager vault-profile limits (claude/codex/grok/cursor).
+# Last-resort source behind the direct collectors; needs vault profiles — a
+# live login without a vault quota row emits nothing. See docs/caam.md.
+# enabled = true
 
 [collectors.codexbar]
 # "enabled" honors CodexBar's own provider list; use "all" or a CSV to override.

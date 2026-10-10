@@ -20,7 +20,7 @@ def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
     bin_dir.mkdir()
     (formula / "bin").mkdir(parents=True)
     _stub(formula / "bin" / "openusage")
-    for command in ("cswap", "codexbar", "caut", "openusage", "tokscale", "curl"):
+    for command in ("cswap", "codexbar", "caut", "caam", "openusage", "tokscale", "curl"):
         _stub(bin_dir / command)
     _stub(bin_dir / "brew", 'if [ "$1" = "--prefix" ]; then printf "%s\\n" "$FAKE_FORMULA"; fi')
 
@@ -48,7 +48,7 @@ def test_install_deps_check_recognizes_openusage_sh_wrapper(tmp_path):
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for command in ("cswap", "codexbar", "caut", "openusage", "openusage-sh", "tokscale", "curl"):
+    for command in ("cswap", "codexbar", "caut", "caam", "openusage", "openusage-sh", "tokscale", "curl"):
         _stub(bin_dir / command)
 
     env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin"}

@@ -38,7 +38,7 @@ for the actual agent CLI whose quota it tracks:
 `aiuse --json` exposes this same mapping per account row as `cli_binary`
 (`null` when there is no local CLI) — see
 [`docs/json-contract.md`](docs/json-contract.md). Note the trap this table
-exists for: the _quota_ CLIs (`qwencloud`, `bl`, `caut`, `tokscale`,
+exists for: the _quota_ CLIs (`qwencloud`, `bl`, `caut`, `caam`, `tokscale`,
 `openusage`, `cswap`, `codexbar`) measure usage; they are not how you burn it.
 
 ## See it in action
@@ -106,14 +106,15 @@ of the optional data-source tools ([below](#data-sources)) it found, and
 
 ## Data sources
 
-| Tool                                                                                            | Purpose                                                   | Authority                                                                                                          |
-| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                        | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source                                                                              |
-| [**CodexBar**](https://github.com/) `codexbar usage --format json`                              | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; keep its Claude source disabled on macOS until its Keychain prompting is fixed |
-| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json` | Independent multi-provider usage (CodexBar-class probes)  | Cross-check peer, but leave disabled on macOS until its repeated Keychain prompting is fixed                       |
-| [**OpenUsage.ai**](https://www.openusage.ai/) `openusage` / `127.0.0.1:6736/v1/limits`          | Quiet macOS menu-bar companion + live limits API          | Cross-check peer; distinct collector key: `openusage_ai`                                                           |
-| [**OpenUsage.sh**](https://openusage.sh/) `openusage-sh export --output - --format json`        | Terminal dashboard, local telemetry, and quota export     | Lowest-priority backup; distinct collector key: `openusage_sh`; only explicit quota metrics affect ranking         |
-| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                  | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                            |
+| Tool                                                                                                      | Purpose                                                   | Authority                                                                                                          |
+| --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                                  | Live Claude Code quota for every configured email/account | Canonical multi-account Claude source                                                                              |
+| [**CodexBar**](https://github.com/) `codexbar usage --format json`                                        | Live quotas and balances for enabled providers            | Preferred for non-Claude providers; keep its Claude source disabled on macOS until its Keychain prompting is fixed |
+| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json`           | Independent multi-provider usage (CodexBar-class probes)  | Cross-check peer, but leave disabled on macOS until its repeated Keychain prompting is fixed                       |
+| [**caam**](https://github.com/Dicklesworthstone/coding_agent_account_manager) `caam limits --format json` | Vault-profile limits for claude / codex / grok / cursor   | Last-resort cross-check peer behind every direct source; needs vault profiles (see [`docs/caam.md`](docs/caam.md)) |
+| [**OpenUsage.ai**](https://www.openusage.ai/) `openusage` / `127.0.0.1:6736/v1/limits`                    | Quiet macOS menu-bar companion + live limits API          | Cross-check peer; distinct collector key: `openusage_ai`                                                           |
+| [**OpenUsage.sh**](https://openusage.sh/) `openusage-sh export --output - --format json`                  | Terminal dashboard, local telemetry, and quota export     | Lowest-priority backup; distinct collector key: `openusage_sh`; only explicit quota metrics affect ranking         |
+| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                            | Independent live subscription quota measurement           | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                            |
 
 This project shells out to tools already on your `PATH` (and optionally hits
 OpenUsage’s loopback API); it does not scrape billing dashboards itself. For
@@ -391,9 +392,9 @@ not require importing its Python package.
 | **3** | `--available` only: the run succeeded but zero pools are usable right now (everything measured is exhausted or unknown). The data is fine; the quota is not.                                                                       |
 
 `aiuse doctor` checks config file presence, **config validation** (unknown keys, bad
-timeouts, dead plan aliases), all six data-source tools on `PATH` (and OpenUsage.ai
+timeouts, dead plan aliases), all seven data-source tools on `PATH` (and OpenUsage.ai
 loopback HTTP when the CLI is missing), and a light **version probe**
-(`cswap --version`, `codexbar -V`, `caut --version`, `tokscale --version`). It does
+(`cswap --version`, `codexbar -V`, `caut --version`, `caam --version`, `tokscale --version`). It does
 **not** call usage APIs or verify login sessions.
 
 ## What “use it or lose it” means
@@ -402,7 +403,7 @@ Most **subscription** coding plans (Claude Pro/Max, ChatGPT Plus/Codex, Cursor, 
 
 This tool:
 
-1. Pulls **remaining %** and **reset times** from **cswap** (Claude multi-account), **CodexBar** (broad live quotas), **caut**, **OpenUsage.ai**, **OpenUsage.sh** (cross-check peers / fill-in), and **tokscale** (independent measurement; preferred for Copilot).
+1. Pulls **remaining %** and **reset times** from **cswap** (Claude multi-account), **CodexBar** (broad live quotas), **caut**, **caam**, **OpenUsage.ai**, **OpenUsage.sh** (cross-check peers / fill-in), and **tokscale** (independent measurement; preferred for Copilot).
 2. Scores windows with **pace-based** logic (default): compare how far through the cycle you are vs how much you've used, then project waste or early lockout.
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from — but genuinely **independent pools are never merged into that governing window**: Cursor's Included+Auto pool and its separate Other Models pool are scored on their own, so an exhausted Other Models pool raises its own alert instead of being masked by a healthy Included. Claude's **Fable cap is within the shared weekly pool** (up to 50%, not additional quota): the main row shows overall usage, with an indented cap underneath. Fable at 100% does not exhaust other Claude models; shared exhaustion blocks Fable too.
@@ -455,7 +456,7 @@ Codex · account=you@example.com · plan=plus · selected live source: CodexBar
 ```
 src/aiuse/
   cli.py                 # entrypoint
-  collectors/            # cswap, codexbar, caut, openusage, tokscale
+  collectors/            # cswap, codexbar, caut, caam, openusage, tokscale
   analysis/use_or_lose.py
   report.py
 config/config.example.toml
@@ -496,7 +497,7 @@ Disabled services: top-level `[disabled_services]` maps `"provider"` to a reason
 ## Notes / limitations
 
 - Live quota accuracy depends on each tool's auth (browser cookies, OAuth, keychain). Errors are reported per account rather than aborting the whole run.
-- All enabled collectors (cswap, CodexBar, caut, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud, bailian) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s**; `cswap` and `openusage_sh` are **90s** (`-t` / `config.toml [timeouts]`).
+- All enabled collectors (cswap, CodexBar, caut, caam, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud, bailian) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s**; `cswap`, `caam`, and `openusage_sh` are **90s** (`-t` / `config.toml [timeouts]`).
 - Per-window detail still shows $ value, flexibility class, and a **pace** ratio when computable.
 - Duplicate live measurements are retained for cross-checking but only one copy drives recommendations.
 - Dollar values use plan `monthly_price` with waking-hours correction (default 16h/day).

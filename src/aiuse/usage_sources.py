@@ -1,7 +1,7 @@
 """Which usage sources can speak for each vendor, and which one is pinned.
 
-Quota sources (cswap, CodexBar, caut, OpenUsage, tokscale, and the native
-collectors) report plan windows and balances. They do not need the vendor
+Quota sources (cswap, CodexBar, caut, caam, OpenUsage, tokscale, and the
+native collectors) report plan windows and balances. They do not need the vendor
 TUI. The ACP log source reports context-window fill and per-turn tokens
 from ``~/.local/state/acp-run`` and is never blended into those percents.
 
@@ -29,11 +29,11 @@ ACP_SOURCE = "acp"
 # Collectors that can report plan or balance data for a provider. Multi-provider
 # tools are listed only where that tool is known to track the service.
 QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
-    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
-    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
+    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam"),
+    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam"),
     "copilot": ("tokscale", "codexbar", "openusage_ai", "openusage_sh"),
-    "cursor": ("codexbar", "openusage_ai", "openusage_sh", "tokscale"),
-    "grok": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "grok_billing", "hermes"),
+    "cursor": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "caam"),
+    "grok": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "grok_billing", "hermes", "caam"),
     "antigravity": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
     "opencode-go": ("opencode_go", "codexbar", "openusage_ai", "openusage_sh", "tokscale"),
     "opencode-zen": ("opencode_zen",),
@@ -47,12 +47,13 @@ QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
     "devin": ("codexbar", "openusage_ai", "tokscale"),
 }
 
-_MULTI_PROVIDER = frozenset({"codexbar", "openusage_ai", "openusage_sh", "tokscale", "caut", "hermes"})
+_MULTI_PROVIDER = frozenset({"codexbar", "openusage_ai", "openusage_sh", "tokscale", "caut", "caam", "hermes"})
 
 _TOOL: dict[str, str] = {
     "cswap": "cswap",
     "codexbar": "codexbar",
     "caut": "caut",
+    "caam": "caam",
     "openusage_sh": "openusage-sh",
     "tokscale": "tokscale",
     "clinepass": "cline",
