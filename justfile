@@ -1,6 +1,8 @@
 # aiuse — local test, lint, format, and security checks.
 
 set shell := ["bash", "-uc"]
+# Recipes that forward extra arguments use "$@", so a quoted value keeps its spaces.
+set positional-arguments
 
 # Install external data-source tools (cswap, codexbar, caut, OpenUsage, tokscale).
 install-deps:
@@ -97,9 +99,10 @@ format:
 
 # Full release (PyPI via OIDC + Homebrew). Example: `just release 2.1.16`
 # Extra flags pass through: `just release 2.1.16 --dry-run`
+# Quote values with spaces: `just release 2.1.16 --notes 'Fable cap (pace) fix'`
 release version *args:
-    uv run python packaging/release.py {{ version }} {{ args }}
+    uv run python packaging/release.py "$@"
 
 # Preview release actions without mutating git / remotes.
 release-dry version *args:
-    uv run python packaging/release.py {{ version }} --dry-run {{ args }}
+    uv run python packaging/release.py "$1" --dry-run "${@:2}"
