@@ -638,6 +638,21 @@ def test_collect_watch_frame_persist_false_is_screen_only(monkeypatch):
     assert snapshot.accounts and alerts == []
 
 
+def test_screen_only_sweep_collects_through_the_shared_pipeline(monkeypatch):
+    """The docs promise the sweep's queries still pass the cross-process
+    QueryGate. That holds only while collect_watch_frame(persist=False)
+    collects through run_collectors — pin it so a future side path cannot
+    silently bypass the vendors' rate-limit protection."""
+    seen: list[dict] = []
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda cfg: seen.append(cfg) or _snap())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    sweep_config = all_providers_config({"disabled_services": {"grok": "off"}})
+    snapshot, _alerts = collect_watch_frame(sweep_config, max_age=600, persist=False)
+    assert snapshot.accounts
+    assert seen == [sweep_config], "the sweep must collect through run_collectors (QueryGate applies)"
+
+
 def test_render_watch_board_marks_the_all_providers_view():
     text = render_watch_board(_snap(), [], color=False, quiet=True, all_providers=True)
     assert "ALL PROVIDERS · screen only" in text
