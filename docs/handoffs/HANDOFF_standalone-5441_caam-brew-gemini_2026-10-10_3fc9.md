@@ -14,6 +14,11 @@ writer: grok
 
 # Handoff — caam collector, brew formula, pipx selector
 
+Update after this file was written: PATH no longer points at
+`packaging/aiuse-path-select.sh`. The same choice lives in
+`aiuse.homebrew_formula`, and `~/.local/bin/aiuse` is the editable pipx
+entrypoint. The rest of this file describes the state at `cf73baa`.
+
 ## The Goal
 
 Get caam (coding_agent_account_manager 0.1.23) installed and vaulted for the

@@ -419,6 +419,12 @@ def _normalize_argv(argv: list[str] | None) -> list[str] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Real console-script entry. Tests pass argv and must not be replaced by
+    # the Homebrew formula. Delegation no-ops while that install lacks caam.
+    if argv is None:
+        from aiuse.homebrew_formula import prefer_homebrew_formula
+
+        prefer_homebrew_formula()
     # Collectors may leave stdin without echo if a child TTY-mutates and dies;
     # always restore attrs we observed at entry (see aiuse.tty / run_json).
     saved_tty = save_stdin_tty()
@@ -870,7 +876,9 @@ def diagnose(
     Does not collect usage. Version probe is optional and non-auth.
     """
     lookup = which_fn if which_fn is not None else which
-    lines: list[str] = [f"aiuse doctor  (v{__version__})", ""]
+    from aiuse.homebrew_formula import formula_status_line
+
+    lines: list[str] = [f"aiuse doctor  (v{__version__})", formula_status_line(), ""]
     problems = 0
 
     config_path = default_config_path()

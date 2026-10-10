@@ -15,10 +15,9 @@ just site-agents-apply
 just site-agents-status
 ```
 
-Requires `~/.local/bin/aiuse`. On this machine that path is
-[`packaging/aiuse-path-select.sh`](../packaging/aiuse-path-select.sh): Homebrew
-when the formula contains `aiuse/collectors/caam.py`, otherwise the editable
-pipx install (`aiuse-src`; see [`packaging.md`](packaging.md)). A plain
+Requires `~/.local/bin/aiuse`. On this machine that path is the editable pipx
+install (`aiuse-src`; see [`packaging.md`](packaging.md)). The module delegates
+to Homebrew when the formula contains `aiuse/collectors/caam.py`. A plain
 `pipx install aiuse` of published 3.3.7 does not include the caam collector.
 The role enables
 `persist_snapshots` in `~/.config/aiuse/config.toml` and sets LaunchAgent

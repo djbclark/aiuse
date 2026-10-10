@@ -54,20 +54,20 @@ Upgrade: `pipx upgrade aiuse` or `brew upgrade aiuse`.
 
 The caam collector (`aiuse.collectors.caam`) is part of the package, not a
 separate extra. Published **3.3.7** (PyPI and the Homebrew formula) does not
-contain it. A pipx install can use that Homebrew binary only once the
-formula's site-packages include `collectors/caam.py`. Until then, install the
-checkout so pipx has the collector:
+contain it. The running module delegates to the Homebrew formula only when
+that install's site-packages include `collectors/caam.py`
+(`aiuse.homebrew_formula`). Until then, install the checkout so pipx has the
+collector:
 
 ```bash
 pipx install --editable --suffix=-src --python python3.14 .
 pipx inject aiuse-src 'browser-cookie3>=0.19'   # chrome-refresh extra
 ```
 
-`packaging/aiuse-path-select.sh` is what `~/.local/bin/aiuse` and `ai` point at
-on this machine. It execs Homebrew when `collectors/caam.py` is in that
-install, and the pipx `-src` commands otherwise. It does not call `brew`.
-`pipx upgrade` would replace the editable checkout install with PyPI and drop
-the collector again; do not run it until the published package has the module.
+On this machine `~/.local/bin/aiuse` and `ai` are the pipx entrypoints for
+that editable install. `pipx upgrade` would replace it with PyPI 3.3.7 and
+drop the collector; do not run it until the published package has the module.
+The delegation does not call `brew`.
 
 ## PyPI Trusted Publishing (OIDC) — how releases publish
 
@@ -120,10 +120,10 @@ just release-dry 2.1.16
 10. Confirm both `aiuse --version` and `ai --version` on PATH report the
     released version. The script does not run `pipx upgrade`, because a pipx
     copy in `~/.local/bin` would shadow the Homebrew formula. On this machine
-    those PATH names are `packaging/aiuse-path-select.sh`. Until the formula
-    contains `collectors/caam.py`, the selector runs the editable pipx install,
-    whose version follows this checkout. The Homebrew check above uses the
-    formula prefix directly.
+    those PATH names are the editable pipx install. Until the formula contains
+    `collectors/caam.py`, `aiuse.homebrew_formula` stays in that install, whose
+    version follows this checkout. The Homebrew check above uses the formula
+    prefix directly.
 
 **Try the unreleased code first:** `./aiuse-test.sh [aiuse args]` runs `aiuse`
 from this source tree (not the installed pipx/Homebrew copy), from any directory.
