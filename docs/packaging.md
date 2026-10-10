@@ -53,21 +53,14 @@ brew install aiuse
 Upgrade: `pipx upgrade aiuse` or `brew upgrade aiuse`.
 
 The caam collector (`aiuse.collectors.caam`) is part of the package, not a
-separate extra. Published **3.3.7** (PyPI and the Homebrew formula) does not
-contain it. The running module delegates to the Homebrew formula only when
-that install's site-packages include `collectors/caam.py`
-(`aiuse.homebrew_formula`). Until then, install the checkout so pipx has the
-collector:
+separate extra. It shipped in **3.3.8** (PyPI and the Homebrew formula).
+`aiuse.homebrew_formula` delegates to the Homebrew install when that install
+contains `collectors/caam.py`. It does not call `brew`.
 
-```bash
-pipx install --editable --suffix=-src --python python3.14 .
-pipx inject aiuse-src 'browser-cookie3>=0.19'   # chrome-refresh extra
-```
-
-On this machine `~/.local/bin/aiuse` and `ai` are the pipx entrypoints for
-that editable install. `pipx upgrade` would replace it with PyPI 3.3.7 and
-drop the collector; do not run it until the published package has the module.
-The delegation does not call `brew`.
+On this machine `~/.local/bin/aiuse` and `ai` are symlinks to the Homebrew
+formula (`/opt/homebrew/bin/aiuse` and `ai`). The LaunchAgent uses the
+`~/.local/bin` path. An older pipx copy must not own those names: it would
+shadow the formula this machine uses to test a release.
 
 ## PyPI Trusted Publishing (OIDC) — how releases publish
 
@@ -120,10 +113,8 @@ just release-dry 2.1.16
 10. Confirm both `aiuse --version` and `ai --version` on PATH report the
     released version. The script does not run `pipx upgrade`, because a pipx
     copy in `~/.local/bin` would shadow the Homebrew formula. On this machine
-    those PATH names are the editable pipx install. Until the formula contains
-    `collectors/caam.py`, `aiuse.homebrew_formula` stays in that install, whose
-    version follows this checkout. The Homebrew check above uses the formula
-    prefix directly.
+    those names are symlinks to the Homebrew binaries. The Homebrew check above
+    uses the formula prefix directly.
 
 **Try the unreleased code first:** `./aiuse-test.sh [aiuse args]` runs `aiuse`
 from this source tree (not the installed pipx/Homebrew copy), from any directory.
