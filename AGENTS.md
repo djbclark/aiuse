@@ -133,6 +133,9 @@ Full path-by-path map with "read when" hints:
 - **`CLAUDE.md` is a symlink to this file** — edit `AGENTS.md` only. Never
   recreate `CLAUDE.md` as a regular file (tools that "initialise" one, e.g.
   `bd setup claude`, `/init`, must be re-pointed at `AGENTS.md`).
+- Run `uv run --extra dev ruff format` on changed Python files before
+  committing: the pre-commit ruff-format hook otherwise rewrites them and aborts
+  the first commit (re-stage and commit again).
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
 - Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
   (the same all-files quality gate as GitHub Actions). `pre-commit install --install-hooks`
