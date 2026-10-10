@@ -183,7 +183,7 @@ def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release, 
     ]
 
 
-def test_upgrade_and_verify_default_path_uses_pipx(monkeypatch, release):
+def test_verify_default_path_does_not_upgrade_pipx(monkeypatch, release):
     calls: list[tuple[list[str], dict]] = []
 
     def fake_run(argv, **kwargs):
@@ -195,10 +195,9 @@ def test_upgrade_and_verify_default_path_uses_pipx(monkeypatch, release):
 
     monkeypatch.setattr(release, "_run", fake_run)
 
-    release._upgrade_and_verify_default_path("2.1.21", dry_run=False)
+    release._verify_default_path("2.1.21", dry_run=False)
 
     assert [argv for argv, _kwargs in calls] == [
-        ["pipx", "upgrade", "aiuse"],
         ["aiuse", "--version"],
         ["ai", "--version"],
     ]
@@ -228,7 +227,7 @@ def test_main_resume_pushes_main_before_tag(monkeypatch, release):
     monkeypatch.setattr(release, "_create_tag", lambda *args, **kwargs: calls.append("create-tag") or "v3.0.4")
     monkeypatch.setattr(release, "_default_notes", lambda version: "notes")
     monkeypatch.setattr(release, "_build_and_release", lambda *args, **kwargs: calls.append("release"))
-    monkeypatch.setattr(release, "_upgrade_and_verify_default_path", lambda *args, **kwargs: calls.append("verify"))
+    monkeypatch.setattr(release, "_verify_default_path", lambda *args, **kwargs: calls.append("verify"))
 
     assert release.main([]) == 0
     assert calls.index("push-main") < calls.index("create-tag")

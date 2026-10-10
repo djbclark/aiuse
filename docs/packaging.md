@@ -100,8 +100,9 @@ just release-dry 2.1.16
 9. Force-refresh Homebrew and its just-pushed tap, verify the tap formula is
    the requested version, upgrade this Mac, confirm its version, and run
    `brew test djbclark/aiuse/aiuse`
-10. Upgrade the pipx install that leads the default PATH, then confirm both
-    `aiuse --version` and `ai --version` report the released version
+10. Confirm both `aiuse --version` and `ai --version` on PATH report the
+    released version. The script does not run `pipx upgrade`, because a pipx
+    copy in `~/.local/bin` would shadow the Homebrew formula.
 
 **Try the unreleased code first:** `./aiuse-test.sh [aiuse args]` runs `aiuse`
 from this source tree (not the installed pipx/Homebrew copy), from any directory.
