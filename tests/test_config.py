@@ -300,6 +300,40 @@ def test_validate_config_flags_disabled_service_collector_drift():
     assert "collectors.grok_billing enabled override has no effect" in issues
 
 
+def test_collection_policy_fingerprint_changes_when_collection_policy_changes():
+    """The id covers disables, collector switches, and source pins, not secrets."""
+    from aiuse.config import collection_policy_fingerprint
+
+    base = collection_policy_fingerprint({})
+    assert base == collection_policy_fingerprint({})
+    assert base != collection_policy_fingerprint({"disabled_services": {"antigravity": "off"}})
+    assert base != collection_policy_fingerprint({"collectors": {"hermes": {"enabled": False}}})
+    assert base != collection_policy_fingerprint({"usage_sources": {"claude": "cswap"}})
+    secret_a = collection_policy_fingerprint({"attribution": {"litellm": {"database_url": "postgresql://a"}}})
+    secret_b = collection_policy_fingerprint({"attribution": {"litellm": {"database_url": "postgresql://b"}}})
+    assert secret_a == secret_b == base
+
+
+def test_snapshot_without_fingerprint_matches_only_the_same_disable_list():
+    from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
+
+    stale = {"disabled_services": {"antigravity": "operator 2026-10-08: purposefully disabled"}}
+    assert snapshot_matches_policy(stale, {}) is False
+    assert (
+        snapshot_matches_policy(
+            stale,
+            {"disabled_services": {"antigravity": "operator 2026-10-08: purposefully disabled"}},
+        )
+        is True
+    )
+    assert snapshot_matches_policy({"disabled_services": {}}, {}) is True
+    assert snapshot_matches_policy({}, {}) is True
+    assert snapshot_matches_policy(None, {}) is False
+    current = collection_policy_fingerprint({})
+    assert snapshot_matches_policy({"config_fingerprint": current, "disabled_services": {}}, {}) is True
+    assert snapshot_matches_policy({"config_fingerprint": "deadbeefdeadbeef"}, {}) is False
+
+
 def test_disabled_services_may_still_name_the_removed_hyper_provider():
     """Charm Hyper support was removed (crush uninstalled 2026-10-08); an
     operator config that still hides it under [disabled_services] stays valid."""

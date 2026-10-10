@@ -76,7 +76,8 @@ def test_serve_state_live_collect(monkeypatch):
             kind="burn",
         )
     ]
-    monkeypatch.setattr("aiuse.serve.run_collectors", lambda _c: snap)
+    calls: list[int] = []
+    monkeypatch.setattr("aiuse.serve.run_collectors", lambda _c: calls.append(1) or snap)
     monkeypatch.setattr("aiuse.serve.analyze_use_or_lose", lambda _s, _c: list(alerts))
     monkeypatch.setattr("aiuse.serve.maybe_local_runtime_alerts", lambda *_a, **_k: [])
     monkeypatch.setattr("aiuse.serve.should_persist_snapshots", lambda _c: False)
@@ -91,6 +92,55 @@ def test_serve_state_live_collect(monkeypatch):
     payload2 = state.get_payload(refresh=False)
     assert payload2["source"] == "live"
     assert payload2["suggestion"]["score"] == 70
+    assert calls == [1]
+
+
+def test_serve_skips_a_fresh_snapshot_from_a_different_disable_list(monkeypatch):
+    snap = Snapshot(collected_at=utcnow(), accounts=[])
+    calls: list[int] = []
+    monkeypatch.setattr("aiuse.serve.run_collectors", lambda _c: calls.append(1) or snap)
+    monkeypatch.setattr("aiuse.serve.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.serve.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.serve.should_persist_snapshots", lambda _c: False)
+    monkeypatch.setattr(
+        "aiuse.serve.load_recent_snapshots",
+        lambda **_k: [
+            {
+                "collected_at": utcnow().isoformat(),
+                "accounts": [],
+                "alerts": [],
+                "disabled_services": {"antigravity": "operator 2026-10-08: purposefully disabled"},
+            }
+        ],
+    )
+    state = _ServeState(config={}, max_age_seconds=3600)
+    payload = state.get_payload(refresh=False)
+    assert payload["source"] == "live"
+    assert calls == [1]
+
+
+def test_serve_reloads_config_and_keeps_it_when_the_file_breaks(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "config.toml"
+    path.write_text('disabled_services = { hermes = "off" }\n')
+    seen: list[dict] = []
+    snap = Snapshot(collected_at=utcnow(), accounts=[])
+    monkeypatch.setattr("aiuse.serve.run_collectors", lambda config: seen.append(config) or snap)
+    monkeypatch.setattr("aiuse.serve.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.serve.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.serve.should_persist_snapshots", lambda _c: False)
+    monkeypatch.setattr("aiuse.serve.load_recent_snapshots", lambda **_k: [])
+    state = _ServeState(
+        config={"disabled_services": {"antigravity": "old"}},
+        max_age_seconds=3600,
+        config_path=str(path),
+    )
+    state.get_payload(refresh=True)
+    assert seen[-1]["disabled_services"] == {"hermes": "off"}
+    path.write_text("this is not = toml [\n")
+    state.get_payload(refresh=True)
+    state.get_payload(refresh=True)
+    assert seen[-1]["disabled_services"] == {"hermes": "off"}
+    assert capsys.readouterr().err.count("config reload failed") == 1
 
 
 def test_http_handler_health(monkeypatch):

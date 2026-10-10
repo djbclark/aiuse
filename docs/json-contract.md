@@ -84,6 +84,10 @@ say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
 - On-disk snapshots additionally mirror the live envelope under a top-level
   `snapshot` key (see below), so `.snapshot.accounts[]` works on both the
   cache file and `aiuse --json`.
+- `config_fingerprint` (string, omitted when absent) identifies the disable
+  list, collector switches, and `[usage_sources]` pins that produced the
+  snapshot. Schema stays 1.1. `aiuse watch` and `aiuse serve` will not reuse
+  a snapshot whose fingerprint differs.
 - New commands: `aiuse --available [--json] [--live]` and
   `aiuse note-exhausted <provider> [--family F] --resets-in 4h53m|--resets-at
 ISO [--reason TEXT]`.
@@ -363,13 +367,14 @@ into the other.
 
 ## `snapshot` object
 
-| Field               | Type              | Notes                                                                                                                                                                                      |
-| ------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `collected_at`      | string (ISO-8601) | UTC collection time                                                                                                                                                                        |
-| `accounts`          | array             | Selected live rows (see below)                                                                                                                                                             |
-| `cross_checks`      | array             | Informational tool comparisons                                                                                                                                                             |
-| `collector_errors`  | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
-| `disabled_services` | object            | provider → reason from top-level `[disabled_services]` (1.1; `{}` = none). Rows for these providers are not collected — do not route to or spend them until the operator removes the entry |
+| Field                | Type              | Notes                                                                                                                                                                                      |
+| -------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `collected_at`       | string (ISO-8601) | UTC collection time                                                                                                                                                                        |
+| `accounts`           | array             | Selected live rows (see below)                                                                                                                                                             |
+| `cross_checks`       | array             | Informational tool comparisons                                                                                                                                                             |
+| `collector_errors`   | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
+| `disabled_services`  | object            | provider → reason from top-level `[disabled_services]` (1.1; `{}` = none). Rows for these providers are not collected — do not route to or spend them until the operator removes the entry |
+| `config_fingerprint` | string \| omitted | short id of the disable list, collector switches, and `[usage_sources]` pins this snapshot was collected under. Omitted on older snapshots. Additive; schema stays 1.1                     |
 
 ### `accounts[]` (`AccountUsage`)
 

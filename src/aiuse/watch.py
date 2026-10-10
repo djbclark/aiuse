@@ -19,12 +19,14 @@ from aiuse.analysis.history import save_snapshot, should_persist_snapshots
 from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
+from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
 from aiuse.models import Snapshot, UseOrLoseAlert, utcnow
 from aiuse.report import _strip_ansi, format_clock, render_clock_matrix, render_stderr_meta
 
 DEFAULT_INTERVAL_S = 600.0
 MIN_INTERVAL_S = 5.0
 WARN_INTERVAL_S = 30.0
+_CONFIG_RELOAD_SECONDS = 2.0
 _INTERVAL_SUFFIX = {"s": 1.0, "m": 60.0, "h": 3600.0}
 _INTERVAL_RE = re.compile(r"^(\d+(?:\.\d+)?)([smh])?$", re.I)
 
@@ -95,6 +97,11 @@ def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, 
 
     rows = load_recent_snapshots(max_count=1)
     if not rows or not _disk_row_age_ok(rows[0], max_age):
+        return None
+    # A snapshot collected under an older disable list or collector switch is
+    # not reusable, however young it is. That is how a long-lived watch kept
+    # writing agy out of latest.json after config.toml had enabled it.
+    if not snapshot_matches_policy(rows[0], config):
         return None
     snapshot = _snapshot_from_accounts_dict(rows[0])
     if _overlay_burst_samples(snapshot):
@@ -356,15 +363,17 @@ def _collect_process_entry(config: dict[str, Any], send: Any, max_age: float | N
 class _WatchCollectionProcess:
     """One cancellable live-collection process for interactive watch mode."""
 
-    def __init__(self, config: dict[str, Any], max_age: float | None = None) -> None:
-        self.config = config
+    def __init__(self, config: dict[str, Any] | None = None, max_age: float | None = None) -> None:
+        self.config = config or {}
         self.max_age = max_age
         methods = multiprocessing.get_all_start_methods()
         self.context: Any = multiprocessing.get_context("fork" if "fork" in methods else "spawn")
         self.process: multiprocessing.Process | None = None
         self.recv: Any | None = None
 
-    def start(self) -> None:
+    def start(self, config: dict[str, Any] | None = None) -> None:
+        if config is not None:
+            self.config = config
         recv, send = self.context.Pipe(duplex=False)
         process = self.context.Process(
             target=_collect_process_entry,
@@ -444,21 +453,54 @@ def run_watch(
     now: NowFn | None = None,
     sleep: Callable[[float], None] = time.sleep,
     require_tty: bool | None = None,
+    config_loader: Callable[[], dict[str, Any]] | None = None,
 ) -> int:
-    """Run ``aiuse watch``. Always exit 0 on a clean quit."""
+    """Run ``aiuse watch``. Always exit 0 on a clean quit.
+
+    ``config_loader`` re-reads config.toml (and reapplies CLI overrides) so a
+    long-lived board does not keep the disable list from the moment it started.
+    """
     out = stdout if stdout is not None else sys.stdout
     err = stderr if stderr is not None else sys.stderr
     color = False if no_color else None
-    collect_fn = collect or (lambda: collect_watch_frame(config, max_age=interval))
+    loaded: dict[str, Any] = {"at": None, "config": config, "error": None}
+    collected_policy: dict[str, str | None] = {"fingerprint": None}
+
+    def live_config() -> dict[str, Any]:
+        if config_loader is None:
+            return config
+        now_m = time.monotonic()
+        loaded_at = loaded["at"]
+        if loaded_at is not None and now_m - float(loaded_at) < _CONFIG_RELOAD_SECONDS:
+            return loaded["config"]
+        try:
+            fresh = config_loader()
+        except (Exception, SystemExit) as exc:
+            loaded["at"] = now_m
+            message = str(exc)
+            if loaded["error"] != message:
+                print(
+                    f"warning: config reload failed ({message}); keeping the previous config",
+                    file=err,
+                )
+                loaded["error"] = message
+            return loaded["config"]
+        loaded["at"] = now_m
+        loaded["config"] = fresh
+        loaded["error"] = None
+        return fresh
+
+    collect_fn = collect or (lambda: collect_watch_frame(live_config(), max_age=interval))
     runtime = WatchRuntime(interval=interval, collect=collect_fn, now=now or time.monotonic)
 
     if once:
         runtime._run_collect()
+        current = live_config()
         print(
             render_watch_board(
                 runtime.snapshot,
                 runtime.alerts,
-                config=config,
+                config=current,
                 color=color,
                 quiet=quiet,
                 last_at=runtime.last_wall,
@@ -466,7 +508,7 @@ def run_watch(
                 collecting_for=None,
                 error=runtime.error,
                 now=utcnow(),
-                sample_schedule=_sample_schedule(config),
+                sample_schedule=_sample_schedule(current),
             ),
             file=out,
         )
@@ -501,8 +543,10 @@ def run_watch(
     process_worker = _WatchCollectionProcess(config, max_age=interval) if collect is None else None
 
     def start_worker(fn: Callable[[], None]) -> None:
+        fresh = live_config()
+        collected_policy["fingerprint"] = collection_policy_fingerprint(fresh)
         if process_worker is not None:
-            process_worker.start()
+            process_worker.start(fresh)
         else:
             threading.Thread(target=fn, name="aiuse-watch-collect", daemon=True).start()
 
@@ -526,11 +570,12 @@ def run_watch(
         from rich.text import Text
 
         def _render() -> Text:
+            current = live_config()
             return Text.from_ansi(
                 render_watch_board(
                     runtime.snapshot,
                     runtime.alerts,
-                    config=config,
+                    config=current,
                     color=color_enabled,
                     quiet=quiet,
                     last_at=runtime.last_wall,
@@ -538,7 +583,7 @@ def run_watch(
                     collecting_for=runtime.collecting_for(),
                     error=runtime.error,
                     now=utcnow(),
-                    sample_schedule=_sample_schedule(config),
+                    sample_schedule=_sample_schedule(current),
                 )
             )
 
@@ -553,6 +598,13 @@ def run_watch(
                     if process_worker is not None:
                         process_worker.stop()
                     break
+                # A config.toml edit has to take effect before the interval
+                # elapses. Otherwise the board keeps the old disable list and
+                # the next refresh can overwrite a newer snapshot with it.
+                if config_loader is not None and not runtime.collecting:
+                    fresh_fp = collection_policy_fingerprint(live_config())
+                    if collected_policy["fingerprint"] is not None and fresh_fp != collected_policy["fingerprint"]:
+                        runtime.next_due = runtime.now()
                 runtime.maybe_start(start_worker)
                 live.update(_render(), refresh=True)
                 sleep(0.25)

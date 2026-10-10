@@ -211,7 +211,9 @@ def test_run_watch_stops_default_collection_process_on_quit(monkeypatch):
             self.stop_calls = 0
             instances.append(self)
 
-        def start(self):
+        def start(self, config=None):
+            if config is not None:
+                self.config = config
             self.started = True
 
         def poll(self):
@@ -253,7 +255,143 @@ def test_run_watch_stops_default_collection_process_on_quit(monkeypatch):
     assert code == 0
     assert len(instances) == 1
     assert instances[0].started
+    assert instances[0].config == {"collectors": {}}
     assert instances[0].stop_calls >= 1
+
+
+def test_run_watch_starts_collection_with_reloaded_config(monkeypatch):
+    instances = []
+
+    class FakeProcessWorker:
+        def __init__(self, config, max_age=None):
+            self.config = config
+            self.starts = []
+            self.pending = False
+            self.stop_calls = 0
+            instances.append(self)
+
+        def start(self, config=None):
+            if config is not None:
+                self.config = config
+            self.starts.append(self.config)
+            self.pending = True
+
+        def poll(self):
+            if self.pending:
+                self.pending = False
+                return _snap(), [], None
+            return None
+
+        def stop(self):
+            self.stop_calls += 1
+
+    class Reader:
+        def __init__(self):
+            self.keys = iter([None, None, "q"])
+
+        def read(self):
+            return next(self.keys, "q")
+
+    class FakeLive:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def update(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr("aiuse.watch._CONFIG_RELOAD_SECONDS", 0)
+    monkeypatch.setattr("aiuse.watch._WatchCollectionProcess", FakeProcessWorker)
+    monkeypatch.setattr("rich.live.Live", FakeLive)
+    loaded = {"n": 0}
+
+    def loader():
+        loaded["n"] += 1
+        if loaded["n"] <= 2:
+            return {}
+        return {"disabled_services": {"hermes": "off"}}
+
+    code = run_watch(
+        {"collectors": {"hermes": {"enabled": True}}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=Reader(),
+        sleep=lambda _s: None,
+        require_tty=False,
+        config_loader=loader,
+    )
+
+    assert code == 0
+    assert [item.get("disabled_services") for item in instances[0].starts] == [
+        None,
+        {"hermes": "off"},
+    ]
+
+
+def test_run_watch_keeps_the_previous_config_when_reload_fails(monkeypatch):
+    instances = []
+
+    class FakeProcessWorker:
+        def __init__(self, config, max_age=None):
+            self.config = config
+            instances.append(self)
+
+        def start(self, config=None):
+            if config is not None:
+                self.config = config
+
+        def poll(self):
+            return None
+
+        def stop(self):
+            return None
+
+    class Reader:
+        def read(self):
+            return "q"
+
+    class FakeLive:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def update(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr("aiuse.watch._WatchCollectionProcess", FakeProcessWorker)
+    monkeypatch.setattr("rich.live.Live", FakeLive)
+    initial = {"disabled_services": {"antigravity": "keep"}}
+    err = StringIO()
+
+    def loader():
+        raise SystemExit("toml broken")
+
+    code = run_watch(
+        initial,
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        stderr=err,
+        key_reader=Reader(),
+        sleep=lambda _s: None,
+        require_tty=False,
+        config_loader=loader,
+    )
+
+    assert code == 0
+    assert instances[0].config is initial
+    assert err.getvalue().count("config reload failed") == 1
 
 
 def test_run_watch_rejects_dumb_terminal_instead_of_showing_blank_board(monkeypatch):
@@ -298,6 +436,19 @@ def test_cli_watch_once_uses_collectors(monkeypatch, capsys):
     assert "aiuse watch" in captured.out
 
 
+def test_cli_watch_once_reapplies_cli_overrides_when_it_reloads(monkeypatch, tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[collectors.cswap]\nenabled = true\n")
+    seen: list[dict] = []
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda config: seen.append(config) or _snap())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.should_persist_snapshots", lambda _c: False)
+    monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
+    assert cli.main(["watch", "--config", str(path), "--no-cswap", "--once", "-q", "--no-color"]) == 0
+    assert seen and seen[0]["collectors"]["cswap"]["enabled"] is False
+
+
 def test_collect_watch_frame_persists_when_enabled(monkeypatch):
     saved: list = []
     monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: _snap())
@@ -318,6 +469,38 @@ def test_watch_frame_reuses_a_fresh_snapshot_instead_of_collecting(monkeypatch):
     snapshot, alerts = collect_watch_frame({"analysis": {"persist_snapshots": True}}, max_age=600)
     assert [a.provider for a in snapshot.accounts] == [a.provider for a in _snap().accounts]
     assert alerts == []
+
+
+def test_watch_frame_does_not_reuse_a_snapshot_from_a_different_disable_list(monkeypatch):
+    """The failure that dropped agy: a young snapshot still listed it as disabled."""
+    from aiuse.analysis.history import save_snapshot
+
+    stale = _snap()
+    stale.disabled_services = {"antigravity": "operator 2026-10-08: purposefully disabled"}
+    save_snapshot(stale, [])
+    calls: list[int] = []
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: calls.append(1) or _snap())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    collect_watch_frame({"analysis": {"persist_snapshots": True}}, max_age=600)
+    assert calls == [1]
+
+
+def test_watch_frame_does_not_reuse_a_snapshot_with_a_different_policy_fingerprint(monkeypatch):
+    from aiuse.analysis.history import save_snapshot
+    from aiuse.config import collection_policy_fingerprint
+
+    stale = _snap()
+    stale.config_fingerprint = "deadbeefdeadbeef"
+    save_snapshot(stale, [])
+    config = {"analysis": {"persist_snapshots": True}}
+    assert collection_policy_fingerprint(config) != "deadbeefdeadbeef"
+    calls: list[int] = []
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: calls.append(1) or _snap())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    collect_watch_frame(config, max_age=600)
+    assert calls == [1]
 
 
 def test_watch_frame_collects_when_the_snapshot_is_stale_and_records_a_sample(monkeypatch):

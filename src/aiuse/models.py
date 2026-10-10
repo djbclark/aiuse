@@ -725,12 +725,18 @@ class Snapshot:
     # provider id -> reason. Rows for these providers are filtered out at
     # collection, so the reason travels on the snapshot to explain the absence.
     disabled_services: dict[str, str] = field(default_factory=dict)
+    # Policy that produced this collect. Watch and serve refuse to reuse a
+    # snapshot whose fingerprint does not match the config they just loaded.
+    config_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "collected_at": self.collected_at.isoformat(),
             "accounts": [a.to_dict() for a in self.accounts],
             "cross_checks": [check.to_dict() for check in self.cross_checks],
             "collector_errors": self.collector_errors,
             "disabled_services": dict(self.disabled_services),
         }
+        if self.config_fingerprint:
+            body["config_fingerprint"] = self.config_fingerprint
+        return body

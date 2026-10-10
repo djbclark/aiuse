@@ -180,6 +180,13 @@ sample and skips its own. The board and the scheduler never poll the vendors
 side by side. This needs snapshot persistence (the default); with
 `learn_from_history = false` and no `persist_snapshots`, every refresh collects.
 
+A refresh re-reads `config.toml` (command-line flags still win) about every two
+seconds. It will not reuse a snapshot collected under a different disable list,
+collector switch, or `[usage_sources]` pin, and a changed policy starts a new
+refresh immediately instead of waiting out the interval. A snapshot written
+before that fingerprint is reused only when its `disabled_services` map still
+matches. `aiuse serve` does the same check on each request.
+
 The header shows the current time, `last:` (when the data on the board was
 collected, which can be earlier than the last redraw), and a `sampler:` line
 with the scheduled sampler's previous run, next due run and tier.

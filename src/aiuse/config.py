@@ -8,6 +8,7 @@ it is the sole default config file; having both is an explicit migration error.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -392,6 +393,80 @@ SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
     "openrouter": "openrouter",
     "deepseek": "deepseek",
 }
+
+# Collector entry keys that change which rows a collect emits. URLs and other
+# endpoint settings are left out; they are not the disable-list bug, and the
+# fingerprint is stored on the snapshot.
+_POLICY_COLLECTOR_KEYS = ("enabled", "providers", "force_refresh", "try_launch_app", "log_dir", "max_age_hours")
+
+
+def canonical_disabled_services(config: dict[str, Any] | None) -> dict[str, str]:
+    """Canonical provider -> reason from top-level ``[disabled_services]``."""
+    raw = (config or {}).get("disabled_services")
+    if not isinstance(raw, dict):
+        return {}
+    disabled: dict[str, str] = {}
+    for key, value in raw.items():
+        provider = canonical_provider(str(key).strip())
+        if not provider:
+            continue
+        reason = value.strip() if isinstance(value, str) and value.strip() else "disabled by operator"
+        disabled[provider] = reason
+    return disabled
+
+
+def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
+    """Stable id for the config knobs that decide which services a collect returns.
+
+    Long-running ``aiuse watch`` and ``aiuse serve`` compare this with the
+    snapshot they are about to reuse. A match means the on-disk rows were
+    collected under the same disables, collector switches, and source pins.
+    """
+    cfg = config or {}
+    collectors_raw = cfg.get("collectors")
+    collectors: dict[str, Any] = {}
+    if isinstance(collectors_raw, dict):
+        for name in sorted(collectors_raw):
+            entry = collectors_raw[name]
+            if isinstance(entry, dict):
+                item = {key: entry[key] for key in _POLICY_COLLECTOR_KEYS if key in entry}
+                item.setdefault("enabled", True)
+            else:
+                item = {"enabled": bool(entry)}
+            collectors[str(name)] = item
+    pins_raw = cfg.get("usage_sources")
+    pins = {str(key): str(value) for key, value in pins_raw.items()} if isinstance(pins_raw, dict) else {}
+    payload = {
+        "disabled_services": canonical_disabled_services(cfg),
+        "collectors": collectors,
+        "usage_sources": pins,
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def snapshot_matches_policy(row: dict[str, Any] | None, config: dict[str, Any] | None) -> bool:
+    """Whether a stored snapshot was collected under ``config``'s current policy.
+
+    Snapshots written before the fingerprint exist are reusable only when their
+    ``disabled_services`` map still matches. A different map is the stale-watch
+    failure: the process kept an old disable list and rewrote ``latest.json``.
+    """
+    if not isinstance(row, dict):
+        return False
+    current = collection_policy_fingerprint(config)
+    found = row.get("config_fingerprint")
+    nested = row.get("snapshot")
+    if not isinstance(found, str) or not found:
+        found = nested.get("config_fingerprint") if isinstance(nested, dict) else None
+    if isinstance(found, str) and found:
+        return found == current
+    stored = row.get("disabled_services")
+    if not isinstance(stored, dict) and isinstance(nested, dict):
+        stored = nested.get("disabled_services")
+    if not isinstance(stored, dict):
+        stored = {}
+    return {str(key): str(value) for key, value in stored.items()} == canonical_disabled_services(config)
 
 
 def collector_health_url(config: dict[str, Any] | None, name: str) -> str | None:

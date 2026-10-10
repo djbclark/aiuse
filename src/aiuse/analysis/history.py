@@ -145,6 +145,7 @@ def save_snapshot(
         "alerts": [a.to_dict() for a in alerts],
         "collector_errors": snapshot.collector_errors,
         "disabled_services": snap_dict.get("disabled_services", {}),
+        "config_fingerprint": snap_dict.get("config_fingerprint"),
         "summary_lines": snap_dict["summary_lines"],
         "semantics": snap_dict["semantics"],
         # Mirror of the live --json envelope's snapshot object, so consumers
@@ -156,6 +157,7 @@ def save_snapshot(
             "cross_checks": snap_dict.get("cross_checks", []),
             "collector_errors": snap_dict.get("collector_errors", []),
             "disabled_services": snap_dict.get("disabled_services", {}),
+            "config_fingerprint": snap_dict.get("config_fingerprint"),
         },
     }
     if "agent_notes" in snap_dict:

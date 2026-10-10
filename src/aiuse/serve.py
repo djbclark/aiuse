@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,7 +21,7 @@ from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.suggest import pick_suggestion, suggestion_to_dict
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
-from aiuse.config import load_config
+from aiuse.config import load_config, snapshot_matches_policy
 from aiuse.models import (
     AccountUsage,
     BillingKind,
@@ -43,6 +44,17 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 28787
 DEFAULT_MAX_AGE_SECONDS = 3600.0
 _PROBE_TIMEOUT_SECONDS = 1.5
+
+
+class _SkipConfigReload:
+    """Marker: this server state keeps the config it was given.
+
+    ``run_serve`` passes a real path (``None`` means the default config.toml).
+    Unit tests omit it so they can pin a config without reading a file.
+    """
+
+
+_SKIP_CONFIG_RELOAD = _SkipConfigReload()
 
 
 def probe_port_holder(host: str, port: int) -> str | None:
@@ -108,7 +120,7 @@ def run_serve(
         return 1
 
     config = load_config(config_path)
-    state = _ServeState(config=config, max_age_seconds=max_age_seconds)
+    state = _ServeState(config=config, max_age_seconds=max_age_seconds, config_path=config_path)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
@@ -210,23 +222,53 @@ def run_serve(
 
 
 class _ServeState:
-    def __init__(self, *, config: dict[str, Any], max_age_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        config: dict[str, Any],
+        max_age_seconds: float,
+        config_path: str | None | _SkipConfigReload = _SKIP_CONFIG_RELOAD,
+    ) -> None:
         self.config = config
         self.max_age_seconds = max_age_seconds
+        self._config_path = config_path
+        self._reload_error: str | None = None
         self._lock = threading.Lock()
         self._cache: dict[str, Any] | None = None
 
     def get_payload(self, *, refresh: bool) -> dict[str, Any]:
         with self._lock:
+            self._reload_config()
             if not refresh:
                 cached = self._from_disk_if_fresh()
                 if cached is not None:
                     return cached
-                if self._cache is not None and _payload_age_ok(self._cache, self.max_age_seconds):
+                if (
+                    self._cache is not None
+                    and _payload_age_ok(self._cache, self.max_age_seconds)
+                    and snapshot_matches_policy(self._cache, self.config)
+                ):
                     return self._cache
             live = self._collect_live()
             self._cache = live
             return live
+
+    def _reload_config(self) -> None:
+        if isinstance(self._config_path, _SkipConfigReload):
+            return
+        try:
+            fresh = load_config(self._config_path)
+        except (Exception, SystemExit) as exc:
+            message = str(exc)
+            if message != self._reload_error:
+                print(
+                    f"warning: config reload failed ({message}); keeping the previous config",
+                    file=sys.stderr,
+                )
+                self._reload_error = message
+            return
+        self.config = fresh
+        self._reload_error = None
 
     def _from_disk_if_fresh(self) -> dict[str, Any] | None:
         rows = load_recent_snapshots(retention_days=90, max_count=1)
@@ -234,6 +276,8 @@ class _ServeState:
             return None
         row = rows[0]
         if not _disk_row_age_ok(row, self.max_age_seconds):
+            return None
+        if not snapshot_matches_policy(row, self.config):
             return None
         return _payload_from_disk_row(row, config=self.config)
 

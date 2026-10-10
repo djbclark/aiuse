@@ -1017,12 +1017,19 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
     if missing:
         print(f"Error: Required collector tools are missing from PATH: {', '.join(missing)}", file=sys.stderr)
         return EXIT_FAILURE
+
+    def _reload_watch_config() -> dict[str, Any]:
+        fresh = load_config(args.config)
+        _apply_cli_overrides(fresh, args)
+        return fresh
+
     return run_watch(
         config,
         interval=interval,
         once=bool(args.once),
         quiet=bool(args.quiet),
         no_color=bool(args.no_color),
+        config_loader=_reload_watch_config,
     )
 
 

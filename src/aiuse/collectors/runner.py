@@ -9,7 +9,12 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 
-from aiuse.config import SINGLE_PROVIDER_COLLECTORS, timeout_for
+from aiuse.config import (
+    SINGLE_PROVIDER_COLLECTORS,
+    canonical_disabled_services,
+    collection_policy_fingerprint,
+    timeout_for,
+)
 from aiuse.models import (
     PROVIDER_ID_ALIASES,
     AccountUsage,
@@ -107,17 +112,7 @@ SOURCE_LABELS: dict[str, str] = {
 
 def _disabled_services(config: dict[str, Any]) -> dict[str, str]:
     """Canonical provider -> reason from top-level ``[disabled_services]``."""
-    raw = config.get("disabled_services")
-    if not isinstance(raw, dict):
-        return {}
-    disabled: dict[str, str] = {}
-    for key, value in raw.items():
-        provider = canonical_provider(str(key).strip())
-        if not provider:
-            continue
-        reason = value.strip() if isinstance(value, str) and value.strip() else "disabled by operator"
-        disabled[provider] = reason
-    return disabled
+    return canonical_disabled_services(config)
 
 
 def _codexbar_timeout_settings(config: dict[str, Any], codexbar_cfg: dict[str, Any]) -> tuple[dict[str, float], float]:
@@ -296,6 +291,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     )
     _apply_lapsed_accounts(snapshot.accounts, config)
     _apply_client_limit_notes(snapshot.accounts, config)
+    snapshot.config_fingerprint = collection_policy_fingerprint(config)
     return snapshot
 
 
