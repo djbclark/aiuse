@@ -29,6 +29,7 @@ grouping see [`index.md`](index.md).
 - `docs/pretty-display.md` — Rich vs Textual for long scrollback-safe reports. **Read when:** When changing pretty/TTY display.
 - `docs/watch-mode.md` — Design: opt-in full-screen `aiuse watch` monitor (q/esc quit, default 10m). **Read when:** When implementing or refining the watch feature.
 - `docs/packaging.md` — pipx / PyPI / Homebrew; **OIDC Trusted Publishing** release flow. **Read when:** When releasing or changing install UX.
+- `aiuse-test.sh` (repo root) — Runs `aiuse` from this source tree (unreleased code, any directory, args pass through). **Read when:** Trying a change before `just release`.
 - `docs/competitive-landscape.md` — Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; post-#2–#9 positioning. **Read when:** Positioning / “what pool next?” / remaining gaps.
 - `docs/next-options.md` — Recommended next actions + effort map for remaining gaps; open issue index. **Read when:** Open-ended “what next?” / whether to chase a competitive gap.
 - `docs/shared-quota-semantics.md` — Design for language-neutral ranking semantics. **Read when:** Background for the package.
