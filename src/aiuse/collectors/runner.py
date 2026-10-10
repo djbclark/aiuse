@@ -48,6 +48,7 @@ from .openusage import app_cli_path as openusage_app_cli_path
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .qwencloud import collect_qwencloud
+from .sipb import collect_sipb
 from .throttle import min_intervals
 from .tokscale import collect_tokscale
 
@@ -245,6 +246,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("openrouter", partial(collect_openrouter, timeout=timeout_for(config, "openrouter"))))
     if _enabled(collectors_cfg, "deepseek"):
         jobs.append(("deepseek", partial(collect_deepseek, timeout=timeout_for(config, "deepseek"))))
+    if _enabled(collectors_cfg, "sipb"):
+        jobs.append(("sipb", partial(collect_sipb, timeout=timeout_for(config, "sipb"))))
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))

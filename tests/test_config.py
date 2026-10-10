@@ -53,7 +53,7 @@ def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path):
 
 
 def test_all_collectors_default_to_enabled_for_future_installation():
-    assert all(entry["enabled"] is True for entry in DEFAULT_CONFIG["collectors"].values())
+    assert all(entry["enabled"] is True for name, entry in DEFAULT_CONFIG["collectors"].items() if name != "sipb")
 
 
 def test_load_config_reads_canonical_toml(monkeypatch, tmp_path):

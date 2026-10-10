@@ -119,6 +119,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "muse": "muse",
     "qwencloud": "qwen",
     "alibaba": "alibaba",
+    "sipb": "SIPB LLMs (MIT)",
 }
 
 # Any provider spelling that may reach us — vendor ids from collectors, external

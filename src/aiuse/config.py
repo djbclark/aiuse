@@ -263,6 +263,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "muse": {"enabled": True},
         "qwencloud": {"enabled": True},
         "bailian": {"enabled": True},
+        # SIPB LLMs (MIT): Opt-in only; unlimited but very slow.
+        "sipb": {"enabled": False},
         # Passive ACP context fill from acp-run JSONL. Not a plan-quota source.
         # max_age_hours drops logs older than this (0 keeps every log).
         "acp": {"enabled": True, "max_age_hours": 168},
@@ -342,6 +344,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "openusage_sh",
         "opencode_zen",
         "opencode_go",
+        "sipb",
         "tokscale",
         "hermes",
         "muse",
@@ -369,6 +372,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "qwencloud",
         "bailian",
         "openrouter",
+        "sipb",
         "deepseek",
         "clinepass",
         "grok_billing",
