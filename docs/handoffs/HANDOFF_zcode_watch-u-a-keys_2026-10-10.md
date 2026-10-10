@@ -3,6 +3,30 @@
 **Session:** zcode, `~/src/aiuse`. Follows
 [`HANDOFF_grok_acp-usage-sources_2026-10-09.md`](HANDOFF_grok_acp-usage-sources_2026-10-09.md).
 
+## Same-day refinement: manual-command throttling
+
+After the keys landed, the operator tightened them (impatience must not
+reach the vendors), enforced in `run_watch`'s `_gate_manual()`:
+
+1. One manual command (`u`/`a`) in flight at a time, across kinds (`a` waits
+   for a running `u` and vice versa). A _scheduled_ tick is not a manual
+   command; the sweep may still run beside one, as before.
+2. A `u` within 90s of an `a` (running or just finished) is **rolled into**
+   the sweep — denied with a board note (`rolled into … (42s in)` /
+   `covered by … (8s ago)`). Past 90s with the sweep still running it still
+   waits.
+3. `u` and `a` share one firing per **2 minutes** (anchored at actual start);
+   a press inside the window gets `ready in 87s (2min minimum)`.
+
+Denied presses explain themselves on the board for ~10s (`key_note` header
+bit) instead of silently doing nothing. Constants `_MANUAL_COOLDOWN_S`,
+`_SWEEP_ROLL_IN_S`, `_KEY_NOTE_S` in `watch.py`. Tests: 7 new cases in
+`tests/test_watch.py` (roll-in, 90s boundary via injected clock, shared
+cooldown, a-waits-for-u, throttle, cooldown expiry). Interpretation taken:
+"either more than once every 2 minutes" = **shared** budget across both keys
+(both poll every vendor); if the operator meant per-key timers, the anchor in
+`_gate_manual` is the single place to change.
+
 ## What landed
 
 Watch (operator request, 2026-10-10) gained two one-shot keys and a matching

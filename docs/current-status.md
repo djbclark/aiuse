@@ -44,7 +44,9 @@ collected under a different disable list or collector switch. Watch keys:
 `aiuse watch --all-providers`) runs a one-time sweep of every provider —
 `[disabled_services]` and collector disable flags cleared — shown on screen
 only: no snapshot, ledger, or sampler-state writes (the cross-process query
-throttle still applies). The sweep is **operator-only**; AI agents must not
+throttle still applies). Manual `u`/`a` commands are one-at-a-time with a
+shared 2-minute minimum; a `u` within 90s of an `a` is rolled into that run.
+The sweep is **operator-only**; AI agents must not
 run it without explicit permission (flagged in `--help`, README, AGENTS.md).
 **No mandatory
 numbered step.** Open-ended

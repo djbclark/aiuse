@@ -652,7 +652,7 @@ def test_render_watch_board_shows_collecting_all():
 class _LoopFakes:
     """Process-worker/Live doubles for key-handling loop tests."""
 
-    def __init__(self, monkeypatch, hold_sweep=False):
+    def __init__(self, monkeypatch, hold_sweep=False, hold_u=False):
         self.instances = []
         self.texts = []
         outer = self
@@ -671,7 +671,8 @@ class _LoopFakes:
                 if config is not None:
                     self.config = config
                 self.starts.append({"config": config, "max_age": max_age})
-                self.pending = None if (hold_sweep and self.persist is False) else (_snap(), [], None)
+                held = (hold_sweep and self.persist is False) or (hold_u and max_age == 0.0)
+                self.pending = None if held else (_snap(), [], None)
 
             def poll(self):
                 result = self.pending
@@ -773,6 +774,137 @@ def test_a_key_is_ignored_while_a_sweep_is_still_running(monkeypatch):
     assert code == 0
     assert len(fakes.sweep.starts) == 1, "a second `a` press must not restart an in-flight sweep"
     assert any("collecting all providers" in text for text in fakes.texts)
+
+
+def test_u_within_90s_of_a_is_rolled_into_the_sweep(monkeypatch):
+    fakes = _LoopFakes(monkeypatch, hold_sweep=True)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence(["a", "u", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    # Only the initial scheduled collect ran; the u was covered by the sweep.
+    assert [start["max_age"] for start in fakes.regular.starts] == [None]
+    assert len(fakes.sweep.starts) == 1
+    assert any("rolled into the all-providers run" in text for text in fakes.texts)
+
+
+def test_u_waits_for_a_long_running_sweep_beyond_90s(monkeypatch):
+    fakes = _LoopFakes(monkeypatch, hold_sweep=True)
+    clock = [0.0]
+
+    def tick(_seconds):
+        clock[0] += 30.0
+
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence(["a", "u", "u", "u", "q"]),
+        sleep=tick,
+        now=lambda: clock[0],
+        require_tty=False,
+    )
+    assert code == 0
+    assert len(fakes.sweep.starts) == 1
+    assert [start["max_age"] for start in fakes.regular.starts] == [None], "u never starts beside the sweep"
+    texts = "\n".join(fakes.texts)
+    assert "rolled into the all-providers run (30s in)" in texts
+    assert "rolled into the all-providers run (60s in)" in texts
+    assert "waiting for the all-providers run (90s in)" in texts
+
+
+def test_u_shortly_after_a_finished_is_covered(monkeypatch):
+    fakes = _LoopFakes(monkeypatch)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence(["a", None, "u", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    assert [start["max_age"] for start in fakes.regular.starts] == [None], "the sweep result already covers the u"
+    assert any("covered by the all-providers run" in text for text in fakes.texts)
+
+
+def test_manual_keys_share_a_two_minute_cooldown(monkeypatch):
+    fakes = _LoopFakes(monkeypatch)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "u", "a", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    # scheduled collect, then the one allowed u; the a never fires.
+    assert [start["max_age"] for start in fakes.regular.starts] == [None, 0.0]
+    assert fakes.sweep.starts == []
+    assert any("ready in" in text and "2min minimum" in text for text in fakes.texts)
+
+
+def test_a_waits_for_an_in_flight_u(monkeypatch):
+    fakes = _LoopFakes(monkeypatch, hold_u=True)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "u", "a", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    assert fakes.sweep.starts == [], "a must not start while a u-triggered update is collecting"
+    assert any("waiting for the u update" in text for text in fakes.texts)
+
+
+def test_second_u_within_two_minutes_is_throttled(monkeypatch):
+    fakes = _LoopFakes(monkeypatch)
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "u", None, "u", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    assert [start["max_age"] for start in fakes.regular.starts] == [None, 0.0]
+    assert any("u: manual refresh ready in" in text for text in fakes.texts)
+
+
+def test_manual_cooldown_expires_after_two_minutes(monkeypatch):
+    fakes = _LoopFakes(monkeypatch)
+    clock = [0.0]
+
+    def tick(_seconds):
+        clock[0] += 65.0
+
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "u", None, "u", "q"]),
+        sleep=tick,
+        now=lambda: clock[0],
+        require_tty=False,
+    )
+    assert code == 0
+    assert [start["max_age"] for start in fakes.regular.starts] == [None, 0.0, 0.0]
 
 
 def test_cli_watch_all_providers_once(monkeypatch, capsys):

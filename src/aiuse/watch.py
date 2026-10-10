@@ -28,6 +28,13 @@ DEFAULT_INTERVAL_S = 600.0
 MIN_INTERVAL_S = 5.0
 WARN_INTERVAL_S = 30.0
 _CONFIG_RELOAD_SECONDS = 2.0
+# Manual key commands (u / a): one at a time, at most one firing per window.
+# Both poll every vendor, so an impatient key-mash must not reach them.
+_MANUAL_COOLDOWN_S = 120.0
+# A `u` this soon after an `a` (running or just finished) is covered by the
+# sweep — the user is impatient or forgot the sweep takes up to ~90s cold.
+_SWEEP_ROLL_IN_S = 90.0
+_KEY_NOTE_S = 10.0  # how long a denied-key note stays on the board
 _INTERVAL_SUFFIX = {"s": 1.0, "m": 60.0, "h": 3600.0}
 _INTERVAL_RE = re.compile(r"^(\d+(?:\.\d+)?)([smh])?$", re.I)
 
@@ -220,6 +227,7 @@ def render_watch_board(
     now: datetime | None = None,
     sample_schedule: tuple[datetime, datetime, str] | None = None,
     all_providers: bool = False,
+    key_note: str | None = None,
 ) -> str:
     """Header + clock matrix + optional footer for the alternate-screen board.
 
@@ -227,7 +235,8 @@ def render_watch_board(
     the board last refreshed: a frame can come from a snapshot the scheduled
     sampler wrote some minutes ago. ``all_providers`` marks the screen-only
     sweep view (``a`` key / ``--all-providers``): every provider was queried
-    once and nothing was recorded.
+    once and nothing was recorded. ``key_note`` is the short-lived
+    explanation shown after a denied ``u``/``a`` press.
     """
     header_bits = ["aiuse watch"]
     if all_providers:
@@ -246,6 +255,8 @@ def render_watch_board(
         header_bits.append(f"next in {mins}:{secs:02d}")
     if collecting_all_for is not None:
         header_bits.append(f"collecting all providers… ({collecting_all_for:.0f}s)")
+    if key_note:
+        header_bits.append(key_note)
     header_bits.append("q/esc quit · u update now · a all providers")
     lines = [" · ".join(header_bits)]
     if sample_schedule is not None:
@@ -629,13 +640,62 @@ def run_watch(
     sweep.next_due = float("inf")  # only ever started by the ``a`` key
     sweep_config_held: dict[str, Any] = {"cfg": None}
     show_all_view: dict[str, bool] = {"v": False}
-    forced_update: dict[str, bool] = {"v": False}
+    # Manual key commands (u/a): one in flight at most, one firing per
+    # _MANUAL_COOLDOWN_S, "forced" marks a u-triggered regular collect.
+    manual: dict[str, Any] = {
+        "forced": False,
+        "last_fired": None,  # monotonic time the last u/a actually fired
+        "u_in_flight": False,  # the running regular collect was u-triggered
+        "a_fired_at": None,  # monotonic time the last a sweep fired
+        "note": None,  # (expiry_monotonic, text) explaining a denied press
+    }
+
+    def _gate_manual(kind: str) -> str | None:
+        """Why this ``u``/``a`` press cannot fire now; ``None`` when it may.
+
+        One manual command at a time, at most one firing per two minutes
+        (they both poll every vendor). A ``u`` within 90s of an ``a`` —
+        running or just finished — is covered by that sweep: the user is
+        impatient or forgot the sweep was already on its way.
+        """
+        now_m = runtime.now()
+        if kind == "u":
+            if sweep.collecting:
+                elapsed = sweep.collecting_for() or 0.0
+                if elapsed < _SWEEP_ROLL_IN_S:
+                    return f"u: rolled into the all-providers run ({elapsed:.0f}s in)"
+                return f"u: waiting for the all-providers run ({elapsed:.0f}s in)"
+            if runtime.collecting:
+                if manual["u_in_flight"]:
+                    return "u: update already collecting"
+                return "u: a refresh is already collecting"
+            a_fired_at = manual["a_fired_at"]
+            if a_fired_at is not None and now_m - a_fired_at < _SWEEP_ROLL_IN_S:
+                return f"u: covered by the all-providers run ({now_m - a_fired_at:.0f}s ago)"
+        else:
+            if sweep.collecting:
+                elapsed = sweep.collecting_for() or 0.0
+                return f"a: all-providers run already in flight ({elapsed:.0f}s in)"
+            if runtime.collecting and manual["u_in_flight"]:
+                return "a: waiting for the u update to finish"
+        last_fired = manual["last_fired"]
+        if last_fired is not None:
+            left = _MANUAL_COOLDOWN_S - (now_m - last_fired)
+            if left > 0:
+                return f"{kind}: manual refresh ready in {left:.0f}s (2min minimum)"
+        return None
+
+    def _deny_key(note: str) -> None:
+        manual["note"] = (runtime.now() + _KEY_NOTE_S, note)
 
     def start_worker(fn: Callable[[], None]) -> None:
         fresh = live_config()
         collected_policy["fingerprint"] = collection_policy_fingerprint(fresh)
-        force = forced_update["v"]
-        forced_update["v"] = False
+        force = manual["forced"]
+        manual["forced"] = False
+        manual["u_in_flight"] = force
+        if force:
+            manual["last_fired"] = runtime.now()
         if process_worker is not None:
             # max_age=0 skips the disk snapshot so ``u`` really means now.
             process_worker.start(fresh, max_age=0.0 if force else None)
@@ -643,6 +703,9 @@ def run_watch(
             threading.Thread(target=fn, name="aiuse-watch-collect", daemon=True).start()
 
     def start_sweep(fn: Callable[[], None]) -> None:
+        fired_at = runtime.now()
+        manual["last_fired"] = fired_at
+        manual["a_fired_at"] = fired_at
         if sweep_worker is not None:
             sweep_worker.start(sweep_config_held["cfg"] or all_providers_config(live_config()))
         else:
@@ -684,6 +747,14 @@ def run_watch(
             if not showing_all and sweep.error:
                 suffix = f"all-providers run: {sweep.error}"
                 error = f"{error} · {suffix}" if error else suffix
+            key_note: str | None = None
+            note_state = manual["note"]
+            if note_state is not None:
+                note_expiry, note_text = note_state
+                if runtime.now() < note_expiry:
+                    key_note = note_text
+                else:
+                    manual["note"] = None
             return Text.from_ansi(
                 render_watch_board(
                     source.snapshot,
@@ -699,6 +770,7 @@ def run_watch(
                     now=utcnow(),
                     sample_schedule=_sample_schedule(current),
                     all_providers=showing_all,
+                    key_note=key_note,
                 )
             )
 
@@ -724,12 +796,20 @@ def run_watch(
                     if process_worker is not None:
                         process_worker.stop()
                     break
-                if key in ("u", "U") and not runtime.collecting:
-                    forced_update["v"] = True
-                    runtime.next_due = runtime.now()
-                elif key in ("a", "A") and not sweep.collecting:
-                    sweep_config_held["cfg"] = all_providers_config(live_config())
-                    sweep.next_due = sweep.now()
+                if key in ("u", "U"):
+                    denial = _gate_manual("u")
+                    if denial is None:
+                        manual["forced"] = True
+                        runtime.next_due = runtime.now()
+                    else:
+                        _deny_key(denial)
+                elif key in ("a", "A"):
+                    denial = _gate_manual("a")
+                    if denial is None:
+                        sweep_config_held["cfg"] = all_providers_config(live_config())
+                        sweep.next_due = sweep.now()
+                    else:
+                        _deny_key(denial)
                 # A config.toml edit has to take effect before the interval
                 # elapses. Otherwise the board keeps the old disable list and
                 # the next refresh can overwrite a newer snapshot with it.
