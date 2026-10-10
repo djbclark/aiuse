@@ -11,15 +11,15 @@ aggregator CLI). Install all seven with:
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
 ```
 
-| Tool             | Typical install                                                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **cswap**        | `uv tool install claude-swap`                                                                                                   |
-| **codexbar**     | `brew install --cask codexbar`                                                                                                  |
-| **caut**         | `cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker`                                  |
-| **caam**         | upstream install script or release tarball: https://github.com/Dicklesworthstone/coding_agent_account_manager/releases          |
-| **openusage**    | `brew install --cask openusage` (+ optional CLI from app Settings; or leave app running for `:6736`)                            |
-| **openusage-sh** | `brew install janekbaraniewski/tap/openusage`; `install-deps.sh` creates the collision-safe `~/.local/bin/openusage-sh` wrapper |
-| **tokscale**     | PATH shim via `npx tokscale@latest` (created by `install-deps.sh`)                                                              |
+| Tool             | Typical install                                                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **cswap**        | `uv tool install claude-swap`                                                                                                                  |
+| **codexbar**     | `brew install --cask codexbar`                                                                                                                 |
+| **caut**         | `cargo install --locked --git https://github.com/Dicklesworthstone/coding_agent_usage_tracker`                                                 |
+| **caam**         | checksum-verified v0.1.23 tarball via `packaging/install-deps.sh` (https://github.com/Dicklesworthstone/coding_agent_account_manager/releases) |
+| **openusage**    | `brew install --cask openusage` (+ optional CLI from app Settings; or leave app running for `:6736`)                                           |
+| **openusage-sh** | `brew install janekbaraniewski/tap/openusage`; `install-deps.sh` creates the collision-safe `~/.local/bin/openusage-sh` wrapper                |
+| **tokscale**     | PATH shim via `npx tokscale@latest` (created by `install-deps.sh`)                                                                             |
 
 ## Status
 
