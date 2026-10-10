@@ -124,8 +124,8 @@ def test_table_keeps_overall_week_and_indents_fable_cap(width):
 def test_fable_cap_line_matches_row_syntax_and_shows_pace(fable_used, sign):
     text = render_clock_matrix([], snapshot=_snapshot(fable_used=fable_used), color=False, width=110)
     cap = next(line for line in text.splitlines() if "Fable cap" in line)
-    # "<used>u/<left>l/<reset>" with no spaces, then the signed pace delta.
-    match = re.search(r": (\d+)u/(\d+)l/(\d+d(?:\d+h)?) ([+-])(\d+)%$", cap)
+    # "<used>u/<left>l/<reset>" with no spaces, then the signed pace delta in parentheses.
+    match = re.search(r": (\d+)u/(\d+)l/(\d+d(?:\d+h)?) \(([+-])(\d+)% pace\)$", cap)
     assert match is not None, cap
     assert match.group(4) == sign
 

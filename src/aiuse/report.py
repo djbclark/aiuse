@@ -1238,8 +1238,12 @@ def _build_matrix_rows(
                     paced = window if window.window_minutes else replace(window, window_minutes=_WEEKLY_MINUTES)
                     pace = None if exhausted else compute_pace(paced, now=now)
                     # Projected end-of-window use vs. the window's own quota:
-                    # "+44%" heads over it, "-22%" heads under it.
-                    trend = f" {(pace.pace_ratio - 1.0) * 100.0:+.0f}%" if pace is not None and pace.pace_ratio else ""
+                    # "(+44% pace)" heads over it, "(-22% pace)" heads under it.
+                    trend = (
+                        f" ({(pace.pace_ratio - 1.0) * 100.0:+.0f}% pace)"
+                        if pace is not None and pace.pace_ratio
+                        else ""
+                    )
                     status = " EXHAUSTED" if exhausted else ""
                     sublimit_notes.append(f"{model} cap ({cap}): {meter}{reset}{trend}{status}")
                     continue
