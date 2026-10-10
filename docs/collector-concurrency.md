@@ -67,8 +67,14 @@ Tools either return in tens of seconds or hang; long budgets only delay failure
   capped at **`_MAX_CONCURRENT_PROVIDER_QUERIES = 16`**.
 - Per-provider timeout: `timeout_for(config, "codexbar")` (full 45s budget
   **each** — a stuck provider can hold its own slot that long), unless
-  `[collectors.codexbar] provider_timeouts = { <provider> = <seconds> }` sets
-  a shorter one. A CLI `--timeout` still wins over both.
+  `[collectors.codexbar] provider_timeouts = { <provider> = <seconds> }`
+  overrides it. The built-in map sets `opencodego = 60`, the same budget as
+  CodexBar's own `--web-timeout`, so that fetch is not killed at 45s. A CLI
+  `--timeout` still wins over both. OpenCode Go is `--source web` only: a
+  miss does not fall through to auto, which rescans
+  `~/.local/share/opencode/opencode.db` (there is no usage-result cache;
+  `--refresh` belongs to `codexbar cost`) and can report a dollar-cap
+  estimate that disagrees with the console.
 - **Hang backoff** (aiuse-e9d, 2026-10-09): a provider whose query is killed
   at its timeout is skipped for `[collectors.codexbar] timeout_backoff`
   seconds (default 1800), doubling per further consecutive timeout up to 12x.

@@ -108,6 +108,13 @@ def test_non_timeout_errors_do_not_start_a_backoff(tmp_path):
     assert not (tmp_path / "codexbar-timeouts.json").exists()
 
 
+def test_default_opencodego_timeout_matches_codexbar_web_budget():
+    from aiuse.config import DEFAULT_CONFIG
+
+    timeouts, _backoff = _codexbar_timeout_settings(DEFAULT_CONFIG, DEFAULT_CONFIG["collectors"]["codexbar"])
+    assert timeouts["opencodego"] == 60.0
+
+
 def test_runner_settings_force_timeout_beats_provider_timeouts():
     cfg = {"collectors": {"codexbar": {"provider_timeouts": {"devin": 20, "bad": "x", "zero": 0}}}}
     timeouts, backoff = _codexbar_timeout_settings(cfg, cfg["collectors"]["codexbar"])

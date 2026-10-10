@@ -118,11 +118,17 @@ same fixed dollar caps CodexBar local uses (`$12` / `$30` / `$60`).
 1. Native `opencode_go` collector reads `/console/api/go/status` for each
    workspace with the OpenCode console session cookie. A missing `access`
    object (or a 404) is empty / expired; `access.meters` is the live allotment.
-2. For CodexBar provider `opencodego`, query with `--source web` first.
-3. If web fails (no cookies / API error), fall back to CodexBar auto/local and
-   annotate that the local estimate may diverge from the official limit.
+2. For CodexBar provider `opencodego`, query with `--source web` only, with a
+   60s subprocess budget (CodexBar's own `--web-timeout` default). A 45s kill
+   cut that fetch off, and the old auto fallback is not a cache read.
+3. If web fails (no cookies / API error), CodexBar contributes no OpenCode Go
+   row. Auto would rescan `~/.local/share/opencode/opencode.db` on every call
+   (no stored usage snapshot; `--refresh` is a `codexbar cost` flag) and sum
+   local costs against the fixed $12/$30/$60 caps. That estimate can show
+   monthly headroom when the console is empty, so it is not a fallback.
    Local leftover % never wins selection when the native page (or CodexBar web)
-   is live.
+   is live. A web **timeout** still counts as a hang and uses the CodexBar
+   timeout backoff; it does not start the SQLite rescan.
 4. Prefer CodexBar over OpenUsage for selection when both are estimates or
    both are web; cross-check still runs. When an **estimated/local** peer
    disagrees with web/server data, the warning states which side is local

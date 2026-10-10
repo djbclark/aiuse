@@ -535,41 +535,45 @@ def test_opencodego_prefers_web_source(monkeypatch):
     assert zen.balance_usd == 1.25
 
 
-def test_opencodego_falls_back_to_auto_when_web_errors(monkeypatch):
+def test_opencodego_web_miss_does_not_rescan_local(monkeypatch):
     calls: list[list[str]] = []
 
     def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
         calls.append(list(argv))
-        if "--source" in argv:
-            return [
-                {
-                    "provider": "opencodego",
-                    "source": "web",
-                    "error": {"kind": "provider", "message": "missing cookie"},
-                }
-            ]
         return [
             {
                 "provider": "opencodego",
-                "source": "local",
-                "usage": {
-                    "tertiary": {"usedPercent": 80.6, "windowMinutes": 43200, "resetsAt": "2099-02-01T00:00:00Z"},
-                },
+                "source": "web",
+                "error": {"kind": "provider", "message": "missing cookie"},
             }
         ]
 
     monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
 
-    from aiuse.collectors.codexbar import _from_row, _query_provider
+    from aiuse.collectors.codexbar import _query_provider
 
-    outcome = _query_provider("opencodego")
-    assert isinstance(outcome, list)
-    assert outcome[0]["source"] == "local"
-    assert any(call[-2:] == ["--source", "web"] for call in calls)
-    assert any("--source" not in call for call in calls)
+    assert _query_provider("opencodego") == []
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["--source", "web"]
 
-    account = _from_row(outcome[0])
-    assert any("local estimate" in note for note in account.notes)
+
+def test_opencodego_web_timeout_does_not_start_a_second_scan(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
+        calls.append((list(argv), timeout))
+        raise CollectorTimeout(f"timed out after {timeout}s")
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
+
+    from aiuse.collectors.base import CollectorTimeout
+    from aiuse.collectors.codexbar import _query_provider
+
+    outcome = _query_provider("opencodego", timeout=60)
+    assert isinstance(outcome, CollectorTimeout)
+    assert len(calls) == 1
+    assert calls[0][0][-2:] == ["--source", "web"]
+    assert calls[0][1] == 60
 
 
 def test_opencodego_local_plus_web_source_is_still_a_local_estimate():

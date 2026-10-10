@@ -49,16 +49,25 @@ _MAX_CONCURRENT_PROVIDER_QUERIES = 16
 # 0 disables. See aiuse-e9d and docs/collector-concurrency.md.
 DEFAULT_TIMEOUT_BACKOFF_SECONDS = 1800.0
 
-# Providers queried with a specific CodexBar `--source` first, falling back to
-# `auto` when that source returns nothing usable.
+# Providers queried with a specific CodexBar `--source` first. Antigravity
+# falls back to `auto` when that source returns nothing usable. OpenCode Go
+# does not: see `_NO_AUTO_FALLBACK`.
 #
-# - opencodego -> web: `auto` prefers a local heuristic that sums SQLite costs
-#   against hardcoded $12/$30/$60 caps; the live billing page is the real limit.
+# - opencodego -> web: `auto` rescans ~/.local/share/opencode/opencode.db
+#   (json over every message; no usage-result cache — `--refresh` is a
+#   `codexbar cost` flag) and sums those costs against hardcoded $12/$30/$60
+#   caps. That scan is what blew the 45s kill, and the estimate can show
+#   monthly headroom when the console is already empty. Web is the real
+#   limit; a miss does not fall through to the rescan.
 # - antigravity -> oauth: `auto` reads the agy CLI, which spawns agy three times
 #   per probe and boots its language server each time (issue #34). `oauth`
 #   reads stored Google auth and spawns nothing; when it has no credentials
 #   the CLI path still runs, gated by query_min_interval.
 _PREFERRED_SOURCES: dict[str, str] = {"opencodego": "web", "antigravity": "oauth"}
+
+# Preferred source is the only CodexBar call. A miss returns nothing (a
+# timeout still propagates so hang backoff applies) instead of a second scan.
+_NO_AUTO_FALLBACK: frozenset[str] = frozenset({"opencodego"})
 
 _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
     # CodexBar maps Copilot primary→premium, secondary→chat (no tertiary /
@@ -324,11 +333,19 @@ def _query_provider(provider_arg: str | None, *, timeout: float = 45.0) -> Any:
     if provider_arg is not None:
         argv.extend(["--provider", provider_arg])
 
-    preferred = _PREFERRED_SOURCES.get(provider_arg.lower()) if provider_arg is not None else None
+    provider = provider_arg.lower() if provider_arg is not None else None
+    preferred = _PREFERRED_SOURCES.get(provider) if provider is not None else None
     if preferred is not None:
         preferred_outcome = _run_codexbar_usage([*argv, "--source", preferred], timeout=timeout)
         if _usable_usage_payload(preferred_outcome):
             return preferred_outcome
+        if provider in _NO_AUTO_FALLBACK:
+            # A timeout must stay a timeout so hang backoff records it. Any
+            # other miss (no cookie, parse error) is empty: the auto fallback
+            # would rescan local history and publish the wrong estimate.
+            if isinstance(preferred_outcome, CollectorTimeout):
+                return preferred_outcome
+            return []
         # The preferred source failed or returned only errors — fall through to
         # CodexBar auto so the provider still appears in the report.
 

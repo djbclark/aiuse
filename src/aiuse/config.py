@@ -229,7 +229,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "collectors": {
         "cswap": {"enabled": True},
-        "codexbar": {"enabled": True, "providers": "enabled"},
+        "codexbar": {
+            "enabled": True,
+            "providers": "enabled",
+            # Matches CodexBar's own `--web-timeout` default (60s). The 45s
+            # collector budget killed OpenCode Go before that fetch could
+            # finish, and the auto fallback is a local SQLite rescan rather
+            # than a cached usage snapshot.
+            "provider_timeouts": {"opencodego": 60},
+        },
         # caut + the two distinct OpenUsage products are cross-check peers.
         # "both" = claude+codex (providers caut can actually fill windows for).
         "caut": {"enabled": True, "providers": "both"},
