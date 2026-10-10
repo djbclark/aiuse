@@ -36,7 +36,7 @@ aggregator CLI). Install all seven with:
 
 Git tag **`v2.0.0`** is historical (pre-rename `src/ai/`). First renamed PyPI
 release was **`2.1.0`** (API token). **`2.1.1`** was the first release uploaded
-by GitHub Actions via Trusted Publishing. Current published release: **`3.3.7`**.
+by GitHub Actions via Trusted Publishing. Current published release: **`3.3.8`**.
 
 ## Install (end users)
 
