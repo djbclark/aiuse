@@ -1160,7 +1160,7 @@ def _run_available(args: argparse.Namespace) -> int:
 
     from aiuse.client_limits import load_client_limits
 
-    enrich_snapshot(snap_dict, notes=notes, client_limits=load_client_limits(config))
+    enrich_snapshot(snap_dict, notes=notes, client_limits=load_client_limits(config), threshold_seconds=threshold)
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally
     # filtered at collection, but a cache written by an older build (or with

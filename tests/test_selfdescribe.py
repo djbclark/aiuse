@@ -484,6 +484,40 @@ def test_freshness_threshold():
     assert freshness(None) == {"age_seconds": None, "fresh": False}
 
 
+def test_stale_account_is_flagged_and_marked_in_summary():
+    from aiuse.analysis.selfdescribe import enrich_snapshot, pool_entries
+
+    now = utcnow()
+    fix = _antigravity_fixture()
+    # Age the account's *reading* (CodexBar updatedAt), not the snapshot: this
+    # is exactly the 2.5-hour-old figure that must stop looking current.
+    fix["accounts"][0]["collected_at"] = (now - timedelta(minutes=40)).isoformat()
+    snap = enrich_snapshot(fix, now=now)
+
+    account = snap["accounts"][0]
+    assert 2390 <= account["age_seconds"] <= 2410
+    assert account["fresh"] is False
+    assert account["stale"] is True
+
+    pools = {p["pool_family"]: p for p in pool_entries(snap)}
+    assert pools["gemini"]["stale"] is True
+    assert pools["gemini"]["fresh"] is False
+    assert pools["claude_gpt"]["stale"] is True
+
+    gemini_line = next(line for line in snap["summary_lines"] if "gemini" in line)
+    assert "[STALE 40m]" in gemini_line
+
+
+def test_fresh_account_has_no_stale_marker():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    snap = enrich_snapshot(_antigravity_fixture())
+    account = snap["accounts"][0]
+    assert account["fresh"] is True
+    assert account["stale"] is False
+    assert not any("[STALE" in line for line in snap["summary_lines"])
+
+
 # ── human output never prints a bare percentage ─────────────────────────────
 
 

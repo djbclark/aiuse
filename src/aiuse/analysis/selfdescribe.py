@@ -46,6 +46,7 @@ SEMANTICS: dict[str, str] = {
     "headroom_basis": "shared_weekly for Fable routing entries: min(shared headroom, 0.5 * Fable cap headroom); window percentages remain relative to their own limits",
     "age_seconds": "seconds since collected_at, computed at read time; stale data can hide a fresh exhaustion",
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
+    "stale": "age_seconds > fresh threshold; the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
@@ -165,6 +166,7 @@ def enrich_account(
     collected_at: str | None = None,
     now: datetime | None = None,
     notes: list[Mapping[str, Any]] | None = None,
+    threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
 ) -> dict[str, Any]:
     """Add self-describing fields to one account dict (windows enriched too)."""
     now = now or utcnow()
@@ -212,9 +214,19 @@ def enrich_account(
     if acct_collected:
         account["collected_at"] = acct_collected
         dt = parse_dt(acct_collected)
-        account["age_seconds"] = round((now - dt).total_seconds(), 1) if dt else None
+        if dt:
+            age = (now - dt).total_seconds()
+            account["age_seconds"] = round(age, 1)
+            account["fresh"] = age <= threshold_seconds
+            account["stale"] = age > threshold_seconds
+        else:
+            account["age_seconds"] = None
+            account["fresh"] = False
+            account["stale"] = False
     else:
         account["age_seconds"] = None
+        account["fresh"] = False
+        account["stale"] = False
     return account
 
 
@@ -224,6 +236,7 @@ def enrich_snapshot(
     now: datetime | None = None,
     notes: list[Mapping[str, Any]] | None = None,
     client_limits: Mapping[str, list[dict[str, Any]]] | None = None,
+    threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
 ) -> dict[str, Any]:
     """Enrich accounts in place and attach summary_lines / semantics.
 
@@ -235,7 +248,13 @@ def enrich_snapshot(
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
     collected = snap.get("collected_at")
     for account in accounts:
-        enrich_account(account, collected_at=collected, now=now, notes=notes)
+        enrich_account(
+            account,
+            collected_at=collected,
+            now=now,
+            notes=notes,
+            threshold_seconds=threshold_seconds,
+        )
         if client_limits is not None:
             limits = client_limits.get(str(account.get("provider") or ""))
             if limits:
@@ -336,6 +355,8 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "available_at": min(resets).isoformat() if resets else None,
                     "models_hint": hints.get(family),
                     "age_seconds": account.get("age_seconds"),
+                    "fresh": account.get("fresh"),
+                    "stale": account.get("stale"),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
                     "windows": windows,
                 }
@@ -363,6 +384,23 @@ def _reset_fragment(resets_at: Any) -> str:
     from aiuse.report import format_clock
 
     return f", resets {format_clock(dt, date=dt - utcnow() > timedelta(hours=24))}"
+
+
+def _format_age(seconds: float | None) -> str:
+    """Compact reading age for a STALE marker: ``2h28m`` / ``40m`` / ``30s``."""
+    if seconds is None:
+        return "age?"
+    seconds = max(0, int(round(seconds)))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, rem = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h{rem:02d}m" if rem else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d{hours:02d}h" if hours else f"{days}d"
 
 
 def summary_line(pool: Mapping[str, Any]) -> str:
@@ -411,6 +449,8 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         line += " -> NOT usable now"
     elif all(str(w.get("state")) == "unknown" for w in pool.get("windows") or []):
         line += " -> unknown"
+    if pool.get("stale"):
+        line += f" [STALE {_format_age(pool.get('age_seconds'))}]"
     return line
 
 

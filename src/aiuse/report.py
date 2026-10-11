@@ -95,6 +95,7 @@ class _MatrixRow:
     value_usd: float | None = None
     note: str | None = None
     tail_note: str | None = None
+    stale: bool = False
     sublimit_notes: list[str] = field(default_factory=list)
 
 
@@ -1196,6 +1197,18 @@ def _used_percent(window: QuotaWindow) -> float | None:
     return None if remaining is None else max(0.0, 100.0 - float(remaining))
 
 
+def _account_data_age(account: AccountUsage, now: datetime) -> float | None:
+    """Seconds since this account's underlying reading (CodexBar ``updatedAt``, etc.).
+
+    ``collected_at`` is the data freshness, not the snapshot time: a row reused
+    across a throttle window still carries its original reading's timestamp, so
+    this is the number the STALE marker must key on.
+    """
+    if account.collected_at is None:
+        return None
+    return max(0.0, (now - account.collected_at).total_seconds())
+
+
 def _build_matrix_rows(
     alerts: list[UseOrLoseAlert],
     snapshot: Snapshot | None,
@@ -1206,6 +1219,10 @@ def _build_matrix_rows(
     raw_analysis = cfg.get("analysis")
     plans: dict[str, Any] = raw_plans if isinstance(raw_plans, dict) else {}
     analysis: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
+    try:
+        fresh_threshold = float(analysis.get("fresh_threshold_seconds") or 1500.0)
+    except (TypeError, ValueError):
+        fresh_threshold = 1500.0
 
     # Collapse alerts onto the pool they describe, keeping the most
     # attention-grabbing band and the use-urgency that goes with it.
@@ -1333,6 +1350,8 @@ def _build_matrix_rows(
                         tail_note = extra_note
                 else:
                     note = extra_note if note is None else f"{note} · {extra_note}"
+            data_age = _account_data_age(account, now)
+            stale = data_age is not None and data_age > fresh_threshold
             rows.append(
                 _MatrixRow(
                     sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
@@ -1346,6 +1365,7 @@ def _build_matrix_rows(
                     value_usd=value,
                     note=note,
                     tail_note=tail_note,
+                    stale=stale,
                     sublimit_notes=sublimit_notes,
                 )
             )
@@ -1655,6 +1675,8 @@ def render_clock_matrix(
             tail.append(f"{value_text:>{w_value}}")
         if row.tail_note:
             tail.append(s.dim(row.tail_note))
+        if row.stale:
+            tail.append(s.yellow("STALE"))
 
         line = _line(tag, score, service, account, scope, tail)
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
@@ -1674,6 +1696,14 @@ def render_clock_matrix(
     if any_folded:
         legend_items.append(
             ("+ = >1 window on that clock, showing most-used", s.dim("+ = >1 window on that clock, showing most-used"))
+        )
+    if any(row.stale for row in rows):
+        legend_items.append(
+            (
+                "STALE = reading older than the freshness threshold; re-collect before trusting it",
+                s.yellow("STALE")
+                + s.dim(" = reading older than the freshness threshold; re-collect before trusting it"),
+            )
         )
 
     plain_note = "u/l = percent used / percent left — l is what you can still spend"
