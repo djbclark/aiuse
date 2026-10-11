@@ -540,6 +540,7 @@ def _from_provider(provider_id: str, body: dict[str, Any], *, via: str) -> Accou
         balance_usd=balance_usd,
         credits_remaining=credits_remaining,
         usage_credits=usage_credits,
+        collected_at=parse_dt(body.get("fetchedAt")),
         notes=notes,
         raw=body,
     )

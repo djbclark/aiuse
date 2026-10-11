@@ -582,3 +582,45 @@ def test_run_collectors_skips_single_provider_collector_when_disabled(monkeypatc
     assert calls == []
     assert snapshot.accounts == []
     assert snapshot.disabled_services == {"grok": "off-limits"}
+
+
+def test_fresh_source_beats_stale_source_despite_priority():
+    from datetime import timedelta
+
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    stale_codexbar = _account("codexbar", "antigravity")
+    stale_codexbar.collected_at = now - timedelta(hours=3)
+    fresh_openusage = _account("openusage_ai", "antigravity")
+    fresh_openusage.collected_at = now - timedelta(minutes=2)
+
+    selected, _checks = _select_and_cross_check([stale_codexbar, fresh_openusage], cswap_authoritative=True)
+
+    # CodexBar is priority-first, but its 3h-old reading must not beat a fresh one.
+    assert [account.source for account in selected] == ["openusage_ai"]
+
+
+def test_unknown_age_source_keeps_priority_order():
+    # Neither row sets collected_at, so neither is provably fresh or stale;
+    # priority order (codexbar before tokscale) must be preserved.
+    selected, _checks = _select_and_cross_check(
+        [_account("codexbar", "codex"), _account("tokscale", "codex")],
+        cswap_authoritative=True,
+    )
+    assert [account.source for account in selected] == ["codexbar"]
+
+
+def test_stale_source_alone_is_still_selected():
+    from datetime import timedelta
+
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    stale_codexbar = _account("codexbar", "antigravity")
+    stale_codexbar.collected_at = now - timedelta(hours=3)
+
+    selected, _checks = _select_and_cross_check([stale_codexbar], cswap_authoritative=True)
+
+    # No fresh peer exists, so the stale (but only) reading still surfaces.
+    assert [account.source for account in selected] == ["codexbar"]

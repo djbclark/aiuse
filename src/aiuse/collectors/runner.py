@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 
+from aiuse.analysis.selfdescribe import FRESH_THRESHOLD_SECONDS_DEFAULT
 from aiuse.config import (
     SINGLE_PROVIDER_COLLECTORS,
     canonical_disabled_services,
@@ -175,6 +176,12 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     intervals = min_intervals(config)
     disabled_services = _disabled_services(config)
     disabled_providers = set(disabled_services)
+    raw_analysis = config.get("analysis")
+    analysis_cfg = raw_analysis if isinstance(raw_analysis, dict) else {}
+    try:
+        fresh_threshold = float(analysis_cfg.get("fresh_threshold_seconds") or FRESH_THRESHOLD_SECONDS_DEFAULT)
+    except (TypeError, ValueError):
+        fresh_threshold = FRESH_THRESHOLD_SECONDS_DEFAULT
 
     # Each collector shells out (or hits loopback) independently — run concurrently.
     # Correctness: long default timeouts; all enabled sources always queried.
@@ -300,6 +307,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         cswap_authoritative=_enabled(collectors_cfg, "cswap"),
         account_aliases=config.get("account_aliases"),
         usage_sources=usage_sources,
+        fresh_threshold_seconds=fresh_threshold,
     )
     _apply_lapsed_accounts(snapshot.accounts, config)
     _apply_client_limit_notes(snapshot.accounts, config)
@@ -442,6 +450,7 @@ def _select_and_cross_check(
     cswap_authoritative: bool,
     account_aliases: dict[str, Any] | None = None,
     usage_sources: dict[str, Any] | None = None,
+    fresh_threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
 ) -> tuple[list[AccountUsage], list[CrossCheck]]:
     """Select report rows while cross-checking all live sources.
 
@@ -489,7 +498,13 @@ def _select_and_cross_check(
                 acp_rows = []
 
         priority = _source_priority(provider, cswap_authoritative=cswap_authoritative)
-        primary = _pick_primary_source(provider, by_source, priority, cswap_authoritative=cswap_authoritative)
+        primary = _pick_primary_source(
+            provider,
+            by_source,
+            priority,
+            cswap_authoritative=cswap_authoritative,
+            fresh_threshold_seconds=fresh_threshold_seconds,
+        )
 
         chosen: list[AccountUsage] = []
         if primary is not None:
@@ -551,6 +566,7 @@ def _pick_primary_source(
     priority: Sequence[str],
     *,
     cswap_authoritative: bool,
+    fresh_threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
 ) -> str | None:
     """Return the source id to surface for this provider, or None."""
     if provider == "claude" and cswap_authoritative and "cswap" in by_source:
@@ -570,7 +586,8 @@ def _pick_primary_source(
     ]
     if live_sources:
         authoritative = [source for source in live_sources if not _source_is_local_estimate(by_source[source])]
-        return (authoritative or live_sources)[0]
+        candidates = authoritative or live_sources
+        return _prefer_fresh_source(candidates, by_source, fresh_threshold_seconds)
     for source in priority:
         if by_source.get(source):
             return source
@@ -579,6 +596,35 @@ def _pick_primary_source(
         if any(_has_live_data(a) for a in rows):
             return source
     return next(iter(by_source), None)
+
+
+def _prefer_fresh_source(
+    candidates: list[str],
+    by_source: dict[str, list[AccountUsage]],
+    fresh_threshold_seconds: float,
+) -> str:
+    """Pick the first candidate, demoting a known-stale reading behind a fresh one.
+
+    A stale reading can hide a fresh exhaustion (the agy case: CodexBar's hours-old
+    row would keep winning over OpenUsage's fresh row purely on priority order).
+    Only demote when a source is provably stale AND a provably fresh peer exists;
+    unknown-age sources keep their priority position.
+    """
+    now = utcnow()
+    ages = {source: _source_age(by_source[source], now) for source in candidates}
+    known_fresh: list[str] = []
+    any_stale = False
+    for source in candidates:
+        age = ages[source]
+        if age is None:
+            continue
+        if age <= fresh_threshold_seconds:
+            known_fresh.append(source)
+        else:
+            any_stale = True
+    if known_fresh and any_stale:
+        return known_fresh[0]
+    return candidates[0]
 
 
 def _consolidate_accounts(
@@ -637,6 +683,22 @@ def _has_live_data(account: AccountUsage) -> bool:
         or account.credits_remaining is not None
         or account.usage_credits is not None
     )
+
+
+def _source_age(rows: list[AccountUsage], now: datetime) -> float | None:
+    """Newest reading age across a source's live rows, or None when unknown.
+
+    A source that never sets ``collected_at`` (several collectors don't) is
+    unknown-age, distinct from a source whose reading is provably stale — the
+    selector only demotes a source when it is known-stale AND a known-fresh
+    peer exists.
+    """
+    ages = [
+        max(0.0, (now - row.collected_at).total_seconds())
+        for row in rows
+        if _has_live_data(row) and row.collected_at is not None
+    ]
+    return min(ages) if ages else None
 
 
 def _provider_multi_source_cross_checks(
