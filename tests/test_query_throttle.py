@@ -181,6 +181,57 @@ def test_openusage_force_without_antigravity_does_not_spend_the_slot(monkeypatch
         assert gate.allowed
 
 
+def test_openusage_force_with_empty_antigravity_does_not_spend_the_slot(monkeypatch):
+    """Bug (c): a stale/empty antigravity card must not reset agy's throttle.
+
+    OpenUsage's forced refresh re-queries agy but can come back with a card that
+    carries no usable consumption window (stale, or resources with no percent).
+    Spending the slot then starves the authoritative CodexBar source, which
+    reuses a hours-old payload while OpenUsage's own reading is useless.
+    """
+    payload = {
+        "providers": {
+            "antigravity": {
+                "displayName": "Antigravity",
+                "stale": True,
+                "resources": {"geminiSession": {"kind": "consumption", "unit": "percent"}},
+            },
+            "codex": {
+                "displayName": "Codex",
+                "resources": {"session": {"kind": "consumption", "unit": "percent", "used": 5}},
+            },
+        }
+    }
+    monkeypatch.setattr(openusage, "app_cli_path", lambda: "/usr/local/bin/openusage")
+    monkeypatch.setattr(openusage, "_fetch_limits", lambda **_kw: (payload, "cli"))
+    openusage.collect_openusage_ai(min_intervals={"antigravity": 900.0})
+
+    # The antigravity slot is still open, so CodexBar can take a fresh reading.
+    with QueryGate("antigravity", min_interval=900, wait=0) as gate:
+        assert gate.allowed
+
+
+def test_openusage_force_with_usable_antigravity_spends_the_slot(monkeypatch):
+    payload = {
+        "providers": {
+            "antigravity": {
+                "displayName": "Antigravity",
+                "resources": {"geminiSession": {"kind": "consumption", "unit": "percent", "used": 10}},
+            },
+            "codex": {
+                "displayName": "Codex",
+                "resources": {"session": {"kind": "consumption", "unit": "percent", "used": 5}},
+            },
+        }
+    }
+    monkeypatch.setattr(openusage, "app_cli_path", lambda: "/usr/local/bin/openusage")
+    monkeypatch.setattr(openusage, "_fetch_limits", lambda **_kw: (payload, "cli"))
+    openusage.collect_openusage_ai(min_intervals={"antigravity": 900.0})
+
+    with QueryGate("antigravity", min_interval=900, wait=0) as gate:
+        assert not gate.allowed
+
+
 # --- issue #34: cheap source first, back off a provider that keeps returning nothing
 
 

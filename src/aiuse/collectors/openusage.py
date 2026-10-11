@@ -225,6 +225,44 @@ def _gated_providers(min_intervals: dict[str, float] | None) -> set[str]:
     return {provider for provider, seconds in (min_intervals or {}).items() if seconds > 0}
 
 
+def _provider_card(providers: dict[str, Any], provider_id: str) -> dict[str, Any] | None:
+    """The provider body keyed by ``provider_id`` (case-insensitive), else None."""
+    want = provider_id.lower()
+    for key, body in providers.items():
+        if str(key).lower() == want and isinstance(body, dict):
+            return body
+    return None
+
+
+def _card_has_quota_reading(body: dict[str, Any]) -> bool:
+    """True when an OpenUsage provider card carries a usable consumption window.
+
+    Mirrors ``_from_provider``'s window-building conditions: a card that would
+    produce no ``QuotaWindow`` (no consumption percent, or a stale snapshot) is
+    not a live reading and must not spend the cross-process throttle slot for
+    that provider. Requiring a real reading is what stops OpenUsage's forced
+    refresh from restarting agy's 15-minute timer with an empty/stale card and
+    starving the authoritative CodexBar source out of its own fresh reading.
+    """
+    if body.get("stale"):
+        return False
+    resources = body.get("resources")
+    if not isinstance(resources, dict):
+        return False
+    for res in resources.values():
+        if not isinstance(res, dict) or str(res.get("kind") or "") != "consumption":
+            continue
+        used = _f(res.get("used"))
+        remaining = _f(res.get("remaining"))
+        limit = _f(res.get("limit"))
+        if str(res.get("unit") or "") == "percent":
+            if used is not None or remaining is not None:
+                return True
+        elif limit is not None and limit > 0 and (used is not None or remaining is not None):
+            return True
+    return False
+
+
 def _fetch_limits_gated(
     *,
     timeout: float,
@@ -260,9 +298,14 @@ def _fetch_limits_gated(
             return payload, via, f"OpenUsage refresh not forced: {reasons}."
         if via == "cli":
             returned = payload.get("providers") if isinstance(payload, dict) else None
-            for gate in gates:
-                if isinstance(returned, dict) and gate.provider in {str(k).lower() for k in returned}:
-                    gate.record("openusage_ai", store=False)
+            if isinstance(returned, dict):
+                for gate in gates:
+                    body = _provider_card(returned, gate.provider)
+                    if body is not None and _card_has_quota_reading(body):
+                        # Only spend the throttle slot when OpenUsage actually
+                        # returned a usable reading; an empty/stale card must
+                        # not block the authoritative source from re-querying.
+                        gate.record("openusage_ai", store=False)
         return payload, via, None
 
 
