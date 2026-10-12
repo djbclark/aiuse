@@ -64,3 +64,19 @@ Optional at runtime (`[collectors.caam] enabled = false` to disable).
 `packaging/install-deps.sh` installs the checksum-verified v0.1.23 release
 tarball from
 [the releases page](https://github.com/Dicklesworthstone/coding_agent_account_manager/releases).
+
+### This machine runs a local build, not v0.1.23
+
+`~/.local/bin/caam` here is a **local build** from
+`~/src/coding_agent_account_manager` at commit `7c6bd5d` (built 2026-10-10),
+three Grok commits ahead of v0.1.23:
+
+1. `73f93c6` fix(auth): preserve selected credentials during switch and import
+2. `b83c03c` fix(usage): never let the Grok billing probe start a browser login
+3. `7c6bd5d` feat(grok): keep saved Grok profiles fresh from the live login automatically
+
+It reports `caam dev (unknown)` because a plain `go build` embeds no version
+string. `install_caam` early-returns when `caam` is already on PATH, so a
+re-run of `install-deps.sh` will **not** replace it with v0.1.23. Revert to the
+checksum-verified release only once **v0.1.24** ships (it formalizes these
+Grok fixes); until then v0.1.23 is the floor, not what is installed.
