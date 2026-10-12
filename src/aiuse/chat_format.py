@@ -13,7 +13,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from aiuse.analysis.pace import independent_pool_key, pool_scope_label
+from aiuse.analysis.pace import (
+    independent_pool_key,
+    overall_pace_percent,
+    pool_scope_label,
+    window_pace_percent,
+)
 from aiuse.models import (
     AccountUsage,
     BillingKind,
@@ -154,41 +159,23 @@ def pace_interpretation(
     pace: PaceProfile | None,
     resets_at: datetime | None,
 ) -> str | None:
-    """Human-readable one-line pace interpretation, or None if no pace data."""
+    """Human-readable one-line pace projection, or None if no projection to report."""
     if pace is None or pace.pace_ratio is None:
         return None
 
-    ratio_s = f"`{pace.pace_ratio:.2f}×` normal"
-
-    exhausts = _projected_exhaustion_before_reset(pace, resets_at)
-
-    if exhausts:
-        phrase = "projected to exhaust before reset"
+    if _projected_exhaustion_before_reset(pace, resets_at):
+        phrase = "Projected to exhaust before reset"
         if pace.has_overage:
             phrase += " and overage may create real spending"
-        return f"Pace: {ratio_s} — {phrase}"
+        return phrase
 
     if _projection_disagrees_with_ratio(pace):
-        # Name the source, so the sentence does not read as a contradiction of
-        # the ratio printed right beside it.
-        phrase = "but history projects exhaustion before reset"
+        phrase = "History projects exhaustion before reset"
         if pace.has_overage:
             phrase += " and overage may create real spending"
-        return f"Pace: {ratio_s} right now — {phrase}"
+        return phrase
 
-    if pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= 0.20:
-        return f"Pace: {ratio_s} — likely unused capacity at reset"
-
-    if pace.pace_ratio < 0.80:
-        return f"Pace: {ratio_s} — likely unused capacity at reset"
-
-    if pace.pace_ratio > 1.30:
-        return f"Pace: {ratio_s} — significantly ahead of sustainable pace"
-
-    if pace.pace_ratio > 1.10:
-        return f"Pace: {ratio_s} — slightly ahead of sustainable pace"
-
-    return f"Pace: {ratio_s} — roughly on sustainable pace"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +288,8 @@ class _WindowRow:
         "is_monthly",
         "governing_warning",
         "pace_line",
+        "now",
+        "pace_percent",
     )
 
     def __init__(
@@ -309,6 +298,7 @@ class _WindowRow:
         account: str | None,
         window: QuotaWindow,
         alert: UseOrLoseAlert | None,
+        now: datetime | None = None,
     ) -> None:
         self.provider = provider
         self.account = account
@@ -318,6 +308,7 @@ class _WindowRow:
         self.cadence = _cadence_label(window)
         self.is_monthly = _is_monthly_window(window)
         self.governing_warning: str | None = None
+        self.now = now
 
         # Pace data.
         pace = alert.pace if alert else None
@@ -325,6 +316,7 @@ class _WindowRow:
 
         self.emoji = status_emoji(self.remaining, pace_ratio)
         self.pace_line = pace_interpretation(pace, window.resets_at)
+        self.pace_percent = window_pace_percent(window, now) if now is not None else None
 
     @property
     def heading(self) -> str:
@@ -341,10 +333,14 @@ class _WindowRow:
         rem = _format_remaining(self.remaining)
         estimated = not self.window.reset_time_is_precise()
         deadline = _chat_deadline(
-            self.window.days_until_reset(),
+            self.window.days_until_reset(self.now),
             estimated=estimated,
         )
-        return f"`{rem} left · resets in {deadline}`"
+        reset_part = deadline if deadline.startswith("reset") else f"resets in {deadline}"
+        parts = [f"{rem} left", reset_part]
+        if self.pace_percent is not None:
+            parts.append(f"pace {self.pace_percent:+d}%")
+        return f"`{' · '.join(parts)}`"
 
     def severity_key(self) -> int:
         """Numeric severity for sorting (higher = worse)."""
@@ -594,10 +590,28 @@ def _monthly_pacing_note(
 # ---------------------------------------------------------------------------
 
 
+def _alert_pace_percent(
+    alert: UseOrLoseAlert,
+    sub_rows: list[_WindowRow] | None,
+    now: datetime | None,
+) -> int | None:
+    """Signed pace percent for an alert, resolving the QuotaWindow when possible."""
+    if sub_rows and now:
+        for r in sub_rows:
+            if (r.provider, r.account, r.window.label) == (alert.provider, alert.account, alert.window_label):
+                pct = window_pace_percent(r.window, now)
+                if pct is not None:
+                    return pct
+    if alert.pace and alert.pace.pace_ratio is not None:
+        return round((alert.pace.pace_ratio - 1) * 100)
+    return None
+
+
 def _build_action_items(
     alerts: list[UseOrLoseAlert],
     routing_context: RoutingContext | None = None,
     sub_rows: list[_WindowRow] | None = None,
+    now: datetime | None = None,
 ) -> list[str]:
     """Build deterministic action items from alerts.
 
@@ -685,6 +699,7 @@ def _build_action_items(
             if scope:
                 acct += f" · {scope}"
             rem = _format_remaining(a.remaining_percent)
+            pace_pct = _alert_pace_percent(a, sub_rows, now)
 
             if a.kind == "conserve":
                 # Nothing left to conserve — the plain report tags these `empty`
@@ -692,14 +707,10 @@ def _build_action_items(
                 if a.remaining_percent < 1:
                     items.append(f"{name}{acct} is exhausted")
                     continue
-                pace_s = ""
-                if a.pace and a.pace.pace_ratio is not None:
-                    pace_s = f" and pace is `{a.pace.pace_ratio:.2f}×` normal"
+                pace_s = f" and pace `{pace_pct:+d}%`" if pace_pct is not None else ""
                 items.append(f"Conserve {name}{acct}: `{rem}` remains{pace_s}")
             elif a.kind == "burn":
-                pace_s = ""
-                if a.pace and a.pace.pace_ratio is not None:
-                    pace_s = f" pacing at `{a.pace.pace_ratio:.2f}×`"
+                pace_s = f" pacing at `{pace_pct:+d}%`" if pace_pct is not None else ""
                 if a.remaining_percent < 1:
                     items.append(f"{name}{acct} is exhausted")
                 else:
@@ -792,15 +803,18 @@ def _window_line_label(row: _WindowRow, scope: str | None) -> str:
     return label
 
 
-def _render_pool_entry(entry: _PoolEntry) -> list[str]:
+def _render_pool_entry(entry: _PoolEntry, now: datetime | None = None) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form."""
+    overall = overall_pace_percent([r.window for r in entry.rows], now) if now is not None else None
+    pace_suffix = f" · pace {overall:+d}%" if overall is not None else ""
+
     if len(entry.rows) == 1:
         row = entry.rows[0]
-        lines = [f"{row.emoji} {row.heading}", f"   ↳ {row.status_line}"]
+        lines = [f"{row.emoji} {row.heading}{pace_suffix}", f"   ↳ {row.status_line}"]
         lines.extend(f"   ↳ {note}" for note in _row_notes(row))
         return lines
 
-    lines = [f"{entry.emoji} {entry.heading}"]
+    lines = [f"{entry.emoji} {entry.heading}{pace_suffix}"]
     for row in entry.rows:
         lines.append(f"   ↳ {_window_line_label(row, entry.scope)} — {row.status_line}")
         # Deeper indent so a pace line is unambiguously about the window above
@@ -898,10 +912,11 @@ def render_chat_report(
 
     # --- Build subscription window rows ---
     sub_rows: list[_WindowRow] = []
+    now = snapshot.collected_at
     for account in sub_accounts:
         for window in account.windows:
             alert = _find_alert(alert_idx, account.provider, account.account, window.label)
-            row = _WindowRow(account.provider, account.account, window, alert)
+            row = _WindowRow(account.provider, account.account, window, alert, now=now)
             sub_rows.append(row)
 
     # Apply governing-window warnings.
@@ -916,7 +931,7 @@ def render_chat_report(
     if pool_entries:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
         for entry in pool_entries:
-            lines.extend(_render_pool_entry(entry))
+            lines.extend(_render_pool_entry(entry, now=now))
         sections.append("\n".join(lines))
 
     # --- Render prepaid/API balances ---
@@ -928,7 +943,12 @@ def render_chat_report(
         sections.append("\n".join(lines))
 
     # --- Action section ---
-    action_items = _build_action_items(alerts, routing_context=routing_context, sub_rows=sub_rows)
+    action_items = _build_action_items(
+        alerts,
+        routing_context=routing_context,
+        sub_rows=sub_rows,
+        now=now,
+    )
     if action_items:
         lines = ["📌 **ACTION**"]
         for item in action_items:
@@ -949,6 +969,9 @@ def render_chat_report(
             who = acc.account or "default"
             lines.append(f"   ↳ {name} ({who}): no usage data")
         sections.append("\n".join(lines))
+
+    if pool_entries:
+        sections.append("pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest")
 
     if not sections[1:]:  # Only header, no data.
         sections.append("No usage data collected.")

@@ -226,8 +226,8 @@ class TestPaceInterpretation:
             projected_exhaust_at=None,
         )
         result = pace_interpretation(pace, NOW)
-        assert "projected to exhaust before reset" in result
-        assert "1.47×" in result
+        assert result == "Projected to exhaust before reset"
+        assert "1.47×" not in (result or "")
 
     def test_projected_exhaustion_with_overage(self):
         pace = PaceProfile(
@@ -242,6 +242,7 @@ class TestPaceInterpretation:
         )
         result = pace_interpretation(pace, NOW)
         assert "overage may create real spending" in result
+        assert "Projected to exhaust before reset" in result
 
     def test_no_overage_no_spending(self):
         pace = PaceProfile(
@@ -256,6 +257,7 @@ class TestPaceInterpretation:
         )
         result = pace_interpretation(pace, NOW)
         assert "overage" not in result
+        assert "Projected to exhaust before reset" in result
 
     def test_waste_from_fraction(self):
         pace = PaceProfile(
@@ -267,8 +269,7 @@ class TestPaceInterpretation:
             projected_waste_usd=None,
             projected_exhaust_at=None,
         )
-        result = pace_interpretation(pace, NOW)
-        assert "likely unused capacity" in result
+        assert pace_interpretation(pace, NOW) is None
 
     def test_low_pace(self):
         pace = PaceProfile(
@@ -280,8 +281,7 @@ class TestPaceInterpretation:
             projected_waste_usd=None,
             projected_exhaust_at=None,
         )
-        result = pace_interpretation(pace, NOW)
-        assert "likely unused capacity" in result
+        assert pace_interpretation(pace, NOW) is None
 
     def test_significantly_ahead(self):
         pace = PaceProfile(
@@ -293,8 +293,7 @@ class TestPaceInterpretation:
             projected_waste_usd=None,
             projected_exhaust_at=None,
         )
-        result = pace_interpretation(pace, NOW)
-        assert "significantly ahead" in result
+        assert pace_interpretation(pace, NOW) is None
 
     def test_slightly_ahead(self):
         pace = PaceProfile(
@@ -306,8 +305,7 @@ class TestPaceInterpretation:
             projected_waste_usd=None,
             projected_exhaust_at=None,
         )
-        result = pace_interpretation(pace, NOW)
-        assert "slightly ahead" in result
+        assert pace_interpretation(pace, NOW) is None
 
     def test_on_pace(self):
         pace = PaceProfile(
@@ -319,8 +317,7 @@ class TestPaceInterpretation:
             projected_waste_usd=None,
             projected_exhaust_at=None,
         )
-        result = pace_interpretation(pace, NOW)
-        assert "roughly on sustainable pace" in result
+        assert pace_interpretation(pace, NOW) is None
 
 
 # -----------------------------------------------------------------------
@@ -701,13 +698,14 @@ class TestRenderChatReport:
         assert "**SUBSCRIPTION WINDOWS**" in output
 
     def test_pace_line_present(self):
-        """Pace data from alert is rendered when available."""
+        """Pace data is rendered in window code span and header."""
         acc = _account()
         alert = _alert(pace_ratio=1.15)
         snap = _snapshot([acc])
         output = render_chat_report(snap, [alert])
-        assert "Pace:" in output
-        assert "1.15×" in output
+        assert "pace " in output
+        assert "1.15×" not in output
+        assert "Pace:" not in output
 
 
 # -----------------------------------------------------------------------
@@ -842,8 +840,7 @@ def test_pace_below_sustainable_is_never_projected_to_exhaust():
             projected_exhaust_at=now + timedelta(hours=1),
         )
         line = pace_interpretation(pace, resets)
-        assert line is not None
-        assert "projected to exhaust" not in line, f"ratio {ratio}: {line}"
+        assert line is None or "projected to exhaust" not in line.lower(), f"ratio {ratio}: {line}"
 
     # At or above sustainable pace the warning is still allowed through.
     fast = PaceProfile(
@@ -855,7 +852,7 @@ def test_pace_below_sustainable_is_never_projected_to_exhaust():
         projected_waste_usd=None,
         projected_exhaust_at=now + timedelta(hours=1),
     )
-    assert "projected to exhaust" in (pace_interpretation(fast, resets) or "")
+    assert "projected to exhaust" in (pace_interpretation(fast, resets) or "").lower()
 
 
 def test_exhausted_window_is_not_described_as_conserve():
@@ -907,8 +904,8 @@ def test_history_driven_projection_names_its_source():
     )
     line = pace_interpretation(pace, now + timedelta(days=6))
     assert line is not None
-    assert "0.00×" in line
-    assert "history projects exhaustion" in line
+    assert "0.00×" not in line
+    assert "history projects exhaustion" in line.lower()
     # The bare claim, which would contradict the 0.00× beside it, is gone.
     assert "normal — projected to exhaust" not in line
 
@@ -1120,3 +1117,87 @@ class TestNoDataAccounts:
         output = render_chat_report(snap, [])
         assert "no usage data" not in output
         assert EMOJI_PREPAID in output
+
+
+class TestPaceHeadlinesAndWindowPace:
+    """Tests for per-window pace, overall header pace, and action pace in chat format."""
+
+    def test_window_line_ends_with_pace_in_code_span(self):
+        # 48h left out of 10080m (7d = 168h). Elapsed is 120h/168h = 71.4%.
+        # Used is 50%. Pace ratio is 50 / 71.4 = 0.70. Pace percent is -30%.
+        win = _window("weekly", remaining=50.0, resets_hours=48.0, window_minutes=10080)
+        row = _WindowRow("claude", "user@example.com", win, None, now=NOW)
+        assert row.status_line == "`50% left · resets in 2d · pace -30%`"
+
+    def test_window_line_omits_pace_when_exhausted_or_unclocked(self):
+        win_exhausted = _window("weekly", remaining=0.0, resets_hours=48.0, window_minutes=10080)
+        row1 = _WindowRow("claude", "user@example.com", win_exhausted, None, now=NOW)
+        assert "pace" not in row1.status_line
+
+        win_unclocked = QuotaWindow(label="unclocked", remaining_percent=50.0, resets_at=None, window_minutes=None)
+        row2 = _WindowRow("claude", "user@example.com", win_unclocked, None, now=NOW)
+        assert "pace" not in row2.status_line
+
+    def test_header_line_gets_overall_pace_and_window_lines_have_pace(self):
+        # Window 1: 5-hour, 94% left, 1.5h left out of 5h -> elapsed 3.5/5 = 70%. Used 6%. Pace 6/70 = 0.086 -> -91%.
+        # Window 2: weekly, 22% left, 88h left out of 168h -> elapsed 80/168 = 47.6%. Used 78%. Pace 78/47.6 = 1.638 -> +64%.
+        w1 = _window("5-hour", remaining=94.0, resets_hours=1.5, window_minutes=300)
+        w2 = _window("weekly", remaining=22.0, resets_hours=88.0, window_minutes=10080)
+        acc = _account(provider="claude", account="user@example.com", windows=[w1, w2])
+        snap = _snapshot([acc])
+        output = render_chat_report(snap, [])
+        # Header line gets overall pace (highest = +64%)
+        assert "**claude · user@example.com** · pace +64%" in output
+        # Windows get their respective pace
+        assert "5-hour — `94% left · resets in 1h 30m · pace -91%`" in output
+        assert "weekly — `22% left · resets in 3d 15h · pace +64%`" in output
+
+    def test_header_pace_omitted_when_any_window_exhausted(self):
+        w1 = _window("5-hour", remaining=0.0, resets_hours=1.0, window_minutes=300)
+        w2 = _window("weekly", remaining=50.0, resets_hours=48.0, window_minutes=10080)
+        acc = _account(provider="claude", account="user@example.com", windows=[w1, w2])
+        snap = _snapshot([acc])
+        output = render_chat_report(snap, [])
+        header = next(ln for ln in output.splitlines() if "**claude" in ln)
+        assert "pace" not in header
+
+    def test_no_separate_pace_number_line_keep_projection(self):
+        w = _window("weekly", remaining=22.0, resets_hours=88.0, window_minutes=10080)
+        alert = _alert(
+            kind="conserve",
+            remaining=22.0,
+            urgency=Urgency.HIGH,
+            pace_ratio=1.65,
+            projected_used_fraction=1.2,
+        )
+        snap = _snapshot([_account(windows=[w])])
+        output = render_chat_report(snap, [alert])
+        assert "Projected to exhaust before reset" in output
+        assert "1.65×" not in output
+        assert "Pace:" not in output
+
+    def test_reset_time_unavailable_wording_fix(self):
+        win = QuotaWindow(label="5-hour", remaining_percent=100.0, resets_at=None, window_minutes=300)
+        row = _WindowRow("zai", None, win, None, now=NOW)
+        assert row.status_line == "`100% left · reset time unavailable`"
+        assert "resets in reset time unavailable" not in row.status_line
+
+    def test_action_lines_signed_pace_percent(self):
+        alert = _alert(
+            provider="codex",
+            account="me@gmail.com",
+            window_label="weekly",
+            remaining=6.0,
+            kind="conserve",
+            urgency=Urgency.HIGH,
+            pace_ratio=4.62,
+        )
+        items = _build_action_items([alert])
+        assert len(items) == 1
+        assert "Conserve codex · me@gmail.com: `6%` remains and pace `+362%`" == items[0]
+
+    def test_legend_line_at_end_of_chat_output(self):
+        snap = _snapshot([_account()])
+        output = render_chat_report(snap, [])
+        expected_legend = "pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest"
+        assert output.strip().endswith(expected_legend)
