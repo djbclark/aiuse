@@ -137,7 +137,10 @@ Full path-by-path map with "read when" hints:
   `bd setup claude`, `/init`, must be re-pointed at `AGENTS.md`).
 - Run `uv run --extra dev ruff format` on changed Python files before
   committing: the pre-commit ruff-format hook otherwise rewrites them and aborts
-  the first commit (re-stage and commit again).
+  the first commit (re-stage and commit again). Also run
+  `uv run --extra dev mypy <changed files>`: the pre-commit mypy hook rejects
+  the commit otherwise (2026-10-12: an untyped tuple unpack in a delegated
+  slice).
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
 - Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
   (the same all-files quality gate as GitHub Actions). `pre-commit install --install-hooks`
