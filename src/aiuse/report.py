@@ -1902,18 +1902,29 @@ def _capacity_summary_line(alerts: list[UseOrLoseAlert], s: _Style) -> str | Non
     if not action:
         return None
     conserve = [a for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind == "conserve"]
-    total_value_usd = sum(
-        a.flexibility_profile.value_at_risk_usd
-        for a in action
-        if a.flexibility_profile and a.flexibility_profile.value_at_risk_usd is not None
-    )
     providers = len({a.provider for a in action} | {a.provider for a in conserve})
-    if total_value_usd > 0:
-        return s.dim(
-            f"  Available capacity this cycle: {s.bold(f'${total_value_usd:.2f}')} "
-            f"across {len(action)} windows ({providers} providers)."
-        )
-    return s.dim(f"  {len(action)} windows with unused capacity across {providers} providers.")
+    paced = [a for a in action if a.pace is not None and a.pace.pace_ratio is not None]
+    if paced:
+        items = []
+        for alert in paced[:3]:
+            cadence = classify_window_minutes(alert.window_minutes)
+            window = {"weekly": "week", "monthly": "month"}.get(cadence, cadence) or alert.window_label
+            pace = alert.pace
+            assert pace is not None and pace.pace_ratio is not None
+            item = f"{provider_display_name(alert.provider)} {window} {(pace.pace_ratio - 1.0) * 100.0:+.0f}% pace"
+            if pace.projected_waste_fraction is not None:
+                item += f" ({pace.projected_waste_fraction * 100.0:.0f}% unused at reset)"
+            items.append(s.bold(item))
+        if len(paced) > 3:
+            items.append(f"+{len(paced) - 3} more")
+        window_count = len(action)
+        window_word = "window" if window_count == 1 else "windows"
+        provider_word = "provider" if providers == 1 else "providers"
+        return s.dim(f"  Pace: {'; '.join(items)} · {window_count} {window_word} across {providers} {provider_word}.")
+    window_count = len(action)
+    window_word = "window" if window_count == 1 else "windows"
+    provider_word = "provider" if providers == 1 else "providers"
+    return s.dim(f"  {window_count} {window_word} with unused capacity across {providers} {provider_word}.")
 
 
 def _physical_line_count(lines: list[str]) -> int:

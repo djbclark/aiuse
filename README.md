@@ -441,7 +441,7 @@ Codex · account=you@example.com · plan=plus · selected live source: CodexBar
 
 ## Action plan — use these before they reset
 --------------------------------------------------------------------------------
-  Available capacity this cycle: $35.65 across 6 windows (5 providers).
+  Pace: Codex week -70% pace (93% unused at reset) · 6 windows across 5 providers.
 
   THIS WEEK (start now — capacity will reset or needs lead time)
   ─────────────────────────────────────────────────────────────
