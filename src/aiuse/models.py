@@ -739,6 +739,13 @@ class Snapshot:
             "collector_errors": self.collector_errors,
             "disabled_services": dict(self.disabled_services),
         }
+        from aiuse.analysis.pace import overall_pace_percent, window_pace_percent, window_pace_ratio
+
+        for account, data in zip(self.accounts, body["accounts"], strict=True):
+            data["overall_pace_percent"] = overall_pace_percent(account.windows, self.collected_at)
+            for window, entry in zip(account.windows, data["windows"], strict=True):
+                entry["pace_percent"] = window_pace_percent(window, self.collected_at)
+                entry["pace_ratio"] = window_pace_ratio(window, self.collected_at)
         if self.config_fingerprint:
             body["config_fingerprint"] = self.config_fingerprint
         return body

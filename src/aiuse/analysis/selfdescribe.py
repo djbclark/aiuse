@@ -1,4 +1,4 @@
-"""Self-describing quota semantics (schema 1.1) — read the JSON, no docs needed.
+"""Self-describing quota semantics (schema 1.2) — read the JSON, no docs needed.
 
 Born from three real misreads on 2026-10-03:
 
@@ -20,9 +20,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping
 
-from aiuse.models import canonical_provider, claude_model_scope, parse_dt, utcnow
+from aiuse.analysis.pace import overall_pace_percent, window_pace_percent, window_pace_ratio
+from aiuse.models import QuotaWindow, canonical_provider, claude_model_scope, parse_dt, utcnow
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -32,6 +33,9 @@ TIGHT_BELOW = 15.0  # remaining < 15 -> tight
 FRESH_THRESHOLD_SECONDS_DEFAULT = 1500.0  # 25 min
 
 SEMANTICS: dict[str, str] = {
+    "pace_percent": "round((pace_ratio - 1) * 100); positive ahead, negative behind even spend; null when exhausted or unclocked",
+    "pace_ratio": "unblended used fraction / elapsed fraction (minimum elapsed 0.05), at snapshot collection time",
+    "overall_pace_percent": "highest non-null window pace_percent; null when no window has pace or any window is exhausted",
     "used_percent": "share CONSUMED; 100 means exhausted, 0 means untouched",
     "remaining_percent": "share still available; decide from this",
     "headroom_percent": "window: alias of remaining_percent; routing entry: least applicable headroom, with Fable's cap scaled to shared-weekly units",
@@ -261,6 +265,23 @@ def enrich_snapshot(
                 account["client_limits"] = [dict(entry) for entry in limits]
             else:
                 account.pop("client_limits", None)
+    pace_now = parse_dt(collected) or now
+    for account in accounts:
+        quota_windows = []
+        for window in account.get("windows") or []:
+            if not isinstance(window, dict):
+                continue
+            quota = QuotaWindow(
+                label=str(window.get("label") or ""),
+                used_percent=window.get("used_percent"),
+                remaining_percent=window.get("remaining_percent"),
+                resets_at=parse_dt(window.get("resets_at")),
+                window_minutes=window.get("window_minutes"),
+            )
+            quota_windows.append(quota)
+            window["pace_percent"] = window_pace_percent(quota, pace_now)
+            window["pace_ratio"] = window_pace_ratio(quota, pace_now)
+        account["overall_pace_percent"] = overall_pace_percent(quota_windows, pace_now)
     snap["accounts"] = accounts
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     snap["semantics"] = dict(SEMANTICS)
@@ -427,7 +448,9 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         if left is None and used is not None:
             left = max(0.0, 100.0 - float(used))
         word = {"exhausted": "EXHAUSTED", "tight": "TIGHT", "ok": "ok", "unknown": "UNKNOWN"}.get(state, state)
-        seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{_reset_fragment(window.get('resets_at'))})"
+        pace = window.get("pace_percent")
+        pace_text = f", pace {pace:+d}%" if pace is not None else ""
+        seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{pace_text}{_reset_fragment(window.get('resets_at'))})"
         if window.get("quota_scope") == "model_sublimit":
             cap = window.get("max_share_of_parent_percent")
             seg += f" [cap <={cap:g}% of shared weekly]" if cap is not None else " [cap within shared weekly]"

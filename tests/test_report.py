@@ -798,7 +798,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["##", "SERVICE", "ACCT", "5H", "WEEK", "MONTH", "$", "UNUSED"]
+    assert lines[0].split() == ["##", "SERVICE", "ACCT", "5H", "WEEK", "MONTH", "PACE"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -1735,7 +1735,9 @@ def test_clock_matrix_puts_each_window_under_its_own_clock():
 
     # Claude reports both clocks; the monthly cell is empty, not fabricated.
     claude = rows["claude"].split()
-    assert claude[5:8] == ["75u/25l/4h", "3u/97l/7d", "<-"]
+    assert "75u/25l/4h" in claude
+    assert "3u/97l/7d" in claude
+    assert claude.index("75u/25l/4h") < claude.index("3u/97l/7d") < claude.index("<-")
 
 
 def test_clock_matrix_shows_used_not_remaining():
@@ -1828,8 +1830,8 @@ def test_clock_matrix_sheds_columns_before_truncating_numbers():
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
     narrow = render_clock_matrix([], snapshot=snap, color=False, width=52)
 
-    assert "$ UNUSED" in wide
-    assert "$ UNUSED" not in narrow
+    assert "PACE" in wide
+    assert "PACE" not in narrow
     assert "NEXT" not in wide
     # The clock columns are the point of the table and survive the squeeze.
     for header in ("5H", "WEEK", "MONTH"):
@@ -2228,7 +2230,7 @@ def test_advance_matrix_layout_skips_identity_still_needed_for_uniqueness():
         ],
     )
     built = _build_matrix_rows([], snap, {})
-    layout = _MatrixLayout(show_value=False, compact_deadline=True, short_scope=True, show_scope=True)
+    layout = _MatrixLayout(show_value=False, show_pace=False, compact_deadline=True, short_scope=True, show_scope=True)
     # Unique account can go; SCOPE still distinguishes the two agy rows.
     assert _advance_matrix_layout(layout, built) is True
     assert not layout.show_account

@@ -51,7 +51,7 @@ def _alert(
 def test_under_pace_item_includes_waste_and_uses_short_window() -> None:
     line = _capacity_summary_line([_alert(projected_waste_fraction=0.93)], _Style(False))
 
-    assert line == "  Pace: codex 5h -70% pace (93% unused at reset) · 1 window across 1 provider."
+    assert line == "  1 window with unused capacity across 1 provider."
     assert "$" not in line
 
 
@@ -59,7 +59,7 @@ def test_over_pace_item_has_positive_delta() -> None:
     line = _capacity_summary_line([_alert(pace_ratio=2.04)], _Style(False))
 
     assert line is not None
-    assert "codex 5h +104% pace" in line
+    assert "1 window with unused capacity across 1 provider" in line
 
 
 def test_more_than_three_paced_alerts_are_summarized() -> None:
@@ -68,9 +68,8 @@ def test_more_than_three_paced_alerts_are_summarized() -> None:
     line = _capacity_summary_line(alerts, _Style(False))
 
     assert line is not None
-    assert line.count(" pace") == 3
-    assert "+2 more" in line
-    assert "5 windows across 5 providers" in line
+    assert "pace" not in line
+    assert "5 windows with unused capacity across 5 providers" in line
 
 
 def test_no_pace_uses_pluralized_fallback() -> None:

@@ -3,6 +3,7 @@ analyze_use_or_lose (see use_or_lose.py)."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from aiuse.models import (
@@ -71,6 +72,34 @@ def compute_pace(
         confidence=confidence,
         learned_sample_count=blended_n,
     )
+
+
+def window_pace_ratio(window: QuotaWindow, now: datetime) -> float | None:
+    """Unblended pace, absent for exhausted or unclocked windows."""
+    remaining = window.remaining()
+    if remaining is None or remaining <= 0 or not window.resets_at:
+        return None
+    if not window.window_minutes and claude_model_scope(window.label) is not None:
+        window = replace(window, window_minutes=7 * 24 * 60)
+    pace = compute_pace(window, now=now)
+    return pace.pace_ratio if pace is not None else None
+
+
+def window_pace_percent(window: QuotaWindow, now: datetime) -> int | None:
+    ratio = window_pace_ratio(window, now)
+    return round((ratio - 1) * 100) if ratio is not None else None
+
+
+def overall_pace_percent(windows: list[QuotaWindow], now: datetime) -> int | None:
+    """Highest window pace: the window furthest ahead of an even spend runs out first.
+
+    None when any window is exhausted: the row is locked out until that window
+    resets, so a pace from its other windows would read as spare capacity.
+    """
+    if any((remaining := window.remaining()) is not None and remaining <= 0 for window in windows):
+        return None
+    values = [value for window in windows if (value := window_pace_percent(window, now)) is not None]
+    return max(values) if values else None
 
 
 def classify_pace(

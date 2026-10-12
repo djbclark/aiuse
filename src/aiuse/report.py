@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from dataclasses import dataclass, field, replace
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, TextIO
 
 from aiuse.analysis.history import (
@@ -19,7 +19,9 @@ from aiuse.analysis.pace import (
     compute_pace,
     governing_partition,
     independent_pool_key,
+    overall_pace_percent,
     partition_independent_pools,
+    window_pace_percent,
 )
 from aiuse.analysis.use_or_lose import DAYS_PER_MONTH, _classify_flexibility, _compute_value_at_risk
 from aiuse.models import (
@@ -93,6 +95,7 @@ class _MatrixRow:
     scope: str = "—"
     clocks: dict[str, _ClockCell] = field(default_factory=dict)
     value_usd: float | None = None
+    pace_percent: int | None = None
     note: str | None = None
     tail_note: str | None = None
     stale: bool = False
@@ -108,6 +111,7 @@ class _ClockCell:
     folded: int = 0  # extra windows on this clock, collapsed into this one
     days_until_reset: float | None = None
     reset_estimated: bool = False
+    pace_percent: int | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +134,7 @@ class _ResetSpan:
 class _MatrixLayout:
     """Which optional pieces of the clock matrix the current width can afford."""
 
+    show_pace: bool = True
     show_value: bool = True
     compact_deadline: bool = False
     short_scope: bool = False
@@ -893,6 +898,9 @@ def _advance_matrix_layout(layout: _MatrixLayout, rows: list[_MatrixRow]) -> boo
     if layout.show_value:
         layout.show_value = False
         return True
+    if layout.show_pace:
+        layout.show_pace = False
+        return True
     if not layout.compact_deadline:
         layout.compact_deadline = True
         return True
@@ -972,9 +980,14 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
     for w_span in w_spans:
         total += 1 + (w_pct + ((1 + w_span) if w_span else 0))
     if layout.show_value:
-        total += 1 + max(7, len("$ UNUSED"))
-    if any(row.tail_note for row in rows):
-        total += 1 + max(len(row.tail_note or "") for row in rows)
+        total += 1 + max([4] + [len(f"{row.pace_percent:+d}%") for row in rows if row.pace_percent is not None])
+    # Reserve a fixed amount for status text, never the length of a free-text
+    # note. This keeps EXHAUSTED readable before squeezing numeric cells.
+    if any(
+        row.note or row.tail_note or row.stale or any(cell.used_percent >= 99 for cell in row.clocks.values())
+        for row in rows
+    ):
+        total += 1 + len("<- EXHAUSTED")
     return total
 
 
@@ -998,6 +1011,17 @@ def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple
                 w_spans[idx] = max(w_spans[idx], len(span.plain()))
     for idx, (_key, label) in enumerate(CLOCK_COLUMNS):
         w_pct = max(w_pct, len(label))
+    if layout.show_pace:
+        for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
+            suffix = max(
+                [0]
+                + [
+                    len(f" {row.clocks[key].pace_percent:+d}%")
+                    for row in rows
+                    if key in row.clocks and row.clocks[key].pace_percent is not None
+                ]
+            )
+            w_spans[idx] += suffix
     return w_pct, w_spans
 
 
@@ -1249,7 +1273,7 @@ def _build_matrix_rows(
     # them (analysis can raise on data an account row cannot render), and the
     # alert is the more informative row. Same rule the ladder used.
     deferred: list[AccountUsage] = []
-    now = utcnow()
+    now = snapshot.collected_at if snapshot is not None else utcnow()
 
     for account in _sorted_accounts(snapshot.accounts) if snapshot is not None else []:
         service = provider_display_name(account.provider)
@@ -1280,16 +1304,8 @@ def _build_matrix_rows(
                     exhausted = window.remaining() == 0
                     span = _format_reset_span(window.days_until_reset(now))
                     reset = f"/{span.plain()}" if span else ""
-                    # cswap reports no duration for a model cap; it rides the weekly clock.
-                    paced = window if window.window_minutes else replace(window, window_minutes=_WEEKLY_MINUTES)
-                    pace = None if exhausted else compute_pace(paced, now=now)
-                    # Projected end-of-window use vs. the window's own quota:
-                    # "(+44% pace)" heads over it, "(-22% pace)" heads under it.
-                    trend = (
-                        f" ({(pace.pace_ratio - 1.0) * 100.0:+.0f}% pace)"
-                        if pace is not None and pace.pace_ratio
-                        else ""
-                    )
+                    pace_percent = window_pace_percent(window, now)
+                    trend = f" ({pace_percent:+d}% pace)" if pace_percent is not None else ""
                     status = " EXHAUSTED" if exhausted else ""
                     sublimit_notes.append(f"{model} cap ({cap}): {meter}{reset}{trend}{status}")
                     continue
@@ -1306,6 +1322,7 @@ def _build_matrix_rows(
                             inferred=inferred,
                             days_until_reset=days,
                             reset_estimated=estimated,
+                            pace_percent=window_pace_percent(window, now),
                         )
                     else:
                         # Same clock, same pool (Cursor Included ⊂ Auto): show the
@@ -1316,6 +1333,7 @@ def _build_matrix_rows(
                             cell.inferred = inferred
                             cell.days_until_reset = days
                             cell.reset_estimated = estimated
+                            cell.pace_percent = window_pace_percent(window, now)
                 remaining = window.remaining()
                 if remaining is not None:
                     priced = _window_value_usd(window, remaining, account.provider, plans, analysis)
@@ -1369,6 +1387,7 @@ def _build_matrix_rows(
                     scope=_POOL_SCOPE_LABELS.get(pool_id, "—"),
                     clocks=clocks,
                     value_usd=value,
+                    pace_percent=overall_pace_percent(pool, now),
                     note=note,
                     tail_note=tail_note,
                     stale=stale,
@@ -1385,7 +1404,7 @@ def _build_matrix_rows(
         if key in covered:
             continue
         covered.add(key)
-        rows.append(_row_from_alert(alert))
+        rows.append(_row_from_alert(alert, now=now))
 
     for account in deferred:
         if _ladder_coverage_key(account.provider, account.account, "") in covered:
@@ -1466,7 +1485,7 @@ def _build_matrix_rows(
     return rows
 
 
-def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
+def _row_from_alert(alert: UseOrLoseAlert, *, now: datetime | None = None) -> _MatrixRow:
     """A table row built from an alert alone, with no account windows behind it.
 
     Only ever one clock wide — an alert describes a single window — so these
@@ -1488,12 +1507,14 @@ def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
         row.note = f"{alert.window_label}"
         return row
 
+    now = now or utcnow()
     synthetic = QuotaWindow(
         label=alert.window_label,
         remaining_percent=alert.remaining_percent,
-        resets_at=None,
-        window_minutes=None,
+        resets_at=now + timedelta(days=alert.days_until_reset) if alert.days_until_reset is not None else None,
+        window_minutes=alert.window_minutes,
     )
+    row.pace_percent = window_pace_percent(synthetic, now)
     clock, inferred = infer_window_clock(synthetic)
     if clock is None and alert.days_until_reset is not None:
         # No duration and an unhelpful label: fall back to reset distance, the
@@ -1506,6 +1527,7 @@ def _row_from_alert(alert: UseOrLoseAlert) -> _MatrixRow:
             inferred=inferred,
             days_until_reset=alert.days_until_reset,
             reset_estimated=alert.deadline_is_estimated,
+            pace_percent=row.pace_percent,
         )
     if alert.flexibility_profile is not None:
         row.value_usd = alert.flexibility_profile.value_at_risk_usd
@@ -1571,7 +1593,7 @@ def render_clock_matrix(
     if not rows:
         return s.green("use   nothing urgent under current thresholds")
 
-    avail = min(width or terminal_width(), TABLE_MAX_WIDTH)
+    avail = width or terminal_width()
     layout = _MatrixLayout(
         show_scope=any(row.scope != "—" for row in rows),
         show_account=any(row.account != "—" for row in rows),
@@ -1588,7 +1610,7 @@ def render_clock_matrix(
     w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
     w_pct, w_spans = _clock_column_widths(rows, layout)
     w_clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
-    w_value = max(7, len("$ UNUSED"))
+    w_value = max([4] + [len(f"{row.pace_percent:+d}%") for row in rows if row.pace_percent is not None])
 
     def _line(tag: str, score: str, service: str, account: str, scope: str, tail: list[str]) -> str:
         cells = [tag, score, service]
@@ -1613,7 +1635,7 @@ def render_clock_matrix(
                 f"{'SERVICE':<{w_service}}",
                 f"{'ACCT':<{w_account}}",
                 f"{'SCOPE':<{w_scope}}",
-                header_clocks + ([f"{'$ UNUSED':>{w_value}}"] if layout.show_value else []),
+                header_clocks + ([f"{'PACE':>{w_value}}"] if layout.show_value else []),
             )
         )
     ]
@@ -1632,7 +1654,10 @@ def render_clock_matrix(
         scope = s.dim(f"{scope_text:<{w_scope}}")
 
         if row.note is not None:
-            line = _line(tag, score, service, account, scope, [s.dim(row.note)])
+            blanks = [" " * size for size in w_clocks]
+            if layout.show_value:
+                blanks.append(f"{'—':>{w_value}}")
+            line = _line(tag, score, service, account, scope, blanks + [s.dim(row.note)])
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             for note in row.sublimit_notes:
                 lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
@@ -1647,13 +1672,7 @@ def render_clock_matrix(
             if cell is not None and 100.0 - float(cell.used_percent) <= 1.0:
                 row_exhausted = True
             if cell is None:
-                if not present_indices or min(present_indices) < idx < max(present_indices):
-                    missing_char = "—"
-                elif idx < min(present_indices):
-                    missing_char = "->"
-                else:
-                    missing_char = "<-"
-                tail.append(s.dim(f"{missing_char:>{w_clock}}"))
+                tail.append(s.dim(f"{'—':>{w_clock}}"))
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
@@ -1668,17 +1687,20 @@ def render_clock_matrix(
                 continue
             any_deadline = True
             styled = colored + s.dim("/") + _style_reset_span(s, span)
-            pad = w_clock - (w_pct + 1 + len(span.plain()))
+            suffix = f" {cell.pace_percent:+d}%" if layout.show_pace and cell.pace_percent is not None else ""
+            styled += s.dim(suffix)
+            pad = w_clock - (w_pct + 1 + len(span.plain()) + len(suffix))
             if pad > 0:
                 styled += " " * pad
             tail.append(styled)
 
+        if layout.show_value:
+            value_text = "—" if row.pace_percent is None else f"{row.pace_percent:+d}%"
+            tail.append(f"{value_text:>{w_value}}")
+        if present_indices and max(present_indices) < len(CLOCK_COLUMNS) - 1:
+            tail.append(s.dim("<-"))
         if row_exhausted:
             tail.append(s.red(s.bold("EXHAUSTED")))
-
-        if layout.show_value:
-            value_text = "—" if row.value_usd is None else f"${row.value_usd:,.2f}"
-            tail.append(f"{value_text:>{w_value}}")
         if row.tail_note:
             tail.append(s.dim(row.tail_note))
         if row.stale:
@@ -1715,6 +1737,14 @@ def render_clock_matrix(
     plain_note = "u/l = percent used / percent left — l is what you can still spend"
     fmt_note = s.dim("u/l = ") + s.bold("percent used / percent left") + s.dim(" — l is what you can still spend")
     legend_items.append((plain_note, fmt_note))
+    if layout.show_value:
+        pace_note = (
+            "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest"
+        )
+        legend_items.append((pace_note, s.dim(pace_note)))
+    elif layout.show_pace:
+        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window"
+        legend_items.append((pace_note, s.dim(pace_note)))
 
     plain_ai_note = "AI: Use `aiuse --json` for machine-readable output"
     fmt_ai_note = s.dim(plain_ai_note)
@@ -1889,9 +1919,6 @@ def render_stderr_meta(
         lines.append(s.red("Collector errors:"))
         for err in snapshot.collector_errors:
             lines.append(s.red(f"  - {err}"))
-    capacity = _capacity_summary_line(alerts, s)
-    if capacity:
-        lines.append(capacity.strip())
     lines.append(s.dim("Detail: ai --full"))
     return "\n".join(lines)
 
@@ -1903,24 +1930,6 @@ def _capacity_summary_line(alerts: list[UseOrLoseAlert], s: _Style) -> str | Non
         return None
     conserve = [a for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE) and a.kind == "conserve"]
     providers = len({a.provider for a in action} | {a.provider for a in conserve})
-    paced = [a for a in action if a.pace is not None and a.pace.pace_ratio is not None]
-    if paced:
-        items = []
-        for alert in paced[:3]:
-            cadence = classify_window_minutes(alert.window_minutes)
-            window = {"weekly": "week", "monthly": "month"}.get(cadence, cadence) or alert.window_label
-            pace = alert.pace
-            assert pace is not None and pace.pace_ratio is not None
-            item = f"{provider_display_name(alert.provider)} {window} {(pace.pace_ratio - 1.0) * 100.0:+.0f}% pace"
-            if pace.projected_waste_fraction is not None:
-                item += f" ({pace.projected_waste_fraction * 100.0:.0f}% unused at reset)"
-            items.append(s.bold(item))
-        if len(paced) > 3:
-            items.append(f"+{len(paced) - 3} more")
-        window_count = len(action)
-        window_word = "window" if window_count == 1 else "windows"
-        provider_word = "provider" if providers == 1 else "providers"
-        return s.dim(f"  Pace: {'; '.join(items)} · {window_count} {window_word} across {providers} {provider_word}.")
     window_count = len(action)
     window_word = "window" if window_count == 1 else "windows"
     provider_word = "provider" if providers == 1 else "providers"

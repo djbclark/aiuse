@@ -82,6 +82,9 @@ config & setup:
   aiuse --no-tui              classic plain-text report (skip Rich styling)
   aiuse --print-completion bash|zsh   shell completion script to stdout
 
+matrix: u/l = percent used / percent left; signed pace = ahead (+) or behind (-)
+  of even spend across the window. PACE = the row’s highest window pace.
+
 exit codes (collect runs):
   0  success, no burn/conserve alerts
   1  hard failure (collectors failed and no accounts)

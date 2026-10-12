@@ -1,4 +1,4 @@
-"""Self-describing semantics (schema 1.1) — the 2026-10-03 misread-proofing.
+"""Self-describing semantics (schema 1.2) — the 2026-10-03 misread-proofing.
 
 Golden fixtures mirror the three real failure modes:
 1. codex 5-hour 100% used + weekly 35% used read as "100% free" / usable.
@@ -328,7 +328,7 @@ def test_cli_available_reads_cache_and_filters(tmp_path, monkeypatch, capsys):
     assert main(["--available", "--json", "-q"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["source"] == "cache"
-    assert payload["schema_version"] == "1.1"
+    assert payload["schema_version"] == "1.2"
     assert [p["pool_family"] for p in payload["available"]] == ["gemini"]
     assert payload["available"][0]["provider"] == "antigravity"
     assert payload["semantics"]["used_percent"]
@@ -456,7 +456,7 @@ def test_save_snapshot_writes_enriched_flat_and_mirror(tmp_path, monkeypatch):
     snap = _snapshot_from_fixture(_codex_fixture())
     path = history.save_snapshot(snap, [])
     data = json.loads(path.read_text())
-    assert data["schema_version"] == "1.1"
+    assert data["schema_version"] == "1.2"
     # flat path still works (aiuse-pools reads .accounts[])
     assert data["accounts"][0]["windows"][0]["state"] == "exhausted"
     assert data["accounts"][0]["usable_now"] is False
