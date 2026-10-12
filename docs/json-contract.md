@@ -58,6 +58,42 @@ time) and `fresh` (age ≤ `analysis.fresh_threshold_seconds`, default 1500s)
 say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
 (`--live`) before trusting it for routing.
 
+## What's new in schema 1.2 (2026-10-12)
+
+Schema 1.2 adds per-window pace and per-account overall pace across all JSON
+surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
+`aiuse --available`):
+
+- **Every window (`windows[]`)**:
+  - `pace_percent` (`integer | null`): `round((pace_ratio - 1) * 100)`. Signed
+    percentage indicating whether usage is ahead (`+`) or behind (`-`) an even
+    spend across the elapsed window duration. Floored at 5% elapsed. Null when
+    the window is exhausted (≤1% remaining) or unclocked (no `resets_at` or no duration).
+  - `pace_ratio` (`number | null`): unblended `used_fraction / elapsed_fraction`
+    measured at snapshot collection time (minimum elapsed fraction 0.05). Null
+    when the window is exhausted or unclocked.
+- **Every account (`accounts[]`)**:
+  - `overall_pace_percent` (`integer | null`): highest non-null `pace_percent`
+    among the account's windows (the window furthest ahead of spend that will run
+    out first). Null when no window in the account has a pace reading, or when
+    **any** window in the account is exhausted (since the account is locked out
+    until that reset).
+- **Shortlist and summary lines**:
+  - `aiuse --available` includes pace in window summaries (e.g. `, pace +37%`).
+  - Top-level `summary_lines` format includes `, pace +N%` / `, pace -N%`.
+- **Top-level `semantics`**:
+  - Contains explicit definitions for `pace_percent`, `pace_ratio`, and
+    `overall_pace_percent`.
+
+### Changelog
+
+#### Schema 1.2 (2026-10-12)
+
+- Added `pace_percent` (`int | null`) and `pace_ratio` (`float | null`) to `windows[]` (`QuotaWindow`).
+- Added `overall_pace_percent` (`int | null`) to `accounts[]` (`AccountUsage`).
+- Added `pace_percent`, `pace_ratio`, and `overall_pace_percent` to the top-level `semantics` object.
+- Included window pace in `summary_lines` and `aiuse --available` human summaries and JSON outputs.
+
 ## What's new in schema 1.1 (additive; nothing renamed or removed)
 
 - Every window: `state`, `headroom_percent`, and on split vendors
@@ -98,7 +134,7 @@ Default `aiuse --json` stdout:
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
 
@@ -163,7 +199,7 @@ operator script reads it). Enriched fields (`state`, `usable_now`,
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
   "alerts": [ ... ],
@@ -253,7 +289,7 @@ sorted by headroom (most left first), each with `models_hint` and the local
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "generated_at": "2026-10-03T23:05:00+00:00",
   "source": "cache",
   "age_seconds": 412.0,
@@ -374,7 +410,7 @@ into the other.
 | `cross_checks`       | array             | Informational tool comparisons                                                                                                                                                             |
 | `collector_errors`   | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
 | `disabled_services`  | object            | provider → reason from top-level `[disabled_services]` (1.1; `{}` = none). Rows for these providers are not collected — do not route to or spend them until the operator removes the entry |
-| `config_fingerprint` | string \| omitted | short id of the disable list, collector switches, and `[usage_sources]` pins this snapshot was collected under. Omitted on older snapshots. Additive; schema stays 1.1                     |
+| `config_fingerprint` | string \| omitted | short id of the disable list, collector switches, and `[usage_sources]` pins this snapshot was collected under. Omitted on older snapshots. Additive (schema 1.1+)                         |
 
 ### `accounts[]` (`AccountUsage`)
 
@@ -402,6 +438,7 @@ into the other.
 | `binding_headroom_percent` | number \| null    | 1.1 — that window's remaining share                                                                                                                                                                                                          |
 | `available_at`             | string \| null    | 1.1 — earliest `resets_at` among applicable exhausted windows; Claude model caps are excluded from the shared account. Null when nothing applicable is exhausted or no reset is known                                                        |
 | `age_seconds`              | number \| null    | 1.1 — seconds since this account's `collected_at`, computed at read time                                                                                                                                                                     |
+| `overall_pace_percent`     | int \| null       | 1.2 — highest non-null window `pace_percent`; null when no window has pace or any window in the account is exhausted                                                                                                                         |
 
 `raw` is **not** included in JSON (internal only).
 
@@ -436,6 +473,8 @@ additive per the stability policy below.
 | `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                         |
 | `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                               |
 | `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                |
+| `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                               |
+| `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                    |
 
 ### `usage_credits` (optional)
 

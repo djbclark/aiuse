@@ -42,7 +42,7 @@ Two guards address that:
 | Method | Path           | Notes                                                                                                                               |
 | ------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/v1/health`   | Liveness + identity (`service: "aiuse"`, version)                                                                                   |
-| GET    | `/v1/snapshot` | Latest snapshot object (schema 1.1: enriched windows/accounts), plus `source`, `age_seconds`, `fresh`, `summary_lines`, `semantics` |
+| GET    | `/v1/snapshot` | Latest snapshot object (schema 1.2: enriched windows/accounts), plus `source`, `age_seconds`, `fresh`, `summary_lines`, `semantics` |
 | GET    | `/v1/ladder`   | Ranked `alerts[]`                                                                                                                   |
 | GET    | `/v1/suggest`  | Single burn winner or null                                                                                                          |
 | GET    | `/v1/status`   | One-line status string                                                                                                              |

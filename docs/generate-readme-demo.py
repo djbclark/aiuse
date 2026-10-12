@@ -11,10 +11,9 @@ plain-text table with a leading ``+``/``-``/`` `` diff marker per line
 for everything on pace) and wraps it in a ```diff fence, which GitHub *does*
 colorize.
 
-The two legend lines ``render_clock_matrix`` prints (the "% used" header note
-and the "dim % = clock inferred" footer) are dropped here: the dim/`+` markers
-they explain cannot survive into a plain-text fence, and the README says the
-same thing in prose underneath.
+The legend lines ``render_clock_matrix`` prints (reset interval, u/l
+explanation, pace calculation, and the AI JSON notice) are preserved
+at the bottom of the table.
 
 Usage: ``uv run python docs/generate-readme-demo.py`` and paste the output
 between the `<!-- readme-demo:start -->` / `<!-- readme-demo:end -->` markers
@@ -72,8 +71,8 @@ def _window(label: str, remaining: float, days: float, minutes: int) -> QuotaWin
 
     ``minutes`` is required rather than optional: without a declared duration
     ``infer_window_clock`` falls back to distance-from-reset, which collapses
-    every demo row into the WEEK column, and ``_window_value_usd`` returns None
-    so the whole ``$ UNUSED`` column renders as em-dashes.
+    every demo row into the WEEK column, and window pace cannot be computed
+    so the cell pace suffixes and the PACE column render as em-dashes.
     """
     return QuotaWindow(
         label=label,
@@ -243,8 +242,7 @@ def render_demo_diff_block() -> str:
         _demo_alerts(),
         snapshot=_demo_snapshot(),
         # Ships the packaged defaults, not the operator's ~/.config/aiuse — the
-        # demo must not vary with whoever regenerates it. `plans` is what prices
-        # the `$ UNUSED` column; without it that column is entirely em-dashes.
+        # demo must not vary with whoever regenerates it.
         config=DEFAULT_CONFIG,
         color=False,
         # Wide enough that no column is shed, so the README shows the full table.

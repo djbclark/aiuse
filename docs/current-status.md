@@ -15,7 +15,9 @@ done. Product issues **#1–#9** done. Packaging **3.2.6**
 the envelope under `snapshot`, serve default port moved to **28787** with
 fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
 replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
-"How to read this". The
+"How to read this".
+**Schema 1.2 (2026-10-12):** per-window pace (`pace_percent`, `pace_ratio`), per-account `overall_pace_percent`, PACE column replaces `$ UNUSED` in clock matrix with cell-level signed pace percentages and lined-up notes; pace in `summary_lines` and `aiuse --available`.
+The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
 tracks only what a fresh session must know. **18 registered collectors**
 (cswap, CodexBar, caut, caam, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale,

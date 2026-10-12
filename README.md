@@ -50,28 +50,48 @@ pools most worth using right now sort to the bottom.
 <!-- readme-demo:start -->
 
 ```diff
-        ## SERVICE    ACCT  SCOPE         5H       WEEK       MONTH      $ UNUSED
-- error ?? oc-zen     gmail —          No available fetch strategy for opencode-zen.
-- empty  0 oc-go      gmail —                  ->  100%/4d12h         <-        —
-  n/a   -- deepseek   gmail —          $4.15 (counts down)
-  n/a   -- openrouter gmail —          $18.55 (counts down)
-  slow  48 agy        gmail claude/gpt         ->   78%/1d5h          <-        —
-  mid   50 claude     gmail —            12%/3h7m   77%/3d2h          <-    $1.59
-  mid   50 cursor     gmail —                  ->          ->   71%/3d7h    $5.80
-  mid   50 codex      gmail —                  ->   54%/2d7h          <-    $3.17
-  mid   50 grok       gmail —                  ->    6%/6d14h         <-        —
-  mid   53 agy        gmail gemini        4%/4h5m   16%/4d            <-    $5.80
-+ use   88 copilot    —     —                  ->   58%/~1d           <-        —
-               2d14h = until this clock resets · bold = largest unit
-                            Note: 100% means 100% Used
-                AI: Use `aiuse --json` for machine-readable output
+        ## SERVICE    ACCT  SCOPE           5H              WEEK              MONTH           PACE
+- error ?? oc-zen     gmail —                                                                    — No available fetch strategy for op…
+- empty  0 oc-go      gmail —                          — 100u/0l/4d12h                      —    — <- EXHAUSTED
+  n/a   -- deepseek   gmail —                                                                    — $4.15 (counts down)
+  n/a   -- openrouter gmail —                                                                    — $18.55 (counts down)
+  slow  48 agy        gmail claude/gpt                 — 78u/22l/1d5h                       —    — <-
+  mid   50 claude     gmail —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                  — +38% <-
+  mid   50 cursor     gmail —                          —                  — 71u/29l/3d7h -20% -20%
+  mid   50 codex      gmail —                          — 54u/46l/2d7h -20%                  — -20% <-
+  mid   50 grok       gmail —                          —  6u/94l/6d14h                      —    — <-
+  mid   53 agy        gmail gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                    — -63% <-
++ use   88 copilot    —     —                          — 58u/42l/~1d                        —    — <-
+                              2d14h = until this clock resets · bold = largest unit
+                        u/l = percent used / percent left — l is what you can still spend
+      +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest
+                               AI: Use `aiuse --json` for machine-readable output
 ```
 
 <!-- readme-demo:end -->
 
 Every row is measured on the same three clocks, so a column reads top to
 bottom. An em-dash means that service has no window on that clock at all.
-**Percentages are consumption**: `0%` is untouched, `100%` is exhausted.
+Each cell displays `used% u / left% l / reset_span pace%`: **`u/l` = percent used /
+percent left** (`l` is what you can still spend). For example, `12u/88l/3h7m -68%`
+means 12% consumed, 88% remaining, resetting in 3 hours 7 minutes, and burning 68%
+slower than an even spend across the window.
+
+### Pace and the PACE column
+
+- **Window pace %** (`+N%` / `-N%`) compares consumption against an even spend across the
+  window (`round((pace_ratio - 1) * 100)` with `pace_ratio = used_fraction / elapsed_fraction`;
+  elapsed floored at 5%). `+` means burning faster than an even spend (will run out early);
+  `-` means burning slower (capacity will remain at reset). Exhausted windows and windows
+  with no reset time leave pace blank.
+- **`PACE` column** reports the row's **overall pace** = the highest window pace in the row
+  (the window furthest ahead of spend that will run out first). It shows an em-dash (`—`)
+  when no window has a pace reading or when **any** window in the row is exhausted (since the
+  row is locked out until that reset).
+- **Column alignment**: all free text notes (`<-`, `EXHAUSTED`, extra credits, prepaid notes)
+  appear after all fixed columns so columns align on every row. Narrow terminals shed `PACE` first,
+  then individual cell pace suffixes.
+
 The colored `##` score is the action queue from `0` (empty) to `99` (use as
 soon as possible). Its action-state boundaries are contiguous: `slow` ends at
 49, `mid` runs from 50–74, and an active `use` recommendation starts at 75.
@@ -355,7 +375,7 @@ not require importing its Python package.
 | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | _(none)_ / `--format pretty`                                                                                    | Clock matrix on stdout (empty→n/a→slow→mid→use); meta on stderr; plain when piped                                                                                                                                                                                                         |
 | `--full`                                                                                                        | Long pretty report: per-provider, cross-checks, tips, History, detailed plan                                                                                                                                                                                                              |
-| `--json` / `--format json`                                                                                      | Full snapshot + alerts + `suggestion` + `history` as JSON (schema **1.1**: `state`, `usable_now`, `pool_family`, `summary_lines`, `semantics`)                                                                                                                                            |
+| `--json` / `--format json`                                                                                      | Full snapshot + alerts + `suggestion` + `history` as JSON (schema **1.2**: `state`, `usable_now`, `pool_family`, `pace_percent`, `pace_ratio`, `overall_pace_percent`, `summary_lines`, `semantics`)                                                                                      |
 | `--available` / `--live`                                                                                        | Routing shortlist: only pools usable **now**, per vendor + model family, sorted by headroom; reads the cache by default, `--live` forces a collect                                                                                                                                        |
 | `usage-sources` / `--usage-sources`                                                                             | Which quota tools and ACP context logs are active for each vendor. No collect, no ACP turn. `[usage_sources]` pins one source; the default still blends. See [`docs/acp-usage.md`](docs/acp-usage.md).                                                                                    |
 | `--brief`                                                                                                       | Alias of the default pretty report                                                                                                                                                                                                                                                        |
@@ -408,7 +428,7 @@ This tool:
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from — but genuinely **independent pools are never merged into that governing window**: Cursor's Included+Auto pool and its separate Other Models pool are scored on their own, so an exhausted Other Models pool raises its own alert instead of being masked by a healthy Included. Claude's **Fable cap is within the shared weekly pool** (up to 50%, not additional quota): the main row shows overall usage, with an indented cap underneath. Fable at 100% does not exhaust other Claude models; shared exhaustion blocks Fable too.
 5. Qualifies **Conserve** alerts with **overage awareness**: if the account has a real or config-confirmed overage/extra-usage wallet (Claude's usage credits, Cursor's on-demand balance, or a manually confirmed OpenCode Go overage state), the message says so — the real risk there is unplanned $ spend, not lockout, which is a different situation from a genuinely hard ceiling.
-6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH), percentages **used** with that clock's reset after a slash (`75%/4h`, `89%/2d14h`; depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
+6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH) plus a **PACE** column for the row's highest pace, each cell displaying `used% u / left% l / reset_span pace%` (`75u/25l/4h -10%`, `89u/11l/2d14h +180%`; depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
 7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout …`, projected waste %) appear on table/status lines when pace can project them.
 8. Cross-checks **all live sources** pairwise; Claude multi-account stays canonical in cswap.
 9. Optional surfaces: `aiuse suggest` (single burn winner), `aiuse status` / `prompt` (one-liner), and `aiuse serve` (loopback ranking API for agents). Snapshot history can blend into pace when enabled.
