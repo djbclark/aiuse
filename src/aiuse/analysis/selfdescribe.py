@@ -20,7 +20,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping
 
-from aiuse.analysis.pace import overall_pace_percent, window_pace_percent, window_pace_ratio
+from aiuse.analysis.pace import (
+    format_pace,
+    overall_pace,
+    window_pace,
+    window_pace_ratio,
+)
 from aiuse.models import QuotaWindow, canonical_provider, claude_model_scope, parse_dt, utcnow
 
 SCHEMA_VERSION = "1.2"
@@ -35,7 +40,9 @@ FRESH_THRESHOLD_SECONDS_DEFAULT = 1500.0  # 25 min
 SEMANTICS: dict[str, str] = {
     "pace_percent": "round((pace_ratio - 1) * 100); positive ahead, negative behind even spend; null when exhausted or unclocked",
     "pace_ratio": "unblended used fraction / elapsed fraction (minimum elapsed 0.05), at snapshot collection time",
+    "pace_early": "true when window elapsed fraction is below 0.10 (early in the window, pace is noisy); false when pace is null or not early",
     "overall_pace_percent": "highest non-null window pace_percent; null when no window has pace or any window is exhausted",
+    "overall_pace_early": "true when the window that supplied overall_pace_percent is early; false when overall_pace_percent is null or not early",
     "used_percent": "share CONSUMED; 100 means exhausted, 0 means untouched",
     "remaining_percent": "share still available; decide from this",
     "headroom_percent": "window: alias of remaining_percent; routing entry: least applicable headroom, with Fable's cap scaled to shared-weekly units",
@@ -279,9 +286,13 @@ def enrich_snapshot(
                 window_minutes=window.get("window_minutes"),
             )
             quota_windows.append(quota)
-            window["pace_percent"] = window_pace_percent(quota, pace_now)
+            pct, early = window_pace(quota, pace_now)
+            window["pace_percent"] = pct
             window["pace_ratio"] = window_pace_ratio(quota, pace_now)
-        account["overall_pace_percent"] = overall_pace_percent(quota_windows, pace_now)
+            window["pace_early"] = early
+        ovr_pct, ovr_early = overall_pace(quota_windows, pace_now)
+        account["overall_pace_percent"] = ovr_pct
+        account["overall_pace_early"] = ovr_early
     snap["accounts"] = accounts
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     snap["semantics"] = dict(SEMANTICS)
@@ -449,7 +460,8 @@ def summary_line(pool: Mapping[str, Any]) -> str:
             left = max(0.0, 100.0 - float(used))
         word = {"exhausted": "EXHAUSTED", "tight": "TIGHT", "ok": "ok", "unknown": "UNKNOWN"}.get(state, state)
         pace = window.get("pace_percent")
-        pace_text = f", pace {pace:+d}%" if pace is not None else ""
+        pace_early = bool(window.get("pace_early"))
+        pace_text = f", pace {format_pace(pace, pace_early)}" if pace is not None else ""
         seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{pace_text}{_reset_fragment(window.get('resets_at'))})"
         if window.get("quota_scope") == "model_sublimit":
             cap = window.get("max_share_of_parent_percent")

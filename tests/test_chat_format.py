@@ -1199,5 +1199,5 @@ class TestPaceHeadlinesAndWindowPace:
     def test_legend_line_at_end_of_chat_output(self):
         snap = _snapshot([_account()])
         output = render_chat_report(snap, [])
-        expected_legend = "pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest"
+        expected_legend = "pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest · ~ = early: under 10% of the window has elapsed"
         assert output.strip().endswith(expected_legend)

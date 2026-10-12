@@ -1,6 +1,15 @@
 from datetime import datetime, timedelta, timezone
 
-from aiuse.analysis.pace import overall_pace_percent, window_pace_percent, window_pace_ratio
+from aiuse.analysis.pace import (
+    format_pace,
+    overall_pace,
+    overall_pace_early,
+    overall_pace_percent,
+    window_is_early,
+    window_pace,
+    window_pace_percent,
+    window_pace_ratio,
+)
 from aiuse.analysis.selfdescribe import SCHEMA_VERSION, available_pools, enrich_snapshot, summary_line
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 from aiuse.report import render_clock_matrix, render_stderr_meta
@@ -112,3 +121,130 @@ def test_cached_window_fields_are_refreshed_at_collection_time():
     data["accounts"][0]["windows"][0]["pace_percent"] = 12345
     enriched = enrich_snapshot(data, now=NOW + timedelta(days=20))
     assert enriched["accounts"][0]["windows"][0]["pace_percent"] == -50
+
+
+def test_early_boundary():
+    # 1000 minutes duration
+    # 90 minutes elapsed (910 min left) -> elapsed 0.09 -> early (<0.10)
+    w_early = QuotaWindow(
+        label="5h",
+        used_percent=20,
+        window_minutes=1000,
+        resets_at=NOW + timedelta(minutes=910),
+    )
+    # 110 minutes elapsed (890 min left) -> elapsed 0.11 -> not early (>=0.10)
+    w_not_early = QuotaWindow(
+        label="5h",
+        used_percent=20,
+        window_minutes=1000,
+        resets_at=NOW + timedelta(minutes=890),
+    )
+    assert window_is_early(w_early, NOW) is True
+    assert window_pace(w_early, NOW)[1] is True
+    assert window_is_early(w_not_early, NOW) is False
+    assert window_pace(w_not_early, NOW)[1] is False
+
+
+def test_format_pace():
+    assert format_pace(1351, True) == "+1351%~"
+    assert format_pace(-20, False) == "-20%"
+    assert format_pace(50, False) == "+50%"
+    assert format_pace(0, True) == "+0%~"
+    assert format_pace(0, False) == "+0%"
+
+
+def test_overall_early_follows_max_window():
+    # Window A: elapsed 0.50, pace -20% (not early)
+    wa = QuotaWindow(
+        label="5h",
+        used_percent=40,
+        window_minutes=1000,
+        resets_at=NOW + timedelta(minutes=500),
+    )
+    # Window B: elapsed 0.05, used 73% -> pace +1360% (early)
+    wb = QuotaWindow(
+        label="monthly",
+        used_percent=73,
+        window_minutes=10000,
+        resets_at=NOW + timedelta(minutes=9500),
+    )
+    pct, early = overall_pace([wa, wb], NOW)
+    assert pct == 1360
+    assert early is True
+    assert overall_pace_early([wa, wb], NOW) is True
+
+    # When not-early window has higher pace:
+    # Window C: elapsed 0.50, used 90% -> pace +80% (not early)
+    wc = QuotaWindow(
+        label="5h",
+        used_percent=90,
+        window_minutes=1000,
+        resets_at=NOW + timedelta(minutes=500),
+    )
+    # Window D: elapsed 0.05, used 2% -> pace -60% (early)
+    wd = QuotaWindow(
+        label="monthly",
+        used_percent=2,
+        window_minutes=10000,
+        resets_at=NOW + timedelta(minutes=9500),
+    )
+    pct2, early2 = overall_pace([wc, wd], NOW)
+    assert pct2 == 80
+    assert early2 is False
+    assert overall_pace_early([wc, wd], NOW) is False
+
+
+def test_matrix_cell_shows_tilde_and_columns_aligned():
+    w_early = QuotaWindow(
+        label="monthly",
+        used_percent=73,
+        window_minutes=43200,
+        resets_at=NOW + timedelta(days=29),
+    )
+    snap = Snapshot(
+        collected_at=NOW,
+        accounts=[
+            AccountUsage(provider="opencode-go", source="test", windows=[w_early]),
+            AccountUsage(provider="codex", source="test", windows=[window(), window(75, 10080)]),
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    lines = text.splitlines()
+    oc_line = next(line for line in lines if "oc-go" in line)
+    codex_line = next(line for line in lines if "codex" in line)
+    assert "+1360%~" in oc_line
+    assert "+50%" in codex_line
+    assert "~" not in codex_line
+    # Month column in oc-go shows ~ and PACE column shows +1360%~
+    assert oc_line.count("+1360%~") == 2
+    # Ensure footer explains ~
+    assert "~ = early: under 10% of the window has elapsed" in text
+
+
+def test_json_fields_pace_early_and_overall_pace_early():
+    w_early = QuotaWindow(
+        label="monthly",
+        used_percent=73,
+        window_minutes=43200,
+        resets_at=NOW + timedelta(days=29),
+    )
+    snap = Snapshot(
+        collected_at=NOW,
+        accounts=[
+            AccountUsage(provider="opencode-go", source="test", windows=[w_early]),
+            AccountUsage(provider="codex", source="test", windows=[window(100)]),
+        ],
+    )
+    data = enrich_snapshot(snap.to_dict(), now=NOW)
+    # opencode-go has early window
+    assert data["accounts"][0]["overall_pace_early"] is True
+    assert data["accounts"][0]["windows"][0]["pace_early"] is True
+    assert "pace +1360%~" in summary_line(available_pools(data)[0])
+    # codex is exhausted -> pace is None, pace_early is False, overall_pace_early is False
+    assert data["accounts"][1]["overall_pace_percent"] is None
+    assert data["accounts"][1]["overall_pace_early"] is False
+    assert data["accounts"][1]["windows"][0]["pace_percent"] is None
+    assert data["accounts"][1]["windows"][0]["pace_early"] is False
+    # SEMANTICS contains the new glossary keys
+    assert "pace_early" in data["semantics"]
+    assert "overall_pace_early" in data["semantics"]

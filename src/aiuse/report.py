@@ -16,11 +16,12 @@ from aiuse.analysis.history import (
 )
 from aiuse.analysis.pace import (
     POOL_SCOPE_LABELS,
+    format_pace,
     governing_partition,
     independent_pool_key,
-    overall_pace_percent,
+    overall_pace,
     partition_independent_pools,
-    window_pace_percent,
+    window_pace,
 )
 from aiuse.analysis.use_or_lose import DAYS_PER_MONTH, _classify_flexibility, _compute_value_at_risk
 from aiuse.models import (
@@ -94,6 +95,7 @@ class _MatrixRow:
     clocks: dict[str, _ClockCell] = field(default_factory=dict)
     value_usd: float | None = None
     pace_percent: int | None = None
+    pace_early: bool = False
     note: str | None = None
     tail_note: str | None = None
     stale: bool = False
@@ -110,6 +112,7 @@ class _ClockCell:
     days_until_reset: float | None = None
     reset_estimated: bool = False
     pace_percent: int | None = None
+    pace_early: bool = False
 
 
 @dataclass(frozen=True)
@@ -978,7 +981,9 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
     for w_span in w_spans:
         total += 1 + (w_pct + ((1 + w_span) if w_span else 0))
     if layout.show_value:
-        total += 1 + max([4] + [len(f"{row.pace_percent:+d}%") for row in rows if row.pace_percent is not None])
+        total += 1 + max(
+            [4] + [len(format_pace(row.pace_percent, row.pace_early)) for row in rows if row.pace_percent is not None]
+        )
     # Reserve a fixed amount for status text, never the length of a free-text
     # note. This keeps EXHAUSTED readable before squeezing numeric cells.
     if any(
@@ -1014,7 +1019,7 @@ def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple
             suffix = max(
                 [0]
                 + [
-                    len(f" {row.clocks[key].pace_percent:+d}%")
+                    len(f" {format_pace(row.clocks[key].pace_percent, row.clocks[key].pace_early)}")
                     for row in rows
                     if key in row.clocks and row.clocks[key].pace_percent is not None
                 ]
@@ -1302,8 +1307,8 @@ def _build_matrix_rows(
                     exhausted = window.remaining() == 0
                     span = _format_reset_span(window.days_until_reset(now))
                     reset = f"/{span.plain()}" if span else ""
-                    pace_percent = window_pace_percent(window, now)
-                    trend = f" ({pace_percent:+d}% pace)" if pace_percent is not None else ""
+                    pace_percent, pace_early = window_pace(window, now)
+                    trend = f" ({format_pace(pace_percent, pace_early)} pace)" if pace_percent is not None else ""
                     status = " EXHAUSTED" if exhausted else ""
                     sublimit_notes.append(f"{model} cap ({cap}): {meter}{reset}{trend}{status}")
                     continue
@@ -1314,13 +1319,15 @@ def _build_matrix_rows(
                 estimated = not window.reset_time_is_precise()
                 if clock is not None:
                     cell = clocks.get(clock)
+                    pace_pct, pace_early = window_pace(window, now)
                     if cell is None:
                         clocks[clock] = _ClockCell(
                             used_percent=used,
                             inferred=inferred,
                             days_until_reset=days,
                             reset_estimated=estimated,
-                            pace_percent=window_pace_percent(window, now),
+                            pace_percent=pace_pct,
+                            pace_early=pace_early,
                         )
                     else:
                         # Same clock, same pool (Cursor Included ⊂ Auto): show the
@@ -1331,7 +1338,8 @@ def _build_matrix_rows(
                             cell.inferred = inferred
                             cell.days_until_reset = days
                             cell.reset_estimated = estimated
-                            cell.pace_percent = window_pace_percent(window, now)
+                            cell.pace_percent = pace_pct
+                            cell.pace_early = pace_early
                 remaining = window.remaining()
                 if remaining is not None:
                     priced = _window_value_usd(window, remaining, account.provider, plans, analysis)
@@ -1374,6 +1382,7 @@ def _build_matrix_rows(
                     note = extra_note if note is None else f"{note} · {extra_note}"
             data_age = _account_data_age(account, now)
             stale = data_age is not None and data_age > fresh_threshold
+            overall_pct, overall_early = overall_pace(pool, now)
             rows.append(
                 _MatrixRow(
                     sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
@@ -1385,7 +1394,8 @@ def _build_matrix_rows(
                     scope=_POOL_SCOPE_LABELS.get(pool_id, "—"),
                     clocks=clocks,
                     value_usd=value,
-                    pace_percent=overall_pace_percent(pool, now),
+                    pace_percent=overall_pct,
+                    pace_early=overall_early,
                     note=note,
                     tail_note=tail_note,
                     stale=stale,
@@ -1512,7 +1522,7 @@ def _row_from_alert(alert: UseOrLoseAlert, *, now: datetime | None = None) -> _M
         resets_at=now + timedelta(days=alert.days_until_reset) if alert.days_until_reset is not None else None,
         window_minutes=alert.window_minutes,
     )
-    row.pace_percent = window_pace_percent(synthetic, now)
+    row.pace_percent, row.pace_early = window_pace(synthetic, now)
     clock, inferred = infer_window_clock(synthetic)
     if clock is None and alert.days_until_reset is not None:
         # No duration and an unhelpful label: fall back to reset distance, the
@@ -1526,6 +1536,7 @@ def _row_from_alert(alert: UseOrLoseAlert, *, now: datetime | None = None) -> _M
             days_until_reset=alert.days_until_reset,
             reset_estimated=alert.deadline_is_estimated,
             pace_percent=row.pace_percent,
+            pace_early=row.pace_early,
         )
     if alert.flexibility_profile is not None:
         row.value_usd = alert.flexibility_profile.value_at_risk_usd
@@ -1608,7 +1619,9 @@ def render_clock_matrix(
     w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
     w_pct, w_spans = _clock_column_widths(rows, layout)
     w_clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
-    w_value = max([4] + [len(f"{row.pace_percent:+d}%") for row in rows if row.pace_percent is not None])
+    w_value = max(
+        [4] + [len(format_pace(row.pace_percent, row.pace_early)) for row in rows if row.pace_percent is not None]
+    )
 
     def _line(tag: str, score: str, service: str, account: str, scope: str, tail: list[str]) -> str:
         cells = [tag, score, service]
@@ -1685,7 +1698,11 @@ def render_clock_matrix(
                 continue
             any_deadline = True
             styled = colored + s.dim("/") + _style_reset_span(s, span)
-            suffix = f" {cell.pace_percent:+d}%" if layout.show_pace and cell.pace_percent is not None else ""
+            suffix = (
+                f" {format_pace(cell.pace_percent, cell.pace_early)}"
+                if layout.show_pace and cell.pace_percent is not None
+                else ""
+            )
             styled += s.dim(suffix)
             pad = w_clock - (w_pct + 1 + len(span.plain()) + len(suffix))
             if pad > 0:
@@ -1693,7 +1710,7 @@ def render_clock_matrix(
             tail.append(styled)
 
         if layout.show_value:
-            value_text = "—" if row.pace_percent is None else f"{row.pace_percent:+d}%"
+            value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
             tail.append(f"{value_text:>{w_value}}")
         if present_indices and max(present_indices) < len(CLOCK_COLUMNS) - 1:
             tail.append(s.dim("<-"))
@@ -1736,12 +1753,10 @@ def render_clock_matrix(
     fmt_note = s.dim("u/l = ") + s.bold("percent used / percent left") + s.dim(" — l is what you can still spend")
     legend_items.append((plain_note, fmt_note))
     if layout.show_value:
-        pace_note = (
-            "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest"
-        )
+        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed"
         legend_items.append((pace_note, s.dim(pace_note)))
     elif layout.show_pace:
-        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window"
+        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · ~ = early: under 10% of the window has elapsed"
         legend_items.append((pace_note, s.dim(pace_note)))
 
     plain_ai_note = "AI: Use `aiuse --json` for machine-readable output"
@@ -2661,9 +2676,9 @@ def _consumption_line(window: Any, provider: str, analysis: dict[str, Any]) -> s
         unit = capacity_unit or ""
         parts.append(f"{capacity:.0f}{unit}/cycle")
 
-    pace_percent = window_pace_percent(window, utcnow())
+    pace_percent, pace_early = window_pace(window, utcnow())
     if pace_percent is not None:
-        parts.append(f"pace {pace_percent:+d}%")
+        parts.append(f"pace {format_pace(pace_percent, pace_early)}")
 
     return " · ".join(parts) if parts else None
 

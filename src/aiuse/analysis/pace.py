@@ -74,6 +74,12 @@ def compute_pace(
     )
 
 
+def format_pace(percent: int, early: bool = False) -> str:
+    """Format a pace percentage with an explicit sign and optional '~' marker when early."""
+    marker = "~" if early else ""
+    return f"{percent:+d}%{marker}"
+
+
 def window_pace_ratio(window: QuotaWindow, now: datetime) -> float | None:
     """Unblended pace, absent for exhausted or unclocked windows."""
     remaining = window.remaining()
@@ -85,9 +91,54 @@ def window_pace_ratio(window: QuotaWindow, now: datetime) -> float | None:
     return pace.pace_ratio if pace is not None else None
 
 
+def window_is_early(window: QuotaWindow, now: datetime) -> bool:
+    """Whether a clocked, non-exhausted window is under 10% elapsed."""
+    remaining = window.remaining()
+    if remaining is None or remaining <= 0 or not window.resets_at:
+        return False
+    if not window.window_minutes and claude_model_scope(window.label) is not None:
+        window = replace(window, window_minutes=7 * 24 * 60)
+    pace = compute_pace(window, now=now)
+    if pace is None or pace.elapsed_fraction is None:
+        return False
+    return pace.elapsed_fraction < 0.10
+
+
+def window_pace(window: QuotaWindow, now: datetime) -> tuple[int | None, bool]:
+    """Unblended pace percent and early flag (False when pace is None)."""
+    remaining = window.remaining()
+    if remaining is None or remaining <= 0 or not window.resets_at:
+        return None, False
+    if not window.window_minutes and claude_model_scope(window.label) is not None:
+        window = replace(window, window_minutes=7 * 24 * 60)
+    pace = compute_pace(window, now=now)
+    if pace is None or pace.pace_ratio is None:
+        return None, False
+    percent = round((pace.pace_ratio - 1) * 100)
+    early = pace.elapsed_fraction is not None and pace.elapsed_fraction < 0.10
+    return percent, early
+
+
 def window_pace_percent(window: QuotaWindow, now: datetime) -> int | None:
-    ratio = window_pace_ratio(window, now)
-    return round((ratio - 1) * 100) if ratio is not None else None
+    percent, _ = window_pace(window, now)
+    return percent
+
+
+def overall_pace(windows: list[QuotaWindow], now: datetime) -> tuple[int | None, bool]:
+    """Highest window pace and whether that governing window is early.
+
+    (None, False) when no window has pace or any window is exhausted.
+    """
+    if any((remaining := window.remaining()) is not None and remaining <= 0 for window in windows):
+        return None, False
+    candidates: list[tuple[int, bool]] = []
+    for window in windows:
+        pct, early = window_pace(window, now)
+        if pct is not None:
+            candidates.append((pct, early))
+    if not candidates:
+        return None, False
+    return max(candidates, key=lambda pair: pair[0])
 
 
 def overall_pace_percent(windows: list[QuotaWindow], now: datetime) -> int | None:
@@ -96,10 +147,13 @@ def overall_pace_percent(windows: list[QuotaWindow], now: datetime) -> int | Non
     None when any window is exhausted: the row is locked out until that window
     resets, so a pace from its other windows would read as spare capacity.
     """
-    if any((remaining := window.remaining()) is not None and remaining <= 0 for window in windows):
-        return None
-    values = [value for window in windows if (value := window_pace_percent(window, now)) is not None]
-    return max(values) if values else None
+    percent, _ = overall_pace(windows, now)
+    return percent
+
+
+def overall_pace_early(windows: list[QuotaWindow], now: datetime) -> bool:
+    _, early = overall_pace(windows, now)
+    return early
 
 
 def classify_pace(

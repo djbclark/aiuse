@@ -72,27 +72,32 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
   - `pace_ratio` (`number | null`): unblended `used_fraction / elapsed_fraction`
     measured at snapshot collection time (minimum elapsed fraction 0.05). Null
     when the window is exhausted or unclocked.
+  - `pace_early` (`bool`): `true` when window elapsed fraction is below 0.10
+    (early in the window, pace is noisy); `false` when pace is null or not early.
 - **Every account (`accounts[]`)**:
   - `overall_pace_percent` (`integer | null`): highest non-null `pace_percent`
     among the account's windows (the window furthest ahead of spend that will run
     out first). Null when no window in the account has a pace reading, or when
     **any** window in the account is exhausted (since the account is locked out
     until that reset).
+  - `overall_pace_early` (`bool`): `true` when the window that supplied
+    `overall_pace_percent` is early (<10% elapsed); `false` when
+    `overall_pace_percent` is null or not early.
 - **Shortlist and summary lines**:
-  - `aiuse --available` includes pace in window summaries (e.g. `, pace +37%`).
-  - Top-level `summary_lines` format includes `, pace +N%` / `, pace -N%`.
+  - `aiuse --available` includes pace in window summaries (e.g. `, pace +37%` or `, pace +1351%~`).
+  - Top-level `summary_lines` format includes `, pace +N%` / `, pace -N%` (with `~` when early).
 - **Top-level `semantics`**:
-  - Contains explicit definitions for `pace_percent`, `pace_ratio`, and
-    `overall_pace_percent`.
+  - Contains explicit definitions for `pace_percent`, `pace_ratio`, `pace_early`,
+    `overall_pace_percent`, and `overall_pace_early`.
 
 ### Changelog
 
 #### Schema 1.2 (2026-10-12)
 
-- Added `pace_percent` (`int | null`) and `pace_ratio` (`float | null`) to `windows[]` (`QuotaWindow`).
-- Added `overall_pace_percent` (`int | null`) to `accounts[]` (`AccountUsage`).
-- Added `pace_percent`, `pace_ratio`, and `overall_pace_percent` to the top-level `semantics` object.
-- Included window pace in `summary_lines` and `aiuse --available` human summaries and JSON outputs.
+- Added `pace_percent` (`int | null`), `pace_ratio` (`float | null`), and `pace_early` (`bool`) to `windows[]` (`QuotaWindow`).
+- Added `overall_pace_percent` (`int | null`) and `overall_pace_early` (`bool`) to `accounts[]` (`AccountUsage`).
+- Added `pace_percent`, `pace_ratio`, `pace_early`, `overall_pace_percent`, and `overall_pace_early` to the top-level `semantics` object.
+- Included window pace (marked with `~` when early) in `summary_lines` and `aiuse --available` human summaries and JSON outputs.
 
 ## What's new in schema 1.1 (additive; nothing renamed or removed)
 
@@ -439,6 +444,7 @@ into the other.
 | `available_at`             | string \| null    | 1.1 — earliest `resets_at` among applicable exhausted windows; Claude model caps are excluded from the shared account. Null when nothing applicable is exhausted or no reset is known                                                        |
 | `age_seconds`              | number \| null    | 1.1 — seconds since this account's `collected_at`, computed at read time                                                                                                                                                                     |
 | `overall_pace_percent`     | int \| null       | 1.2 — highest non-null window `pace_percent`; null when no window has pace or any window in the account is exhausted                                                                                                                         |
+| `overall_pace_early`       | bool              | 1.2 — true when the window that supplied `overall_pace_percent` is early (<10% elapsed); false when null or not early                                                                                                                        |
 
 `raw` is **not** included in JSON (internal only).
 
@@ -475,6 +481,7 @@ additive per the stability policy below.
 | `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                |
 | `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                               |
 | `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                    |
+| `pace_early`                  | bool                 | 1.2 — true when window elapsed fraction is below 0.10; false when pace is null or not early                                                                                       |
 
 ### `usage_credits` (optional)
 

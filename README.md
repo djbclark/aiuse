@@ -64,7 +64,7 @@ pools most worth using right now sort to the bottom.
 + use   88 copilot    —     —                          — 58u/42l/~1d                        —    — <-
                               2d14h = until this clock resets · bold = largest unit
                         u/l = percent used / percent left — l is what you can still spend
-      +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest
+      +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed
                                AI: Use `aiuse --json` for machine-readable output
 ```
 
@@ -82,10 +82,12 @@ slower than an even spend across the window.
 - **Window pace %** (`+N%` / `-N%`) compares consumption against an even spend across the
   window (`round((pace_ratio - 1) * 100)` with `pace_ratio = used_fraction / elapsed_fraction`;
   elapsed floored at 5%). `+` means burning faster than an even spend (will run out early);
-  `-` means burning slower (capacity will remain at reset). Exhausted windows and windows
+  `-` means burning slower (capacity will remain at reset). Early in a window (under 10%
+  elapsed), readings are noisy and marked with `~` (e.g. `+1351%~`). Exhausted windows and windows
   with no reset time leave pace blank.
 - **`PACE` column** reports the row's **overall pace** = the highest window pace in the row
-  (the window furthest ahead of spend that will run out first). It shows an em-dash (`—`)
+  (the window furthest ahead of spend that will run out first), marked with `~` if that highest
+  window is early. It shows an em-dash (`—`)
   when no window has a pace reading or when **any** window in the row is exhausted (since the
   row is locked out until that reset).
 - **Column alignment**: all free text notes (`<-`, `EXHAUSTED`, extra credits, prepaid notes)

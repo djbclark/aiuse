@@ -739,13 +739,21 @@ class Snapshot:
             "collector_errors": self.collector_errors,
             "disabled_services": dict(self.disabled_services),
         }
-        from aiuse.analysis.pace import overall_pace_percent, window_pace_percent, window_pace_ratio
+        from aiuse.analysis.pace import (
+            overall_pace,
+            window_pace,
+            window_pace_ratio,
+        )
 
         for account, data in zip(self.accounts, body["accounts"], strict=True):
-            data["overall_pace_percent"] = overall_pace_percent(account.windows, self.collected_at)
+            ovr_pct, ovr_early = overall_pace(account.windows, self.collected_at)
+            data["overall_pace_percent"] = ovr_pct
+            data["overall_pace_early"] = ovr_early
             for window, entry in zip(account.windows, data["windows"], strict=True):
-                entry["pace_percent"] = window_pace_percent(window, self.collected_at)
+                pct, early = window_pace(window, self.collected_at)
+                entry["pace_percent"] = pct
                 entry["pace_ratio"] = window_pace_ratio(window, self.collected_at)
+                entry["pace_early"] = early
         if self.config_fingerprint:
             body["config_fingerprint"] = self.config_fingerprint
         return body

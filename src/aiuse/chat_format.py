@@ -14,10 +14,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aiuse.analysis.pace import (
+    format_pace,
     independent_pool_key,
-    overall_pace_percent,
+    overall_pace,
     pool_scope_label,
-    window_pace_percent,
+    window_pace,
 )
 from aiuse.models import (
     AccountUsage,
@@ -290,6 +291,7 @@ class _WindowRow:
         "pace_line",
         "now",
         "pace_percent",
+        "pace_early",
     )
 
     def __init__(
@@ -316,7 +318,8 @@ class _WindowRow:
 
         self.emoji = status_emoji(self.remaining, pace_ratio)
         self.pace_line = pace_interpretation(pace, window.resets_at)
-        self.pace_percent = window_pace_percent(window, now) if now is not None else None
+        paced: tuple[int | None, bool] = window_pace(window, now) if now is not None else (None, False)
+        self.pace_percent, self.pace_early = paced
 
     @property
     def heading(self) -> str:
@@ -339,7 +342,7 @@ class _WindowRow:
         reset_part = deadline if deadline.startswith("reset") else f"resets in {deadline}"
         parts = [f"{rem} left", reset_part]
         if self.pace_percent is not None:
-            parts.append(f"pace {self.pace_percent:+d}%")
+            parts.append(f"pace {format_pace(self.pace_percent, self.pace_early)}")
         return f"`{' · '.join(parts)}`"
 
     def severity_key(self) -> int:
@@ -590,21 +593,31 @@ def _monthly_pacing_note(
 # ---------------------------------------------------------------------------
 
 
+def _alert_pace(
+    alert: UseOrLoseAlert,
+    sub_rows: list[_WindowRow] | None,
+    now: datetime | None,
+) -> tuple[int | None, bool]:
+    """Signed pace percent and early flag for an alert, resolving the QuotaWindow when possible."""
+    if sub_rows and now:
+        for r in sub_rows:
+            if (r.provider, r.account, r.window.label) == (alert.provider, alert.account, alert.window_label):
+                return r.pace_percent, r.pace_early
+    if alert.pace and alert.pace.pace_ratio is not None:
+        pct = round((alert.pace.pace_ratio - 1) * 100)
+        early = alert.pace.elapsed_fraction is not None and alert.pace.elapsed_fraction < 0.10
+        return pct, early
+    return None, False
+
+
 def _alert_pace_percent(
     alert: UseOrLoseAlert,
     sub_rows: list[_WindowRow] | None,
     now: datetime | None,
 ) -> int | None:
     """Signed pace percent for an alert, resolving the QuotaWindow when possible."""
-    if sub_rows and now:
-        for r in sub_rows:
-            if (r.provider, r.account, r.window.label) == (alert.provider, alert.account, alert.window_label):
-                pct = window_pace_percent(r.window, now)
-                if pct is not None:
-                    return pct
-    if alert.pace and alert.pace.pace_ratio is not None:
-        return round((alert.pace.pace_ratio - 1) * 100)
-    return None
+    pct, _ = _alert_pace(alert, sub_rows, now)
+    return pct
 
 
 def _build_action_items(
@@ -699,7 +712,7 @@ def _build_action_items(
             if scope:
                 acct += f" · {scope}"
             rem = _format_remaining(a.remaining_percent)
-            pace_pct = _alert_pace_percent(a, sub_rows, now)
+            pace_pct, pace_early = _alert_pace(a, sub_rows, now)
 
             if a.kind == "conserve":
                 # Nothing left to conserve — the plain report tags these `empty`
@@ -707,10 +720,10 @@ def _build_action_items(
                 if a.remaining_percent < 1:
                     items.append(f"{name}{acct} is exhausted")
                     continue
-                pace_s = f" and pace `{pace_pct:+d}%`" if pace_pct is not None else ""
+                pace_s = f" and pace `{format_pace(pace_pct, pace_early)}`" if pace_pct is not None else ""
                 items.append(f"Conserve {name}{acct}: `{rem}` remains{pace_s}")
             elif a.kind == "burn":
-                pace_s = f" pacing at `{pace_pct:+d}%`" if pace_pct is not None else ""
+                pace_s = f" pacing at `{format_pace(pace_pct, pace_early)}`" if pace_pct is not None else ""
                 if a.remaining_percent < 1:
                     items.append(f"{name}{acct} is exhausted")
                 else:
@@ -805,8 +818,8 @@ def _window_line_label(row: _WindowRow, scope: str | None) -> str:
 
 def _render_pool_entry(entry: _PoolEntry, now: datetime | None = None) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form."""
-    overall = overall_pace_percent([r.window for r in entry.rows], now) if now is not None else None
-    pace_suffix = f" · pace {overall:+d}%" if overall is not None else ""
+    overall, overall_early = overall_pace([r.window for r in entry.rows], now) if now is not None else (None, False)
+    pace_suffix = f" · pace {format_pace(overall, overall_early)}" if overall is not None else ""
 
     if len(entry.rows) == 1:
         row = entry.rows[0]
@@ -971,7 +984,9 @@ def render_chat_report(
         sections.append("\n".join(lines))
 
     if pool_entries:
-        sections.append("pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest")
+        sections.append(
+            "pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest · ~ = early: under 10% of the window has elapsed"
+        )
 
     if not sections[1:]:  # Only header, no data.
         sections.append("No usage data collected.")
