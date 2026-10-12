@@ -516,7 +516,10 @@ def test_action_plan_line_includes_pace_fragment():
         ),
     )
     line = _action_plan_line(alert, _Style(False))
-    assert "pace 0.4x" in line
+    assert "pace -60%" in line
+    assert "(history-blended)" not in line
+    assert "$3.00 at risk" not in line
+    assert "at risk" not in line
     assert "projected 60% unused" in line
 
 
@@ -550,7 +553,11 @@ def test_action_plan_line_notes_blended_history():
         ),
     )
     line = _action_plan_line(alert, _Style(False))
-    assert "blended with history (5 samples)" in line
+    assert "pace -60% (history-blended)" in line
+    assert "blended with history" not in line
+    assert "$3.00 at risk" not in line
+    assert "at risk" not in line
+    assert "projected 60% unused" in line
 
 
 def test_render_report_full_includes_history_section():

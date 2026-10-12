@@ -449,7 +449,7 @@ Collected at … · 3 accounts · 2 alerts
 Codex · account=you@example.com · plan=plus · selected live source: CodexBar
   quota: Codex weekly quota
     [============] 100% left   0% used   resets in 6.4d (Jul 28 21:59 UTC)
-    $6.90 · flex:▒ semi
+    flex:▒ semi · pace -100%
 
 ## Cross-checks (informational)
 --------------------------------------------------------------------------------
@@ -461,13 +461,13 @@ Codex · account=you@example.com · plan=plus · selected live source: CodexBar
 
 ## Action plan — use these before they reset
 --------------------------------------------------------------------------------
-  Pace: Codex week -70% pace (93% unused at reset) · 6 windows across 5 providers.
+  6 windows with unused capacity across 5 providers.
 
   THIS WEEK (start now — capacity will reset or needs lead time)
   ─────────────────────────────────────────────────────────────
-  .   Codex · you@example.com · Codex weekly quota: 88% left · use within 6.4 days · $6.07 at risk
+  .   Codex · you@example.com · Codex weekly quota: 88% left · use within 6.4 days · pace -40% — projected 52% unused@reset
       Semi-throttled — steady usage will exhaust it.
-  .   OpenCode Go · default · OpenCode Go weekly quota: 98% left · use within 4.5 days · $3.37 at risk
+  .   OpenCode Go · default · OpenCode Go weekly quota: 98% left · use within 4.5 days · pace -95% — projected 91% unused@reset
       Burstable — one heavy session will cover it.
 ```
 

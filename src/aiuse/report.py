@@ -16,7 +16,6 @@ from aiuse.analysis.history import (
 )
 from aiuse.analysis.pace import (
     POOL_SCOPE_LABELS,
-    compute_pace,
     governing_partition,
     independent_pool_key,
     overall_pace_percent,
@@ -32,7 +31,6 @@ from aiuse.models import (
     Snapshot,
     Urgency,
     UseOrLoseAlert,
-    canonical_provider,
     classify_window_minutes,
     claude_model_scope,
     infer_window_clock,
@@ -2344,11 +2342,8 @@ def _action_plan_line(alert: UseOrLoseAlert, s: _Style) -> str:
     when = _human_deadline(alert.days_until_reset, estimated=alert.deadline_is_estimated)
 
     profile = alert.flexibility_profile
-    value_part = ""
     flex_note = ""
     if profile:
-        if profile.value_at_risk_usd is not None:
-            value_part = f" · ${profile.value_at_risk_usd:.2f} at risk"
         if profile.consumption_flexibility >= 0.9:
             flex_note = "Burstable — one heavy session will cover it."
         elif profile.consumption_flexibility >= 0.4:
@@ -2359,23 +2354,22 @@ def _action_plan_line(alert: UseOrLoseAlert, s: _Style) -> str:
             flex_note = f"{flex_note} ({profile.burn_estimate})"
 
     pace = alert.pace
+    pace_part = ""
     if pace is not None and pace.pace_ratio is not None:
+        pace_pct = round((pace.pace_ratio - 1) * 100)
+        pace_str = f"pace {pace_pct:+d}%"
+        if pace.learned_sample_count > 0:
+            pace_str += " (history-blended)"
         waste = pace.projected_waste_fraction
         if waste is not None:
-            value_part += f" · pace {pace.pace_ratio:.1f}x — projected {waste:.0%} unused@reset"
+            pace_part = f" · {pace_str} — projected {waste:.0%} unused@reset"
         else:
-            value_part += f" · pace {pace.pace_ratio:.1f}x"
-        if pace.projected_exhaust_at is not None and alert.kind == "burn":
-            # Burn rows: exhaust after reset is less interesting; only if before reset.
-            pass
-        if pace.learned_sample_count > 0:
-            n = pace.learned_sample_count
-            value_part += f" · blended with history ({n} sample{'s' if n != 1 else ''})"
+            pace_part = f" · {pace_str}"
 
     return (
         f"  {badge} {s.bold(provider_display_name(alert.provider))} · "
         f"{who} · {alert.window_label}: {alert.remaining_percent:.0f}% left · "
-        f"use {when}{value_part}\n"
+        f"use {when}{pace_part}\n"
         f"      {s.dim(flex_note)}"
     )
 
@@ -2464,11 +2458,8 @@ def _render_account(
 ) -> list[str]:
     lines: list[str] = []
     cfg = config or {}
-    raw_plans = cfg.get("plans")
     raw_analysis = cfg.get("analysis")
-    plans: dict[str, Any] = raw_plans if isinstance(raw_plans, dict) else {}
     analysis: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
-    rates = learned_burn_rates or {}
 
     head = s.bold(provider_display_name(acc.provider))
     if acc.account:
@@ -2521,7 +2512,7 @@ def _render_account(
         lines.append(f"    {bar} {rem_colored} {used_s:10} {s.dim(reset_s)}")
 
         if rem is not None and w.window_minutes:
-            detail = _consumption_line(w, rem, acc.provider, plans, analysis, s, learned_burn_rates=rates)
+            detail = _consumption_line(w, acc.provider, analysis)
             if detail:
                 lines.append(s.dim(f"    {detail}"))
 
@@ -2637,57 +2628,21 @@ def _source_description(source: str) -> str:
     }.get(source, f"source: {source}")
 
 
-def _consumption_line(
-    window: Any,
-    remaining: float,
-    provider: str,
-    plans: dict[str, Any],
-    analysis: dict[str, Any],
-    s: _Style,
-    *,
-    learned_burn_rates: dict[str, tuple[float, int]] | None = None,
-) -> str | None:
+def _consumption_line(window: Any, provider: str, analysis: dict[str, Any]) -> str | None:
     if not window.window_minutes:
         return None
 
     provider_key = provider_config_key(provider)
-    plan_meta: dict[str, Any] = {}
-    meta = plans.get(provider_key)
-    if isinstance(meta, dict):
-        plan_meta = meta
-
-    monthly_price = plan_meta.get("monthly_price")
-    value_multipliers = plan_meta.get("value_multiplier")
-    waking = float(analysis.get("waking_hours_per_day", 16))
     duration_kind = classify_window_minutes(window.window_minutes)
 
     flex_class, flex_score = _classify_flexibility(
         window_minutes=window.window_minutes, provider=provider, config=analysis
     )
 
-    value_usd: float | None = None
-    if monthly_price is not None and window.window_minutes:
-        window_mult = 1.0
-        if isinstance(value_multipliers, dict) and duration_kind:
-            window_mult = float(value_multipliers.get(duration_kind, 1.0))
-        value_usd = round(
-            _compute_value_at_risk(
-                remaining=remaining,
-                window_minutes=window.window_minutes,
-                monthly_price=float(monthly_price),
-                waking_hours_per_day=waking,
-                value_multiplier=window_mult,
-            ),
-            2,
-        )
-
     flex_bar = "░" if flex_score <= 0.1 else "▓" if flex_score >= 0.9 else "▒"
     class_label = flex_class.value
 
-    parts: list[str] = []
-    if value_usd is not None:
-        parts.append(f"${value_usd:.2f}")
-    parts.append(f"flex:{flex_bar} {class_label}")
+    parts: list[str] = [f"flex:{flex_bar} {class_label}"]
 
     capacity = window.refill_capacity
     capacity_unit = window.refill_capacity_unit
@@ -2706,31 +2661,9 @@ def _consumption_line(
         unit = capacity_unit or ""
         parts.append(f"{capacity:.0f}{unit}/cycle")
 
-    # Pace fragment for detail view (on-pace windows still show here).
-    learned_rate: float | None = None
-    learned_n = 0
-    rates = learned_burn_rates or {}
-    if rates and duration_kind:
-        # Canonical provider id, not the config key — that is how
-        # history.compute_learned_burn_rates stores them.
-        rate_key = f"{canonical_provider(provider)}:{duration_kind}"
-        if rate_key in rates:
-            learned_rate, learned_n = rates[rate_key]
-    try:
-        pace_profile = compute_pace(
-            window,
-            now=utcnow(),
-            learned_rate_per_day=learned_rate,
-            learned_sample_count=learned_n,
-        )
-    except Exception:  # noqa: BLE001
-        pace_profile = None
-    if pace_profile is not None and pace_profile.pace_ratio is not None:
-        pace_s = f"pace {pace_profile.pace_ratio:.1f}x"
-        if pace_profile.learned_sample_count > 0:
-            n = pace_profile.learned_sample_count
-            pace_s += f" (blended w/ history, {n} sample{'s' if n != 1 else ''})"
-        parts.append(pace_s)
+    pace_percent = window_pace_percent(window, utcnow())
+    if pace_percent is not None:
+        parts.append(f"pace {pace_percent:+d}%")
 
     return " · ".join(parts) if parts else None
 
