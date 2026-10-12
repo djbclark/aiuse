@@ -11,10 +11,11 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-10-10):** Package/CLI **`aiuse`**, packaging **3.3.9**
+**Status (2026-10-12):** Package/CLI **`aiuse`**, packaging **3.4.1**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
-done; JSON schema **1.1** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`); 19 registered collectors (including passive `acp`
+done; JSON schema **1.2** (self-describing output, `aiuse --available`,
+`aiuse note-exhausted`; 1.2 adds per-window pace and the matrix PACE column,
+early readings marked `~`); 19 registered collectors (including passive `acp`
 context logs and the opt-in `sipb` MIT status probe; `aiuse usage-sources`);
 scheduled sampling +
 `aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →

@@ -28,5 +28,5 @@ and batch log in `~/.local/state/bigteam/aiuse-pace-headline/`.
 
 1. Low-priority bead: oc-go monthly pace uses a fixed 43200-minute month; the vendor uses calendar
    months. The +1351% reading on 2026-10-12 was real usage (vendor re-anchored the meter Oct 10).
-2. Early in a window pace is exaggerated by the 5% elapsed floor (e.g. +1351% one day into a month).
-   A display-side cap or a "too early" marker could help if it bothers the operator.
+2. Done in **3.4.1** (b150c47): early readings (under 10% of the window elapsed) are marked `~`
+   (`+1352%~`) on every surface; JSON `pace_early` / `overall_pace_early` (schema still 1.2).
