@@ -1263,6 +1263,71 @@ def test_clock_matrix_shows_reset_clock_beside_wallet_note():
     assert "$14.46 extra credits" in grok_line
 
 
+def test_clock_matrix_depleted_clock_reads_empty_despite_sibling_conserve_alert():
+    """A depleted 5h clock blocks its pool; a sibling weekly conserve alert must
+    not downgrade the row tag from ``empty`` to ``slow``.
+
+    The exhausted window raises no alert of its own (zero projected waste is
+    ``on_pace``), so the alert band used to be taken from the healthy sibling.
+    """
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                account="gmail",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="5-hour",
+                        used_percent=100.0,
+                        remaining_percent=0.0,
+                        resets_at=utcnow() + timedelta(hours=2, minutes=12),
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="weekly",
+                        used_percent=47.0,
+                        remaining_percent=53.0,
+                        resets_at=utcnow() + timedelta(days=5),
+                        window_minutes=10080,
+                    ),
+                ],
+            )
+        ],
+    )
+    alert = UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="codex",
+        account="gmail",
+        window_label="weekly",
+        remaining_percent=53.0,
+        days_until_reset=5.0,
+        plan=None,
+        message="pace yourself",
+        source="codexbar",
+        score=40.0,
+        kind="conserve",
+        window_minutes=10080,
+    )
+    with_alert = next(
+        line
+        for line in render_clock_matrix([alert], snapshot=snap, color=False, width=140).splitlines()
+        if "codex" in line
+    )
+    assert with_alert.startswith("empty")
+    assert with_alert.split()[1] == "0"
+    assert "100u/0l/2h12m" in with_alert
+    assert "EXHAUSTED" in with_alert
+
+    # Same row without the sibling alert was already ``empty``; it must stay so.
+    without_alert = next(
+        line for line in render_clock_matrix([], snapshot=snap, color=False, width=140).splitlines() if "codex" in line
+    )
+    assert without_alert.startswith("empty")
+
+
 def test_clock_matrix_wallet_only_row_stays_note_only():
     """No windows → the whole row is still the inventory note (wallet case)."""
     snap = Snapshot(

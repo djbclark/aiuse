@@ -1325,12 +1325,18 @@ def _build_matrix_rows(
                         value = priced
 
             key = _ladder_coverage_key(account.provider, account.account, pool_id)
+            # A fully depleted window blocks its whole pool (``governing_partition``
+            # promotes it as governing for exactly that reason), but it raises no
+            # alert of its own: zero projected waste classifies as ``on_pace``.  So
+            # never let a sibling conserve/burn alert mask the pool's own empty
+            # state -- take whichever band grabs more attention.
+            representative = _pick_representative_window(pool) if pool else None
+            own_band = _unalerted_window_band(representative)
             found = pool_alert.get(key)
-            if found is not None:
+            if found is not None and _BAND_ATTENTION[found[0]] >= _BAND_ATTENTION[own_band]:
                 band, priority = found
             else:
-                representative = _pick_representative_window(pool) if pool else None
-                band = _unalerted_window_band(representative)
+                band = own_band
                 priority = _pool_queue_priority(account, band, pool)
 
             note = None
