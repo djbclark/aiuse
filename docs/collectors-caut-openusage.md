@@ -1,21 +1,30 @@
 # caut + OpenUsage.ai / OpenUsage.sh collectors
 
-**Date:** 2026-07-25  
-**Status:** All collectors are enabled by default for multi-source cross-checks
-(correctness over speed), including tools installed later. Disable an
-inappropriate source explicitly in `config.toml`.
+**Date:** 2026-07-25 (updated 2026-10-13)  
+**Status:** Multi-source cross-checks prioritize correctness, but **not all sources are suitable for ambient polling**. Recommended collector posture:
+
+- **CodexBar**: **Highly recommended** as primary multi-provider source (<2ms read via group container `widget-snapshot.json` cache).
+- **OpenUsage.ai**: **Recommended** as secondary cross-check (fast loopback HTTP via `GET /v1/limits`).
+- **cswap**: **Highly recommended** as authoritative source for multi-account Claude Code.
+- **tokscale**: **Recommended** for lightweight Copilot and Cursor token tracking.
+- **OpenUsage.sh**: **Recommend AGAINST / Keep disabled** (`enabled = false`). Heavy (~40s CPU) export latency, yields mostly all-time session logs rather than quota rate limits, and poses terminal raw-mode corruption risks.
+- **caut**: **Recommend AGAINST / Keep disabled** (`enabled = false`). Ad-hoc cargo binary triggers recurring macOS Keychain dialogs; Claude credential detection is flaky.
+- **caam**: Guarded build required (to prevent unexpected browser consent/login popups).
 
 ## Why
 
 `aiuse` prefers ranking quality over a single data path. In addition to
 **cswap**, **CodexBar**, and **tokscale**, it can also collect:
 
-| Source                                                                        | Role                                                                       |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            |
-| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) |
-| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          |
-| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           |
+| Source                                                                        | Role                                                                       | Recommendation                        |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------- |
+| **[CodexBar](https://github.com/steipete/CodexBar)**                          | Primary multi-provider usage probe (instant widget snapshot cache)         | **Recommended**                       |
+| **[cswap](https://github.com/realiti4/claude-swap)**                          | Authoritative multi-account Claude Code rate limits                        | **Recommended**                       |
+| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          | **Recommended** (secondary)           |
+| **[tokscale](https://github.com/Dicklesworthstone/tokscale)**                 | Copilot & Cursor token quotas                                              | **Recommended**                       |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            | **Avoid / Opt-in** (keychain prompts) |
+| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) | **Guarded only** (PR #124)            |
+| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           | **Avoid / Disable** (~40s CPU)        |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**
@@ -133,6 +142,23 @@ token/cost estimates. Identical metric aliases are collapsed, while Cursor's
 Included/Auto/Other Models pools remain distinct. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
 `--no-openusage`), and `--no-openusage-sh`.
 
+### Why OpenUsage.sh is NOT recommended for ambient polling
+
+While `openusage-sh` provides a standalone terminal dashboard, running `openusage-sh export` in automated background polling (such as `aiuse watch` or an hourly LaunchAgent) is **strongly discouraged**:
+
+1. **High CPU load and long latency (~40s):** `openusage-sh export` walks local transcript logs, sqlite files, and session directories (Pi, Zed, Qwen, etc.), consuming ~30–40 seconds of 90%+ CPU per call. Under concurrent load, it frequently hits the 90.0s collector timeout.
+2. **Minimal quota yield:** Nearly all data returned by `openusage-sh` consists of cumulative all-time token/request counters, which `aiuse` intentionally ignores (only percentage rate-limit windows drive `aiuse` ranking). The heavy compute cost yields almost zero actionable quota data.
+3. **Terminal corruption hazard:** Invoking the binary without subcommands or with improper TTY detachment can hijack `/dev/tty` and leave the terminal in raw mode, garbling subsequent output into staircases.
+
+**Recommended posture:** Disable `openusage_sh` in `~/.config/aiuse/config.toml`:
+
+```toml
+[collectors.openusage_sh]
+enabled = false
+```
+
+Rely instead on `CodexBar` (which reads the instant `<2ms` widget snapshot cache) and `OpenUsage.ai` (the menu bar app's lightweight loopback HTTP endpoint).
+
 ## Selection priority (generalized)
 
 | Provider | Order (first live wins for the ladder)                           |
@@ -248,11 +274,14 @@ claude auth status          # compare with caut doctor Claude section
 
 ### What “good enough” looks like for aiuse
 
-| Source                      | Need for correct ladder?                                        |
-| --------------------------- | --------------------------------------------------------------- |
-| cswap + CodexBar + tokscale | **Yes** (primary selection)                                     |
-| OpenUsage                   | Strong cross-check; keep app running or install CLI             |
-| caut                        | Best-effort; valuable when Claude windows land; safe when empty |
+| Source           | Need for correct ladder?                                      | Posture / Recommendation                         |
+| ---------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| **cswap**        | **Yes** (authoritative Claude multi-account selection)        | **Highly recommended**                           |
+| **CodexBar**     | **Yes** (primary multi-provider selection via widget cache)   | **Highly recommended** (<2ms via snapshot cache) |
+| **tokscale**     | **Yes** (primary Copilot & Cursor selection)                  | **Recommended**                                  |
+| **OpenUsage.ai** | Strong secondary cross-check; loopback HTTP is fast and clean | **Recommended** (keep app running)               |
+| **caut**         | Best-effort; Claude credential detection flaky                | **Avoid / Disable** (adhoc keychain prompts)     |
+| **OpenUsage.sh** | Unnecessary; heavy ~40s CPU export, minimal rate limits       | **Avoid / Disable** (`enabled = false`)          |
 
 ---
 

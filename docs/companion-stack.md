@@ -5,13 +5,13 @@ quota monitor. Pair it with tools that already own **ambient** % bars.
 
 ## Recommended split
 
-| Role                      | Tool                                                                                     | What you use it for                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| **Ambient** (always-on %) | [CodexBar](https://github.com/steipete/CodexBar), [OpenUsage](https://www.openusage.ai/) | Live bars in the menu bar; spot lockouts at a glance                       |
-| **Rank / burn**           | **`aiuse`**                                                                              | Ordered ladder of expiring allotments; `aiuse suggest` for a single winner |
-| **Multi-account Claude**  | [cswap](https://github.com/realiti4/claude-swap)                                         | Canonical Claude Code rows for every configured email                      |
-| **Hourly history**        | LaunchAgent (`docs/scheduling.md`)                                                       | Persist snapshots + optional `learn_from_history`                          |
-| **In-terminal board**     | **`aiuse watch`**                                                                        | Opt-in full-screen matrix; compose with CodexBar / OpenUsage for a menubar |
+| Role                      | Tool                                                                                        | What you use it for                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Ambient** (always-on %) | [CodexBar](https://github.com/steipete/CodexBar), [OpenUsage.ai](https://www.openusage.ai/) | Live bars in the menu bar; spot lockouts at a glance (reads via cached JSON / loopback HTTP) |
+| **Rank / burn**           | **`aiuse`**                                                                                 | Ordered ladder of expiring allotments; `aiuse suggest` for a single winner                   |
+| **Multi-account Claude**  | [cswap](https://github.com/realiti4/claude-swap)                                            | Canonical Claude Code rows for every configured email                                        |
+| **Hourly history**        | LaunchAgent (`docs/scheduling.md`)                                                          | Persist snapshots + optional `learn_from_history`                                            |
+| **In-terminal board**     | **`aiuse watch`**                                                                           | Opt-in full-screen matrix; compose with CodexBar / OpenUsage.ai                              |
 
 Install data sources: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
 or site `just install-aiuse-deps`.
@@ -51,8 +51,20 @@ normal collect run (0 / 1 / 2).
 
 - No Swift/macOS menu-bar binary (`status` is a **pull** one-liner, not a widget)
 - No request routing / proxy / LiteLLM leases (stay Layer 2; use `suggest` / `serve` for ranked advice only)
-- Ambient % for a single provider is better in CodexBar/OpenUsage
+- Ambient % for a single provider is better in CodexBar/OpenUsage.ai
 - Full history charts / anomaly BI — use onWatch-class tools; `aiuse` History is operational
+
+## Collector posture recommendations
+
+| Collector          | Posture          | Rationale                                                                                                           |
+| :----------------- | :--------------- | :------------------------------------------------------------------------------------------------------------------ |
+| **`codexbar`**     | **Recommended**  | Primary multi-provider source; instantaneous (<2ms) via group container `widget-snapshot.json` cache.               |
+| **`cswap`**        | **Recommended**  | Canonical source for Claude Code multi-account quota windows.                                                       |
+| **`openusage_ai`** | **Recommended**  | Clean secondary cross-check; loopback HTTP (`http://127.0.0.1:6736/v1/limits`) responds in milliseconds.            |
+| **`tokscale`**     | **Recommended**  | Fast, lightweight token quotas for Copilot and Cursor.                                                              |
+| **`openusage_sh`** | **Disable**      | Heavy CLI export (`openusage-sh export` takes ~40s CPU scanning all local session logs) and yields few rate limits. |
+| **`caut`**         | **Disable**      | Ad-hoc cargo binary triggers modal macOS Keychain prompts; Claude credential detection is flaky.                    |
+| **`caam`**         | **Guarded only** | Requires patched build (PR #124) to avoid triggering browser consent popups.                                        |
 
 ## Related product surfaces (shipped)
 
