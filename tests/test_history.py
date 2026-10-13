@@ -836,6 +836,60 @@ def test_anonymous_history_row_does_not_borrow_a_sibling_account(tmp_path: Path)
     assert resolve_live_window(index, key, "b@example.com")["account"] == "b@example.com"
 
 
+def _codex_snapshot(account: str | None) -> Snapshot:
+    now = _now()
+    return Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                account=account,
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Codex 5-hour quota (1)",
+                        remaining_percent=0.0,
+                        resets_at=now + timedelta(hours=1),
+                        window_minutes=300,
+                    )
+                ],
+            )
+        ],
+    )
+
+
+def test_named_history_row_follows_account_that_went_anonymous():
+    """Codex shape: history said gmail, the live row now reports no account."""
+    from aiuse.analysis.history import live_window_index, resolve_live_window, window_series_key
+
+    index = live_window_index(_codex_snapshot(None))
+    key = window_series_key("codex", "Codex 5-hour quota (1)", 300)
+    found = resolve_live_window(index, key, "djbclark@gmail.com")
+    assert found is not None
+    assert found["remaining_percent"] == 0.0
+
+
+def test_anonymous_history_row_follows_account_that_became_named():
+    """Reverse of the Codex shape: history had no account, live names one."""
+    from aiuse.analysis.history import live_window_index, resolve_live_window, window_series_key
+
+    index = live_window_index(_codex_snapshot("djbclark@gmail.com"))
+    key = window_series_key("codex", "Codex 5-hour quota (1)", 300)
+    found = resolve_live_window(index, key, None)
+    assert found is not None
+    assert found["account"] == "djbclark@gmail.com"
+
+
+def test_named_history_row_does_not_follow_a_different_named_account():
+    """A switch to another named account is not drift; it stays unresolved."""
+    from aiuse.analysis.history import live_window_index, resolve_live_window, window_series_key
+
+    index = live_window_index(_codex_snapshot("other@example.com"))
+    key = window_series_key("codex", "Codex 5-hour quota (1)", 300)
+    assert resolve_live_window(index, key, "djbclark@gmail.com") is None
+
+
 def test_sliding_reset_counts_one_cycle_not_one_per_collection(tmp_path: Path):
     """Most providers recompute the reset on every poll — that is not a new cycle.
 

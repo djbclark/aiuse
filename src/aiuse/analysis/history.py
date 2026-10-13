@@ -302,15 +302,23 @@ def resolve_live_window(
 ) -> dict[str, Any] | None:
     """Find the live window for one history record, if it is still live.
 
-    A record that names an account matches only that account. A record with no
+    A record that names an account matches only that account — except when the
+    sole live entry for the series is anonymous (the collector stopped
+    reporting an account name: Codex flipped from its email to none), which is
+    the same subscription drifting rather than a sibling. A record with no
     account — OpenUsage's envelope is provider-scoped, not per-account — adopts
     the live identity only when there is exactly one candidate, so a
-    multi-account provider never silently borrows a sibling's row.
+    multi-account provider never silently borrows a sibling's row. A named
+    record never falls back to a differently *named* live account: that is an
+    account switch, not drift.
     """
     entries = index.get(series_key) or []
     wanted = account_key(account)
     if wanted:
-        return next((e for e in entries if account_key(e["account"]) == wanted), None)
+        exact = next((e for e in entries if account_key(e["account"]) == wanted), None)
+        if exact is None and len(entries) == 1 and not account_key(entries[0]["account"]):
+            return entries[0]
+        return exact
     if len(entries) == 1:
         return entries[0]
     return None
