@@ -223,6 +223,9 @@ def _demo_alerts() -> list[UseOrLoseAlert]:
             source="tokscale",
             score=88.0,
             kind="burn",
+            # Real pace alerts always carry the window length; the board's capacity
+            # ordering prices a refill by it, so without it the row has no dollars.
+            window_minutes=_MONTHLY,
             deadline_is_estimated=True,
             pace=PaceProfile(
                 elapsed_fraction=0.55,

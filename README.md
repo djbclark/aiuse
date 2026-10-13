@@ -55,13 +55,13 @@ pools most worth using right now sort to the bottom.
 - empty  0 oc-go      gmail —                          — 100u/0l/4d12h                      —    — <- EXHAUSTED
   n/a   -- deepseek   gmail —                                                                    — $4.15 (counts down)
   n/a   -- openrouter gmail —                                                                    — $18.55 (counts down)
-  slow  48 agy        gmail claude/gpt                 — 78u/22l/1d5h                       —    — <-
-  mid   50 claude     gmail —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                  — +38% <-
-  mid   50 cursor     gmail —                          —                  — 71u/29l/3d7h -20% -20%
-  mid   50 codex      gmail —                          — 54u/46l/2d7h -20%                  — -20% <-
+  slow  38 agy        gmail claude/gpt                 — 78u/22l/1d5h                       —    — <-
   mid   50 grok       gmail —                          —  6u/94l/6d14h                      —    — <-
-  mid   53 agy        gmail gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                    — -63% <-
-+ use   88 copilot    —     —                          — 58u/42l/~1d                        —    — <-
+  mid   63 claude     gmail —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                  — +38% <-
+  mid   65 codex      gmail —                          — 54u/46l/2d7h -20%                  — -20% <-
+  mid   67 agy        gmail gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                    — -63% <-
+  mid   67 cursor     gmail —                          —                  — 71u/29l/3d7h -20% -20%
++ use   91 copilot    —     —                          —                  — 58u/42l/~1d -39%  -39%
                               2d14h = until this clock resets · bold = largest unit
                         u/l = percent used / percent left — l is what you can still spend
       +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed
@@ -116,13 +116,23 @@ soon as possible). Its action-state boundaries are contiguous: `slow` ends at
 `??` means usage could not be fetched; `--` means rolling prepaid/PAYG
 inventory has no use-or-lose urgency.
 
-Inside the `slow` band (25-49) the score is how attractive the pool is right now:
-tokens available, proxied by `remaining% x monthly_price` from `[plans.<provider>]`
-(log-scaled, so a 5%-left $200 plan outranks a 1%-left $20 one). Recovery speed
-(how soon the lockout ends) only breaks ties. Plan tier is not detected, so each
-provider defaults to its lowest tier: set `[plans.claude] monthly_price = 200` for
-Max, or `[plans.claude."me@x.com"] monthly_price = 200` for one account (the account
-value wins). A provider with no price is valued at the cheapest configured plan.
+Inside each live band (`slow` 25-49, `mid` 50-74, `use` 75-99) the score is how
+attractive the pool is right now: the dollars at risk in its window. That is the
+plan's `monthly_price` from `[plans.<provider>]` spread over the window's refills
+per waking month (16 waking hours a day by default, so a 5-hour window is 1/97 of
+the month and a weekly one about a third), times the percent still left and the
+plan's `value_multiplier` — the same figure `--json` reports as `value_at_risk_usd`.
+The score is that dollar amount log-scaled onto the band's range (6 points per
+decade, $0.01 at the band's floor to $100 at its ceiling), so 5% left of a $200
+plan's weekly window ($3.45) outranks 1% left of a $20 one ($0.07), and a weekly
+window outranks the same percent of a 5-hour one. The band's older signal only
+breaks ties: recovery speed in `slow`, the analyzer score in `mid` and `use`. A
+window whose length is neither reported nor named in its label has no refill to
+price and sits at its band's floor. Plan tier is not detected, so each provider
+defaults to its lowest tier: set `[plans.claude] monthly_price = 200` for Max, or
+`[plans.claude."me@x.com"] monthly_price = 200` for one account (the account value
+wins). For ordering, a provider with no price is valued at the cheapest configured
+plan; it still shows no dollar figure.
 
 Green (`use`) is capacity to burn now before it resets; red is capacity
 already lost (`empty`, including a zero/negative prepaid balance) or a source
@@ -546,7 +556,7 @@ Disabled services: top-level `[disabled_services]` maps `"provider"` to a reason
 - All enabled collectors (cswap, CodexBar, caut, caam, OpenUsage.ai, OpenUsage.sh, tokscale, qwencloud, bailian, sipb) run concurrently; each CodexBar provider is its own subprocess. Default tool timeout is **45s**; CodexBar OpenCode Go is **60s** (`[collectors.codexbar] provider_timeouts`); `cswap`, `caam`, and `openusage_sh` are **90s**; the opt-in `sipb` probe defaults to **120s** (the MIT server is slow) (`-t` / `config.toml [timeouts]`).
 - Per-window detail still shows $ value, flexibility class, and a **pace** ratio when computable.
 - Duplicate live measurements are retained for cross-checking but only one copy drives recommendations.
-- Dollar values use plan `monthly_price` with waking-hours correction (default 16h/day).
+- Dollar values use plan `monthly_price` (a per-account `[plans.<provider>."<account>"]` price beats the provider's) with waking-hours correction (default 16h/day). A provider with no price shows no dollar figure.
 
 ## Further documentation
 

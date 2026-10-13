@@ -1,10 +1,21 @@
-"""Slow-band ranking is capacity-weighted: remaining% x monthly_price (aiuse-faf)."""
+"""Slow-band ranking is capacity-weighted: dollars at risk in the window (aiuse-faf, aiuse-b31)."""
 
 from datetime import timedelta
 
+import pytest
+
 from aiuse.config import DEFAULT_CONFIG, load_config, plan_monthly_price, validate_config
 from aiuse.models import PaceProfile, Urgency, UseOrLoseAlert, provider_display_name, utcnow
-from aiuse.report import _alert_queue_priority, _build_matrix_rows, _queue_score, _slow_capacity
+from aiuse.report import _alert_queue_priority, _build_matrix_rows, _Pricing, _queue_score
+
+# A weekly window is this share of the 16-waking-hours-a-day month its price is spread over.
+WEEKLY_SHARE = 10080 / (16 * 30.44 * 60)
+
+
+def _capacity(alert, plans=None):
+    """The capacity (dollars at risk) the board orders ``alert`` by."""
+    config = None if plans is None else {"plans": plans}
+    return _alert_queue_priority(alert, pricing=_Pricing.from_config(config))[0]
 
 
 def _slow(provider, account, remaining, days, *, lockout_in_days=None, label="weekly quota"):
@@ -53,7 +64,8 @@ def test_claude_200_plan_outranks_gemini_20_plan_in_slow_band():
 
 
 def test_slow_score_is_monotonic_in_capacity_and_stays_in_band():
-    caps = [1.0, 10.0, 24.0, 83.0, 1000.0, 1380.0, 10_000.0, 20_000.0]
+    # Dollars at risk, not remaining% x price: a cent or less floors the band, $100 or more tops it.
+    caps = [0.001, 0.01, 0.05, 0.3, 1.0, 3.4, 10.0, 100.0, 500.0]
     scores = [_queue_score(3, (cap, 0.0, 0.0)) for cap in caps]
     assert scores == sorted(scores)
     assert min(scores) == 25 and max(scores) == 49
@@ -68,8 +80,8 @@ def test_per_account_override_beats_provider_price():
 
     big = _slow("claude", "big@x.com", 5.0, 3.0)
     small = _slow("claude", "small@x.com", 5.0, 3.0)
-    assert _slow_capacity(big, plans) == 1000.0
-    assert _slow_capacity(small, plans) == 100.0
+    assert _capacity(big, plans) == pytest.approx(200 * WEEKLY_SHARE * 0.05)
+    assert _capacity(small, plans) == pytest.approx(20 * WEEKLY_SHARE * 0.05)
     rows = _build_matrix_rows([big, small], None, {"plans": plans})
     assert [r.account_full for r in rows] == ["small@x.com", "big@x.com"]
     assert rows[1].queue_score > rows[0].queue_score
@@ -90,27 +102,28 @@ def test_provider_alias_resolves_plan_key():
 def test_unpriced_provider_falls_back_to_cheapest_configured_plan():
     plans = {"claude": {"monthly_price": 20}, "copilot": {"monthly_price": 10}, "devin": {"name": "Devin"}}
     devin = _slow("devin", None, 5.0, 3.0)
-    assert _slow_capacity(devin, plans) == 5.0 * 10.0
+    assert _capacity(devin, plans) == pytest.approx(10 * WEEKLY_SHARE * 0.05)
     # No priced plan at all: the built-in constant.
-    assert _slow_capacity(devin, {}) == 5.0 * 10.0
+    assert _capacity(devin, {}) == pytest.approx(10 * WEEKLY_SHARE * 0.05)
     # Never outranks a known plan with the same remaining%.
     claude = _slow("claude", "a@x", 5.0, 3.0)
-    assert _slow_capacity(devin, plans) < _slow_capacity(claude, plans)
+    assert _capacity(devin, plans) < _capacity(claude, plans)
 
 
 def test_no_config_uses_builtin_plan_prices():
     alert = _slow("claude", "a@x", 10.0, 3.0)
-    assert _slow_capacity(alert, None) == 10.0 * DEFAULT_CONFIG["plans"]["claude"]["monthly_price"]
+    assert _capacity(alert) == pytest.approx(DEFAULT_CONFIG["plans"]["claude"]["monthly_price"] * WEEKLY_SHARE * 0.10)
 
 
 def test_equal_capacity_tiebreaks_on_readiness():
     plans = {"claude": {"monthly_price": 20}}
+    pricing = _Pricing.from_config({"plans": plans})
     # Same provider, same remaining% => equal capacity.  Dangerous lockout (exhausts
     # in 0.1d with 6d to reset) sorts above the one that barely locks out.
     danger = _slow("claude", "danger@x", 5.0, 6.0, lockout_in_days=0.1)
     safe = _slow("claude", "safe@x", 5.0, 6.0, lockout_in_days=5.9)
-    assert _alert_queue_priority(danger, plans=plans)[0] == _alert_queue_priority(safe, plans=plans)[0]
-    assert _alert_queue_priority(danger, plans=plans) < _alert_queue_priority(safe, plans=plans)
+    assert _alert_queue_priority(danger, pricing=pricing)[0] == _alert_queue_priority(safe, pricing=pricing)[0]
+    assert _alert_queue_priority(danger, pricing=pricing) < _alert_queue_priority(safe, pricing=pricing)
     rows = _build_matrix_rows([safe, danger], None, {"plans": plans})
     assert [r.account_full for r in rows] == ["danger@x", "safe@x"]
     assert rows[0].queue_score == rows[1].queue_score

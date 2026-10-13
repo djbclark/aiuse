@@ -65,7 +65,10 @@ Default parameters: see `policy/pace_defaults.yaml`.
 ## Bands (B1–B2)
 
 - **B1:** Sort by band lane first (`error` → `empty` → `n_a` → `slow` → `mid` → `use`), then score.
-  Within `slow`, score (25-49, log-scaled) is capacity: `remaining% x monthly_price`; recovery speed breaks ties.
+  Within `slow`, `mid` and `use`, score (25-49 / 50-74 / 75-99, log-scaled) is capacity: the dollars at risk
+  in the row's window, `monthly_price / max(refills per waking month, 1) x remaining% x value_multiplier`
+  (a per-account price beats the provider's; a window of unknown length has none). The band's older
+  signal breaks ties: recovery speed in `slow`, the analyzer score in `mid` and `use`.
 - **B2:** Never promote prepaid into `use`/`slow` from remaining% alone.
 
 ## Suggestion (G1)

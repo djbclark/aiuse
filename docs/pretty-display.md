@@ -28,9 +28,11 @@ use   92 claude     mit      —             25%/now  60%/2d14h      —    $2.7
 `##` is a colored **0–99 action score** aligned with the row order: `0` means
 empty and `99` means use as soon as possible. Shared semantic thresholds keep
 category transitions contiguous: `slow` is 25–49, `mid` is 50–74, and `use`
-is 75–99. The ranges are not independently stretched. A safe-to-resume `slow`
-row is 49 beside a weakest `mid` at 50; the strongest `mid` is 74 beside a
-weakest active `use` recommendation at 75. An error prints `??` because its
+is 75–99. The ranges are not independently stretched: inside its range a row's
+score is the dollars at risk in its window (plan price per refill × percent
+left, log-scaled from $0.01 to $100), so the strongest `slow` row is 49 beside
+a weakest `mid` at 50, and the strongest `mid` is 74 beside a weakest active
+`use` recommendation at 75. An error prints `??` because its
 urgency is unknown; non-expiring `n/a` inventory prints `--` because it has no
 use-or-lose score. Those markers avoid falsely calling unavailable data or
 rolling API credit empty.

@@ -134,10 +134,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # stale cache. Use for TUIs that must temporarily not be used even though
     # they have headroom.
     "disabled_services": {},
-    # monthly_price is the capacity proxy for slow-band ordering (remaining% x
-    # price): defaults are each provider's lowest tier. Override per provider
-    # ([plans.claude] monthly_price = 200) or per account via a sub-table
-    # ([plans.claude."me@x"] monthly_price = 200); see plan_monthly_price().
+    # monthly_price prices the dollars at risk in a window and, through them,
+    # orders the slow/mid/use bands on the board: defaults are each provider's
+    # lowest tier. Override per provider ([plans.claude] monthly_price = 200) or
+    # per account via a sub-table ([plans.claude."me@x"] monthly_price = 200);
+    # see plan_monthly_price().
     "plans": {
         "codex": {
             "name": "ChatGPT / Codex Plus",

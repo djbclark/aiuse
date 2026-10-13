@@ -11,6 +11,7 @@ from aiuse.analysis.use_or_lose import (
     _compute_flexibility_profile,
     _compute_value_at_risk,
     _human_when,
+    _plan_meta,
     _redistribute_weights,
     _score_multi_dimension,
     analyze_use_or_lose,
@@ -1550,3 +1551,89 @@ def test_pace_scoring_prioritizes_soon_and_inflexible():
     assert alerts[0].window_label == "5-hour"
     assert alerts[1].window_label == "monthly"
     assert alerts[0].score >= alerts[1].score
+
+
+def _claude_account(name: str, now: datetime, *, label: str, minutes: int, resets_in: timedelta) -> AccountUsage:
+    return AccountUsage(
+        source="cswap",
+        provider="claude",
+        account=name,
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label=label,
+                used_percent=5.0,
+                remaining_percent=95.0,
+                resets_at=now + resets_in,
+                window_minutes=minutes,
+            )
+        ],
+    )
+
+
+def test_plan_meta_resolves_the_account_price_and_leaves_unpriced_providers_unpriced():
+    plans = {
+        "claude": {
+            "name": "Claude",
+            "monthly_price": 20,
+            "value_multiplier": {"5h": 1.4},
+            "max@x.com": {"monthly_price": 200},
+        },
+        "gemini": {"monthly_price": 20},
+        "devin": {"name": "Devin"},
+        "free": {"monthly_price": 0},
+    }
+    # Account sub-table beats the provider price (case-insensitive); others keep the provider's.
+    assert _plan_meta("claude", plans, "max@x.com")["monthly_price"] == 200.0
+    assert _plan_meta("claude", plans, "MAX@x.com")["monthly_price"] == 200.0
+    assert _plan_meta("claude", plans, "pro@x.com")["monthly_price"] == 20
+    assert _plan_meta("claude", plans)["monthly_price"] == 20
+    # The rest of the provider's meta rides along, and the config is not mutated.
+    meta = _plan_meta("claude", plans, "max@x.com")
+    assert meta["name"] == "Claude" and meta["value_multiplier"] == {"5h": 1.4}
+    assert plans["claude"]["monthly_price"] == 20
+    # Collector ids alias to the config key (antigravity -> gemini).
+    assert _plan_meta("antigravity", plans, None)["monthly_price"] == 20
+    # No price anywhere stays unpriced (the board's cheapest-plan fallback is ordering only);
+    # a configured 0 keeps meaning "free plan".
+    assert _plan_meta("devin", plans, "me@x").get("monthly_price") is None
+    assert _plan_meta("free", plans, "me@x")["monthly_price"] == 0
+    assert _plan_meta("nobody", plans, "me@x") == {}
+
+
+def test_value_at_risk_prices_each_account_by_its_own_plan():
+    """``[plans.<provider>."<account>"] monthly_price`` sets that account's dollars (aiuse-qm7)."""
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            _claude_account("max@x.com", now, label="Claude Code weekly", minutes=10080, resets_in=timedelta(days=2)),
+            _claude_account("pro@x.com", now, label="Claude Code weekly", minutes=10080, resets_in=timedelta(days=2)),
+        ],
+    )
+    cfg = _pace_cfg()
+    cfg["plans"] = {"claude": {"monthly_price": 20, "max@x.com": {"monthly_price": 200}}}
+    by_account = {a.account: a for a in analyze_use_or_lose(snap, cfg)}
+    weekly_share = 10080 / (16 * 30.44 * 60)
+    big, small = by_account["max@x.com"], by_account["pro@x.com"]
+    assert big.flexibility_profile.value_at_risk_usd == pytest.approx(200 * weekly_share * 0.95, abs=0.01)
+    assert small.flexibility_profile.value_at_risk_usd == pytest.approx(20 * weekly_share * 0.95, abs=0.01)
+    # The projected-waste dollars are priced per account as well.
+    assert big.pace.projected_waste_usd == pytest.approx(10 * small.pace.projected_waste_usd, rel=0.01)
+
+
+def test_value_multiplier_still_scales_an_accounts_own_price():
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            _claude_account("max@x.com", now, label="Claude Code 5-hour", minutes=300, resets_in=timedelta(hours=1))
+        ],
+    )
+    cfg = _pace_cfg()
+    cfg["plans"] = {
+        "claude": {"monthly_price": 20, "value_multiplier": {"5h": 1.4}, "max@x.com": {"monthly_price": 200}}
+    }
+    (alert,) = analyze_use_or_lose(snap, cfg)
+    five_hour_share = 300 / (16 * 30.44 * 60)
+    assert alert.flexibility_profile.value_at_risk_usd == pytest.approx(200 * five_hour_share * 1.4 * 0.95, abs=0.01)

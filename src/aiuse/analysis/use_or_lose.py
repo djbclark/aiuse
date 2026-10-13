@@ -26,6 +26,7 @@ from aiuse.analysis.pace import (
     governing_partition,
     partition_independent_pools,
 )
+from aiuse.config import plan_monthly_price
 from aiuse.models import (
     WINDOW_5H_MAX_MINUTES,
     AccountUsage,
@@ -76,6 +77,20 @@ def _compute_value_at_risk(
     # worth more than the plan itself.
     value_per_refill = monthly_price / max(active_cycles, 1.0)
     return value_per_refill * (remaining / 100.0) * value_multiplier
+
+
+def window_value_multiplier(plan_meta: dict[str, Any] | None, window_minutes: int | None) -> float:
+    """``plans.<provider>.value_multiplier`` for a window's duration bucket (default 1.0).
+
+    The one lookup shared by the analyzer, the matrix dollar figure and the
+    board's capacity ordering, so a configured multiplier (Claude 5h = 1.4)
+    weighs a window identically everywhere.
+    """
+    multipliers = plan_meta.get("value_multiplier") if isinstance(plan_meta, dict) else None
+    duration_kind = classify_window_minutes(window_minutes)
+    if isinstance(multipliers, dict) and duration_kind:
+        return float(multipliers.get(duration_kind, 1.0))
+    return 1.0
 
 
 def _classify_flexibility(
@@ -294,9 +309,8 @@ def analyze_use_or_lose(
                 )
             continue
 
-        plan_meta = _plan_meta(account.provider, plans)
+        plan_meta = _plan_meta(account.provider, plans, account.account)
         monthly_price = plan_meta.get("monthly_price")
-        value_multipliers = plan_meta.get("value_multiplier")
         provider_key = provider_config_key(account.provider)
 
         priorities = analysis_cfg.get("provider_priority") or []
@@ -356,9 +370,7 @@ def analyze_use_or_lose(
             seen.add(key)
 
             duration_kind = classify_window_minutes(window.window_minutes)
-            window_value_mult = 1.0
-            if isinstance(value_multipliers, dict) and duration_kind:
-                window_value_mult = float(value_multipliers.get(duration_kind, 1.0))
+            window_value_mult = window_value_multiplier(plan_meta, window.window_minutes)
 
             flex_profile = _compute_flexibility_profile(
                 window=window,
@@ -773,11 +785,22 @@ def _looks_monthly(label: str) -> bool:
     return "month" in low or "billing" in low
 
 
-def _plan_meta(provider: str, plans: dict[str, Any]) -> dict[str, Any]:
+def _plan_meta(provider: str, plans: dict[str, Any], account: str | None = None) -> dict[str, Any]:
+    """Plan metadata for a provider, with ``monthly_price`` resolved for one account.
+
+    ``plan_monthly_price`` owns the resolution order: a per-account
+    ``[plans.<provider>."<account>"]`` price beats the provider-level one.  When
+    it resolves nothing positive the provider meta passes through untouched, so
+    an unpriced provider stays unpriced (no dollar figure) and a configured 0
+    keeps meaning "free plan, $0 at risk".
+    """
     # Canonical collector key → plans / config key (e.g. antigravity → gemini).
     lookup = provider_config_key(provider)
     meta = plans.get(lookup) or plans.get(provider) or {}
-    return meta if isinstance(meta, dict) else {}
+    if not isinstance(meta, dict):
+        return {}
+    price = plan_monthly_price(plans, provider, account)
+    return meta if price is None else {**meta, "monthly_price": price}
 
 
 def _score(

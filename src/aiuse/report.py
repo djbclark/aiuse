@@ -24,7 +24,14 @@ from aiuse.analysis.pace import (
     partition_independent_pools,
     window_pace,
 )
-from aiuse.analysis.use_or_lose import DAYS_PER_MONTH, _classify_flexibility, _compute_value_at_risk
+from aiuse.analysis.use_or_lose import (
+    _DEFAULT_WAKING_HOURS,
+    DAYS_PER_MONTH,
+    _classify_flexibility,
+    _compute_value_at_risk,
+    _plan_meta,
+    window_value_multiplier,
+)
 from aiuse.config import DEFAULT_CONFIG, plan_monthly_price
 from aiuse.models import (
     AccountUsage,
@@ -434,9 +441,10 @@ def alert_priority_band(alert: UseOrLoseAlert) -> int:
 def alert_use_urgency(alert: UseOrLoseAlert) -> float:
     """Primary within-band priority; higher appears lower in the queue.
 
-    Kept as a scalar public helper for callers/tests.  Rendering uses the full
-    :func:`_alert_queue_priority` tuple so ties preserve the analyzer's exact
-    recommendation order.
+    For slow, mid and use rows it is the capacity: dollars at risk in the
+    alert's window at the built-in plan prices.  Kept as a scalar public helper
+    for callers/tests.  Rendering uses the full :func:`_alert_queue_priority`
+    tuple, so ties preserve the analyzer's recommendation order.
     """
     return _alert_queue_priority(alert)[0]
 
@@ -463,16 +471,27 @@ def _conserve_use_readiness(alert: UseOrLoseAlert) -> float:
     return max(0.0, 100.0 - float(alert.score))
 
 
-# Slow-band capacity mapping.  A slow row's attractiveness is the tokens it has
-# available now, proxied by ``remaining% x monthly_price`` (a 5%-left $200 plan
-# holds as much as a 50%-left $20 one).  Capacity spans decades, so the 25-49
-# display score is log-scaled between these clamps: $10 x 1% -> 25 (floor) and
-# $200 x 50% (10,000) or more -> 49.
-_SLOW_CAPACITY_FLOOR = 10.0
-_SLOW_CAPACITY_CEIL = 10_000.0
+# Capacity: the one number slow, mid and use rows are ordered by.  It is the
+# dollars at risk in the row's window -- the plan price spread over the window's
+# refills per waking month, times the share still unspent and the plan's
+# value_multiplier (analysis.use_or_lose._compute_value_at_risk):
+#
+#     capacity = price / max(refills per month, 1) x remaining% / 100 x multiplier
+#
+# so a 5-hour window at 50% is worth far less than a weekly one at 50%, and a
+# percent of a $200 plan is worth ten of a $20 plan's.  Capacity spans five
+# decades, so a band's score is log-scaled between these clamps, 6 of its 24
+# points per decade: $0.01 or less is the band's floor, $100 or more its ceiling.
+_CAPACITY_FLOOR_USD = 0.01
+_CAPACITY_CEIL_USD = 100.0
+# Score range of each active band.  A band's ceiling sits one below the next
+# band's floor, so a category change adds evidence without leaving a gap.
+_BAND_SCORE_RANGE = {_BAND_CONSERVE: (25, 49), _BAND_MID: (50, 74), _BAND_USE: (75, 99)}
 # Last-resort price for a provider with no configured monthly_price and no
 # priced plan anywhere in the config.
-_SLOW_FALLBACK_PRICE = 10.0
+_FALLBACK_PRICE_USD = 10.0
+# A queue priority: the band's ordering key first, tie-breakers after it.
+_Priority = tuple[float, ...]
 
 
 def _plans_or_default(config_plans: Any) -> dict[str, Any]:
@@ -489,29 +508,79 @@ def _lowest_plan_price(plans: dict[str, Any]) -> float:
         price = meta.get("monthly_price") if isinstance(meta, dict) else None
         if not isinstance(price, bool) and isinstance(price, (int, float)) and price > 0:
             prices.append(float(price))
-    return min(prices) if prices else _SLOW_FALLBACK_PRICE
+    return min(prices) if prices else _FALLBACK_PRICE_USD
 
 
-def _slow_capacity(alert: UseOrLoseAlert, plans: dict[str, Any] | None = None) -> float:
-    """Tokens available now for a slow row: ``remaining% x monthly_price``.
+@dataclass(frozen=True)
+class _Pricing:
+    """What turns a window into dollars at risk: plan prices and waking hours.
 
-    Per-account ``[plans.<provider>."<account>"]`` beats the provider price.
-    A provider with no price (devin free, ...) is valued at the cheapest plan
-    configured: conservative, so an unknown never outranks a known cheap plan.
+    Built once per render.  ``plans`` falls back to the built-in defaults so the
+    board still ranks by real prices when no config was passed.
     """
-    plans = _plans_or_default(plans)
-    price = plan_monthly_price(plans, alert.provider, alert.account)
-    if price is None:
-        price = _lowest_plan_price(plans)
-    return max(0.0, float(alert.remaining_percent)) * price
+
+    plans: dict[str, Any]
+    waking_hours: float
+    fallback_price: float
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any] | None) -> _Pricing:
+        cfg = config or {}
+        plans = _plans_or_default(cfg.get("plans"))
+        analysis = cfg.get("analysis")
+        analysis = analysis if isinstance(analysis, dict) else {}
+        waking = float(analysis.get("waking_hours_per_day", _DEFAULT_WAKING_HOURS))
+        return cls(plans=plans, waking_hours=waking, fallback_price=_lowest_plan_price(plans))
+
+    def capacity_usd(
+        self,
+        provider: str,
+        account: str | None,
+        remaining: float,
+        window_minutes: int | None,
+        label: str | None = None,
+    ) -> float:
+        """Dollars at risk in the unspent part of one window.
+
+        The analyzer's own ``_compute_value_at_risk``, priced per account: the
+        account's ``[plans.<provider>."<account>"]`` price, else the provider's,
+        else the cheapest configured plan (conservative: an unpriced provider
+        never outranks a priced one).  A window whose length neither the source
+        nor its label states has no refill to price and is worth 0.0, the floor
+        of its band, where the band's own tie-break orders it.
+        """
+        minutes = effective_window_minutes(label, window_minutes)
+        if not minutes:
+            return 0.0
+        price = plan_monthly_price(self.plans, provider, account)
+        if price is None:
+            price = self.fallback_price
+        return _compute_value_at_risk(
+            remaining=max(0.0, min(100.0, float(remaining))),
+            window_minutes=minutes,
+            monthly_price=price,
+            waking_hours_per_day=self.waking_hours,
+            value_multiplier=window_value_multiplier(_plan_meta(provider, self.plans), minutes),
+        )
+
+    def window_capacity_usd(self, provider: str, account: str | None, window: QuotaWindow) -> float:
+        """:meth:`capacity_usd` for a live window (0.0 when it reports no remaining)."""
+        remaining = window.remaining()
+        if remaining is None:
+            return 0.0
+        return self.capacity_usd(provider, account, remaining, window.window_minutes, window.label)
 
 
 def _alert_queue_priority(
     alert: UseOrLoseAlert,
     band: int | None = None,
-    plans: dict[str, Any] | None = None,
-) -> tuple[float, float, float]:
-    """Category-specific queue priority; larger tuples appear lower."""
+    pricing: _Pricing | None = None,
+) -> _Priority:
+    """Category-specific queue priority; larger tuples appear lower.
+
+    Slow, mid and use rows lead with their capacity (dollars at risk), so one
+    notion orders every active band; each band's own signal breaks ties.
+    """
     band = alert_priority_band(alert) if band is None else band
     rem = max(0.0, float(alert.remaining_percent))
     days = float(alert.days_until_reset) if alert.days_until_reset is not None else None
@@ -524,18 +593,21 @@ def _alert_queue_priority(
     if band == _BAND_NA:
         value = alert.flexibility_profile.value_at_risk_usd if alert.flexibility_profile is not None else None
         return (1.0 if value is not None else 0.0, float(value or 0.0), rem)
+
+    capacity = (pricing or _Pricing.from_config(None)).capacity_usd(
+        alert.provider, alert.account, rem, alert.window_minutes, alert.window_label
+    )
     if band == _BAND_CONSERVE:
-        # Least capacity (remaining% x plan price) first, most capacity last;
-        # equal capacity falls back to recovery speed: most dangerous lockout
-        # first, closest-to-safe last.
-        return (_slow_capacity(alert, plans), _conserve_use_readiness(alert), -float(alert.score))
+        # Least capacity first, most capacity last; equal capacity falls back to
+        # recovery speed: most dangerous lockout first, closest-to-safe last.
+        return (capacity, _conserve_use_readiness(alert), -float(alert.score))
 
-    # Burn alerts, including low-urgency ``mid`` ones, exactly mirror
-    # ``pick_suggestion``: analyzer score, remaining capacity, sooner reset.
-    return (float(alert.score), rem, -(days if days is not None else 99.0))
+    # Burn alerts, including low-urgency ``mid`` ones, break capacity ties by
+    # analyzer score, then remaining capacity, then sooner reset.
+    return (capacity, float(alert.score), rem, -(days if days is not None else 99.0))
 
 
-def _queue_score(band: int, priority: tuple[float, float, float]) -> int | None:
+def _queue_score(band: int, priority: _Priority) -> int | None:
     """Map queue evidence onto one semantic 0–99 ``use next`` scale.
 
     The category is evidence in its own right: ``slow`` means use is currently
@@ -543,33 +615,18 @@ def _queue_score(band: int, priority: tuple[float, float, float]) -> int | None:
     thresholds are therefore shared action states, not three independently
     stretched mini-scales.  In particular, the strongest row on either side
     of a category boundary differs by one point rather than an artificial
-    band-sized jump.
+    band-sized jump.  Inside a band the score is the row's capacity
+    (``priority[0]``, dollars at risk) log-scaled onto the band's range.
     """
     if band in (_BAND_ERROR, _BAND_NA):
         return None
     if band == _BAND_EMPTY:
         return 0
 
-    raw = float(priority[0])
-
-    if band == _BAND_CONSERVE:
-        # A live but currently unsafe quota occupies the lower action quartile;
-        # ``raw`` is its capacity (remaining% x plan price), log-scaled so each
-        # decade of tokens available moves the score by the same amount.
-        clamped = max(_SLOW_CAPACITY_FLOOR, min(_SLOW_CAPACITY_CEIL, raw))
-        fraction = math.log(clamped / _SLOW_CAPACITY_FLOOR) / math.log(_SLOW_CAPACITY_CEIL / _SLOW_CAPACITY_FLOOR)
-        return 25 + round(fraction * 24.0)
-    if band == _BAND_MID:
-        return round(max(50.0, min(74.0, raw)))
-
-    # _BAND_USE: Scale short-window top priorities (which can hit raw 150+)
-    # to differentiate them in the 90-99 range without artificial flattening.
-    if raw <= 90.0:
-        return round(max(75.0, raw))
-    elif raw >= 150.0:
-        return 99
-    else:
-        return 90 + round((raw - 90.0) * (9.0 / 60.0))
+    low, high = _BAND_SCORE_RANGE[band]
+    capacity = max(_CAPACITY_FLOOR_USD, min(_CAPACITY_CEIL_USD, float(priority[0])))
+    fraction = math.log(capacity / _CAPACITY_FLOOR_USD) / math.log(_CAPACITY_CEIL_USD / _CAPACITY_FLOOR_USD)
+    return low + round(fraction * (high - low))
 
 
 def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
@@ -670,8 +727,11 @@ def _account_use_urgency(account: AccountUsage) -> float:
 
 
 def _account_queue_priority(
-    account: AccountUsage, band: int, window: QuotaWindow | None = None
-) -> tuple[float, float, float]:
+    account: AccountUsage,
+    band: int,
+    window: QuotaWindow | None = None,
+    pricing: _Pricing | None = None,
+) -> _Priority:
     """Category-specific priority for rows without an analysis alert."""
     if band == _BAND_ERROR:
         return (0.0, 0.0, 0.0)
@@ -692,25 +752,32 @@ def _account_queue_priority(
             return (1.0, float(account.credits_remaining), 0.0)
         return (0.0, 0.0, 0.0)
     representative = window or _pick_representative_window(account.windows)
-    score = _window_use_urgency(representative) if representative is not None else _account_use_urgency(account)
-    return (score, 0.0, 0.0)
+    if representative is None:
+        # Nothing to size: no capacity, the floor of its band.
+        return (0.0, _account_use_urgency(account), 0.0, 0.0)
+    capacity = (pricing or _Pricing.from_config(None)).window_capacity_usd(
+        account.provider, account.account, representative
+    )
+    return (capacity, _window_use_urgency(representative), 0.0, 0.0)
 
 
 def _pool_queue_priority(
     account: AccountUsage,
     band: int,
     windows: list[QuotaWindow],
-) -> tuple[float, float, float]:
+    pricing: _Pricing | None = None,
+) -> _Priority:
     """Queue a no-alert pool using its strongest meaningful reset clock.
 
     A longest-window-only heuristic hides useful weekly opportunities behind a
     monthly parent.  Taking every window instead makes ubiquitous nested 5h
     rate limits dominate.  Pick one representative per clock, ignore 5h when
-    the pool also has weekly/monthly clocks, then take the strongest soft
-    recommendation.  Single-clock short-window providers still rank normally.
+    the pool also has weekly/monthly clocks, then take the clock with the most
+    capacity (dollars at risk), the soft recommendation breaking ties.
+    Single-clock short-window providers still rank normally.
     """
     if band != _BAND_MID or not windows:
-        return _account_queue_priority(account, band, _pick_representative_window(windows))
+        return _account_queue_priority(account, band, _pick_representative_window(windows), pricing)
 
     by_clock: dict[str, list[QuotaWindow]] = {}
     for window in windows:
@@ -719,22 +786,28 @@ def _pool_queue_priority(
         clock, _inferred = infer_window_clock(window)
         by_clock.setdefault(clock or "unknown", []).append(window)
     if not by_clock:
-        return _account_queue_priority(account, band)
+        return _account_queue_priority(account, band, pricing=pricing)
 
     clocks = list(by_clock)
     if "5h" in by_clock and any(clock in by_clock for clock in ("weekly", "monthly")):
         clocks.remove("5h")
-    scores = [
-        _window_use_urgency(representative)
+    pricing = pricing or _Pricing.from_config(None)
+    candidates = [
+        (
+            pricing.window_capacity_usd(account.provider, account.account, representative),
+            _window_use_urgency(representative),
+            0.0,
+            0.0,
+        )
         for clock in clocks
         if (representative := _pick_representative_window(by_clock[clock])) is not None
     ]
-    return (max(scores) if scores else _account_use_urgency(account), 0.0, 0.0)
+    return max(candidates) if candidates else _account_queue_priority(account, band, pricing=pricing)
 
 
 def _ladder_sort_key(
     band: int,
-    priority: tuple[float, float, float],
+    priority: _Priority,
     provider: str,
     account: str | None,
 ) -> tuple:
@@ -838,35 +911,32 @@ def _window_value_usd(
     window: QuotaWindow,
     remaining: float,
     provider: str,
+    account: str | None,
     plans: dict[str, Any],
     analysis: dict[str, Any],
 ) -> float | None:
     """Dollar value of the unused part of a window, or None when unpriceable.
 
-    Needs both a configured ``monthly_price`` for the plan and a known window
-    duration, so providers that report neither (grok, the unnamed antigravity
-    quotas) legitimately have no dollar figure.
+    Needs both a configured ``monthly_price`` for the plan (this account's own
+    ``[plans.<provider>."<account>"]`` price, else the provider's) and a known
+    window duration, so providers that report neither (grok, the unnamed
+    antigravity quotas) legitimately have no dollar figure.  Unlike the board's
+    capacity ordering there is no cheapest-plan fallback: an unpriced provider
+    shows no dollars rather than an invented figure.
     """
     if not window.window_minutes:
         return None
-    plan_meta = plans.get(provider_config_key(provider))
-    if not isinstance(plan_meta, dict):
-        return None
+    plan_meta = _plan_meta(provider, plans, account)
     monthly_price = plan_meta.get("monthly_price")
     if monthly_price is None:
         return None
-    value_multipliers = plan_meta.get("value_multiplier")
-    duration_kind = classify_window_minutes(window.window_minutes)
-    window_mult = 1.0
-    if isinstance(value_multipliers, dict) and duration_kind:
-        window_mult = float(value_multipliers.get(duration_kind, 1.0))
     return round(
         _compute_value_at_risk(
             remaining=remaining,
             window_minutes=window.window_minutes,
             monthly_price=float(monthly_price),
-            waking_hours_per_day=float(analysis.get("waking_hours_per_day", 16)),
-            value_multiplier=window_mult,
+            waking_hours_per_day=float(analysis.get("waking_hours_per_day", _DEFAULT_WAKING_HOURS)),
+            value_multiplier=window_value_multiplier(plan_meta, window.window_minutes),
         ),
         2,
     )
@@ -1170,11 +1240,11 @@ def render_priority_ladder(
 
     The fixed band order is error/empty/n/a/slow/mid/use.  Within a band,
     rows become more actionable toward the bottom according to that band's
-    semantics (recovery, inventory, safe-to-resume, or use-next priority).
+    semantics (recovery, inventory, or capacity: dollars at risk in the window).
     """
     if s is None:
         s = _Style(use_color(force=color))
-    plans = _plans_or_default((config or {}).get("plans"))
+    pricing = _Pricing.from_config(config)
 
     entries: list[tuple[tuple, str]] = []
     # Coverage includes independent pool id so Antigravity Gemini vs Claude/GPT
@@ -1187,7 +1257,7 @@ def render_priority_ladder(
         band = alert_priority_band(alert)
         key = _ladder_sort_key(
             band,
-            _alert_queue_priority(alert, band, plans),
+            _alert_queue_priority(alert, band, pricing),
             alert.provider,
             alert.account,
         )
@@ -1258,7 +1328,7 @@ def render_priority_ladder(
                 (
                     _ladder_sort_key(
                         band,
-                        _pool_queue_priority(account, band, pool),
+                        _pool_queue_priority(account, band, pool, pricing),
                         account.provider,
                         account.account,
                     ),
@@ -1320,8 +1390,8 @@ def _build_matrix_rows(
     raw_plans = cfg.get("plans")
     raw_analysis = cfg.get("analysis")
     plans: dict[str, Any] = raw_plans if isinstance(raw_plans, dict) else {}
-    # Slow-band ordering needs prices even when no config was passed.
-    slow_plans = _plans_or_default(raw_plans)
+    # Ordering needs prices even when no config was passed; the dollar figure does not.
+    pricing = _Pricing.from_config(cfg)
     analysis: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
     try:
         fresh_threshold = float(analysis.get("fresh_threshold_seconds") or 1500.0)
@@ -1330,13 +1400,13 @@ def _build_matrix_rows(
 
     # Collapse alerts onto the pool they describe, keeping the most
     # attention-grabbing band and the use-urgency that goes with it.
-    pool_alert: dict[tuple[str, str, str], tuple[int, tuple[float, float, float]]] = {}
+    pool_alert: dict[tuple[str, str, str], tuple[int, _Priority]] = {}
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
             continue
         key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
         band = alert_priority_band(alert)
-        candidate = (band, _alert_queue_priority(alert, band, slow_plans))
+        candidate = (band, _alert_queue_priority(alert, band, pricing))
         current = pool_alert.get(key)
         stronger_same_band = False
         if current is not None and band == current[0]:
@@ -1422,7 +1492,7 @@ def _build_matrix_rows(
                             cell.pace_early = pace_early
                 remaining = window.remaining()
                 if remaining is not None:
-                    priced = _window_value_usd(window, remaining, account.provider, plans, analysis)
+                    priced = _window_value_usd(window, remaining, account.provider, account.account, plans, analysis)
                     # Max, not sum: a 5h window is carved out of the weekly
                     # budget above it, so adding them double-counts the money.
                     if priced is not None and (value is None or priced > value):
@@ -1441,7 +1511,7 @@ def _build_matrix_rows(
                 band, priority = found
             else:
                 band = own_band
-                priority = _pool_queue_priority(account, band, pool)
+                priority = _pool_queue_priority(account, band, pool, pricing)
 
             note = None
             tail_note = None
@@ -1492,7 +1562,7 @@ def _build_matrix_rows(
         if key in covered:
             continue
         covered.add(key)
-        rows.append(_row_from_alert(alert, now=now, plans=slow_plans))
+        rows.append(_row_from_alert(alert, now=now, pricing=pricing))
 
     for account in deferred:
         if _ladder_coverage_key(account.provider, account.account, "") in covered:
@@ -1574,7 +1644,7 @@ def _build_matrix_rows(
 
 
 def _row_from_alert(
-    alert: UseOrLoseAlert, *, now: datetime | None = None, plans: dict[str, Any] | None = None
+    alert: UseOrLoseAlert, *, now: datetime | None = None, pricing: _Pricing | None = None
 ) -> _MatrixRow:
     """A table row built from an alert alone, with no account windows behind it.
 
@@ -1582,7 +1652,7 @@ def _row_from_alert(
     rows are deliberately sparser than an account-derived row.
     """
     band = alert_priority_band(alert)
-    priority = _alert_queue_priority(alert, band, plans)
+    priority = _alert_queue_priority(alert, band, pricing)
     service = provider_display_name(alert.provider)
     row = _MatrixRow(
         sort_key=_ladder_sort_key(band, priority, alert.provider, alert.account),
@@ -1673,6 +1743,10 @@ def render_clock_matrix(
     ``##`` is the colored 0–99 action score: 0 is empty and 99 means use as
     soon as possible. Errors and non-expiring inventory render ``??`` / ``--``
     because neither has an honest position on that scale.
+
+    Within slow, mid and use the score is the row's capacity: the dollars still
+    unspent in its window (plan price per refill x percent left), log-scaled onto
+    that band's range, so a Max-plan weekly window outranks a Pro plan's 5-hour one.
 
     Percentages are **used**, not left: 0% is untouched, 100% is exhausted.
     When a clock has a reset timestamp the cell is ``75%/4h`` / ``89%/2d14h``

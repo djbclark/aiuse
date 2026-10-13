@@ -825,7 +825,7 @@ def test_default_report_is_clock_matrix():
 
 def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
     """Sooner high-score burn sorts below a later lower-score burn (tags may match)."""
-    from aiuse.report import alert_use_urgency, render_priority_ladder
+    from aiuse.report import _alert_queue_priority, alert_use_urgency, render_priority_ladder
 
     later = UseOrLoseAlert(
         urgency=Urgency.HIGH,
@@ -853,7 +853,10 @@ def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
         score=90.0,
         kind="burn",
     )
-    assert alert_use_urgency(sooner) > alert_use_urgency(later)
+    # Same plan price, remaining% and window: equal capacity (the primary key), so the
+    # analyzer score breaks the tie and the sooner, higher-score burn sorts lower.
+    assert alert_use_urgency(sooner) == alert_use_urgency(later)
+    assert _alert_queue_priority(sooner) > _alert_queue_priority(later)
     text = render_priority_ladder([later, sooner], color=False)
     assert text.index("Zzz") > text.index("Aaa")
     assert text.strip().splitlines()[-1].startswith("use")
@@ -979,7 +982,7 @@ def test_priority_ladder_mid_queue_uses_remaining_capacity_and_deadline():
     assert text.index("Mid_Far") < text.index("Mid_Soon")
 
 
-def test_priority_ladder_mid_queue_uses_weekly_signal_without_nested_5h_noise():
+def test_priority_ladder_mid_queue_uses_most_valuable_clock_without_nested_5h_noise():
     now = utcnow()
 
     def window(label: str, remaining: float, days: float, minutes: int) -> QuotaWindow:
@@ -998,29 +1001,40 @@ def test_priority_ladder_mid_queue_uses_weekly_signal_without_nested_5h_noise():
             windows=windows,
         )
 
+    # No config: every provider is unpriced, so each is valued at the cheapest built-in
+    # plan ($10).  Capacity is dollars at risk in the clock that drives the row:
+    #   weekly 80% = $2.76, monthly 80% = $8.00, monthly 0.8% = $0.08, monthly 0.5% = $0.05.
     snapshot = Snapshot(
         collected_at=now,
         accounts=[
+            # Its full 5h window is worth $0.10 if counted, which would lift this row
+            # above mid_tiny_monthly; ignored beside the monthly clock, it is worth $0.05.
             account(
                 "mid_short_noise",
                 [
                     window("5-hour", 100.0, 0.2, 300),
-                    window("monthly", 50.0, 20.0, 43200),
+                    window("monthly", 0.5, 20.0, 43200),
                 ],
             ),
+            account("mid_tiny_monthly", [window("monthly", 0.8, 20.0, 43200)]),
             account("mid_monthly_only", [window("monthly", 80.0, 20.0, 43200)]),
             account(
                 "mid_weekly_signal",
                 [
                     window("5-hour", 100.0, 0.2, 300),
                     window("weekly", 80.0, 2.0, 10080),
-                    window("monthly", 50.0, 20.0, 43200),
+                    window("monthly", 0.5, 20.0, 43200),
                 ],
             ),
         ],
     )
     text = render_priority_ladder([], snapshot=snapshot, color=False, width=200)
-    assert text.index("Mid_Short_Noise") < text.index("Mid_Monthly_Only") < text.index("Mid_Weekly_Signal")
+    assert (
+        text.index("Mid_Short_Noise")
+        < text.index("Mid_Tiny_Monthly")
+        < text.index("Mid_Weekly_Signal")
+        < text.index("Mid_Monthly_Only")
+    )
 
 
 def test_clock_matrix_action_score_covers_all_bands_and_uses_color():
@@ -1096,24 +1110,74 @@ def test_clock_matrix_action_score_covers_all_bands_and_uses_color():
     assert scores["n/a"] == "--"
     assert 25 <= int(scores["slow"]) <= 49
     assert 50 <= int(scores["mid"]) <= 74
-    assert scores["use"] == "92"
+    # use_score is unpriced, so it is valued at the cheapest built-in plan ($10); a weekly
+    # window is 34.5% of the waking month and 100% is left: $3.45, log-scaled from $0.01..$100
+    # onto 75-99 -> 75 + round(0.634 x 24) = 90.
+    assert scores["use"] == "90"
 
     colored = render_clock_matrix(alerts, snapshot=snapshot, color=True, width=200)
-    assert "\033[32m\033[1m92" in colored
+    assert "\033[32m\033[1m90" in colored
 
 
 def test_action_score_has_contiguous_cross_band_boundaries():
     """Category transitions add evidence, not an artificial 30-point gap."""
     from aiuse.report import _queue_score
 
-    # Slow priority[0] is capacity (remaining% x plan price), log-scaled 10..10000.
-    assert _queue_score(3, (10_000.0, 0.0, 0.0)) == 49  # most-capacity slow
-    assert _queue_score(3, (1.0, 0.0, 0.0)) == 25  # least-capacity slow (clamped)
-    assert _queue_score(4, (0.0, 0.0, 0.0)) == 50  # weakest mid
+    # priority[0] is capacity (dollars at risk) in every active band, log-scaled over the
+    # same $0.01..$100 span onto the band's own range.
+    assert _queue_score(3, (0.01, 0.0, 0.0)) == 25  # least-capacity slow (floor)
+    assert _queue_score(3, (100.0, 0.0, 0.0)) == 49  # most-capacity slow
+    assert _queue_score(4, (0.01, 0.0, 0.0)) == 50  # weakest mid
     assert _queue_score(4, (100.0, 0.0, 0.0)) == 74  # strongest mid
-    assert _queue_score(5, (0.0, 0.0, 0.0)) == 75  # weakest use
-    assert _queue_score(5, (100.0, 0.0, 0.0)) == 92  # high urgency use
-    assert _queue_score(5, (150.0, 0.0, 0.0)) == 99  # max urgency use
+    assert _queue_score(5, (0.01, 0.0, 0.0)) == 75  # weakest use
+    assert _queue_score(5, (100.0, 0.0, 0.0)) == 99  # strongest use
+    # Clamped, not extrapolated: outside the span a row stays inside its band.
+    assert _queue_score(3, (0.0, 0.0, 0.0)) == 25
+    assert _queue_score(5, (10_000.0, 0.0, 0.0)) == 99
+    # One capacity sits at the same relative position in every band ($1 is halfway).
+    assert [_queue_score(band, (1.0, 0.0, 0.0)) for band in (3, 4, 5)] == [37, 62, 87]
+
+
+def test_window_value_usd_prices_the_account_and_keeps_unpriceable_providers_none():
+    """Per-account price (aiuse-qm7); an unpriced provider shows no dollars, never a fallback price."""
+    from aiuse.report import _window_value_usd
+
+    plans = {
+        "claude": {"monthly_price": 20, "value_multiplier": {"5h": 1.4}, "max@x.com": {"monthly_price": 200}},
+        "devin": {"name": "Devin"},
+        "other": {"only@x.com": {"monthly_price": 30}},
+    }
+    weekly = QuotaWindow(label="weekly", remaining_percent=50.0, window_minutes=10080)
+    five_hour = QuotaWindow(label="5-hour", remaining_percent=100.0, window_minutes=300)
+    weekly_share = 10080 / (16 * 30.44 * 60)
+    five_hour_share = 300 / (16 * 30.44 * 60)
+
+    assert _window_value_usd(weekly, 50.0, "claude", "max@x.com", plans, {}) == pytest.approx(
+        200 * weekly_share * 0.5, abs=0.01
+    )
+    assert _window_value_usd(weekly, 50.0, "claude", "pro@x.com", plans, {}) == pytest.approx(
+        20 * weekly_share * 0.5, abs=0.01
+    )
+    # value_multiplier keeps applying on top of the account's price.
+    assert _window_value_usd(five_hour, 100.0, "claude", "max@x.com", plans, {}) == pytest.approx(
+        200 * five_hour_share * 1.4, abs=0.01
+    )
+    # waking hours come from the analysis config.
+    assert _window_value_usd(weekly, 50.0, "claude", "pro@x.com", plans, {"waking_hours_per_day": 8}) == pytest.approx(
+        2 * 20 * weekly_share * 0.5, abs=0.01
+    )
+    # Legitimately unpriceable: no price anywhere, no plans at all, or no known window length.
+    assert _window_value_usd(weekly, 50.0, "devin", None, plans, {}) is None
+    assert _window_value_usd(weekly, 50.0, "claude", None, {}, {}) is None
+    assert (
+        _window_value_usd(QuotaWindow(label="quota", remaining_percent=50.0), 50.0, "claude", "max@x.com", plans, {})
+        is None
+    )
+    # An account-level price alone prices that account only.
+    assert _window_value_usd(weekly, 50.0, "other", "only@x.com", plans, {}) == pytest.approx(
+        30 * weekly_share * 0.5, abs=0.01
+    )
+    assert _window_value_usd(weekly, 50.0, "other", "someone@x.com", plans, {}) is None
 
 
 def test_soft_window_score_combines_capacity_with_deadline_pressure():
