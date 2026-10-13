@@ -21,6 +21,7 @@ from aiuse.models import (
     parse_dt,
     utcnow,
 )
+from aiuse.timefmt import format_clock
 
 _DEFAULT_SNAPSHOT_DIR = "~/.cache/aiuse/snapshots"
 _DEFAULT_RETENTION_DAYS = 90
@@ -1202,8 +1203,8 @@ def history_section_lines(
             else:
                 span_s = f"{span_h:.0f}h"
             lines.append(
-                f"  span: {oldest.strftime('%Y-%m-%d %H:%M')} → "
-                f"{newest.strftime('%Y-%m-%d %H:%M')} UTC ({span_s}, {len(times)} files)"
+                f"  span: {format_clock(oldest, date=True)} → "
+                f"{format_clock(newest, date=True)} ({span_s}, {len(times)} files)"
             )
             lines.append(f"  retention: {retention}d (config snapshot_retention_days)")
 

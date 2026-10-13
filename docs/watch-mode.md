@@ -72,7 +72,7 @@ use a 90s budget, the other collectors 45s; see
    elapsed seconds so the user knows it is not frozen. Process isolation is
    required: collector thread pools are non-daemon, so a background thread
    made `q` close the screen but left Python waiting for slow CodexBar calls.
-3. **Staleness is shown.** Header: `last: HH:MM:SS · next in M:SS · q/esc quit`.
+3. **Staleness is shown.** Header: `last: 9:02:07pm · next in M:SS · q/esc quit`.
 4. **Floor the interval.** Warn if `< 30s` (sub-collect-time intervals starve
    the six external tools). Hard floor at `5s` to prevent abuse.
 5. **Honor `persist_snapshots`.** If snapshot persistence is enabled in config,

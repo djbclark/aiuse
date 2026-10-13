@@ -447,6 +447,34 @@ def test_report_intervals_line_each_step_up_with_who_spent(tmp_path):
     assert "no quota provider mapped" in text
 
 
+def test_interval_rows_stay_aligned_across_clock_widths():
+    def row(start, end):
+        item = {"start": start.isoformat(), "end": end.isoformat(), "burned": {"w": 1.0}, "tokscale": [], "litellm": []}
+        report = {
+            "since": start.isoformat(),
+            "until": end.isoformat(),
+            "coverage": {
+                "quota_samples": 0,
+                "burst_samples": 0,
+                "ledger_samples": 0,
+                "litellm": "off",
+                "ledger_span": None,
+            },
+            "providers": [
+                {"display": "P", "provider": "p", "windows": [], "tokscale": [], "litellm": [], "intervals": [item]}
+            ],
+            "unmapped": {"tokscale": [], "litellm": []},
+        }
+        text = attribute.render_report(report, intervals=True)
+        return next(line for line in text.splitlines() if line.endswith("w +1"))
+
+    narrow = row(datetime(2026, 10, 3, 9, 2).astimezone(), datetime(2026, 10, 3, 9, 15).astimezone())
+    wide = row(datetime(2026, 10, 14, 23, 50).astimezone(), datetime(2026, 10, 15, 0, 15).astimezone())
+    assert narrow.index("→") == wide.index("→")
+    assert narrow.index("+1") == wide.index("+1")
+    assert " 9:15am  w +1" in narrow and "12:15am  w +1" in wide
+
+
 def test_report_joins_the_litellm_spend_log_by_key_alias(tmp_path):
     _seed(tmp_path)
     config = {"attribution": {"litellm": {"database_url": "postgresql://x/litellm", "provider_map": {}}}}

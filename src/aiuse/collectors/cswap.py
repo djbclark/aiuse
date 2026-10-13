@@ -33,6 +33,7 @@ from aiuse.models import (
 )
 from aiuse.models import coerce_float as _number
 from aiuse.models import coerce_int as _int_or_none
+from aiuse.timefmt import format_clock
 
 from .base import CollectorError, run_json, which
 
@@ -233,7 +234,7 @@ def _append_spend_note(notes: list[str], credits: UsageCredits | None) -> None:
     elif credits.used is not None:
         notes.append(f"Usage credits spent: {credits.used:g} {cur}.")
     if credits.resets_at is not None:
-        notes.append(f"Usage credits reset at {credits.resets_at.isoformat()}.")
+        notes.append(f"Usage credits reset at {format_clock(credits.resets_at, date=True)}.")
 
 
 _NOMINAL_MINUTES = {

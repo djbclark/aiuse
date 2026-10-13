@@ -10,7 +10,7 @@ Spec: https://github.com/djbclark/aiuse/issues/29
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from aiuse.analysis.pace import (
@@ -32,6 +32,7 @@ from aiuse.models import (
     claude_model_scope,
     provider_display_name,
 )
+from aiuse.timefmt import format_clock
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -894,7 +895,7 @@ def render_chat_report(
     sections: list[str] = []
 
     # --- Header ---
-    ts = snapshot.collected_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ts = format_clock(snapshot.collected_at, date=True)
     sections.append(f"🤖 **AI USAGE · {ts}**\n━━━━━━━━━━━━━━━━━━━━")
 
     for provider, reason in sorted((getattr(snapshot, "disabled_services", None) or {}).items()):

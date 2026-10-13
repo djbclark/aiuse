@@ -22,7 +22,8 @@ from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
 from aiuse.models import Snapshot, UseOrLoseAlert, utcnow
-from aiuse.report import _strip_ansi, format_clock, render_clock_matrix, render_stderr_meta
+from aiuse.report import _strip_ansi, render_clock_matrix, render_stderr_meta
+from aiuse.timefmt import format_clock
 
 DEFAULT_INTERVAL_S = 600.0
 MIN_INTERVAL_S = 5.0

@@ -41,7 +41,7 @@ Learning (when active) also implies snapshot persistence for that run.
 ```text
 ## History
 History: N snapshots in …/snapshots (learning auto/waiting|auto/on|on|off)
-  span: YYYY-MM-DD HH:MM → YYYY-MM-DD HH:MM UTC (…, N files)
+  span: Sat Oct 3 9:02pm → Tue Oct 13 5:37pm (…, N files)
   retention: 90d (config snapshot_retention_days)
   Learned burn rates (blended into pace when present):
     · Claude weekly: ~12%/day (5 samples)

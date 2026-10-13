@@ -22,6 +22,7 @@ from aiuse.models import (
 )
 from aiuse.models import coerce_float as _f
 from aiuse.models import coerce_int as _int_or_none
+from aiuse.timefmt import format_clock
 
 from .base import CollectorError, CollectorTimeout, run_json, which
 from .throttle import QueryGate, TimeoutBackoff
@@ -459,7 +460,9 @@ def _query_provider_gated(
             return outcome
         reused_at = gate.reused_from("codexbar")
         if reused_at is not None:
-            notes[provider_arg] = f"{gate.describe()}; reused CodexBar's result from {reused_at.isoformat()}."
+            notes[provider_arg] = (
+                f"{gate.describe()}; reused CodexBar's result from {format_clock(reused_at, date=True)}."
+            )
         return gate.reuse("codexbar")
 
 

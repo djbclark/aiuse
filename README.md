@@ -474,7 +474,7 @@ Collected at … · 3 accounts · 2 alerts
 --------------------------------------------------------------------------------
 Codex · account=you@example.com · plan=plus · selected live source: CodexBar
   quota: Codex weekly quota
-    [============] 100% left   0% used   resets in 6.4d (Jul 28 21:59 UTC)
+    [============] 100% left   0% used   resets in 6.4d (Tue Jul 28 9:59pm)
     flex:▒ semi · pace -100%
 
 ## Cross-checks (informational)

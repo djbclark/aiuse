@@ -27,6 +27,7 @@ from aiuse.analysis.pace import (
     window_pace_ratio,
 )
 from aiuse.models import QuotaWindow, canonical_provider, claude_model_scope, parse_dt, utcnow
+from aiuse.timefmt import format_clock
 
 SCHEMA_VERSION = "1.2"
 
@@ -414,8 +415,6 @@ def _reset_fragment(resets_at: Any) -> str:
     if dt is None:
         return ""
     # Local 12-hour time, the same form the watch board uses.
-    from aiuse.report import format_clock
-
     return f", resets {format_clock(dt, date=dt - utcnow() > timedelta(hours=24))}"
 
 

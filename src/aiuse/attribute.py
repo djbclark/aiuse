@@ -23,6 +23,7 @@ from aiuse.analysis import history
 from aiuse.collectors.base import CollectorError
 from aiuse.config import timeout_for
 from aiuse.models import canonical_provider, effective_window_minutes, provider_display_name, utcnow
+from aiuse.timefmt import format_clock
 
 SCHEMA_VERSION = "1.0"
 # How far before ``since`` to look for the reading each series starts from.
@@ -401,14 +402,20 @@ def _n(value: Any) -> str:
     return f"{number:.0f}"
 
 
-def _local(iso: str, fmt: str = "%m-%d %H:%M") -> str:
-    return datetime.fromisoformat(iso).astimezone().strftime(fmt)
+# Widest ``format_clock(date=True)`` ("Wed Sep 30 12:15am") and plain ("12:15am") renderings,
+# so interval rows stay aligned whatever the day/hour digits.
+_DATED_CLOCK_WIDTH = 18
+_CLOCK_WIDTH = 7
+
+
+def _local(iso: str, *, date: bool = False) -> str:
+    return format_clock(datetime.fromisoformat(iso), date=date)
 
 
 def render_report(report: dict[str, Any], *, intervals: bool = False) -> str:
     cov = report["coverage"]
     lines = [
-        f"Attribution {_local(report['since'], '%Y-%m-%d %H:%M')} → {_local(report['until'], '%Y-%m-%d %H:%M')}"
+        f"Attribution {_local(report['since'], date=True)} → {_local(report['until'], date=True)}"
         f" · {cov['quota_samples']} quota samples (+{cov['burst_samples']} burst)"
         f" · {cov['ledger_samples']} ledger samples · LiteLLM {cov['litellm']}",
     ]
@@ -418,7 +425,7 @@ def render_report(report: dict[str, Any], *, intervals: bool = False) -> str:
         )
     elif datetime.fromisoformat(cov["ledger_span"][0]) > datetime.fromisoformat(report["since"]) + timedelta(minutes=5):
         lines.append(
-            f"  (session-file tokens cover only {_local(cov['ledger_span'][0])} → {_local(cov['ledger_span'][1], '%H:%M')})"
+            f"  (session-file tokens cover only {_local(cov['ledger_span'][0], date=True)} → {_local(cov['ledger_span'][1])})"
         )
     for prov in report["providers"]:
         lines += [
@@ -469,7 +476,7 @@ def render_report(report: dict[str, Any], *, intervals: bool = False) -> str:
                 who = [f"{r['client']} {_n(_tokscale_weight(r))}" for r in item["tokscale"]]
                 who += [f"{r['client']} {_n(r['input'] + r['output'])} via proxy" for r in item["litellm"]]
                 lines.append(
-                    f"    {_local(item['start'])} → {_local(item['end'], '%H:%M')}  {burned}"
+                    f"    {_local(item['start'], date=True):<{_DATED_CLOCK_WIDTH}} → {_local(item['end']):>{_CLOCK_WIDTH}}  {burned}"
                     + (f"  ←  {'; '.join(who[:4])}" if who else "")
                 )
     unmapped = report["unmapped"]

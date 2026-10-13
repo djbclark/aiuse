@@ -571,7 +571,7 @@ def test_reset_times_are_local_twelve_hour():
 
     from aiuse.analysis.selfdescribe import _reset_fragment
     from aiuse.models import utcnow
-    from aiuse.report import format_clock
+    from aiuse.timefmt import format_clock
 
     soon, later = utcnow() + timedelta(hours=3), utcnow() + timedelta(days=4)
     assert _reset_fragment(soon.isoformat()) == f", resets {format_clock(soon)}"

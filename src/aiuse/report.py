@@ -42,6 +42,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
+from aiuse.timefmt import format_clock
 
 URGENCY_ICON = {
     Urgency.CRITICAL: "!!!",
@@ -1893,7 +1894,7 @@ def _forecast_fragment(alert: UseOrLoseAlert, *, compact: bool = True) -> str:
     # Already-empty capacity is not "about to lock out" — skip the forecast.
     rem = float(alert.remaining_percent)
     if alert.kind == "conserve" and pace.projected_exhaust_at is not None and rem > 1.0:
-        parts.append(f"~lockout {pace.projected_exhaust_at.strftime('%a %H:%M')}")
+        parts.append(f"~lockout {format_clock(pace.projected_exhaust_at, weekday=True)}")
     if alert.kind == "burn" and pace.projected_waste_fraction is not None:
         waste_pct = pace.projected_waste_fraction * 100.0
         if waste_pct >= 5.0:
@@ -1988,14 +1989,6 @@ def _priority_account_line(
     else:
         body = f"{name} · {who} · on pace"
     return f"{_priority_tag(s, band)} {body}"
-
-
-def format_clock(when: datetime, *, seconds: bool = False, date: bool = False) -> str:
-    """Local 12-hour time as people say it: ``9:02pm``, ``9:02:07pm``, ``Sat Oct 5 9:02pm``."""
-    local = when.astimezone()
-    clock = f"{local.hour % 12 or 12}:{local:%M}" + (f":{local:%S}" if seconds else "")
-    clock += "am" if local.hour < 12 else "pm"
-    return f"{local:%a %b} {local.day} {clock}" if date else clock
 
 
 def render_stderr_meta(
@@ -2424,7 +2417,7 @@ def _conserve_line(alert: UseOrLoseAlert, s: _Style) -> str:
     pace = alert.pace
     lockout = ""
     if pace and pace.projected_exhaust_at:
-        lockout = f", locked out ~{pace.projected_exhaust_at.strftime('%a %H:%M UTC')}"
+        lockout = f", locked out ~{format_clock(pace.projected_exhaust_at, weekday=True)}"
     waste = ""
     if pace and pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= 0.05:
         waste = f", ~{pace.projected_waste_fraction:.0%} unused if pace holds"
@@ -2697,7 +2690,7 @@ def _colored_bar(remaining_percent: float, s: _Style, width: int = 12) -> str:
 def _fmt_dt(dt: datetime | None) -> str:
     if not dt:
         return "?"
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
+    return format_clock(dt, date=True)
 
 
 def _usage_credits_lines(credits: Any, s: _Style) -> list[str]:

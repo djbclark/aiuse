@@ -160,7 +160,7 @@ Default `aiuse --json` stdout:
   // New in schema 1.1:
   "age_seconds": 0.0,
   "fresh": true,
-  "summary_lines": [ "codex: Codex 5-hour quota (1): EXHAUSTED (100% used / 0% left, resets 15:42); … -> NOT usable now" ],
+  "summary_lines": [ "codex: Codex 5-hour quota (1): EXHAUSTED (100% used / 0% left, resets 3:42pm); … -> NOT usable now" ],
   "semantics": { "used_percent": "share CONSUMED; 100 means exhausted, 0 means untouched", "...": "..." },
   "agent_notes": [ { "provider": "codex", "pool_family": null, "resets_at": "...", "reason": "429", "source": "agent-reported" } ]
 }

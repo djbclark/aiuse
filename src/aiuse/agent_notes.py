@@ -22,6 +22,7 @@ from typing import Any
 
 from aiuse.analysis.history import snapshot_dir
 from aiuse.models import parse_dt, utcnow
+from aiuse.timefmt import format_clock
 
 _UNIT_SECONDS = {"d": 86400.0, "h": 3600.0, "m": 60.0, "s": 1.0}
 _RESPEC = re.compile(r"(\d+(?:\.\d+)?)\s*([dhms])", re.IGNORECASE)
@@ -141,6 +142,6 @@ def run_note_exhausted(argv: list[str]) -> int:
     )
     print(
         f"noted: {args.provider}{'/' + args.family if args.family else ''} exhausted until "
-        f"{resets_at.astimezone().strftime('%Y-%m-%d %H:%M %Z')} ({path})",
+        f"{format_clock(resets_at, date=True)} ({path})",
     )
     return 0

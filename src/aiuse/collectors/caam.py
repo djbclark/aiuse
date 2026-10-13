@@ -23,6 +23,7 @@ from aiuse.models import (
 from aiuse.models import (
     coerce_float as _f,
 )
+from aiuse.timefmt import format_clock
 
 from .base import CollectorError, run_json, which
 
@@ -192,7 +193,7 @@ def _usage_notes(usage: dict[str, Any]) -> list[str]:
             notes.append(f"caam burn {rate:g}%/h")
     depletion = parse_dt(usage.get("estimated_depletion"))
     if depletion is not None and depletion.year > 1:
-        notes.append(f"caam estimates depletion at {depletion.isoformat()}")
+        notes.append(f"caam estimates depletion at {format_clock(depletion, date=True)}")
     return notes
 
 

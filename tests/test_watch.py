@@ -530,7 +530,7 @@ def test_board_header_shows_now_data_time_and_the_sampler_schedule():
     from datetime import datetime, timedelta, timezone
 
     from aiuse import sampler
-    from aiuse.report import format_clock
+    from aiuse.timefmt import format_clock
     from aiuse.watch import render_watch_board
 
     snap = _snap()
@@ -585,7 +585,7 @@ def test_watch_frame_overlays_newer_burst_samples_on_the_full_snapshot(monkeypat
 def test_format_clock_is_twelve_hour_without_leading_zeros():
     from datetime import datetime
 
-    from aiuse.report import format_clock
+    from aiuse.timefmt import format_clock
 
     evening = datetime(2026, 10, 3, 21, 2, 7).astimezone()
     assert format_clock(evening) == "9:02pm"
@@ -593,6 +593,9 @@ def test_format_clock_is_twelve_hour_without_leading_zeros():
     assert format_clock(evening, date=True) == "Sat Oct 3 9:02pm"
     assert format_clock(datetime(2026, 10, 3, 0, 5).astimezone()) == "12:05am"
     assert format_clock(datetime(2026, 10, 3, 12, 0).astimezone()) == "12:00pm"
+    assert format_clock(evening, weekday=True) == "Sat 9:02pm"
+    assert format_clock(datetime(2026, 10, 5, 0, 5).astimezone(), weekday=True) == "Mon 12:05am"
+    assert format_clock(datetime(2026, 10, 5, 12, 0).astimezone(), weekday=True) == "Mon 12:00pm"
 
 
 def test_board_footer_is_centered_under_the_table():
