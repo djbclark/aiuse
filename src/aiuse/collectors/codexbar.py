@@ -209,12 +209,16 @@ def _normalize_providers(providers: str | list[str] | None) -> list[str | None]:
         return [None]
     if isinstance(providers, list):
         items: list[str] = [str(provider).strip().lower() for provider in providers if str(provider).strip()]
+        if len(items) == 1 and items[0] in ("", "enabled", "configured", "default", "all"):
+            return [None]
+        if len(items) == 1 and items[0] == "both":
+            return ["codex", "claude"]
     else:
         text = str(providers).strip().lower()
-        if text in ("", "enabled", "configured", "default"):
+        if text in ("", "enabled", "configured", "default", "all"):
             return [None]
-        if text in ("all", "both"):
-            return [text]
+        if text in ("both",):
+            return ["codex", "claude"]
         items = [provider.strip().lower() for provider in text.split(",") if provider.strip()]
     return list(items) if items else [None]
 

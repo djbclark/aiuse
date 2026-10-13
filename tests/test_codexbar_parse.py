@@ -249,6 +249,10 @@ def test_zero_of_zero_is_not_reported_as_fully_unused():
 
 def test_provider_selection_defaults_to_enabled_and_splits_csv():
     assert _normalize_providers("enabled") == [None]
+    assert _normalize_providers("all") == [None]
+    assert _normalize_providers(["all"]) == [None]
+    assert _normalize_providers("both") == ["codex", "claude"]
+    assert _normalize_providers(["both"]) == ["codex", "claude"]
     assert _normalize_providers("codex,copilot") == ["codex", "copilot"]
 
 
