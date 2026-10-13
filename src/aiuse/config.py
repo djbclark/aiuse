@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from aiuse.models import canonical_provider
+from aiuse.models import canonical_provider, provider_config_key
 
 # Default wall-clock budget for every external CLI subprocess. Tools either
 # return within tens of seconds or hang; long budgets only delay failure.
@@ -134,6 +134,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # stale cache. Use for TUIs that must temporarily not be used even though
     # they have headroom.
     "disabled_services": {},
+    # monthly_price is the capacity proxy for slow-band ordering (remaining% x
+    # price): defaults are each provider's lowest tier. Override per provider
+    # ([plans.claude] monthly_price = 200) or per account via a sub-table
+    # ([plans.claude."me@x"] monthly_price = 200); see plan_monthly_price().
     "plans": {
         "codex": {
             "name": "ChatGPT / Codex Plus",
@@ -555,6 +559,45 @@ _DEAD_PLAN_KEYS: dict[str, str] = {
 }
 
 
+def _positive_number(value: Any) -> float | None:
+    """A strictly positive finite number, else None (bool and text excluded)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if number > 0.0 and number != float("inf") else None
+
+
+def _is_price(value: Any) -> bool:
+    """A non-negative number; 0 is a legitimate free-plan price."""
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0
+
+
+def plan_monthly_price(plans: Any, provider: str, account: str | None = None) -> float | None:
+    """Configured monthly plan price for a provider, optionally per account.
+
+    ``[plans.claude."me@x"] monthly_price = 200`` overrides the provider-level
+    ``[plans.claude] monthly_price`` for that one account (matched
+    case-insensitively); other accounts keep the provider value.  Returns None
+    when nothing positive is configured.  Dict-valued plan keys other than the
+    reserved ``value_multiplier`` are per-account sub-tables.
+    """
+    if not isinstance(plans, dict):
+        return None
+    meta = plans.get(provider_config_key(provider)) or plans.get(provider)
+    if not isinstance(meta, dict):
+        return None
+    want = (account or "").strip().casefold()
+    if want:
+        for key, sub in meta.items():
+            if key == "value_multiplier" or not isinstance(sub, dict):
+                continue
+            if str(key).strip().casefold() == want:
+                price = _positive_number(sub.get("monthly_price"))
+                if price is not None:
+                    return price
+    return _positive_number(meta.get("monthly_price"))
+
+
 def timeout_for(config: dict[str, Any] | None, name: str) -> float:
     """Resolve subprocess timeout (seconds) for a named tool.
 
@@ -784,6 +827,29 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 issues.append(
                     f"warning: plans key {name!r} is dead — use {canon!r} (collector id aliases to that config key)"
                 )
+            meta = plans[name]
+            if not isinstance(meta, dict):
+                continue
+            if "monthly_price" in meta and not _is_price(meta["monthly_price"]):
+                issues.append(
+                    f"warning: plans.{name}.monthly_price must be a non-negative number (got {meta['monthly_price']!r})"
+                )
+            for sub_key, sub in meta.items():
+                # Dict-valued keys other than value_multiplier are per-account
+                # sub-tables: [plans.<provider>."<account>"] monthly_price = N.
+                if sub_key == "value_multiplier" or not isinstance(sub, dict):
+                    continue
+                for field in sub:
+                    if field != "monthly_price":
+                        issues.append(
+                            f"warning: unknown plans.{name}.{sub_key!r} key {field!r} "
+                            "(per-account plan sub-tables take only monthly_price)"
+                        )
+                if "monthly_price" in sub and not _is_price(sub["monthly_price"]):
+                    issues.append(
+                        f"warning: plans.{name}.{sub_key!r}.monthly_price must be a non-negative number "
+                        f"(got {sub['monthly_price']!r})"
+                    )
 
     sampling = cfg.get("sampling")
     if sampling is not None and not isinstance(sampling, dict):

@@ -100,6 +100,14 @@ soon as possible). Its action-state boundaries are contiguous: `slow` ends at
 `??` means usage could not be fetched; `--` means rolling prepaid/PAYG
 inventory has no use-or-lose urgency.
 
+Inside the `slow` band (25-49) the score is how attractive the pool is right now:
+tokens available, proxied by `remaining% x monthly_price` from `[plans.<provider>]`
+(log-scaled, so a 5%-left $200 plan outranks a 1%-left $20 one). Recovery speed
+(how soon the lockout ends) only breaks ties. Plan tier is not detected, so each
+provider defaults to its lowest tier: set `[plans.claude] monthly_price = 200` for
+Max, or `[plans.claude."me@x.com"] monthly_price = 200` for one account (the account
+value wins). A provider with no price is valued at the cheapest configured plan.
+
 Green (`use`) is capacity to burn now before it resets; red is capacity
 already lost (`empty`, including a zero/negative prepaid balance) or a source
 that failed to fetch (`error`); everything else is informational (`n/a`

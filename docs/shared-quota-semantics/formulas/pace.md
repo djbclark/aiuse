@@ -65,6 +65,7 @@ Default parameters: see `policy/pace_defaults.yaml`.
 ## Bands (B1–B2)
 
 - **B1:** Sort by band lane first (`error` → `empty` → `n_a` → `slow` → `mid` → `use`), then score.
+  Within `slow`, score (25-49, log-scaled) is capacity: `remaining% x monthly_price`; recovery speed breaks ties.
 - **B2:** Never promote prepaid into `use`/`slow` from remaining% alone.
 
 ## Suggestion (G1)

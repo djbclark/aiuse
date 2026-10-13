@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import sys
@@ -24,6 +25,7 @@ from aiuse.analysis.pace import (
     window_pace,
 )
 from aiuse.analysis.use_or_lose import DAYS_PER_MONTH, _classify_flexibility, _compute_value_at_risk
+from aiuse.config import DEFAULT_CONFIG, plan_monthly_price
 from aiuse.models import (
     AccountUsage,
     BillingKind,
@@ -454,7 +456,54 @@ def _conserve_use_readiness(alert: UseOrLoseAlert) -> float:
     return max(0.0, 100.0 - float(alert.score))
 
 
-def _alert_queue_priority(alert: UseOrLoseAlert, band: int | None = None) -> tuple[float, float, float]:
+# Slow-band capacity mapping.  A slow row's attractiveness is the tokens it has
+# available now, proxied by ``remaining% x monthly_price`` (a 5%-left $200 plan
+# holds as much as a 50%-left $20 one).  Capacity spans decades, so the 25-49
+# display score is log-scaled between these clamps: $10 x 1% -> 25 (floor) and
+# $200 x 50% (10,000) or more -> 49.
+_SLOW_CAPACITY_FLOOR = 10.0
+_SLOW_CAPACITY_CEIL = 10_000.0
+# Last-resort price for a provider with no configured monthly_price and no
+# priced plan anywhere in the config.
+_SLOW_FALLBACK_PRICE = 10.0
+
+
+def _plans_or_default(config_plans: Any) -> dict[str, Any]:
+    if isinstance(config_plans, dict):
+        return config_plans
+    default = DEFAULT_CONFIG.get("plans")
+    return default if isinstance(default, dict) else {}
+
+
+def _lowest_plan_price(plans: dict[str, Any]) -> float:
+    """Cheapest provider-level price configured; the unpriced-provider fallback."""
+    prices = []
+    for meta in plans.values():
+        price = meta.get("monthly_price") if isinstance(meta, dict) else None
+        if not isinstance(price, bool) and isinstance(price, (int, float)) and price > 0:
+            prices.append(float(price))
+    return min(prices) if prices else _SLOW_FALLBACK_PRICE
+
+
+def _slow_capacity(alert: UseOrLoseAlert, plans: dict[str, Any] | None = None) -> float:
+    """Tokens available now for a slow row: ``remaining% x monthly_price``.
+
+    Per-account ``[plans.<provider>."<account>"]`` beats the provider price.
+    A provider with no price (devin free, ...) is valued at the cheapest plan
+    configured: conservative, so an unknown never outranks a known cheap plan.
+    """
+    plans = _plans_or_default(plans)
+    price = plan_monthly_price(plans, alert.provider, alert.account)
+    if price is None:
+        price = _lowest_plan_price(plans)
+    return max(0.0, float(alert.remaining_percent)) * price
+
+
+def _alert_queue_priority(
+    alert: UseOrLoseAlert,
+    band: int | None = None,
+    plans: dict[str, Any] | None = None,
+) -> tuple[float, float, float]:
     """Category-specific queue priority; larger tuples appear lower."""
     band = alert_priority_band(alert) if band is None else band
     rem = max(0.0, float(alert.remaining_percent))
@@ -469,8 +518,10 @@ def _alert_queue_priority(alert: UseOrLoseAlert, band: int | None = None) -> tup
         value = alert.flexibility_profile.value_at_risk_usd if alert.flexibility_profile is not None else None
         return (1.0 if value is not None else 0.0, float(value or 0.0), rem)
     if band == _BAND_CONSERVE:
-        # Most dangerous lockout first; closest-to-safe conserve row last.
-        return (_conserve_use_readiness(alert), -float(alert.score), -rem)
+        # Least capacity (remaining% x plan price) first, most capacity last;
+        # equal capacity falls back to recovery speed: most dangerous lockout
+        # first, closest-to-safe last.
+        return (_slow_capacity(alert, plans), _conserve_use_readiness(alert), -float(alert.score))
 
     # Burn alerts, including low-urgency ``mid`` ones, exactly mirror
     # ``pick_suggestion``: analyzer score, remaining capacity, sooner reset.
@@ -495,10 +546,12 @@ def _queue_score(band: int, priority: tuple[float, float, float]) -> int | None:
     raw = float(priority[0])
 
     if band == _BAND_CONSERVE:
-        # A live but currently unsafe quota occupies the lower action quartile.
-        # Readiness moves it toward the adjacent ``mid`` threshold.
-        clamped = max(0.0, min(100.0, raw))
-        return 25 + round(clamped * 24.0 / 100.0)
+        # A live but currently unsafe quota occupies the lower action quartile;
+        # ``raw`` is its capacity (remaining% x plan price), log-scaled so each
+        # decade of tokens available moves the score by the same amount.
+        clamped = max(_SLOW_CAPACITY_FLOOR, min(_SLOW_CAPACITY_CEIL, raw))
+        fraction = math.log(clamped / _SLOW_CAPACITY_FLOOR) / math.log(_SLOW_CAPACITY_CEIL / _SLOW_CAPACITY_FLOOR)
+        return 25 + round(fraction * 24.0)
     if band == _BAND_MID:
         return round(max(50.0, min(74.0, raw)))
 
@@ -1091,6 +1144,7 @@ def render_priority_ladder(
     s: _Style | None = None,
     color: bool | None = None,
     width: int = ACTION_PLAN_WIDTH,
+    config: dict[str, Any] | None = None,
 ) -> str:
     """Stdout body: every provider, with each display band a useful queue.
 
@@ -1100,6 +1154,7 @@ def render_priority_ladder(
     """
     if s is None:
         s = _Style(use_color(force=color))
+    plans = _plans_or_default((config or {}).get("plans"))
 
     entries: list[tuple[tuple, str]] = []
     # Coverage includes independent pool id so Antigravity Gemini vs Claude/GPT
@@ -1112,7 +1167,7 @@ def render_priority_ladder(
         band = alert_priority_band(alert)
         key = _ladder_sort_key(
             band,
-            _alert_queue_priority(alert, band),
+            _alert_queue_priority(alert, band, plans),
             alert.provider,
             alert.account,
         )
@@ -1245,6 +1300,8 @@ def _build_matrix_rows(
     raw_plans = cfg.get("plans")
     raw_analysis = cfg.get("analysis")
     plans: dict[str, Any] = raw_plans if isinstance(raw_plans, dict) else {}
+    # Slow-band ordering needs prices even when no config was passed.
+    slow_plans = _plans_or_default(raw_plans)
     analysis: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
     try:
         fresh_threshold = float(analysis.get("fresh_threshold_seconds") or 1500.0)
@@ -1259,7 +1316,7 @@ def _build_matrix_rows(
             continue
         key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
         band = alert_priority_band(alert)
-        candidate = (band, _alert_queue_priority(alert, band))
+        candidate = (band, _alert_queue_priority(alert, band, slow_plans))
         current = pool_alert.get(key)
         stronger_same_band = False
         if current is not None and band == current[0]:
@@ -1412,7 +1469,7 @@ def _build_matrix_rows(
         if key in covered:
             continue
         covered.add(key)
-        rows.append(_row_from_alert(alert, now=now))
+        rows.append(_row_from_alert(alert, now=now, plans=slow_plans))
 
     for account in deferred:
         if _ladder_coverage_key(account.provider, account.account, "") in covered:
@@ -1493,14 +1550,16 @@ def _build_matrix_rows(
     return rows
 
 
-def _row_from_alert(alert: UseOrLoseAlert, *, now: datetime | None = None) -> _MatrixRow:
+def _row_from_alert(
+    alert: UseOrLoseAlert, *, now: datetime | None = None, plans: dict[str, Any] | None = None
+) -> _MatrixRow:
     """A table row built from an alert alone, with no account windows behind it.
 
     Only ever one clock wide — an alert describes a single window — so these
     rows are deliberately sparser than an account-derived row.
     """
     band = alert_priority_band(alert)
-    priority = _alert_queue_priority(alert, band)
+    priority = _alert_queue_priority(alert, band, plans)
     service = provider_display_name(alert.provider)
     row = _MatrixRow(
         sort_key=_ladder_sort_key(band, priority, alert.provider, alert.account),

@@ -163,6 +163,16 @@
 # Override plan metadata when it differs from the built-in Individual plan.
 # monthly_price = 10
 
+# monthly_price is also the capacity proxy that orders the `slow` band
+# (remaining% x monthly_price, tokens available now). Plan tier is not detected,
+# so the built-in default is each provider's lowest tier; override it per provider
+# or, for accounts on different tiers, per account (the account value wins).
+# [plans.claude]
+# monthly_price = 200
+#
+# [plans.claude."me@example.com"]
+# monthly_price = 200
+
 # Optional macOS codesign identity for `aiuse trust sign-caut`.
 # [macos]
 # codesign_identity = "aiuse-local-codesign"

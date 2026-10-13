@@ -1106,7 +1106,9 @@ def test_action_score_has_contiguous_cross_band_boundaries():
     """Category transitions add evidence, not an artificial 30-point gap."""
     from aiuse.report import _queue_score
 
-    assert _queue_score(3, (100.0, 0.0, 0.0)) == 49  # safest slow
+    # Slow priority[0] is capacity (remaining% x plan price), log-scaled 10..10000.
+    assert _queue_score(3, (10_000.0, 0.0, 0.0)) == 49  # most-capacity slow
+    assert _queue_score(3, (1.0, 0.0, 0.0)) == 25  # least-capacity slow (clamped)
     assert _queue_score(4, (0.0, 0.0, 0.0)) == 50  # weakest mid
     assert _queue_score(4, (100.0, 0.0, 0.0)) == 74  # strongest mid
     assert _queue_score(5, (0.0, 0.0, 0.0)) == 75  # weakest use
