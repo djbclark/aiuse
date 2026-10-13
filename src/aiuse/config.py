@@ -241,9 +241,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "max_cache_age_seconds": 300.0,
             "cache_path": None,
         },
-        # caut + the two distinct OpenUsage products are cross-check peers.
-        # "both" = claude+codex (providers caut can actually fill windows for).
-        "caut": {"enabled": True, "providers": "both"},
+        # caut: disabled by default due to disruptive macOS Keychain prompts
+        # and incomplete/flaky Claude credential layout. See docs/collectors-caut-openusage.md.
+        "caut": {"enabled": False, "providers": "both"},
         # caam (Coding Agent Account Manager) reads vault-profile limits for
         # claude/codex/grok/cursor — last-resort source, never ahead of the
         # direct collectors. See docs/caam.md.
