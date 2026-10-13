@@ -2532,13 +2532,14 @@ def _human_deadline(days: float | None, *, estimated: bool = False) -> str:
         return "before the next reset (time unknown)"
     if days <= 0:
         return "immediately (reset imminent or past)"
+    if days < 1:
+        # Hours away, estimated or not: a carried 5-hour reset is not "~1 day".
+        hours = max(1, int(round(days * 24)))
+        return f"within ~{hours}h"
     if estimated:
         whole_days = max(1, int(days + 0.5))
         unit = "day" if whole_days == 1 else "days"
         return f"within ~{whole_days} {unit}"
-    if days < 1:
-        hours = max(1, int(round(days * 24)))
-        return f"within ~{hours}h"
     return f"within {days:.1f} days"
 
 

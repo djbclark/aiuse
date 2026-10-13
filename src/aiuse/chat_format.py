@@ -191,6 +191,9 @@ def _chat_deadline(days: float | None, *, estimated: bool = False) -> str:
     if days <= 0:
         return "reset imminent"
     if estimated:
+        if days < 1:
+            # A carried 5-hour reset is an estimate, but it is hours away, not "~1d".
+            return f"~{max(1, round(days * 24))}h"
         whole = max(1, int(days + 0.5))
         return f"~{whole}d" if whole < 3 else f"~{whole} days"
     # Sub-day → hours+minutes.

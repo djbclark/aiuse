@@ -1015,6 +1015,9 @@ def _human_when(days: float | None, *, estimated: bool = False) -> str:
     if days is None:
         return "on an unknown schedule"
     if estimated:
+        if 0 < days < 1:
+            # A carried 5-hour reset is an estimate, but it is hours away, not "~1 day".
+            return f"in ~{max(1, round(days * 24))}h"
         whole_days = max(1, int(days + 0.5))
         unit = "day" if whole_days == 1 else "days"
         return f"in ~{whole_days} {unit}"

@@ -84,6 +84,15 @@ longer get no span. The legend line `↻ = clock starts on first use` appears
 only when at least one such cell is on the board. The marker is screen-only; `--json`
 is unchanged.
 
+An in-use window whose source stops sending its reset time (CodexBar sends none for
+Antigravity's 5-hour windows; OpenUsage does) keeps its countdown: `aiuse` carries forward
+the last reset an earlier reading measured for that window, from any source, while that
+reset is still ahead and the window's usage has not fallen since (a fall means it reset).
+A carried time is an estimate, so it renders with `~` like any estimated reset (`~3h`),
+and `--json` marks it with `resets_at_carried_from`
+([`docs/json-contract.md`](docs/json-contract.md)). A window that has not been used yet
+is never carried: its reported reset only slides with every query.
+
 ### Pace and the PACE column
 
 - **Window pace %** (`+N%` / `-N%`) compares consumption against an even spend across the

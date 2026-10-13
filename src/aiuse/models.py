@@ -367,6 +367,11 @@ class QuotaWindow:
 
     window_id: str | None = None
 
+    # Set when ``resets_at`` was not measured by this collection but carried
+    # forward from an earlier reading: ``{"source": <collector that measured
+    # it>, "collected_at": <ISO time of that reading>}``.
+    resets_at_carried_from: dict[str, str] | None = None
+
     def remaining(self) -> float | None:
         if self.remaining_percent is not None:
             return self.remaining_percent
@@ -381,7 +386,13 @@ class QuotaWindow:
         return (self.resets_at - now).total_seconds() / 86400.0
 
     def reset_time_is_precise(self) -> bool:
-        """Whether the source supplied a reset time rather than a date alone."""
+        """Whether the reset time is one a source measured, not an estimate.
+
+        False when the source supplied a date alone, and when ``resets_at`` was
+        carried forward from an earlier reading (``carry_reset``).
+        """
+        if self.resets_at_carried_from is not None:
+            return False
         for key in ("resetsAt", "resets_at", "resetAt", "reset_at"):
             value = self.raw.get(key)
             if isinstance(value, str):
@@ -397,12 +408,25 @@ class QuotaWindow:
             and self.window_minutes == other.window_minutes
         )
 
+    def carry_reset(self, resets_at: datetime, *, source: str, collected_at: datetime) -> None:
+        """Adopt a reset time an earlier reading measured, marked as an estimate.
+
+        ``reset_time_is_precise`` turns False, so every surface renders the
+        countdown with ``~``; ``resets_at_carried_from`` keeps the reading it
+        came from.
+        """
+        self.resets_at = resets_at
+        self.resets_at_carried_from = {"source": source, "collected_at": collected_at.isoformat()}
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         if self.resets_at:
             d["resets_at"] = self.resets_at.isoformat()
         if "raw" in d:
             del d["raw"]
+        if self.resets_at_carried_from is None:
+            # Additive, optional: present only on a window whose reset was carried.
+            del d["resets_at_carried_from"]
         return d
 
 

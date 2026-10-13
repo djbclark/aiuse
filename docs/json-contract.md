@@ -482,6 +482,46 @@ additive per the stability policy below.
 | `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                               |
 | `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                    |
 | `pace_early`                  | bool                 | 1.2 — true when window elapsed fraction is below 0.10; false when pace is null or not early                                                                                       |
+| `resets_at_carried_from`      | object \| omitted    | 2026-10-13 — `{source, collected_at}` of the earlier reading whose `resets_at` was carried forward because the source dropped it; an estimate (see below)                         |
+
+#### `resets_at_carried_from` — a reset the selected source dropped
+
+Added 2026-10-13. Additive and optional (schema stays 1.2): present only on a
+window whose `resets_at` was **not measured by this collection**.
+
+Sources disagree on what a window reports — OpenUsage sends the reset of an
+Antigravity 5-hour window, CodexBar does not — and selection keeps one
+source's rows, so whenever CodexBar wins, an in-use window used to lose its
+countdown. `aiuse` now keeps the last reset an earlier reading measured for
+that window (same provider, pool, duration and account, whichever source
+reported it) and marks it:
+
+```json
+"resets_at": "2026-10-13T17:37:26+00:00",
+"resets_at_carried_from": { "source": "openusage_ai", "collected_at": "2026-10-13T14:27:47.224836+00:00" }
+```
+
+`source` is the collector that measured the reset and `collected_at` is when
+that reading was collected; a reset passed along through several collections
+keeps naming the reading that measured it. Treat `resets_at` as an
+**estimate**: the board renders it with `~`, and an alert on it has
+`deadline_is_estimated: true`. It is carried only when all of these hold;
+otherwise `resets_at` stays `null`:
+
+- the window has no `resets_at`, is in use (`used_percent` > 0) and has a
+  known duration (any duration: 5-hour, weekly, monthly, …);
+- the newest earlier reading of the same window that knew a reset is no older
+  than the window's own length, and that reset is still in the future at this
+  collection's `collected_at`;
+- that reading was in use too (`used_percent` > 0): an unused window's reset
+  is only "now plus the window length" and slides with every query;
+- `used_percent` has not fallen since, in that reading or any between (by
+  more than 1 point of source rounding): a fall means the window reset;
+- a named account never borrows from a differently named account. An
+  anonymous reading (OpenUsage's envelope is provider-scoped) is adopted only
+  when exactly one live account holds that window, and a named reading is
+  adopted by a sole anonymous live window (a collector that stopped naming the
+  account).
 
 ### `usage_credits` (optional)
 
@@ -515,7 +555,7 @@ additive per the stability policy below.
 | `remaining_percent`     | number            | share of the window still available                           |
 | `used_percent`          | number \| null    | share already consumed; null when the source reports neither  |
 | `days_until_reset`      | number \| null    |                                                               |
-| `deadline_is_estimated` | bool              | true when the source supplied a reset date without a time     |
+| `deadline_is_estimated` | bool              | true when the reset is a date alone or was carried forward    |
 | `plan`                  | string \| null    |                                                               |
 | `message`               | string            | human sentence                                                |
 | `source`                | string            | data source for the window                                    |

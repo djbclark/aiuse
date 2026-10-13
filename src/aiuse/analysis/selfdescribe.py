@@ -64,6 +64,7 @@ SEMANTICS: dict[str, str] = {
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
     "context_usage": "ACP context-window fill and this turn's token counts. used/size is the session context, not a 5h or weekly plan. turn_quota is per-turn tokens. Plan windows stay on windows[]",
+    "resets_at_carried_from": "present only when resets_at was not measured by this collection: the source dropped the reset, so aiuse carried forward the last one an earlier reading measured ({source, collected_at} of that reading); an estimate, shown as ~. Only carried while still in the future and usage has not fallen since",
 }
 
 # (substring, family, models_hint) matched against the lowercased window label,

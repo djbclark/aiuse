@@ -72,6 +72,18 @@ When active ([`src/aiuse/analysis/history.py`](../src/aiuse/analysis/history.py)
   current governing weekly/monthly window, so stale short-window averages
   cannot contradict an exhausted pool.
 
+## Reset carry-forward (not learning)
+
+Persisted snapshots also let an in-use window keep its countdown when the
+winning source drops the reset time (CodexBar sends none for Antigravity's
+5-hour windows): the last reset an earlier snapshot measured is carried onto the
+window and marked `~` / `resets_at_carried_from` (rules in
+[`json-contract.md`](json-contract.md)). It reuses a measured value rather than
+learning a rate, so it is **not** gated by `learn_from_history` (including
+`false`); it only needs snapshots to exist. A collection that has no such window
+reads no files; otherwise it opens only the newest snapshots inside the window's
+own length, newest first, and stops at the first decision.
+
 ## Scheduling
 
 See [`scheduling.md`](scheduling.md). Site LaunchAgent enables `persist_snapshots`

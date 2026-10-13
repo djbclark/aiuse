@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 
+from aiuse.analysis.history import find_carried_resets
 from aiuse.analysis.selfdescribe import FRESH_THRESHOLD_SECONDS_DEFAULT
 from aiuse.config import (
     SINGLE_PROVIDER_COLLECTORS,
@@ -321,6 +322,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         usage_sources=usage_sources,
         fresh_threshold_seconds=fresh_threshold,
     )
+    _carry_forward_resets(snapshot)
     _apply_lapsed_accounts(snapshot.accounts, config)
     _apply_client_limit_notes(snapshot.accounts, config)
     snapshot.config_fingerprint = collection_policy_fingerprint(config)
@@ -384,6 +386,21 @@ def _merge_grok_extra_credits(accounts: list[AccountUsage]) -> None:
         for note in extra.notes:
             if note not in account.notes:
                 account.notes.append(note)
+
+
+def _carry_forward_resets(snapshot: Snapshot) -> None:
+    """Keep the countdown of an in-use window whose selected source dropped its reset.
+
+    Selection keeps one source's rows, and not every source reports a reset on
+    every window (CodexBar sends none for Antigravity's 5-hour windows while
+    OpenUsage does), so an in-use window can lose a reset that an earlier
+    reading measured. History supplies it back, marked as an estimate (see
+    ``history.find_carried_resets`` for when that is safe). Running before the
+    snapshot is returned means the saved snapshot, ``--json`` and the screen
+    all carry it, and the next collection finds it in history in turn.
+    """
+    for window, carried in find_carried_resets(snapshot):
+        window.carry_reset(carried.resets_at, source=carried.source, collected_at=carried.collected_at)
 
 
 def _apply_lapsed_accounts(accounts: list[AccountUsage], config: dict[str, Any] | None) -> None:

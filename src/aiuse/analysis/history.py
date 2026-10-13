@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from aiuse.analysis.pace import independent_pool_key
-from aiuse.models import Snapshot, canonical_provider, claude_model_scope, effective_window_minutes, utcnow
+from aiuse.models import (
+    QuotaWindow,
+    Snapshot,
+    canonical_provider,
+    claude_model_scope,
+    coerce_float,
+    effective_window_minutes,
+    parse_dt,
+    utcnow,
+)
 
 _DEFAULT_SNAPSHOT_DIR = "~/.cache/aiuse/snapshots"
 _DEFAULT_RETENTION_DAYS = 90
@@ -322,6 +333,239 @@ def resolve_live_window(
     if len(entries) == 1:
         return entries[0]
     return None
+
+
+# How far a window's used_percent may read *lower* than an earlier reading of the
+# same window and still be the same cycle. OpenUsage reports whole points, so one
+# window handed from it to CodexBar's decimals (or back) can differ by nearly a
+# point without any reset. A real reset drops by far more.
+RESET_CARRY_USED_TOLERANCE = 1.0
+
+
+@dataclass(frozen=True)
+class CarriedReset:
+    """A reset time an earlier reading measured, for a window that has since lost it."""
+
+    resets_at: datetime
+    # The collector that measured it, and when that reading was collected.
+    source: str
+    collected_at: datetime
+
+
+@dataclass
+class _CarryTarget:
+    """A live window that needs its reset time back, and what the search learned so far."""
+
+    window: QuotaWindow
+    series_key: str
+    account: str
+    # Lowest used_percent met so far, walking back from the live reading.
+    floor: float
+    # A reading older than this belongs to an earlier cycle of the window.
+    oldest: datetime
+    found: CarriedReset | None = None
+    done: bool = False
+
+
+def find_carried_resets(snapshot: Snapshot) -> list[tuple[QuotaWindow, CarriedReset]]:
+    """The reset time each reset-less, in-use window of ``snapshot`` last had.
+
+    Sources disagree on what a window reports: OpenUsage sends the reset of an
+    Antigravity 5-hour window and CodexBar does not. Selection keeps one
+    source's rows, so whenever the other wins, an in-use window loses its
+    countdown. The last reset an earlier reading measured for that window —
+    matched by ``window_series_key`` and account, whichever source reported it
+    — is still the best answer, provided it still holds.
+
+    A window qualifies when it has no ``resets_at``, is in use (``used_percent``
+    above 0) and has a known duration. Recorded readings are walked newest
+    first; the newest one that knew a reset decides, and its reset is carried
+    only when
+
+    - it is still in the future at ``snapshot.collected_at``;
+    - that reading was in use too: an unused window's reset is only "now plus
+      the window length" and slides with every query, so it says nothing;
+    - ``used_percent`` never fell since (in that reading or any between, within
+      ``RESET_CARRY_USED_TOLERANCE``): a drop means the window reset, and the
+      old reset time belongs to the previous cycle.
+
+    Accounts match as in ``resolve_live_window``: a reading never lends its
+    reset to a differently named account. A reading older than the window's own
+    length is an earlier cycle, so the walk stops there, and it stops at the
+    first decision: one bounded pass over the newest files serves every window.
+    """
+    targets = _carry_targets(snapshot)
+    if not targets:
+        return []
+    index = live_window_index(snapshot)
+    by_series: dict[str, dict[str, list[_CarryTarget]]] = {}
+    for target in targets:
+        by_series.setdefault(target.series_key, {}).setdefault(target.account, []).append(target)
+    for collected, data in _prior_readings(min(target.oldest for target in targets), snapshot.collected_at):
+        for target in targets:
+            if collected < target.oldest:
+                target.done = True
+        records = data.get("accounts")
+        for record in records if isinstance(records, list) else ():
+            if isinstance(record, dict):
+                _offer_record(record, collected, snapshot.collected_at, index, by_series)
+        # Checked here, not at the top: the generator opens the next file to
+        # produce the next iteration, so a decision must end the walk first.
+        if all(target.done for target in targets):
+            break
+    return [(target.window, target.found) for target in targets if target.found is not None]
+
+
+def _carry_targets(snapshot: Snapshot) -> list[_CarryTarget]:
+    targets: list[_CarryTarget] = []
+    for account in snapshot.accounts:
+        for window in account.windows:
+            if window.resets_at is not None:
+                continue
+            used = _used_percent(window.used_percent, window.remaining_percent)
+            if used is None or used <= 0:
+                continue
+            minutes = effective_window_minutes(window.label, window.window_minutes)
+            # An unknown duration is no series: its key would pool unrelated windows.
+            if minutes is None or minutes <= 0 or _duration_key(minutes) is None:
+                continue
+            key = window_series_key(account.provider, window.label, minutes)
+            oldest = snapshot.collected_at - timedelta(minutes=minutes)
+            targets.append(_CarryTarget(window, key, account_key(account.account), used, oldest))
+    return targets
+
+
+def _offer_record(
+    record: dict[str, Any],
+    collected: datetime,
+    now: datetime,
+    index: dict[str, list[dict[str, Any]]],
+    by_series: dict[str, dict[str, list[_CarryTarget]]],
+) -> None:
+    """Offer one recorded account row to every target whose series and account it matches."""
+    provider = record.get("provider")
+    windows = record.get("windows")
+    if not isinstance(provider, str) or not isinstance(windows, list):
+        return
+    recorded_account = record.get("account")
+    for window in windows:
+        if not isinstance(window, dict):
+            continue
+        label = window.get("label")
+        label = label if isinstance(label, str) else None
+        key = window_series_key(provider, label, effective_window_minutes(label, window.get("window_minutes")))
+        series = by_series.get(key)
+        if series is None:
+            continue
+        live = resolve_live_window(index, key, recorded_account if isinstance(recorded_account, str) else None)
+        if live is None:
+            continue
+        for target in series.get(account_key(live["account"]), ()):
+            if not target.done:
+                _offer_window(target, window, record, collected, now)
+
+
+def _offer_window(
+    target: _CarryTarget,
+    window: dict[str, Any],
+    record: dict[str, Any],
+    collected: datetime,
+    now: datetime,
+) -> None:
+    used = _used_percent(window.get("used_percent"), window.get("remaining_percent"))
+    if used is not None:
+        if used > target.floor + RESET_CARRY_USED_TOLERANCE:
+            target.done = True  # more used then than later: the window reset in between
+            return
+        target.floor = min(target.floor, used)
+    raw_reset = window.get("resets_at")
+    resets_at = parse_dt(raw_reset) if isinstance(raw_reset, str) else None
+    if resets_at is None:
+        return  # this reading never knew the reset; keep walking back
+    target.done = True  # the newest reading that knew a reset decides
+    if used is None or used <= 0 or resets_at <= now:
+        return
+    source, measured = _reset_origin(window, record, collected)
+    target.found = CarriedReset(resets_at, source, measured)
+
+
+def _reset_origin(window: dict[str, Any], record: dict[str, Any], collected: datetime) -> tuple[str, datetime]:
+    """Who measured a recorded reset, and when.
+
+    A reset that was itself carried forward names the reading that really
+    measured it; a collector that only passed it along is not the source.
+    """
+    carried = window.get("resets_at_carried_from")
+    if isinstance(carried, dict):
+        source = carried.get("source")
+        measured_at = carried.get("collected_at")
+        measured = parse_dt(measured_at) if isinstance(measured_at, str) else None
+        if isinstance(source, str) and source and measured is not None:
+            return source, measured
+    source = record.get("source")
+    return (source if isinstance(source, str) and source else "unknown"), collected
+
+
+def _used_percent(used: Any, remaining: Any) -> float | None:
+    """A window's consumed share: ``used_percent``, else whatever ``remaining_percent`` leaves."""
+    value = coerce_float(used)
+    if value is not None:
+        return value
+    left = coerce_float(remaining)
+    return None if left is None else max(0.0, 100.0 - left)
+
+
+def _prior_readings(oldest: datetime, before: datetime) -> Iterator[tuple[datetime, dict[str, Any]]]:
+    """Recorded collections made in ``[oldest, before)``, newest first, each opened only when reached.
+
+    ``load_recent_snapshots`` parses every retained file, which is the cost this
+    avoids with thousands on disk. A timestamped name says when it was
+    collected, so nothing older than ``oldest`` is ever opened. Any other
+    ``*.json`` (``latest.json``, a copied file) is opened to learn its own
+    ``collected_at``; a file whose time repeats one already listed is a
+    duplicate (``latest.json`` mirrors the newest collection) and is skipped.
+    """
+    directory = snapshot_dir()
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return
+    found: list[tuple[datetime, Path, dict[str, Any] | None]] = []
+    # Dropping the colons of the legacy spelling makes name order chronological.
+    for name in sorted(names, key=lambda n: n.replace(":", ""), reverse=True):
+        if not name.lower().endswith(".json"):
+            continue
+        path = directory / name
+        data: dict[str, Any] | None = None
+        stamp = _snapshot_file_time(name)
+        if stamp is None:
+            data = _read_snapshot_file(path)
+            collected = _collected_at(data) if data is not None else None
+            if collected is None:
+                continue
+            stamp = collected.astimezone(timezone.utc)
+        elif stamp < oldest:
+            break
+        found.append((stamp, path, data))
+    # At equal times the copy already opened sorts first, so a duplicate is dropped for it.
+    found.sort(key=lambda item: (item[0], item[2] is not None), reverse=True)
+    previous: datetime | None = None
+    for stamp, path, data in found:
+        if stamp == previous or not oldest <= stamp < before:
+            continue
+        if data is None:
+            data = _read_snapshot_file(path)
+        if data is not None:
+            previous = stamp
+            yield stamp, data
+
+
+def _read_snapshot_file(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def compute_learned_burn_rates(

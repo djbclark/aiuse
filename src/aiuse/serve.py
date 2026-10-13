@@ -437,6 +437,7 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
         for w in row.get("windows") or []:
             if not isinstance(w, dict):
                 continue
+            carried_from = w.get("resets_at_carried_from")
             windows.append(
                 QuotaWindow(
                     label=str(w.get("label") or ""),
@@ -445,6 +446,8 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                     resets_at=parse_dt(w.get("resets_at")),
                     window_minutes=w.get("window_minutes"),
                     reset_description=w.get("reset_description"),
+                    # Dropping this would make a cached carried reset read as measured.
+                    resets_at_carried_from=carried_from if isinstance(carried_from, dict) else None,
                 )
             )
         try:
