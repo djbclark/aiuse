@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
 from aiuse.models import (
@@ -119,10 +121,129 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
 }
 
 
+DEFAULT_WIDGET_SNAPSHOT_PATH = (
+    Path.home() / "Library" / "Group Containers" / "Y5PE65HELJ.com.steipete.codexbar" / "widget-snapshot.json"
+)
+
+
 def _codexbar_bin() -> str:
     """Resolve symlinks for the executable to work around CodexBar issue #2756/#2889."""
     cmd = which("codexbar")
     return os.path.realpath(cmd) if cmd else "codexbar"
+
+
+def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -> list[AccountUsage]:
+    primary = entry.get("primary")
+    secondary = entry.get("secondary")
+    tertiary = entry.get("tertiary")
+
+    extra_windows: list[dict[str, Any]] = []
+    for r in entry.get("usageRows") or []:
+        if not isinstance(r, dict):
+            continue
+        rid = str(r.get("id") or "").lower()
+        if rid in ("primary", "secondary", "tertiary", "session", "weekly"):
+            continue
+        w_dict = r.get("window")
+        if isinstance(w_dict, dict):
+            w_dict = dict(w_dict)
+        else:
+            used = (100.0 - float(r["percentLeft"])) if r.get("percentLeft") is not None else 0.0
+            w_dict = {"usedPercent": used}
+            for cand in (primary, secondary, tertiary):
+                if isinstance(cand, dict) and cand.get("usedPercent") is not None:
+                    if abs(float(cand["usedPercent"]) - used) < 0.05:
+                        w_dict.update(
+                            {
+                                "windowMinutes": cand.get("windowMinutes"),
+                                "resetsAt": cand.get("resetsAt"),
+                                "resetDescription": cand.get("resetDescription"),
+                            }
+                        )
+                        break
+            if "windowMinutes" not in w_dict:
+                rtitle = str(r.get("title") or "").lower()
+                if "5h" in rid or "5-hour" in rtitle:
+                    w_dict["windowMinutes"] = 300
+                elif "weekly" in rid or "weekly" in rtitle:
+                    w_dict["windowMinutes"] = 10080
+                elif "monthly" in rid or "monthly" in rtitle:
+                    w_dict["windowMinutes"] = 43200
+        extra_windows.append({"title": r.get("title"), "id": r.get("id"), "window": w_dict})
+
+    row = {
+        "provider": entry.get("provider"),
+        "source": "widget-snapshot",
+        "account": entry.get("quotaOwnerKey"),
+        "usage": {
+            "primary": primary,
+            "secondary": secondary,
+            "tertiary": tertiary,
+            "extraRateWindows": extra_windows,
+            "updatedAt": entry.get("updatedAt"),
+            "providerCost": entry.get("providerCost"),
+        },
+        "credits": {
+            "remaining": entry.get("creditsRemaining"),
+        },
+    }
+    account = _from_row(row)
+    account.notes.append(f"Cached widget snapshot age: {int(age_seconds)}s.")
+    result = [account]
+    zen = _opencode_zen_from_row(row)
+    if zen is not None:
+        result.append(zen)
+    return result
+
+
+def _read_widget_snapshot(
+    cache_path: Path | str | None,
+    max_age: float,
+    provider_list: list[str | None],
+    skip_providers: frozenset[str] | None,
+) -> list[AccountUsage] | None:
+    path = Path(cache_path).expanduser() if cache_path else DEFAULT_WIDGET_SNAPSHOT_PATH
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    gen_dt = parse_dt(data.get("generatedAt"))
+    if not gen_dt:
+        return None
+    age = (utcnow() - gen_dt).total_seconds()
+    if age < 0:
+        age = 0.0
+    if age > max_age:
+        return None
+
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        return None
+
+    if provider_list != [None]:
+        needed_providers = {canonical_provider(p) for p in provider_list if p}
+        available_providers = {
+            canonical_provider(e.get("provider")) for e in entries if isinstance(e, dict) and e.get("provider")
+        }
+        if not needed_providers.issubset(available_providers):
+            return None
+
+    accounts: list[AccountUsage] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("provider"):
+            continue
+        p = canonical_provider(entry.get("provider"))
+        if skip_providers and p in skip_providers:
+            continue
+        if provider_list != [None] and p not in {canonical_provider(x) for x in provider_list if x}:
+            continue
+        accounts.extend(_parse_widget_snapshot_entry(entry, age_seconds=age))
+
+    return accounts
 
 
 def collect_codexbar(
@@ -134,11 +255,23 @@ def collect_codexbar(
     skip_providers: frozenset[str] | None = None,
     provider_timeouts: dict[str, float] | None = None,
     timeout_backoff: float | None = DEFAULT_TIMEOUT_BACKOFF_SECONDS,
+    use_cache: bool = False,
+    max_cache_age: float = 300.0,
+    cache_path: Path | str | None = None,
 ) -> list[AccountUsage]:
+    provider_list = _normalize_providers(providers)
+    if use_cache:
+        cached = _read_widget_snapshot(
+            cache_path=cache_path,
+            max_age=max_cache_age,
+            provider_list=provider_list,
+            skip_providers=skip_providers,
+        )
+        if cached is not None:
+            return cached
+
     if not which("codexbar"):
         raise CollectorError("codexbar not found on PATH")
-
-    provider_list = _normalize_providers(providers)
     if provider_list == [None]:
         # Discover the actual enabled-provider list ourselves so each can be
         # queried as its own concurrent subprocess, instead of asking CodexBar

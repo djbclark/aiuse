@@ -195,6 +195,15 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         codexbar_timeout = timeout_for(config, "codexbar")
         discovery_timeout = timeout_for(config, "codexbar_discovery")
         provider_timeouts, timeout_backoff = _codexbar_timeout_settings(config, codexbar_cfg or {})
+        use_cache = bool((codexbar_cfg or {}).get("use_cache", True))
+        raw_max_age = (codexbar_cfg or {}).get("max_cache_age_seconds")
+        if raw_max_age is None:
+            raw_max_age = (codexbar_cfg or {}).get("max_cache_age", 300.0)
+        try:
+            max_cache_age = float(raw_max_age)
+        except (TypeError, ValueError):
+            max_cache_age = 300.0
+        cache_path = (codexbar_cfg or {}).get("cache_path")
         jobs.append(
             (
                 "codexbar",
@@ -207,6 +216,9 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     skip_providers=frozenset(disabled_providers),
                     provider_timeouts=provider_timeouts,
                     timeout_backoff=timeout_backoff,
+                    use_cache=use_cache,
+                    max_cache_age=max_cache_age,
+                    cache_path=cache_path,
                 ),
             )
         )

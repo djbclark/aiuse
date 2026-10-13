@@ -366,6 +366,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--codexbar-live",
+        action="store_true",
+        help="Bypass CodexBar widget-snapshot cache and force live CLI queries",
+    )
+    p.add_argument(
         "--min-remaining",
         type=float,
         help="Override min remaining %% to flag (default 40)",
@@ -1272,6 +1277,8 @@ def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> No
         collectors["bailian"] = {"enabled": False}
     if args.providers:
         collectors.setdefault("codexbar", {})["providers"] = args.providers
+    if getattr(args, "codexbar_live", False):
+        collectors.setdefault("codexbar", {})["use_cache"] = False
     analysis = config.setdefault("analysis", {})
     if args.min_remaining is not None:
         analysis["min_remaining_percent"] = args.min_remaining

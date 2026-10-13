@@ -237,6 +237,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             # finish, and the auto fallback is a local SQLite rescan rather
             # than a cached usage snapshot.
             "provider_timeouts": {"opencodego": 60},
+            "use_cache": True,
+            "max_cache_age_seconds": 300.0,
+            "cache_path": None,
         },
         # caut + the two distinct OpenUsage products are cross-check peers.
         # "both" = claude+codex (providers caut can actually fill windows for).
@@ -392,6 +395,10 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "timeout_backoff",
         "log_dir",
         "max_age_hours",
+        "use_cache",
+        "max_cache_age_seconds",
+        "max_cache_age",
+        "cache_path",
     }
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
@@ -637,6 +644,23 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                         f"error: collectors.{name}.timeout_backoff must be a non-negative number of seconds "
                         f"(got {entry['timeout_backoff']!r})"
                     )
+            if "use_cache" in entry and not isinstance(entry["use_cache"], bool):
+                issues.append(f"error: collectors.{name}.use_cache must be a boolean (got {entry['use_cache']!r})")
+            for age_key in ("max_cache_age_seconds", "max_cache_age"):
+                if age_key in entry:
+                    try:
+                        ok = float(entry[age_key]) >= 0
+                    except (TypeError, ValueError):
+                        ok = False
+                    if not ok:
+                        issues.append(
+                            f"error: collectors.{name}.{age_key} must be a non-negative number of seconds "
+                            f"(got {entry[age_key]!r})"
+                        )
+            if "cache_path" in entry and entry["cache_path"] is not None and not isinstance(entry["cache_path"], str):
+                issues.append(
+                    f"error: collectors.{name}.cache_path must be a string path (got {entry['cache_path']!r})"
+                )
 
     query_min_interval = cfg.get("query_min_interval")
     if query_min_interval is not None and not isinstance(query_min_interval, dict):
