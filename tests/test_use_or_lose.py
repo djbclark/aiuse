@@ -1309,6 +1309,130 @@ def test_history_alert_uses_the_same_provider_name_as_live_rows(monkeypatch):
     assert alert.days_until_reset is not None
 
 
+def _patch_history(monkeypatch, rows: list[dict]) -> None:
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.should_learn_from_history", lambda _cfg: True)
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.compute_learned_burn_rates", lambda **_k: {})
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.compute_learned_flexibility", lambda **_k: {})
+    monkeypatch.setattr("aiuse.analysis.use_or_lose.chronic_waste_summary", lambda **_k: rows)
+
+
+def test_history_alert_dropped_when_every_live_account_of_the_pool_is_exhausted(monkeypatch):
+    """An unresolvable history account must not outlive an exhausted live pool."""
+    from aiuse.analysis.history import window_series_key
+
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                account=who,
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Codex 5-hour quota (1)",
+                        remaining_percent=0.5,
+                        resets_at=now + timedelta(hours=1),
+                        window_minutes=300,
+                    )
+                ],
+            )
+            for who in ("a@example.com", "b@example.com")
+        ],
+    )
+    _patch_history(
+        monkeypatch,
+        [
+            {
+                "provider": "codex",
+                "account": None,  # ambiguous across two live accounts: resolution fails
+                "label": "Codex 5-hour quota (1)",
+                "window_key": window_series_key("codex", "Codex 5-hour quota (1)", 300),
+                "avg_remaining_pct": 75.0,
+                "sample_count": 6,
+            }
+        ],
+    )
+
+    alerts = analyze_use_or_lose(snap, _pace_cfg(learn_from_history=True))
+
+    assert not any(a.source == "history" for a in alerts)
+
+
+def test_history_alert_survives_when_one_live_account_still_has_quota(monkeypatch):
+    from aiuse.analysis.history import window_series_key
+
+    now = _now()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                account=who,
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Codex 5-hour quota (1)",
+                        remaining_percent=rem,
+                        resets_at=now + timedelta(hours=1),
+                        window_minutes=300,
+                    )
+                ],
+            )
+            for who, rem in (("a@example.com", 0.0), ("b@example.com", 80.0))
+        ],
+    )
+    _patch_history(
+        monkeypatch,
+        [
+            {
+                "provider": "codex",
+                "account": None,
+                "label": "Codex 5-hour quota (1)",
+                "window_key": window_series_key("codex", "Codex 5-hour quota (1)", 300),
+                "avg_remaining_pct": 75.0,
+                "sample_count": 6,
+            }
+        ],
+    )
+
+    alerts = analyze_use_or_lose(snap, _pace_cfg(learn_from_history=True))
+
+    assert any(a.source == "history" for a in alerts)
+
+
+def test_exhausted_pool_does_not_suppress_the_providers_other_pool_history(monkeypatch):
+    """Antigravity's Gemini and Claude/GPT pools are independent budgets."""
+    from aiuse.analysis.history import window_series_key
+
+    now = _now()
+    snap = _antigravity_snapshot(now)
+    snap.accounts[0].windows[0].remaining_percent = 0.0  # Gemini 5-hour spent
+    _patch_history(
+        monkeypatch,
+        [
+            {
+                "provider": "antigravity",
+                "account": None,
+                "label": label,
+                "window_key": window_series_key("antigravity", label, 300),
+                "avg_remaining_pct": 94.0,
+                "sample_count": 3,
+            }
+            for label in ("Gemini 5-hour", "Claude/GPT 5-hour")
+        ],
+    )
+    cfg = _pace_cfg(learn_from_history=True)
+    cfg["plans"] = {"gemini": {"monthly_price": 20, "name": "Google AI Pro / Ultra"}}
+
+    alerts = analyze_use_or_lose(snap, cfg)
+
+    labels = {a.window_label for a in alerts if a.source == "history"}
+    assert labels == {"Claude/GPT 5-hour"}
+
+
 def test_history_child_is_suppressed_across_collector_label_variants(monkeypatch):
     """A 5h child under a live weekly parent stays suppressed despite relabelling."""
     from aiuse.analysis.history import window_series_key

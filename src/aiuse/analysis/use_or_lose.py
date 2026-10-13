@@ -48,6 +48,8 @@ from aiuse.models import (
 SHORT_WINDOW_LABELS = {"5-hour", "5h", "session", "hourly"}
 
 DAYS_PER_MONTH = 30.44
+# At or below this remaining share a window counts as spent (the "depleted" wording).
+_EXHAUSTED_REMAINING_PERCENT = 1.0
 MINUTES_PER_MONTH = DAYS_PER_MONTH * 24 * 60
 
 # Default burn-rate assumptions
@@ -663,8 +665,13 @@ def analyze_use_or_lose(
             samples = wasted["sample_count"]
             live_entry = resolve_live_window(live_windows, series_key, account) or {}
             live_rem = live_entry.get("remaining_percent")
-            if live_rem is not None and live_rem <= 0.0:
+            if live_rem is not None and live_rem <= _EXHAUSTED_REMAINING_PERCENT:
                 continue  # Depleted pools natively use the empty tag; history alerts would improperly mask it.
+            if not live_entry and _series_exhausted(live_windows.get(series_key)):
+                # The account on the history record matched no live row, but
+                # every live window of this exact pool and duration is spent:
+                # a "consistently underused" line would contradict that.
+                continue
             live_resets_at = live_entry.get("resets_at")
             days = (live_resets_at - utcnow()).total_seconds() / 86400.0 if live_resets_at is not None else None
             alerts.append(
@@ -686,6 +693,16 @@ def analyze_use_or_lose(
             )
 
     return alerts
+
+
+def _series_exhausted(entries: list[dict[str, Any]] | None) -> bool:
+    """True when the series is live and every account's window is spent."""
+    if not entries:
+        return False
+    return all(
+        e.get("remaining_percent") is not None and e["remaining_percent"] <= _EXHAUSTED_REMAINING_PERCENT
+        for e in entries
+    )
 
 
 def _chronic_series_key(wasted: dict[str, Any]) -> str:
@@ -949,7 +966,7 @@ def _pace_message(
     rem_s = f"{remaining:.0f}%" if remaining is not None else "some"
     # Already-spent governing windows (e.g. OpenCode Go monthly at 0%) still
     # suppress shorter siblings that may show 100% open — say so clearly.
-    depleted = remaining is not None and remaining <= 1.0
+    depleted = remaining is not None and remaining <= _EXHAUSTED_REMAINING_PERCENT
     child_note = ""
     model_children = [c for c in suppressed_children or [] if claude_model_scope(c.label) is not None]
     suppressed_children = [c for c in suppressed_children or [] if claude_model_scope(c.label) is None]
