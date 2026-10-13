@@ -36,6 +36,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     classify_window_minutes,
     claude_model_scope,
+    effective_window_minutes,
     infer_window_clock,
     provider_config_key,
     provider_display_name,
@@ -113,8 +114,13 @@ class _ClockCell:
     folded: int = 0  # extra windows on this clock, collapsed into this one
     days_until_reset: float | None = None
     reset_estimated: bool = False
+    window_minutes: int | None = None  # full window length, when the source or label states it
     pace_percent: int | None = None
     pace_early: bool = False
+
+
+_UNSTARTED_MARK = "↻"  # a rolling window's clock starts on first use
+_UNSTARTED_LEGEND = f"{_UNSTARTED_MARK} = clock starts on first use"
 
 
 @dataclass(frozen=True)
@@ -1006,10 +1012,27 @@ def _clock_percent_text(cell: _ClockCell) -> str:
     return f"{used_txt}u/{left_txt}l{mark}"
 
 
-def _clock_plain(cell: _ClockCell, *, compact: bool) -> str:
-    percent = _clock_percent_text(cell)
+def _clock_span(cell: _ClockCell, *, compact: bool) -> tuple[_ResetSpan | None, bool]:
+    """The span shown after a cell's percentages, and whether it is an unstarted window's full length.
+
+    A cell with a reset timestamp shows the time left. A sub-day rolling window
+    (the 5-hour kind) that has not been used yet (nothing consumed, no reset
+    timestamp) cannot say when it resets -- its clock starts on first use -- so
+    it shows its full length instead. Longer windows are usually anchored to a
+    calendar or billing date, so an unused one gets no span. Otherwise there is
+    no span.
+    """
     span = _format_reset_span(cell.days_until_reset, estimated=cell.reset_estimated, compact=compact)
-    return f"{percent}/{span.plain()}" if span is not None else percent
+    if span is not None:
+        return span, False
+    if (
+        cell.days_until_reset is None
+        and cell.used_percent <= 0.0
+        and cell.window_minutes
+        and 0 < cell.window_minutes < 1440
+    ):
+        return _format_reset_span(cell.window_minutes / 1440.0, compact=compact), True
+    return None, False
 
 
 def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
@@ -1058,13 +1081,9 @@ def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple
             if cell is None:
                 continue
             w_pct = max(w_pct, len(_clock_percent_text(cell)))
-            span = _format_reset_span(
-                cell.days_until_reset,
-                estimated=cell.reset_estimated,
-                compact=layout.compact_deadline,
-            )
+            span, unstarted = _clock_span(cell, compact=layout.compact_deadline)
             if span is not None:
-                w_spans[idx] = max(w_spans[idx], len(span.plain()))
+                w_spans[idx] = max(w_spans[idx], len(span.plain()) + (len(_UNSTARTED_MARK) if unstarted else 0))
     for idx, (_key, label) in enumerate(CLOCK_COLUMNS):
         w_pct = max(w_pct, len(label))
     if layout.show_pace:
@@ -1374,6 +1393,7 @@ def _build_matrix_rows(
                 clock, inferred = infer_window_clock(window)
                 days = window.days_until_reset(now)
                 estimated = not window.reset_time_is_precise()
+                window_minutes = effective_window_minutes(window.label, window.window_minutes)
                 if clock is not None:
                     cell = clocks.get(clock)
                     pace_pct, pace_early = window_pace(window, now)
@@ -1383,6 +1403,7 @@ def _build_matrix_rows(
                             inferred=inferred,
                             days_until_reset=days,
                             reset_estimated=estimated,
+                            window_minutes=window_minutes,
                             pace_percent=pace_pct,
                             pace_early=pace_early,
                         )
@@ -1395,6 +1416,7 @@ def _build_matrix_rows(
                             cell.inferred = inferred
                             cell.days_until_reset = days
                             cell.reset_estimated = estimated
+                            cell.window_minutes = window_minutes
                             cell.pace_percent = pace_pct
                             cell.pace_early = pace_early
                 remaining = window.remaining()
@@ -1653,7 +1675,10 @@ def render_clock_matrix(
 
     Percentages are **used**, not left: 0% is untouched, 100% is exhausted.
     When a clock has a reset timestamp the cell is ``75%/4h`` / ``89%/2d14h``
-    — used percent, then that clock's own remaining time.
+    — used percent, then that clock's own remaining time. A rolling window that
+    has not been used yet carries no reset timestamp (its clock starts on first
+    use); when its length is known the cell is ``0u/100l/5h↻`` — the full window
+    length and a ``↻`` marker, explained by a legend line.
     """
     if s is None:
         s = _Style(use_color(force=color))
@@ -1712,6 +1737,7 @@ def render_clock_matrix(
     any_inferred = False
     any_folded = False
     any_deadline = False
+    any_unstarted = False
     zebra_width = _matrix_needed_width(rows, layout)
     for row_idx, row in enumerate(rows):
         tag_plain, tag_color = _BAND_TAG[row.band]
@@ -1746,14 +1772,16 @@ def render_clock_matrix(
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
-            span = _format_reset_span(
-                cell.days_until_reset,
-                estimated=cell.reset_estimated,
-                compact=layout.compact_deadline,
-            )
+            span, unstarted = _clock_span(cell, compact=layout.compact_deadline)
             colored = _style_clock_percent(s, cell, width=w_pct)
             if span is None:
                 tail.append(colored + (" " * (w_clock - w_pct)))
+                continue
+            if unstarted:
+                any_unstarted = True
+                styled = colored + s.dim("/") + _style_reset_span(s, span) + s.dim(_UNSTARTED_MARK)
+                pad = w_clock - (w_pct + 1 + len(span.plain()) + len(_UNSTARTED_MARK))
+                tail.append(styled + " " * pad if pad > 0 else styled)
                 continue
             any_deadline = True
             styled = colored + s.dim("/") + _style_reset_span(s, span)
@@ -1793,6 +1821,8 @@ def render_clock_matrix(
                 s.dim("2d14h = until this clock resets · bold = largest unit"),
             )
         )
+    if any_unstarted:
+        legend_items.append((_UNSTARTED_LEGEND, s.dim(_UNSTARTED_LEGEND)))
     if any_inferred:
         legend_items.append(("dim u/l = inferred, not reported", s.dim("dim u/l = inferred, not reported")))
     if any_folded:

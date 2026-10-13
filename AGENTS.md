@@ -171,6 +171,11 @@ Full path-by-path map with "read when" hints:
   unless there is a concrete reason not to (e.g. the operator said not to, or
   the branch is deliberately local-only). Do not wait for separate push
   authorization.
+- **Smoke-test the working tree with `AIUSE_SKIP_HOMEBREW_FORMULA=1`.** The
+  console entry (`.venv/bin/aiuse`, `aiuse-test.sh`) re-execs into the installed
+  Homebrew release (`prefer_homebrew_formula`), so without it a smoke run shows
+  the released code, not your change (2026-10-13: the `↻` marker looked absent
+  until set).
 - **Beads profile: this repo opts in to team-maintainer behavior.** Agents may
   close beads, run quality gates, commit, and push, and should sync beads
   proactively — `bd dolt pull` then `bd dolt push` — after creating, updating,

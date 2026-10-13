@@ -1968,8 +1968,8 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
                 windows=[
                     QuotaWindow(
                         label="z.ai 5-hour",
-                        used_percent=0.0,
-                        remaining_percent=100.0,
+                        used_percent=12.0,
+                        remaining_percent=88.0,
                         window_minutes=300,
                     ),
                     QuotaWindow(
@@ -1986,10 +1986,10 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
     text = render_clock_matrix([], snapshot=snap, color=False, width=120)
     zai = next(line for line in text.splitlines() if " zai/zcode " in line)
     assert "0u/100l/6d20h" in zai
-    # The 5h cell is a labeled pair, not 0u/100l/—.
-    assert "0u/100l/—" not in zai
+    # The 5h cell is a labeled pair, not 12u/88l/—.
+    assert "12u/88l/—" not in zai
     tokens = zai.split()
-    assert "0u/100l" in tokens
+    assert "12u/88l" in tokens
 
 
 def test_clock_matrix_pads_percents_and_colors_only_the_left_token():
@@ -2072,6 +2072,134 @@ def test_style_clock_percent_pads_and_keeps_fold_mark_in_the_left_token():
 
     off = _Style(False)
     assert _style_clock_percent(off, _ClockCell(used_percent=4.0), width=8) == "  4u/96l"
+
+
+def _unused_window_snapshot(*, five_hour_used: float, five_hour_resets: bool = False) -> Snapshot:
+    """One account with a 5h window (reset optional) and a weekly with a countdown."""
+    now = utcnow()
+    return Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="claude",
+                account="a@example.com",
+                source="test",
+                windows=[
+                    QuotaWindow(
+                        label="5h",
+                        used_percent=five_hour_used,
+                        remaining_percent=100.0 - five_hour_used,
+                        resets_at=now + timedelta(hours=3) if five_hour_resets else None,
+                        window_minutes=300,
+                    ),
+                    QuotaWindow(
+                        label="weekly",
+                        used_percent=40.0,
+                        remaining_percent=60.0,
+                        resets_at=now + timedelta(days=2, hours=14),
+                        window_minutes=10080,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+_UNSTARTED_LEGEND_LINE = "↻ = clock starts on first use"
+
+
+def test_unused_rolling_window_shows_full_length_and_marker_with_legend():
+    text = render_clock_matrix([], snapshot=_unused_window_snapshot(five_hour_used=0.0), color=False, width=200)
+    row = next(line for line in text.splitlines() if " claude " in line)
+    assert "0u/100l/5h↻" in row
+    # The weekly countdown on the same row is untouched.
+    assert "40u/60l/2d14h" in row
+    assert _UNSTARTED_LEGEND_LINE in text
+    # Real countdowns exist, so their legend line stays too.
+    assert "until this clock resets" in text
+
+
+def test_marker_only_board_has_no_countdown_legend():
+    snap = _unused_window_snapshot(five_hour_used=0.0)
+    snap.accounts[0].windows = snap.accounts[0].windows[:1]
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    assert "0u/100l/5h↻" in text
+    assert _UNSTARTED_LEGEND_LINE in text
+    assert "until this clock resets" not in text
+
+
+def test_used_window_without_reset_has_no_marker_or_span():
+    text = render_clock_matrix([], snapshot=_unused_window_snapshot(five_hour_used=12.0), color=False, width=200)
+    row = next(line for line in text.splitlines() if " claude " in line)
+    assert "12u/88l" in row
+    assert "12u/88l/" not in row
+    assert "↻" not in text
+
+
+def test_unused_window_without_known_length_renders_as_before():
+    snap = _unused_window_snapshot(five_hour_used=0.0)
+    window = snap.accounts[0].windows[0]
+    window.label = "quota"
+    window.window_minutes = None
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    assert "↻" not in text
+
+
+def test_unused_window_of_a_day_or_longer_gets_no_marker():
+    # Weekly/monthly windows are usually anchored to a calendar or billing date,
+    # so "starts on first use" would be a false claim there.
+    snap = _unused_window_snapshot(five_hour_used=12.0)
+    weekly = snap.accounts[0].windows[1]
+    weekly.used_percent, weekly.remaining_percent, weekly.resets_at = 0.0, 100.0, None
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    row = next(line for line in text.splitlines() if " claude " in line)
+    assert "0u/100l/" not in row
+    assert "↻" not in text
+
+
+def test_board_without_unstarted_windows_has_no_marker_legend():
+    text = render_clock_matrix(
+        [], snapshot=_unused_window_snapshot(five_hour_used=0.0, five_hour_resets=True), color=False, width=200
+    )
+    row = next(line for line in text.splitlines() if " claude " in line)
+    assert "0u/100l/3h" in row
+    assert "↻" not in text
+
+
+def test_clock_column_stays_aligned_when_marker_and_countdown_share_it():
+    now = utcnow()
+    accounts = [
+        AccountUsage(
+            provider="claude",
+            account="a@example.com",
+            source="test",
+            windows=[QuotaWindow(label="5h", used_percent=0.0, remaining_percent=100.0, window_minutes=300)],
+        ),
+        AccountUsage(
+            provider="codex",
+            account="b@example.com",
+            source="test",
+            windows=[
+                QuotaWindow(
+                    label="5h",
+                    used_percent=20.0,
+                    remaining_percent=80.0,
+                    resets_at=now + timedelta(hours=2, minutes=27),
+                    window_minutes=300,
+                )
+            ],
+        ),
+    ]
+    snap = Snapshot(collected_at=now, accounts=accounts)
+    for width in (200, 60):  # roomy, and squeezed into the compact-deadline layout
+        text = render_clock_matrix([], snapshot=snap, color=False, width=width)
+        rows = [_strip_ansi(line) for line in text.splitlines() if " claude " in line or " codex " in line]
+        assert len(rows) == 2
+        assert any("↻" in line for line in rows)
+        marker_row = next(line for line in rows if "↻" in line)
+        # The next column (an em-dash for no weekly window) starts at the same
+        # character in both rows, so the marker's extra cell was budgeted.
+        assert {line.index("—") for line in rows} == {marker_row.index("—")}
 
 
 @pytest.mark.parametrize(
