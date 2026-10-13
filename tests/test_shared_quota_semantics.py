@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from aiuse.analysis.pace import classify_pace, compute_pace, governing_partition
+from aiuse.analysis.ranking import alert_priority_band
 from aiuse.analysis.suggest import pick_suggestion
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.models import (
@@ -21,7 +22,6 @@ from aiuse.models import (
     UsageCredits,
     parse_dt,
 )
-from aiuse.report import alert_priority_band
 
 ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "docs" / "shared-quota-semantics"

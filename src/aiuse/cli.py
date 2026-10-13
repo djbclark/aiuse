@@ -566,7 +566,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
             # Errors still surface even in quiet mode
             print(f"Warning: could not save snapshot: {exc}", file=sys.stderr)
 
-    suggestion_alert = pick_suggestion(alerts)
+    suggestion_alert = pick_suggestion(alerts, config)
     suggestion = suggestion_to_dict(suggestion_alert)
     insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     from aiuse.agent_notes import load_active_notes
@@ -603,7 +603,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
     exit_code = collect_exit_code(snapshot, alerts)
 
     if status_mode:
-        print(render_status_line(snapshot, alerts))
+        print(render_status_line(snapshot, alerts, config=config))
         return exit_code
 
     if suggest_mode and not as_json:

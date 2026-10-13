@@ -183,7 +183,7 @@ def run_serve(
 
                     snap = _snapshot_from_payload(payload)
                     alerts = _alerts_from_payload(payload)
-                    line = render_status_line(snap, alerts)
+                    line = render_status_line(snap, alerts, config=state.config)
                     self._json(200, {"status": line, "source": payload["source"]})
                     return
                 self._json(404, {"error": "not found", "path": path})
@@ -299,7 +299,7 @@ class _ServeState:
                 )
             except OSError:
                 pass
-        suggestion = suggestion_to_dict(pick_suggestion(alerts))
+        suggestion = suggestion_to_dict(pick_suggestion(alerts, self.config))
         return {
             "snapshot": enrich_snapshot(
                 snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits(self.config)
@@ -319,7 +319,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
     alerts_raw = row.get("alerts") or []
     # Re-pick suggestion from stored alerts (stable field set).
     alerts = _alerts_from_dicts(alerts_raw)
-    suggestion = suggestion_to_dict(pick_suggestion(alerts))
+    suggestion = suggestion_to_dict(pick_suggestion(alerts, config))
     snap = enrich_snapshot(
         {
             "collected_at": row.get("collected_at"),

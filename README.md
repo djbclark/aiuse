@@ -56,11 +56,11 @@ pools most worth using right now sort to the bottom.
   n/a   -- deepseek   gmail —                                                                    — $4.15 (counts down)
   n/a   -- openrouter gmail —                                                                    — $18.55 (counts down)
   slow  38 agy        gmail claude/gpt                 — 78u/22l/1d5h                       —    — <-
+  mid   50 claude     gmail —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                  — +38% <-
   mid   50 grok       gmail —                          —  6u/94l/6d14h                      —    — <-
-  mid   63 claude     gmail —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                  — +38% <-
-  mid   65 codex      gmail —                          — 54u/46l/2d7h -20%                  — -20% <-
-  mid   67 agy        gmail gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                    — -63% <-
-  mid   67 cursor     gmail —                          —                  — 71u/29l/3d7h -20% -20%
+  mid   63 codex      gmail —                          — 54u/46l/2d7h -20%                  — -20% <-
+  mid   66 cursor     gmail —                          —                  — 71u/29l/3d7h -20% -20%
+  mid   66 agy        gmail gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                    — -63% <-
 + use   91 copilot    —     —                          —                  — 58u/42l/~1d -39%  -39%
                               2d14h = until this clock resets · bold = largest unit
                         u/l = percent used / percent left — l is what you can still spend
@@ -117,22 +117,40 @@ soon as possible). Its action-state boundaries are contiguous: `slow` ends at
 inventory has no use-or-lose urgency.
 
 Inside each live band (`slow` 25-49, `mid` 50-74, `use` 75-99) the score is how
-attractive the pool is right now: the dollars at risk in its window. That is the
-plan's `monthly_price` from `[plans.<provider>]` spread over the window's refills
-per waking month (16 waking hours a day by default, so a 5-hour window is 1/97 of
-the month and a weekly one about a third), times the percent still left and the
-plan's `value_multiplier` — the same figure `--json` reports as `value_at_risk_usd`.
-The score is that dollar amount log-scaled onto the band's range (6 points per
-decade, $0.01 at the band's floor to $100 at its ceiling), so 5% left of a $200
-plan's weekly window ($3.45) outranks 1% left of a $20 one ($0.07), and a weekly
-window outranks the same percent of a 5-hour one. The band's older signal only
-breaks ties: recovery speed in `slow`, the analyzer score in `mid` and `use`. A
-window whose length is neither reported nor named in its label has no refill to
-price and sits at its band's floor. Plan tier is not detected, so each provider
-defaults to its lowest tier: set `[plans.claude] monthly_price = 200` for Max, or
+much money is at risk in the pool's window, log-scaled onto the band's range (6
+points per decade, $0.01 at the band's floor to $100 at its ceiling). A window is
+priced from the plan's `monthly_price` in `[plans.<provider>]`, spread over the
+window's refills per waking month (16 waking hours a day by default, so a 5-hour
+window is 1/97 of the month and a weekly one about a third) and scaled by the
+plan's `value_multiplier`. Two figures come out of that price:
+
+- **Capacity** is what is still unspent now: the refill's value times the percent
+  still left — the figure `--json` reports as `value_at_risk_usd`. `slow` rows rank
+  by capacity, so 5% left of a $200 plan's weekly window ($3.45) outranks 1% left
+  of a $20 one ($0.07), and a weekly window outranks the same percent of a 5-hour
+  one.
+- **Projected waste** is what the window's pace says will still be unspent when it
+  resets: the pace's `projected_waste_fraction` times a full refill (for a priced
+  account, `--json`'s `pace.projected_waste_usd`). `mid` and `use` rows rank by
+  it, so an imminent reset with real waste outranks a big window with days left: a
+  $20 Claude plan's 5-hour window with 20 minutes to go and two thirds of it
+  unspent ($0.20) outranks a weekly window that is exactly on pace ($0), though
+  that weekly window holds $3.45. A window with no pace to project (no reset time)
+  keeps its capacity, the most it could lose. A window the analyzer raised no
+  alert for is paced by the board the same way.
+
+The band's older signal only breaks ties: recovery speed in `slow`, the analyzer
+score in `mid` and `use`. A window whose length is neither reported nor named in
+its label has no refill to price and sits at its band's floor. Plan tier is not
+detected, so each provider defaults to its lowest tier: set
+`[plans.claude] monthly_price = 200` for Max, or
 `[plans.claude."me@x.com"] monthly_price = 200` for one account (the account value
 wins). For ordering, a provider with no price is valued at the cheapest configured
 plan; it still shows no dollar figure.
+
+`aiuse suggest`, the JSON `suggestion` and the `use:` head of `aiuse status` name
+the burn the board ranks last — the bottom `use` row, else the bottom `mid` row a
+burn alert backs — not the loudest analyzer score.
 
 Green (`use`) is capacity to burn now before it resets; red is capacity
 already lost (`empty`, including a zero/negative prepaid balance) or a source

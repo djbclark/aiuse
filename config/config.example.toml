@@ -164,13 +164,16 @@
 # monthly_price = 10
 
 # monthly_price prices the dollars at risk in a window: the price spread over the
-# window's refills per waking month, x percent left, x value_multiplier. That one
-# figure also orders the `slow`, `mid` and `use` bands (log-scaled, so a weekly
-# window of a $200 plan outranks the same percent of a $20 one, and a weekly window
-# outranks a 5-hour one). Plan tier is not detected, so the built-in default is each
-# provider's lowest tier; override it per provider or, for accounts on different
-# tiers, per account (the account value wins, in the dollar figures too). A provider
-# with no price shows no dollars and is ordered as the cheapest configured plan.
+# window's refills per waking month, x value_multiplier. Those dollars also order
+# the `slow`, `mid` and `use` bands (log-scaled): `slow` by what is still unspent
+# (x percent left), `mid` and `use` by what the window's pace projects to expire
+# unspent at its reset, so an imminent reset with real waste outranks a big window
+# with days left. A weekly window of a $200 plan outranks the same share of a $20
+# one, and a weekly window outranks a 5-hour one. Plan tier is not detected, so the
+# built-in default is each provider's lowest tier; override it per provider or, for
+# accounts on different tiers, per account (the account value wins, in the dollar
+# figures too). A provider with no price shows no dollars and is ordered as the
+# cheapest configured plan.
 # [plans.claude]
 # monthly_price = 200
 #

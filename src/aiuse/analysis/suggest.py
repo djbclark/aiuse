@@ -4,27 +4,26 @@ from __future__ import annotations
 
 from typing import Any
 
+from aiuse.analysis.ranking import _Pricing, alert_sort_key
 from aiuse.models import Urgency, UseOrLoseAlert, provider_display_name
 
 
-def pick_suggestion(alerts: list[UseOrLoseAlert]) -> UseOrLoseAlert | None:
+def pick_suggestion(alerts: list[UseOrLoseAlert], config: dict[str, Any] | None = None) -> UseOrLoseAlert | None:
     """Return the best **burn** alert, or None if nothing is urgent to use.
 
     Conserve alerts mean slow down — they never win as “use next.”
     INFO / prepaid inventory never wins.
+
+    Among the burns that qualify, the winner is the one the board ranks highest:
+    the highest band, then the board's own priority within it (dollars projected
+    to expire unspent; ``analysis.ranking``), priced from ``config`` as the board
+    prices its rows.  So the suggestion is the board's top actionable row.
     """
     burns = [a for a in alerts if a.kind == "burn" and a.urgency not in (Urgency.INFO, Urgency.NONE)]
     if not burns:
         return None
-    # Higher score first; sooner reset and more remaining as tie-breakers.
-    return max(
-        burns,
-        key=lambda a: (
-            float(a.score),
-            -(float(a.days_until_reset) if a.days_until_reset is not None else 99.0),
-            float(a.remaining_percent),
-        ),
-    )
+    pricing = _Pricing.from_config(config)
+    return max(burns, key=lambda a: alert_sort_key(a, pricing))
 
 
 def suggestion_to_dict(alert: UseOrLoseAlert | None) -> dict[str, Any] | None:

@@ -825,7 +825,8 @@ def test_default_report_is_clock_matrix():
 
 def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
     """Sooner high-score burn sorts below a later lower-score burn (tags may match)."""
-    from aiuse.report import _alert_queue_priority, alert_use_urgency, render_priority_ladder
+    from aiuse.analysis.ranking import _alert_queue_priority, alert_use_urgency
+    from aiuse.report import render_priority_ladder
 
     later = UseOrLoseAlert(
         urgency=Urgency.HIGH,
@@ -1441,10 +1442,10 @@ def test_negative_prepaid_is_empty_band():
 
 def test_deepseek_prepaid_has_no_use_urgency():
     """Deepseek CodexBar row is prepaid tokens — not '100% left · use before reset'."""
+    from aiuse.analysis.ranking import alert_use_urgency
     from aiuse.models import BillingKind, QuotaWindow
     from aiuse.report import (
         _account_use_urgency,
-        alert_use_urgency,
         render_priority_ladder,
     )
 

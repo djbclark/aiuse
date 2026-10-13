@@ -65,16 +65,29 @@ Default parameters: see `policy/pace_defaults.yaml`.
 ## Bands (B1–B2)
 
 - **B1:** Sort by band lane first (`error` → `empty` → `n_a` → `slow` → `mid` → `use`), then score.
-  Within `slow`, `mid` and `use`, score (25-49 / 50-74 / 75-99, log-scaled) is capacity: the dollars at risk
-  in the row's window, `monthly_price / max(refills per waking month, 1) x remaining% x value_multiplier`
-  (a per-account price beats the provider's; a window of unknown length has none). The band's older
-  signal breaks ties: recovery speed in `slow`, the analyzer score in `mid` and `use`.
+  Within `slow`, `mid` and `use`, score (25-49 / 50-74 / 75-99, log-scaled over $0.01–$100) is the row's
+  dollars at risk, in two figures that share one price (a per-account price beats the provider's; a window
+  of unknown length has none). The band's older signal breaks ties: recovery speed in `slow`, the analyzer
+  score (then remaining capacity, then sooner reset) in `mid` and `use`.
+  - **capacity**, what is still unspent in the row's window now:
+    `monthly_price / max(refills per waking month, 1) x remaining% x value_multiplier`. `slow` ranks by it.
+  - **projected waste**, what the pace says will still be unspent at the reset: `projected_waste_fraction`
+    (P7) `x` the cycle value, the capacity figure at 100% remaining. `mid` and `use` rank by it, so an
+    imminent reset with real waste outranks a big window with days left. A row with no
+    `projected_waste_fraction` (no reset time or duration, P3/W1; an alert that carries no pace) ranks by its
+    capacity instead, the most it could lose. A window with no alert is paced the same way (P1–P7, no
+    learned rate).
 - **B2:** Never promote prepaid into `use`/`slow` from remaining% alone.
 
-## Suggestion (G1)
+## Suggestion (G1–G2)
 
 - **G1:** Only `burn` alerts with non-info urgency are suggestion-eligible.
   Conserve never wins. Null suggestion = nothing urgent.
+- **G2:** Among the eligible, the suggestion is the alert the board ranks last (most actionable): the
+  highest band, then the highest B1 priority within it, then the provider/account name the board sorts
+  by. The board and the suggestion share this one ordering, so the suggestion is the board's top
+  actionable row whenever an eligible alert backs that row (changed 2026-10-13; the winner used to be
+  the highest analyzer score).
 
 ## Health probe (H1)
 

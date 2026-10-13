@@ -1,16 +1,22 @@
-"""Every active band orders by capacity: dollars at risk in the row's window (aiuse-b31).
+"""Every active band orders by dollars at risk in the row's window (aiuse-b31).
 
 Capacity is ``price / max(refills per waking month, 1) x remaining% x multiplier``
 -- the analyzer's value-at-risk -- so a 5-hour window is worth far less than a
 weekly one, and a percent of a $200 plan far more than a percent of a $20 one.
 Slow, mid and use each log-scale it onto their own score range; the band's old
 signal (readiness, analyzer score, soft urgency) only breaks ties.
+
+Slow rows lead with capacity.  Mid and use rows lead with the dollars their pace projects to
+expire unspent and fall back to capacity when the row has no pace: the alerts built here carry
+none, and the unalerted windows are paced by the board itself (test_urgency_rank.py covers
+alerts that carry a pace).
 """
 
 from datetime import timedelta
 
 import pytest
 
+from aiuse.analysis.ranking import _alert_queue_priority, _Pricing
 from aiuse.models import (
     AccountUsage,
     BillingKind,
@@ -21,9 +27,7 @@ from aiuse.models import (
     utcnow,
 )
 from aiuse.report import (
-    _alert_queue_priority,
     _build_matrix_rows,
-    _Pricing,
     _queue_score,
     render_priority_ladder,
 )
@@ -253,15 +257,18 @@ def test_a_pool_collapses_onto_its_most_valuable_burn_and_most_restrictive_conse
     assert slow_row.band == _BAND_SLOW and slow_row.queue_score == 25 + 12  # $3.45 would score 25 + 15
 
 
-def test_unalerted_mid_rows_order_by_capacity_then_soft_urgency():
+def test_unalerted_mid_rows_order_by_projected_waste():
+    # An unalerted row carries no pace, so the board measures it: half used with 3 of 7 days
+    # elapsed projects 12.5% of the window unspent at its reset.  That share of a full weekly
+    # refill is what the row is worth (capacity, $34.49 / $3.45 / $1.72, is not).
     snapshot = Snapshot(
         collected_at=utcnow(),
         accounts=[
-            _account("claude", "max@x.com", ("weekly", 50.0, 3.0, WEEKLY)),  # $34.49
-            _account("claude", "pro@x.com", ("weekly", 50.0, 3.0, WEEKLY)),  # $3.45
-            _account("copilot", None, ("weekly", 50.0, 3.0, WEEKLY)),  # $1.72
-            # $1.72, but further from its reset: the soft urgency tie-break sorts it first.
-            _account("copilot", "late@x.com", ("weekly", 50.0, 6.0, WEEKLY)),
+            _account("claude", "max@x.com", ("weekly", 50.0, 3.0, WEEKLY)),  # 12.5% of $68.99 = $8.62
+            _account("claude", "pro@x.com", ("weekly", 50.0, 3.0, WEEKLY)),  # 12.5% of $6.90 = $0.86
+            _account("copilot", None, ("weekly", 50.0, 3.0, WEEKLY)),  # 12.5% of $3.45 = $0.43
+            # Half used 1 of 7 days in: on course to run dry well before the reset, nothing to lose.
+            _account("copilot", "late@x.com", ("weekly", 50.0, 6.0, WEEKLY)),  # $0
         ],
     )
     rows = _rows([], CLAUDE_PLANS, snapshot)
@@ -272,7 +279,22 @@ def test_unalerted_mid_rows_order_by_capacity_then_soft_urgency():
         ("claude", "pro@x.com"),
         ("claude", "max@x.com"),
     ]
-    assert [r.queue_score for r in rows] == [63, 63, 65, 71]
+    assert [r.queue_score for r in rows] == [50, 60, 62, 68]
+
+
+def test_unalerted_mid_rows_with_equal_waste_fall_back_to_soft_urgency():
+    # Untouched windows project all of their value as waste whatever the days left, so the dollars
+    # tie; the soft urgency (percent left x deadline pressure) then puts the later reset first.
+    snapshot = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            _account("copilot", "soon@x.com", ("weekly", 100.0, 3.0, WEEKLY)),
+            _account("copilot", "late@x.com", ("weekly", 100.0, 6.0, WEEKLY)),
+        ],
+    )
+    rows = _rows([], CLAUDE_PLANS, snapshot)
+    assert [r.account_full for r in rows] == ["late@x.com", "soon@x.com"]
+    assert rows[0].queue_score == rows[1].queue_score
 
 
 def test_unalerted_mid_row_without_a_window_sits_at_the_mid_floor():

@@ -4,9 +4,10 @@ from datetime import timedelta
 
 import pytest
 
+from aiuse.analysis.ranking import _alert_queue_priority, _Pricing
 from aiuse.config import DEFAULT_CONFIG, load_config, plan_monthly_price, validate_config
 from aiuse.models import PaceProfile, Urgency, UseOrLoseAlert, provider_display_name, utcnow
-from aiuse.report import _alert_queue_priority, _build_matrix_rows, _Pricing, _queue_score
+from aiuse.report import _build_matrix_rows, _queue_score
 
 # A weekly window is this share of the 16-waking-hours-a-day month its price is spread over.
 WEEKLY_SHARE = 10080 / (16 * 30.44 * 60)

@@ -236,8 +236,9 @@ def test_blank_openusage_claude_falls_through_to_acp():
 
 
 def test_matrix_context_only_row_is_not_a_plan_clock():
+    from aiuse.analysis.ranking import _BAND_NA
     from aiuse.models import ContextUsage
-    from aiuse.report import _BAND_NA, _build_matrix_rows
+    from aiuse.report import _build_matrix_rows
 
     row = AccountUsage(
         source="acp",

@@ -92,6 +92,15 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### 2026-10-13: `suggestion` follows board order (schema stays 1.2)
+
+A meaning change, not a shape change: no field was added, renamed or removed, so under the
+[stability policy](#stability-policy) the schema version does not move. `suggestion` used to be the
+burn alert with the highest analyzer `score`; it is now the burn alert the `aiuse` board ranks
+highest (see [`suggestion`](#suggestion-optional-top-level)). A consumer that treats
+`suggestion.score` as the reason the window won should read `alerts[].pace.projected_waste_usd`
+instead.
+
 #### Schema 1.2 (2026-10-12)
 
 - Added `pace_percent` (`int | null`), `pace_ratio` (`float | null`), and `pace_early` (`bool`) to `windows[]` (`QuotaWindow`).
@@ -223,6 +232,16 @@ operator script reads it). Enriched fields (`state`, `usable_now`,
 Single best **burn** window to use next, or `null` when there is nothing
 urgent. Prefer this over re-ranking `alerts[]` in scripts. Also available via
 `aiuse suggest` (human one-liner) / `aiuse suggest --json`.
+
+**Which window wins** (changed 2026-10-13; the shape below is unchanged). The winner is the burn
+alert the board ranks highest: the table's bottom row among those a burn alert backs, not the alert
+with the highest `score`. That is the highest band first (`use`, then `mid`), then the most
+dollars projected to expire unspent (`pace.projected_waste_fraction` × the value of one full refill
+of that window, priced per account like `value_at_risk_usd`; an alert with no pace ranks by the
+dollars it still holds), then the analyzer `score`, then the remaining percent, then the sooner
+reset. Eligibility is unchanged: only `burn` alerts with urgency above `info` qualify, so
+conserve, info and prepaid alerts never win. `score` stays the analysis score; it no longer picks
+the winner.
 
 | Field               | Type           | Notes                       |
 | ------------------- | -------------- | --------------------------- |
@@ -600,6 +619,8 @@ otherwise `resets_at` stays `null`:
 
 - **Additive fields** may appear without a major version bump (new optional keys).
 - **Renames / removals** of listed stable keys require a major version bump and README note.
+- **Meaning changes** that leave a field's shape alone (such as which window `suggestion` names) keep
+  the schema version and are recorded in the Changelog.
 - Message strings and pretty report layout are **not** a contract — use structured fields.
 - Provider id strings may gain new values as collectors expand; treat unknown providers as pass-through.
 

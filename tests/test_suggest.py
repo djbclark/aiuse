@@ -23,6 +23,7 @@ def _burn(score: float, rem: float = 80.0, provider: str = "claude") -> UseOrLos
 
 
 def test_pick_suggestion_prefers_highest_burn_score():
+    # Same plan price, window and remaining% (equal dollars at risk): the analyzer score breaks the tie.
     alerts = [
         _burn(40, provider="codex"),
         _burn(90, provider="claude"),
