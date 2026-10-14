@@ -896,12 +896,63 @@ def test_providers_filter_skips_clinepass_collector(monkeypatch):
 
 
 def test_generate_config_includes_collectors_section(monkeypatch, tmp_path):
-    from aiuse.config import generate_user_config
+    from aiuse.config import KNOWN_COLLECTOR_KEYS, generate_user_config
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     result = generate_user_config()
     path = Path(result["created"][0])
     text = path.read_text(encoding="utf-8")
-    assert "[collectors]" in text
-    assert "codexbar" in text
-    assert "clinepass" in text
+    assert "[collectors]\n" not in text
+    for name in KNOWN_COLLECTOR_KEYS:
+        assert f"[collectors.{name}]" in text, name
+    codexbar = text.split("[collectors.codexbar]", 1)[1].split("[collectors.", 1)[0]
+    assert "enabled = true" in codexbar
+    assert 'providers = "enabled"' in codexbar
+    clinepass = text.split("[collectors.clinepass]", 1)[1].split("[collectors.", 1)[0]
+    assert "enabled = true" in clinepass
+    grok_billing = text.split("[collectors.grok_billing]", 1)[1].split("[collectors.", 1)[0]
+    assert "enabled = false" in grok_billing
+
+
+def test_cursor_matrix_total_scope_label():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+    from aiuse.models import Snapshot
+    from aiuse.report import render_clock_matrix
+
+    row = json.loads((_FIXTURE_DIR / "codexbar_cursor_web.json").read_text(encoding="utf-8"))[0]
+    acc = _from_row(row)
+    snap = Snapshot(collected_at=datetime.now(UTC), accounts=[acc])
+    text = render_clock_matrix([], snapshot=snap, color=False, width=160)
+    total_line = next(line for line in text.splitlines() if " total " in f" {line} ")
+    assert " total " in total_line
+    assert " — " not in total_line.split("SCOPE", 1)[-1][:20]
+
+
+def test_cursor_json_ondemand_usd_and_window_ids():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    row = json.loads((_FIXTURE_DIR / "codexbar_cursor_web.json").read_text(encoding="utf-8"))[0]
+    acc = _from_row(row)
+    payload = enrich_snapshot(
+        {
+            "collected_at": datetime.now(UTC).isoformat(),
+            "accounts": [acc.to_dict()],
+        }
+    )
+    account = payload["accounts"][0]
+    uc = account["usage_credits"]
+    assert uc["used"] == 0
+    assert uc["limit"] == 2
+    assert uc["currency"] == "USD"
+    assert uc["resets_at"] == "2026-11-10T00:46:08+00:00"
+    by_id = {w["window_id"]: w for w in account["windows"]}
+    assert set(by_id) >= {"primary", "secondary", "tertiary", "on-demand"}
+    for window in account["windows"]:
+        assert window.get("window_id")
+        assert window.get("resets_at")
+    on_demand = by_id["on-demand"]
+    assert on_demand["used"] == 0
+    assert on_demand["limit"] == 2
+    assert on_demand["currency"] == "USD"
+    assert on_demand["refill_capacity"] == 2
+    assert on_demand["refill_capacity_unit"] == "usd"

@@ -199,6 +199,16 @@ def enrich_account(
     windows = [w for w in (account.get("windows") or []) if isinstance(w, dict)]
     for window in windows:
         enrich_window(window, provider=provider)
+    uc = account.get("usage_credits")
+    if isinstance(uc, dict) and provider == "cursor":
+        for window in windows:
+            if str(window.get("window_id") or "").casefold() != "on-demand":
+                continue
+            for key in ("used", "limit", "currency"):
+                if uc.get(key) is not None:
+                    window[key] = uc[key]
+            if uc.get("resets_at") and not window.get("resets_at"):
+                window["resets_at"] = uc["resets_at"]
     account["windows"] = windows
 
     for note in notes or []:

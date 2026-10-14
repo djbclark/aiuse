@@ -309,6 +309,21 @@ def pool_scope_label(pool_id: str | None) -> str | None:
     return POOL_SCOPE_LABELS.get(pool_id, pool_id)
 
 
+def matrix_pool_scope(pool_id: str, pool: list[QuotaWindow] | None = None) -> str:
+    """SCOPE column label for a matrix/ladder pool row."""
+    if pool_id:
+        return POOL_SCOPE_LABELS.get(pool_id, pool_id)
+    if pool:
+        for window in pool:
+            wid = (window.window_id or "").strip().casefold()
+            if wid == "primary":
+                return "total"
+            label = (window.label or "").strip().casefold()
+            if label in ("total", "cursor included"):
+                return "total"
+    return "—"
+
+
 def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWindow]]:
     """Group windows into hard-separated allotment pools.
 

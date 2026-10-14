@@ -661,6 +661,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                             resets_at=parse_dt(provider_cost.get("resetsAt")),
                             window_minutes=43200,
                             reset_description=f"On-demand ${cost_used:.2f} / ${cost_limit:.2f}",
+                            refill_capacity=cost_limit,
+                            refill_capacity_unit="usd",
                             raw=provider_cost,
                         )
                     )
