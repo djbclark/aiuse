@@ -1608,6 +1608,25 @@ def _row_from_alert(
     return row
 
 
+def _show_alignment_arrow(row: _MatrixRow) -> bool:
+    """Whether a trailing ``<-`` belongs after this row's fixed columns.
+
+    The marker is column alignment, not an alert: it points back at a leading
+    run of clocks (5H, or 5H+WEEK) that stops before MONTH, and only when the
+    row has a pace reading to sit beside. A weekly-only pool (Cursor grok-bot)
+    is not that run — the arrow would land after its pace and read as an alert.
+    A row with no pace at all does not get one either.
+    """
+    present = [idx for idx, (key, _label) in enumerate(CLOCK_COLUMNS) if row.clocks.get(key) is not None]
+    if not present or present != list(range(present[-1] + 1)):
+        return False
+    if present[-1] >= len(CLOCK_COLUMNS) - 1:
+        return False
+    if row.pace_percent is not None:
+        return True
+    return any(cell.pace_percent is not None for cell in row.clocks.values())
+
+
 def _cell_color(s: _Style, used: float) -> Any:
     """Fuller bucket → hotter color. Neutral about good/bad — the band tag judges."""
     if used >= 99.0:
@@ -1752,7 +1771,6 @@ def render_clock_matrix(
 
         tail: list[str] = []
         row_exhausted = False
-        present_indices = [idx for idx, (k, _) in enumerate(CLOCK_COLUMNS) if row.clocks.get(k) is not None]
         for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
             w_clock = w_clocks[idx]
@@ -1790,7 +1808,7 @@ def render_clock_matrix(
         if layout.show_value:
             value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
             tail.append(f"{value_text:>{w_value}}")
-        if present_indices and max(present_indices) < len(CLOCK_COLUMNS) - 1:
+        if _show_alignment_arrow(row):
             tail.append(s.dim("<-"))
         if row_exhausted:
             tail.append(s.red(s.bold("EXHAUSTED")))
