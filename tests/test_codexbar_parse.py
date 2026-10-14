@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import threading
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.codexbar import _from_row, _normalize_providers, _parse_enabled_providers, _query_providers
 from aiuse.models import BillingKind, QuotaWindow, infer_window_clock
+
+_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def test_parse_clinepass_named_windows():
@@ -664,6 +669,7 @@ def test_parse_cursor_included_auto_other_models_and_ondemand():
         "Cursor included",
         "Cursor Auto",
         "Cursor other models",
+        "On-demand",
     ]
     assert all(w.resets_at is not None for w in acc.windows)
     assert abs((acc.windows[0].remaining_percent or 0) - (100 - 61.35942028985507)) < 0.01
@@ -674,11 +680,7 @@ def test_parse_cursor_included_auto_other_models_and_ondemand():
     assert abs((acc.usage_credits.remaining or 0) - 0.53) < 0.001
     assert any("On-demand" in n for n in acc.notes)
 
-    # Parse → use-or-lose: Other Models is a monthly window, not prepaid inventory.
-    # Fixture resetsAt is a fixed historical timestamp; move windows into the future
-    # so analyze_use_or_lose (which uses utcnow()) still sees an open window.
-    from datetime import UTC, datetime, timedelta
-
+    # Parse → use-or-lose: monthly windows, not prepaid inventory.
     from aiuse.analysis.use_or_lose import analyze_use_or_lose
     from aiuse.models import Snapshot
 
@@ -696,10 +698,13 @@ def test_parse_cursor_included_auto_other_models_and_ondemand():
         "plans": {},
     }
     alerts = analyze_use_or_lose(snap, cfg)
-    other = [a for a in alerts if a.window_label == "Cursor other models"]
-    assert len(other) == 1
-    assert other[0].kind == "conserve"
+    # Third Party is a breakdown row (window_id tertiary), not its own scored pool.
+    assert not [a for a in alerts if a.window_label == "Cursor other models"]
     assert all(a.kind != "prepaid" for a in alerts)
+    on_demand = [w for w in acc.windows if w.window_id == "on-demand"]
+    assert len(on_demand) == 1
+    assert on_demand[0].label == "On-demand"
+    assert all(w.window_id in ("primary", "secondary", "tertiary", "on-demand") for w in acc.windows[:4])
 
 
 def test_antigravity_unnamed_slots_get_the_same_pool_names_as_titled_windows():
@@ -821,3 +826,82 @@ def test_collect_codexbar_never_queries_disabled_services(monkeypatch):
 
     assert queried == ["codex"]
     assert {account.provider for account in accounts} == {"codex"}
+
+
+def test_parse_cursor_web_fixture_pools_and_ondemand():
+    from aiuse.analysis.pace import CURSOR_GROK_BOT_WINDOW_ID, partition_independent_pools, pool_key_for_window
+
+    row = json.loads((_FIXTURE_DIR / "codexbar_cursor_web.json").read_text(encoding="utf-8"))[0]
+    acc = _from_row(row)
+    assert acc.provider == "cursor"
+    by_id = {w.window_id: w for w in acc.windows}
+    assert by_id["primary"].label == "Total"
+    assert abs(by_id["primary"].used_percent - 9.331160896130346) < 0.001
+    assert by_id["primary"].resets_at == datetime.fromisoformat("2026-11-10T00:46:08+00:00")
+    assert by_id["secondary"].label == "auto"
+    assert abs(by_id["secondary"].used_percent - 9.270833333333334) < 0.001
+    assert by_id["tertiary"].label == "Third Party"
+    assert abs(by_id["tertiary"].used_percent - 11.963636363636363) < 0.001
+    grok = next(w for w in acc.windows if w.window_id == CURSOR_GROK_BOT_WINDOW_ID)
+    assert grok.label == "Grok Bot"
+    assert abs(grok.used_percent - 28.458438) < 0.001
+    assert grok.window_minutes == 10080
+    assert grok.resets_at == datetime.fromisoformat("2026-10-17T21:57:39+00:00")
+    assert pool_key_for_window(grok) == "cursor_grok"
+    pools = partition_independent_pools(acc.windows)
+    pool_keys = {pool_key_for_window(w) for pool in pools for w in pool}
+    assert "cursor_grok" in pool_keys
+    assert pool_key_for_window(by_id["primary"]) == ""
+    assert pool_key_for_window(by_id["secondary"]) == "cursor_auto"
+    assert pool_key_for_window(by_id["tertiary"]) == "cursor_third_party"
+    assert acc.usage_credits is not None
+    assert acc.usage_credits.used == 0
+    assert acc.usage_credits.limit == 2
+    on_demand = by_id["on-demand"]
+    assert on_demand.label == "On-demand"
+    assert on_demand.used_percent == 0.0
+
+
+def test_cursor_grok_bot_matches_on_id_not_title():
+    from aiuse.analysis.pace import CURSOR_GROK_BOT_WINDOW_ID, pool_key_for_window
+
+    row = json.loads((_FIXTURE_DIR / "codexbar_cursor_web.json").read_text(encoding="utf-8"))[0]
+    row["usage"]["extraRateWindows"][0]["title"] = "Renamed By Cursor UI"
+    acc = _from_row(row)
+    grok = next(w for w in acc.windows if w.window_id == CURSOR_GROK_BOT_WINDOW_ID)
+    assert grok.label == "Renamed By Cursor UI"
+    assert pool_key_for_window(grok) == "cursor_grok"
+
+
+def test_providers_filter_skips_clinepass_collector(monkeypatch):
+    from aiuse.collectors.runner import run_collectors
+
+    clinepass_ran: list[bool] = []
+
+    def fake_clinepass(**_kw):
+        clinepass_ran.append(True)
+        return []
+
+    monkeypatch.setattr("aiuse.collectors.runner.collect_clinepass", fake_clinepass)
+    monkeypatch.setattr("aiuse.collectors.runner.collect_codexbar", lambda **_kw: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_caut", lambda **_kw: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_caam", lambda **_kw: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_ai", lambda **_kw: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_openusage_sh", lambda **_kw: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_tokscale", lambda **_kw: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_acp", lambda **_kw: [])
+
+    run_collectors({"collectors": {"codexbar": {"providers": "cursor"}, "clinepass": {"enabled": True}}})
+    assert clinepass_ran == []
+
+
+def test_generate_config_includes_collectors_section(monkeypatch, tmp_path):
+    from aiuse.config import generate_user_config
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    result = generate_user_config()
+    path = Path(result["created"][0])
+    text = path.read_text(encoding="utf-8")
+    assert "[collectors]" in text
+    assert "codexbar" in text
+    assert "clinepass" in text
