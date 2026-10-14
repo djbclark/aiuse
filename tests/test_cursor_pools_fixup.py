@@ -9,7 +9,13 @@ import pytest
 
 from aiuse.analysis.history import compute_learned_burn_rates
 from aiuse.analysis.pace import compute_pace
-from aiuse.analysis.selfdescribe import SCHEMA_VERSION, apply_exclusions, enrich_snapshot
+from aiuse.analysis.selfdescribe import (
+    SCHEMA_VERSION,
+    apply_exclusions,
+    available_pools,
+    enrich_snapshot,
+    summary_line,
+)
 from aiuse.chat_format import render_chat_report
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 from aiuse.report import render_report
@@ -90,6 +96,35 @@ def test_chat_shows_ceiling_binding_note():
     snap = Snapshot(collected_at=_now(), accounts=[_cursor_account(auto_used=30.0, total_used=71.0)])
     text = render_chat_report(snap, [], config={})
     assert "total binds" in text
+
+
+def test_available_cursor_breakdown_cap_within_total_monthly():
+    data = _cursor_fixture_dict()
+    auto_pool = next(p for p in available_pools(data) if p.get("pool_family") == "auto")
+    third_pool = next(p for p in available_pools(data) if p.get("pool_family") == "third_party")
+    auto_line = summary_line(auto_pool)
+    third_line = summary_line(third_pool)
+    assert "[cap within total (monthly)]" in auto_line
+    assert "[cap within total (monthly)]" in third_line
+    assert "shared weekly" not in auto_line
+    assert "shared weekly" not in third_line
+
+
+def test_grok_bot_models_hint():
+    data = _cursor_fixture_dict()
+    data["accounts"][0]["windows"].append(
+        {
+            "label": "grok-bot",
+            "window_id": "cursor-grok-bot",
+            "used_percent": 5.0,
+            "remaining_percent": 95.0,
+            "resets_at": (_now() + timedelta(days=3)).isoformat(),
+            "window_minutes": 10080,
+        }
+    )
+    enriched = enrich_snapshot(data)
+    grok = next(w for w in enriched["accounts"][0]["windows"] if w.get("pool_family") == "grok_bot")
+    assert grok["models_hint"] == "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"
 
 
 def test_available_hides_ceiling_and_hidden_pools(tmp_path, monkeypatch, capsys):

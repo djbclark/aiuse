@@ -95,8 +95,8 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     ],
     "cursor": [
         ("on-demand", "on_demand", "Cursor on-demand dollar cap"),
-        ("grok-bot", "grok_bot", "Cursor Grok Bot weekly allowance (distinct from SuperGrok/xAI)"),
-        ("grok bot", "grok_bot", "Cursor Grok Bot weekly allowance (distinct from SuperGrok/xAI)"),
+        ("grok-bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
+        ("grok bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
         ("auto", "auto", "Cursor Auto/Composer models (breakdown of total)"),
         ("total", "total", "Cursor total monthly usage (ceiling)"),
         ("third party", "third_party", "Cursor third-party models (breakdown)"),
@@ -182,7 +182,7 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
         window["pool_family"] = family
     if provider == "cursor":
         if wid == "cursor-grok-bot" or family == "grok_bot":
-            window["models_hint"] = "Cursor Grok Bot weekly allowance (distinct from SuperGrok/xAI)"
+            window["models_hint"] = "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"
         elif family in ("auto", "third_party"):
             window["quota_scope"] = "model_sublimit"
             window["shared_pool_family"] = "total"
@@ -313,6 +313,9 @@ def _apply_ceiling_caps(provider: str, windows: list[dict[str, Any]]) -> None:
         ceiling_left = window_remaining(ceiling)
         if ceiling_left is None:
             continue
+        from aiuse.models import classify_window_minutes
+
+        ceiling_duration = classify_window_minutes(ceiling.get("window_minutes"))
         for window in windows:
             family = window.get("pool_family")
             if family not in sub_families:
@@ -326,6 +329,8 @@ def _apply_ceiling_caps(provider: str, windows: list[dict[str, Any]]) -> None:
             window["ceiling_window_id"] = ceiling.get("window_id")
             window["ceiling_binding"] = effective < own
             window["role"] = "breakdown"
+            if ceiling_duration:
+                window["ceiling_duration_kind"] = ceiling_duration
             if effective != own:
                 window["headroom_percent"] = effective
 
@@ -528,6 +533,20 @@ def _format_age(seconds: float | None) -> str:
     return f"{days}d{hours:02d}h" if hours else f"{days}d"
 
 
+def _sublimit_cap_fragment(window: Mapping[str, Any]) -> str:
+    """Cap note for model_sublimit rows (Claude Fable vs Cursor ceiling breakdown)."""
+    cap = window.get("max_share_of_parent_percent")
+    if cap is not None:
+        return f" [cap <={cap:g}% of shared weekly]"
+    parent = window.get("shared_pool_family")
+    if parent == "total":
+        duration = window.get("ceiling_duration_kind")
+        if duration:
+            return f" [cap within {parent} ({duration})]"
+        return f" [cap within {parent}]"
+    return " [cap within shared weekly]"
+
+
 def summary_line(pool: Mapping[str, Any]) -> str:
     """`codex 5-hour: EXHAUSTED (100% used / 0% left, resets 15:42); weekly … -> NOT usable now`"""
     provider = str(pool.get("provider") or "?")
@@ -557,8 +576,7 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         pace_text = f", pace {format_pace(pace, pace_early)}" if pace is not None else ""
         seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{pace_text}{_reset_fragment(window.get('resets_at'))})"
         if window.get("quota_scope") == "model_sublimit":
-            cap = window.get("max_share_of_parent_percent")
-            seg += f" [cap <={cap:g}% of shared weekly]" if cap is not None else " [cap within shared weekly]"
+            seg += _sublimit_cap_fragment(window)
         if window.get("state_source") == "agent-reported":
             seg += " [agent-reported]"
         segments.append(seg)

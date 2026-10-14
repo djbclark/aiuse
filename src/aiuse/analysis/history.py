@@ -1186,6 +1186,26 @@ def history_insights(
     return out
 
 
+def format_learned_burn_rate_label(key: str) -> str:
+    """Human label for a learned-burn series key (``provider:pool:duration``)."""
+    from aiuse.analysis.pace import pool_scope_label
+    from aiuse.models import provider_display_name
+
+    parts = key.split(":")
+    if len(parts) < 3:
+        return key
+    provider_slug = parts[0]
+    duration = parts[-1]
+    pool_slug = ":".join(parts[1:-1])
+    name = provider_display_name(provider_slug)
+    scope = pool_scope_label(pool_slug)
+    if scope and pool_slug != "-":
+        return f"{name} {scope} ({duration})"
+    if pool_slug not in ("", "-"):
+        return f"{name} {pool_slug.replace('_', ' ')} ({duration})"
+    return f"{name} ({duration})"
+
+
 def history_section_lines(
     snapshot: Snapshot,
     *,
@@ -1245,9 +1265,8 @@ def history_section_lines(
     if rates:
         lines.append("  Learned burn rates (blended into pace when present):")
         for key, (rate, n) in sorted(rates.items()):
-            provider, _, duration = key.partition(":")
-            name = provider_display_name(provider)
-            lines.append(f"    · {name} {duration}: ~{rate * 100:.0f}%/day ({n} sample{'s' if n != 1 else ''})")
+            label = format_learned_burn_rate_label(key)
+            lines.append(f"    · {label}: ~{rate * 100:.0f}%/day ({n} sample{'s' if n != 1 else ''})")
     else:
         lines.append("  No learned burn rates yet (need enough same-window samples across time).")
 

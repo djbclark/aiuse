@@ -668,6 +668,86 @@ def test_chronic_waste_merges_both_collectors_into_one_series(tmp_path: Path):
         assert rows[0]["sample_count"] == 4
 
 
+def test_format_learned_burn_rate_label():
+    from aiuse.analysis.history import format_learned_burn_rate_label
+
+    assert format_learned_burn_rate_label("cursor:cursor_auto:monthly") == "cursor auto (monthly)"
+    assert format_learned_burn_rate_label("cursor:cursor_total:monthly") == "cursor total (monthly)"
+    assert format_learned_burn_rate_label("codex:-:weekly") == "codex (weekly)"
+
+
+def test_history_section_cursor_learned_burn_rate_labels(tmp_path: Path):
+    now = _now()
+    reset = now + timedelta(days=10)
+
+    def snap(rem_total: float, rem_auto: float, collected_at: datetime) -> dict:
+        return {
+            "collected_at": collected_at.isoformat(),
+            "accounts": [
+                {
+                    "provider": "cursor",
+                    "account": "u@example.com",
+                    "windows": [
+                        {
+                            "label": "total",
+                            "window_id": "primary",
+                            "remaining_percent": rem_total,
+                            "window_minutes": 44640,
+                            "resets_at": reset.isoformat(),
+                        },
+                        {
+                            "label": "auto",
+                            "window_id": "secondary",
+                            "remaining_percent": rem_auto,
+                            "window_minutes": 44640,
+                            "resets_at": reset.isoformat(),
+                        },
+                    ],
+                }
+            ],
+        }
+
+    (tmp_path / "a.json").write_text(json.dumps(snap(80.0, 70.0, now - timedelta(days=1))))
+    (tmp_path / "b.json").write_text(json.dumps(snap(60.0, 50.0, now - timedelta(days=2))))
+
+    current = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="cursor",
+                account="u@example.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="total",
+                        window_id="primary",
+                        remaining_percent=40.0,
+                        resets_at=reset,
+                        window_minutes=44640,
+                    ),
+                    QuotaWindow(
+                        label="auto",
+                        window_id="secondary",
+                        remaining_percent=20.0,
+                        resets_at=reset,
+                        window_minutes=44640,
+                    ),
+                ],
+            )
+        ],
+    )
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        lines = history_section_lines(
+            current,
+            analysis_cfg={"learn_from_history": True, "snapshot_retention_days": 90},
+        )
+    joined = "\n".join(lines)
+    assert "Learned burn rates" in joined
+    assert "cursor auto (monthly)" in joined
+    assert "cursor cursor_auto:monthly" not in joined
+
+
 def test_learned_burn_rates_key_on_canonical_provider(tmp_path: Path):
     """merge_learned_flexibility must find the rate the store wrote."""
     with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
