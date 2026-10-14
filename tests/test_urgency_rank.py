@@ -5,7 +5,8 @@ window that will still be unspent at the reset, priced exactly like capacity (th
 value_multiplier, the cheapest-plan fallback for an unpriced provider).  An imminent reset with real waste
 therefore outranks a big window with days left.  A row with no pace to project keeps its capacity, and slow
 rows lead with capacity as before.  ``suggestion`` (and ``aiuse suggest``, and the status line's burn) is the
-board's top actionable burn: one ordering, shared through ``aiuse.analysis.ranking``.
+board's top actionable burn: one ordering, shared through ``aiuse.analysis.ranking``.  A window still under
+15% elapsed is too early to project, so it keeps its capacity -- the same gate ``classify_pace`` applies.
 """
 
 from datetime import timedelta
@@ -188,23 +189,91 @@ def test_the_same_holds_for_windows_without_an_alert_which_the_board_paces_itsel
     )
 
 
-def test_an_early_window_ranks_by_its_projection_like_any_other():
-    # The analyzer will not call a window under 15% elapsed burn or conserve, but a paced window
-    # projects a waste share all the same, and that share (not its capacity) is what the row is worth.
+def test_an_early_window_keeps_its_capacity_not_a_projection_the_analyzer_refuses():
+    # classify_pace will not call a window under 15% elapsed burn or conserve (min_elapsed_fraction),
+    # so ranking must not lean on that same projection: an early window keeps what it holds now.
+    pricing = _Pricing.from_config(CONFIG)
+    now = utcnow()
+
+    def early(remaining):
+        # 4% into the week, a reading or two in.
+        return QuotaWindow(
+            label="weekly",
+            remaining_percent=remaining,
+            resets_at=now + timedelta(days=7 * 0.96),
+            window_minutes=WEEKLY,
+        )
+
+    # Projected as the analyzer would, 10% used 4% in extrapolates to exhaustion (waste 0, the band
+    # floor).  Gated, each row is worth its capacity instead.
+    for remaining in (90.0, 95.0):
+        assert pricing.window_at_risk_usd("copilot", "a@x.com", early(remaining), now) == pytest.approx(
+            pricing.capacity_usd("copilot", "a@x.com", remaining, WEEKLY, "weekly")
+        )
+    # A real reorder: the fuller window now outranks the emptier one, where the raw projection had
+    # flattened both to the floor.
+    assert pricing.window_at_risk_usd("copilot", "a@x.com", early(95.0), now) > pricing.window_at_risk_usd(
+        "copilot", "a@x.com", early(90.0), now
+    )
+
+
+def test_a_window_past_the_early_threshold_still_ranks_by_its_projection():
+    pricing = _Pricing.from_config(CONFIG)
+    now = utcnow()
+    # 30% used halfway through the week: a settled projection (waste 0.4) is applied as before.
+    paced = QuotaWindow(
+        label="weekly",
+        remaining_percent=70.0,
+        resets_at=now + timedelta(days=7 * 0.5),
+        window_minutes=WEEKLY,
+    )
+    assert pricing.window_at_risk_usd("copilot", "a@x.com", paced, now) == pytest.approx(
+        pricing.at_risk_usd("copilot", "a@x.com", 70.0, WEEKLY, "weekly", 0.4)
+    )
+
+
+def test_an_early_window_ranks_by_its_capacity_on_the_board():
+    # The gate reaches the board: both rows are 4% into the week, where projection says each
+    # empties before its reset.  They rank by capacity now, so the fuller account leads with the
+    # bigger at-risk figure (and the bigger score).
     now = utcnow()
     snapshot = Snapshot(
         collected_at=now,
         accounts=[
-            # 30% used 5% into the week: at that rate it is gone long before the reset.
-            _account(now, "copilot", "fast@x.com", ("weekly", 70.0, 7 * 0.95, WEEKLY)),
-            # Untouched 5% into the week: all of it is still to be lost.
-            _account(now, "copilot", "idle@x.com", ("weekly", 100.0, 7 * 0.95, WEEKLY)),
+            _account(now, "copilot", "fast@x.com", ("weekly", 70.0, 7 * 0.96, WEEKLY)),
+            _account(now, "copilot", "idle@x.com", ("weekly", 100.0, 7 * 0.96, WEEKLY)),
         ],
     )
     rows = _build_matrix_rows([], snapshot, CONFIG)
     assert [r.account_full for r in rows] == ["fast@x.com", "idle@x.com"]
-    assert rows[0].queue_score == 50
+    assert rows[0].queue_score == 64  # $2.42: the unspent 70% of a $10 plan's weekly refill
     assert rows[1].queue_score == 65  # $3.45: the whole weekly refill of a $10 plan
+
+
+def test_an_analyzer_approved_early_burn_still_ranks_by_its_projection():
+    # classify_pace's gate has a carve-out: a short or prioritized window can still be a burn under
+    # 15% elapsed.  An alert carrying that approved pace ranks by it -- the board gates only the
+    # no-alert rows, where nothing vouched for the projection.
+    pricing = _Pricing.from_config(CONFIG)
+    approved = _alert(
+        "claude",
+        "a@x.com",
+        "weekly",
+        WEEKLY,
+        60.0,
+        pace=PaceProfile(
+            elapsed_fraction=0.05,
+            used_fraction=0.4,
+            pace_ratio=8.0,
+            projected_used_fraction=0.6,
+            projected_waste_fraction=0.4,
+            projected_waste_usd=None,
+            projected_exhaust_at=None,
+        ),
+    )
+    assert _alert_queue_priority(approved, pricing=pricing)[0] == pytest.approx(
+        pricing.at_risk_usd("claude", "a@x.com", 60.0, WEEKLY, "weekly", 0.4)
+    )
 
 
 # ── no pace: capacity, as before ─────────────────────────────────────────────────────────────

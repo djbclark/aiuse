@@ -977,7 +977,9 @@ def test_priority_ladder_mid_queue_uses_remaining_capacity_and_deadline():
 
     snapshot = Snapshot(
         collected_at=now,
-        accounts=[account("mid_soon", 90.0, 2.0), account("mid_far", 90.0, 12.0)],
+        # Both past the early gate: a 12-day reset on a 7-day window clamps elapsed to 0, which the
+        # analyzer's min_elapsed_fraction now routes to capacity instead of a projection.
+        accounts=[account("mid_soon", 90.0, 2.0), account("mid_far", 90.0, 5.0)],
     )
     text = render_priority_ladder([], snapshot=snapshot, color=False, width=200)
     assert text.index("Mid_Far") < text.index("Mid_Soon")

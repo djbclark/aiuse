@@ -23,6 +23,7 @@ from aiuse.analysis.use_or_lose import (
 )
 from aiuse.config import DEFAULT_CONFIG, plan_monthly_price
 from aiuse.models import (
+    PaceProfile,
     QuotaWindow,
     Urgency,
     UseOrLoseAlert,
@@ -106,6 +107,11 @@ def _conserve_use_readiness(alert: UseOrLoseAlert) -> float:
 # Last-resort price for a provider with no configured monthly_price and no
 # priced plan anywhere in the config.
 _FALLBACK_PRICE_USD = 10.0
+# A window under this share elapsed is too early to project: `classify_pace`
+# refuses to call it burn or conserve (`analysis.pace.min_elapsed_fraction`),
+# and ranking must not lean on a projection the analysis layer declines to act
+# on.  Default mirrors that config key; `_Pricing.from_config` reads it live.
+_DEFAULT_MIN_ELAPSED_FRACTION = 0.15
 # A queue priority: the band's ordering key first, tie-breakers after it.
 _Priority = tuple[float, ...]
 
@@ -127,6 +133,21 @@ def _lowest_plan_price(plans: dict[str, Any]) -> float:
     return min(prices) if prices else _FALLBACK_PRICE_USD
 
 
+def _gated_waste_fraction(pace: PaceProfile | None, min_elapsed_fraction: float) -> float | None:
+    """A pace's projected waste share, or ``None`` when the window is too early to trust.
+
+    ``classify_pace`` refuses to call a window under ``min_elapsed_fraction``
+    elapsed burn or conserve (``analysis.pace.min_elapsed_fraction``); a row
+    that carries no approving alert must not rank on the very projection the
+    analyzer declined, so it falls back to capacity instead of a waste share.
+    """
+    if pace is None:
+        return None
+    if pace.elapsed_fraction is not None and pace.elapsed_fraction < min_elapsed_fraction:
+        return None
+    return pace.projected_waste_fraction
+
+
 @dataclass(frozen=True)
 class _Pricing:
     """What turns a window into dollars at risk: plan prices and waking hours.
@@ -142,7 +163,9 @@ class _Pricing:
       far less than a weekly one, and a percent of a $200 plan ten of a $20 plan's.
     * **cycle value** -- the same figure at 100% remaining: one full refill.
     * **waste** -- ``projected_waste_fraction x cycle value``: what the window's
-      pace says will still be unspent when it resets.
+      pace says will still be unspent when it resets.  A window too early to
+      project (under ``min_elapsed_fraction`` elapsed, the analyzer's own gate)
+      has no such figure and ranks by capacity, like a row with no pace at all.
 
     ``slow`` rows rank by capacity: they are on course to run dry, so what counts
     is how much they hold.  ``mid`` and ``use`` rows rank by waste, so an imminent
@@ -154,6 +177,7 @@ class _Pricing:
     plans: dict[str, Any]
     waking_hours: float
     fallback_price: float
+    min_elapsed_fraction: float = _DEFAULT_MIN_ELAPSED_FRACTION
 
     @classmethod
     def from_config(cls, config: dict[str, Any] | None) -> _Pricing:
@@ -162,7 +186,15 @@ class _Pricing:
         analysis = cfg.get("analysis")
         analysis = analysis if isinstance(analysis, dict) else {}
         waking = float(analysis.get("waking_hours_per_day", _DEFAULT_WAKING_HOURS))
-        return cls(plans=plans, waking_hours=waking, fallback_price=_lowest_plan_price(plans))
+        pace = analysis.get("pace")
+        pace = pace if isinstance(pace, dict) else {}
+        min_elapsed = float(pace.get("min_elapsed_fraction", _DEFAULT_MIN_ELAPSED_FRACTION))
+        return cls(
+            plans=plans,
+            waking_hours=waking,
+            fallback_price=_lowest_plan_price(plans),
+            min_elapsed_fraction=min_elapsed,
+        )
 
     def capacity_usd(
         self,
@@ -228,13 +260,18 @@ class _Pricing:
         """:meth:`at_risk_usd` for a live window with no alert, paced as the analyzer would.
 
         0.0 when the window reports no remaining.  ``now`` defaults to the wall
-        clock; the board passes its snapshot's collection time.
+        clock; the board passes its snapshot's collection time.  A window under
+        ``min_elapsed_fraction`` elapsed keeps its capacity: the analyzer would
+        not trust its projection (``classify_pace``), so neither does the board.
+        An early window the analyzer *did* approve -- a short or prioritized
+        burn -- arrives as an alert, and ``_alert_queue_priority`` ranks it by
+        the pace that alert carries.
         """
         remaining = window.remaining()
         if remaining is None:
             return 0.0
         pace = compute_pace(window, now=now or utcnow())
-        waste = pace.projected_waste_fraction if pace is not None else None
+        waste = _gated_waste_fraction(pace, self.min_elapsed_fraction)
         return self.at_risk_usd(provider, account, remaining, window.window_minutes, window.label, waste)
 
 

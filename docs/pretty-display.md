@@ -96,9 +96,11 @@ The bands are fixed in that order and each is also a deliberate queue. Read
   expire unspent at the reset rank it, so an imminent reset with real waste
   outranks a big window with days left. An on-pace window the analyzer raised no
   alert for is paced by the board itself; a window with no pace to project (no
-  reset time) keeps its capacity. Ties fall to the analyzer score when there is
-  an alert, else to the soft recommendation (remaining capacity multiplied by
-  reset pressure).
+  reset time) keeps its capacity, and so does one still under 15% elapsed
+  (`analysis.pace.min_elapsed_fraction`) — the analyzer's own gate, so the board
+  never ranks on a projection `classify_pace` declined to act on. Ties fall to
+  the analyzer score when there is an alert, else to the soft recommendation
+  (remaining capacity multiplied by reset pressure).
 - **use** ranks the same way (projected waste, then analyzer score, remaining
   capacity and sooner reset), so the bottom row is the one `aiuse suggest`, the
   JSON `suggestion` and the `use:` head of `aiuse status` name.

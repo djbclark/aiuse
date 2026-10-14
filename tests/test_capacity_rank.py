@@ -267,8 +267,8 @@ def test_unalerted_mid_rows_order_by_projected_waste():
             _account("claude", "max@x.com", ("weekly", 50.0, 3.0, WEEKLY)),  # 12.5% of $68.99 = $8.62
             _account("claude", "pro@x.com", ("weekly", 50.0, 3.0, WEEKLY)),  # 12.5% of $6.90 = $0.86
             _account("copilot", None, ("weekly", 50.0, 3.0, WEEKLY)),  # 12.5% of $3.45 = $0.43
-            # Half used 1 of 7 days in: on course to run dry well before the reset, nothing to lose.
-            _account("copilot", "late@x.com", ("weekly", 50.0, 6.0, WEEKLY)),  # $0
+            # Half used 1.5 of 7 days in: on course to run dry well before the reset, nothing to lose.
+            _account("copilot", "late@x.com", ("weekly", 50.0, 5.5, WEEKLY)),  # $0
         ],
     )
     rows = _rows([], CLAUDE_PLANS, snapshot)
