@@ -141,6 +141,52 @@ def _hide_ceiling_window(account: AccountUsage, window: QuotaWindow, config: dic
     )
 
 
+def _find_account(snapshot: Snapshot | None, provider: str, account: str | None) -> AccountUsage | None:
+    if snapshot is None:
+        return None
+    want = (account or "").casefold()
+    for row in snapshot.accounts:
+        if row.provider == provider and (row.account or "").casefold() == want:
+            return row
+    return None
+
+
+def _skip_hidden_ceiling_alert(
+    snapshot: Snapshot | None,
+    alert: UseOrLoseAlert,
+    config: dict[str, Any] | None,
+) -> bool:
+    """True when a ceiling-only alert should not add a matrix/ladder row."""
+    account = _find_account(snapshot, alert.provider, alert.account)
+    if account is None:
+        return False
+    pool_id = _pool_id_for_label(alert.window_label)
+    return _hide_ceiling_pool_row(account, pool_id, config)
+
+
+def _cursor_matrix_used_percent(
+    account: AccountUsage,
+    window: QuotaWindow,
+    used: float,
+    sublimit_notes: list[str],
+) -> float:
+    """Effective used % for Cursor breakdown rows; append binding notes when capped."""
+    from aiuse.analysis.ceilings import ceiling_binding_note, effective_remaining, window_is_breakdown
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    family = pool_family_id(account.provider, window.label, window.window_id)
+    if not window_is_breakdown(account.provider, family):
+        return used
+    effective_left, binding = effective_remaining(window, account.provider, account.windows)
+    if effective_left is None:
+        return used
+    if binding:
+        note = ceiling_binding_note(window, account.provider, account.windows)
+        if note and note not in sublimit_notes:
+            sublimit_notes.append(note)
+    return max(0.0, 100.0 - effective_left)
+
+
 @dataclass
 class _MatrixRow:
     """One line of the usage table: a single account, or one pool within it.
@@ -1316,6 +1362,8 @@ def _build_matrix_rows(
                     continue
                 if used is None:
                     continue
+                if account.provider == "cursor":
+                    used = _cursor_matrix_used_percent(account, window, used, sublimit_notes)
                 clock, inferred = infer_window_clock(window)
                 days = window.days_until_reset(now)
                 estimated = not window.reset_time_is_precise()
@@ -1413,8 +1461,12 @@ def _build_matrix_rows(
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
             continue
-        key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+        pool_id = _pool_id_for_label(alert.window_label)
+        key = _ladder_coverage_key(alert.provider, alert.account, pool_id)
         if key in covered:
+            continue
+        if _skip_hidden_ceiling_alert(snapshot, alert, cfg):
+            covered.add(key)
             continue
         covered.add(key)
         rows.append(_row_from_alert(alert, now=now, pricing=pricing))

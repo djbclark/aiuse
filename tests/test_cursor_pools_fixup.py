@@ -17,8 +17,8 @@ from aiuse.analysis.selfdescribe import (
     summary_line,
 )
 from aiuse.chat_format import render_chat_report
-from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
-from aiuse.report import render_report
+from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, Urgency, UseOrLoseAlert
+from aiuse.report import render_clock_matrix, render_report
 
 
 def _now() -> datetime:
@@ -96,6 +96,109 @@ def test_chat_shows_ceiling_binding_note():
     snap = Snapshot(collected_at=_now(), accounts=[_cursor_account(auto_used=30.0, total_used=71.0)])
     text = render_chat_report(snap, [], config={})
     assert "total binds" in text
+
+
+def _cursor_matrix_lines(text: str) -> list[str]:
+    """Clock-matrix data rows only (exclude sublimit/binding note continuations)."""
+    bands = {"slow", "mid", "use", "n/a", "error", "empty"}
+    return [line for line in text.splitlines() if line.split() and line.split()[0] in bands]
+
+
+def _total_conserve_alert(*, remaining: float = 29.0) -> UseOrLoseAlert:
+    return UseOrLoseAlert(
+        urgency=Urgency.HIGH,
+        provider="cursor",
+        account="user@example.com",
+        window_label="total",
+        remaining_percent=remaining,
+        days_until_reset=10.0,
+        plan=None,
+        message="conserve total",
+        source="codexbar",
+        score=44.0,
+        kind="conserve",
+        window_minutes=44640,
+    )
+
+
+def test_matrix_hides_total_row_when_breakdown_present_and_alert_on_total():
+    snap = Snapshot(collected_at=_now(), accounts=[_cursor_account()])
+    alerts = [_total_conserve_alert()]
+    config = {"analysis": {"show_total_rows": False}}
+    text = render_clock_matrix(alerts, snapshot=snap, config=config, color=False, width=160)
+    matrix = _cursor_matrix_lines(text)
+    assert not any(" total " in f" {line} " for line in matrix)
+    assert any(" auto " in f" {line} " for line in matrix)
+
+
+def test_matrix_shows_total_when_it_is_the_only_cursor_row():
+    reset = _now() + timedelta(days=10)
+    snap = Snapshot(
+        collected_at=_now(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="cursor",
+                account="user@example.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="total",
+                        window_id="primary",
+                        used_percent=71.0,
+                        remaining_percent=29.0,
+                        resets_at=reset,
+                        window_minutes=44640,
+                    )
+                ],
+            )
+        ],
+    )
+    alerts = [_total_conserve_alert()]
+    text = render_clock_matrix(alerts, snapshot=snap, config={"analysis": {}}, color=False, width=160)
+    assert any(" total " in f" {line} " for line in _cursor_matrix_lines(text))
+
+
+def test_matrix_auto_shows_effective_left_and_binding_note():
+    snap = Snapshot(collected_at=_now(), accounts=[_cursor_account(auto_used=30.0, total_used=71.0)])
+    text = render_clock_matrix([], snapshot=snap, config={"analysis": {}}, color=False, width=160)
+    auto_line = next(line for line in text.splitlines() if " auto " in f" {line} ")
+    assert "71u/29l" in auto_line
+    assert any("total binds" in line for line in text.splitlines())
+
+
+def test_no_tui_board_hides_total_row(tmp_path, monkeypatch, capsys):
+    from aiuse import cli as cli_mod
+
+    snap = Snapshot(collected_at=_now(), accounts=[_cursor_account()])
+    alerts = [_total_conserve_alert()]
+    config = tmp_path / "config.toml"
+    config.write_text("[analysis]\nshow_total_rows = false\n")
+    monkeypatch.setattr(cli_mod, "run_collectors", lambda _c: snap)
+    monkeypatch.setattr(cli_mod, "analyze_use_or_lose", lambda *_a, **_k: alerts)
+    monkeypatch.setattr(cli_mod, "check_dependencies", lambda _c: [])
+    assert cli_mod.main(["--config", str(config), "--providers", "cursor", "--no-tui", "-q"]) == 2
+    out = capsys.readouterr().out
+    matrix = _cursor_matrix_lines(out)
+    assert not any(" total " in f" {line} " for line in matrix)
+    assert any(" auto " in f" {line} " for line in matrix)
+
+
+def test_tui_board_hides_total_row(capsys):
+    from aiuse.tui.app import run_usage_app
+
+    snap = Snapshot(collected_at=_now(), accounts=[_cursor_account()])
+    run_usage_app(
+        snap,
+        [_total_conserve_alert()],
+        config={"analysis": {"show_total_rows": False}},
+        full=False,
+        quiet=True,
+    )
+    out = capsys.readouterr().out
+    matrix = _cursor_matrix_lines(out)
+    assert not any(" total " in f" {line} " for line in matrix)
+    assert any(" auto " in f" {line} " for line in matrix)
 
 
 def test_available_cursor_breakdown_cap_within_total_monthly():

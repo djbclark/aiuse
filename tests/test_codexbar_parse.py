@@ -922,7 +922,8 @@ def test_cursor_matrix_total_scope_label():
     acc = _from_row(row)
     snap = Snapshot(collected_at=datetime.now(UTC), accounts=[acc])
     hidden = render_clock_matrix([], snapshot=snap, color=False, width=160)
-    assert not any(" total " in f" {line} " for line in hidden.splitlines())
+    hidden_rows = [line for line in hidden.splitlines() if line.split() and line.split()[0] in {"slow", "mid", "use"}]
+    assert not any(" total " in f" {line} " for line in hidden_rows)
     shown = render_clock_matrix(
         [],
         snapshot=snap,
