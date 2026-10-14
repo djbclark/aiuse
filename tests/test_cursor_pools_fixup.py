@@ -89,7 +89,7 @@ def test_full_report_shows_ceiling_binding_note():
     snap = Snapshot(collected_at=_now(), accounts=[_cursor_account(auto_used=30.0, total_used=71.0)])
     text = render_report(snap, [], config={}, full=True, color=False)
     assert "total binds" in text
-    assert "auto: 70% left, but total leaves 29%" in text
+    assert "auto: own 70% left, capped by total at 29%" in text
 
 
 def test_chat_shows_ceiling_binding_note():

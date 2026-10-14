@@ -87,4 +87,4 @@ def ceiling_binding_note(window: QuotaWindow, provider: str, windows: list[Quota
     effective, binding = effective_remaining(window, provider, windows)
     if not binding or own is None or effective is None:
         return None
-    return f"{window.label}: {own:.0f}% left, but total leaves {effective:.0f}% — total binds"
+    return f"{window.label}: own {own:.0f}% left, capped by total at {effective:.0f}% — total binds"
