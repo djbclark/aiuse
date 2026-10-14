@@ -88,6 +88,11 @@ against the Cursor Models side. Canonical pricing table:
    state, and vice versa.
 3. Parse on-demand `providerCost` into `usage_credits` when `limit > 0`.
 
+`aiuse` sets no on-demand cap of its own. The `$used / $limit` figure is
+whatever Cursor's account reports (via CodexBar `providerCost`), so a small
+limit such as `$2` is Cursor's own setting, not an `aiuse` default — the same
+number appearing in another source just confirms it.
+
 ## Verify
 
 ```bash
