@@ -84,6 +84,10 @@ def _window(label: str, remaining: float, days: float, minutes: int) -> QuotaWin
 
 _5H, _WEEKLY, _MONTHLY = 300, 10080, 43200
 
+# Render width for the demo. Must exceed the longest matrix line, including the
+# legend, or render_clock_matrix clamps it with "…".
+_DEMO_WIDTH = 240
+
 
 def _demo_snapshot() -> Snapshot:
     return Snapshot(
@@ -248,9 +252,13 @@ def render_demo_diff_block() -> str:
         # demo must not vary with whoever regenerates it.
         config=DEFAULT_CONFIG,
         color=False,
-        # Wide enough that no column is shed, so the README shows the full table.
-        width=132,
+        # Wide enough that no column is shed and no row or legend line is
+        # clamped with "…" (the pace legend alone is ~155 cols), so the README
+        # shows everything. GitHub scrolls a wide fence horizontally.
+        width=_DEMO_WIDTH,
     )
+    if "…" in text:
+        raise SystemExit(f"demo output truncated at width={_DEMO_WIDTH}; raise _DEMO_WIDTH")
     lines = []
     for line in text.splitlines():
         tag = line.split(None, 1)[0] if line.strip() else ""
