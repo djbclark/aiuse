@@ -26,11 +26,11 @@ percentages per row; aiuse treats **total** as the monthly ceiling row and
 **auto** / **third-party** as breakdown sub-rows whose effective headroom is
 `min(own, total)`.
 
-**Grok-bot family (2026-10-14):** per xAI, Grok Bot usage is a separate weekly
-allowance — distinct from SuperGrok/xAI subscription and from the monthly Cursor
-pools. aiuse keys it on the stable window id `cursor-grok-bot` (never the display
-title alone). Display label is exactly `grok-bot`; config/JSON family is
-`grok_bot`.
+**Grok-bot family (2026-10-14):** Cursor Grok Bot weekly allowance (counted on
+your Cursor account; not shared with Grok app/CLI/grok.com usage; size may come
+from a linked SuperGrok plan). It is not one of the monthly Cursor pools. aiuse
+keys it on the stable window id `cursor-grok-bot` (never the display title
+alone). Display label is exactly `grok-bot`; config/JSON family is `grok_bot`.
 
 Without fixed slot labels, `_slot_label` fell back to “monthly quota (N)”.
 On-demand was ignored (only OpenCode Zen’s `providerCost` was read initially).
@@ -45,19 +45,22 @@ Cursor exposes:
 - **third-party** — named third-party models at provider rates (breakdown; not
   scored for headline pace).
 - **on-demand** — pay-as-you-go dollar cap (`providerCost`); separate from total.
-- **grok-bot** — separate weekly allowance; never capped by total.
+- **grok-bot** — Cursor Grok Bot weekly allowance (counted on your Cursor
+  account; not shared with Grok app/CLI/grok.com usage; size may come from a
+  linked SuperGrok plan); never capped by total. Usage past the allowance
+  overflows to Cursor on-demand spend if on-demand is enabled.
 
 Both **total**, **auto**, and **third-party** reset with the billing cycle
 (use-or-lose). **On-demand** is a spend cap, not a prepaid wallet. **grok-bot**
 is weekly.
 
-| Pool (aiuse label) | What burns it                                               |
-| ------------------ | ----------------------------------------------------------- |
-| **total**          | All monthly Cursor subscription usage (umbrella meter)      |
-| **auto**           | Cursor Auto/Composer model selection                        |
-| **third-party**    | Third-party models at that model’s API price                |
-| **on-demand**      | Pay-as-you-go spend against the configured dollar cap       |
-| **grok-bot**       | Grok Bot weekly allowance (separate from Grok/Cursor plans) |
+| Pool (aiuse label) | What burns it                                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **total**          | All monthly Cursor subscription usage (umbrella meter)                                                                                                     |
+| **auto**           | Cursor Auto/Composer model selection                                                                                                                       |
+| **third-party**    | Third-party models at that model’s API price                                                                                                               |
+| **on-demand**      | Pay-as-you-go spend against the configured dollar cap                                                                                                      |
+| **grok-bot**       | Cursor Grok Bot weekly allowance (counted on your Cursor account; not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan) |
 
 CodexBar percentages for total, auto, and third-party are independent readings;
 aiuse does not derive one from the others.

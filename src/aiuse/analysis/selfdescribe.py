@@ -95,8 +95,16 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     ],
     "cursor": [
         ("on-demand", "on_demand", "Cursor on-demand dollar cap"),
-        ("grok-bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
-        ("grok bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
+        (
+            "grok-bot",
+            "grok_bot",
+            "Cursor Grok Bot weekly allowance (counted on your Cursor account; not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)",
+        ),
+        (
+            "grok bot",
+            "grok_bot",
+            "Cursor Grok Bot weekly allowance (counted on your Cursor account; not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)",
+        ),
         ("auto", "auto", "Cursor Auto/Composer models (breakdown of total)"),
         ("total", "total", "Cursor total monthly usage (ceiling)"),
         ("third party", "third_party", "Cursor third-party models (breakdown)"),
@@ -112,7 +120,7 @@ def pool_family_id(provider: str, label: str, window_id: str | None = None) -> s
     from aiuse.analysis.pace import cursor_pool_family
 
     if provider == "cursor":
-        family = cursor_pool_family(label, window_id=window_id)
+        family = cursor_pool_family(label, window_id=window_id, provider=provider)
         if family is not None:
             return family
     family, _ = window_family(provider, label)
@@ -182,7 +190,10 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
         window["pool_family"] = family
     if provider == "cursor":
         if wid == "cursor-grok-bot" or family == "grok_bot":
-            window["models_hint"] = "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"
+            window["models_hint"] = (
+                "Cursor Grok Bot weekly allowance (counted on your Cursor account; "
+                "not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)"
+            )
         elif family in ("auto", "third_party"):
             window["quota_scope"] = "model_sublimit"
             window["shared_pool_family"] = "total"
@@ -385,7 +396,9 @@ def enrich_snapshot(
             window["pace_percent"] = pct
             window["pace_ratio"] = window_pace_ratio(quota, pace_now)
             window["pace_early"] = early
-        headline_windows = [w for w in quota_windows if not cursor_breakdown_window(w)]
+        headline_windows = [
+            w for w in quota_windows if not cursor_breakdown_window(w, provider=str(account.get("provider") or ""))
+        ]
         ovr_pct, ovr_early = overall_pace(headline_windows, pace_now)
         account["overall_pace_percent"] = ovr_pct
         account["overall_pace_early"] = ovr_early

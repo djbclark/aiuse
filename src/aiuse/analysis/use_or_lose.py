@@ -335,7 +335,7 @@ def analyze_use_or_lose(
         children_by_gov_id: dict[int, list[QuotaWindow]] = {}
         if shared_allotment:
             any_governing = False
-            for pool in partition_independent_pools(account.windows):
+            for pool in partition_independent_pools(account.windows, provider=account.provider):
                 governing_window, child_windows = governing_partition(pool)
                 if governing_window is None:
                     # No usable remaining() in this pool — score its windows
@@ -353,7 +353,7 @@ def analyze_use_or_lose(
         for window in account.windows:
             if claude_model_scope(window.label) is not None:
                 continue  # model caps cannot be burned as additional account quota
-            if cursor_breakdown_window(window):
+            if cursor_breakdown_window(window, provider=account.provider):
                 continue  # Cursor Auto / Third Party are breakdown rows, not scored pools
             if mode == "legacy" and _is_short_window(window):
                 continue
@@ -766,7 +766,7 @@ def _shared_allotment_child_keys(
         provider_key = provider_config_key(account.provider)
         if not _shared_allotment_enabled(provider_key, analysis_cfg):
             continue
-        for pool in partition_independent_pools(account.windows):
+        for pool in partition_independent_pools(account.windows, provider=account.provider):
             governing, children = governing_partition(pool)
             if governing is None:
                 continue

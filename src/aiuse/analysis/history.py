@@ -259,9 +259,11 @@ def window_series_key(
     subscription into two series that never match each other or the live
     snapshot. What actually identifies the allotment is the provider, the
     independent pool within it (Gemini vs Claude/GPT), and the window duration.
-    When CodexBar supplies a stable ``window_id``, that wins over label text.
+    Cursor's own slot ids and the Grok Bot extra-window id select a Cursor
+    pool; other vendors' CodexBar ``primary``/``secondary``/``tertiary`` slots
+    do not, or one subscription's clocks fork into ``cursor_total`` / ``cursor_auto``.
     """
-    pool = independent_pool_key(label, window_id=window_id) or "-"
+    pool = independent_pool_key(label, window_id=window_id, provider=provider) or "-"
     model = claude_model_scope(label) if canonical_provider(provider) == "claude" else None
     if model is not None:
         pool = f"model_{model.casefold().replace(' ', '_')}"
