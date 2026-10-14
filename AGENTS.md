@@ -11,7 +11,7 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
-**Status (2026-10-14):** Package/CLI **`aiuse`**, packaging **3.4.3**
+**Status (2026-10-14):** Package/CLI **`aiuse`**, packaging **3.5.0**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.2** (self-describing output, `aiuse --available`,
 `aiuse note-exhausted`; 1.2 adds per-window pace and the matrix PACE column,
