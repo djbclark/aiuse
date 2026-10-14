@@ -14,7 +14,9 @@ from aiuse.analysis.selfdescribe import FRESH_THRESHOLD_SECONDS_DEFAULT
 from aiuse.config import (
     SINGLE_PROVIDER_COLLECTORS,
     canonical_disabled_services,
+    collector_serves_requested,
     collection_policy_fingerprint,
+    requested_providers,
     timeout_for,
 )
 from aiuse.models import (
@@ -177,6 +179,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     intervals = min_intervals(config)
     disabled_services = _disabled_services(config)
     disabled_providers = set(disabled_services)
+    provider_filter = requested_providers(config)
     raw_analysis = config.get("analysis")
     analysis_cfg = raw_analysis if isinstance(raw_analysis, dict) else {}
     try:
@@ -294,6 +297,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     # SINGLE_PROVIDER_COLLECTORS) — the rows would be filtered out below anyway.
     if disabled_providers:
         jobs = [(name, fn) for name, fn in jobs if SINGLE_PROVIDER_COLLECTORS.get(name) not in disabled_providers]
+    if provider_filter is not None:
+        jobs = [(name, fn) for name, fn in jobs if collector_serves_requested(name, provider_filter)]
 
     if jobs:
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
@@ -311,6 +316,10 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         # its quota as usable. Canonical aliases (e.g. "grok-build") match too.
         snapshot.accounts = [
             account for account in snapshot.accounts if canonical_provider(account.provider) not in disabled_providers
+        ]
+    if provider_filter is not None:
+        snapshot.accounts = [
+            account for account in snapshot.accounts if canonical_provider(account.provider) in provider_filter
         ]
 
     _merge_grok_extra_credits(snapshot.accounts)

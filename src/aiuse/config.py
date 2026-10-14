@@ -429,6 +429,44 @@ SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
     "deepseek": "deepseek",
 }
 
+
+def requested_providers(config: dict[str, Any] | None) -> frozenset[str] | None:
+    """Explicit provider allow-list from ``collectors.codexbar.providers`` or CLI ``--providers``.
+
+    Returns ``None`` when the default enabled-provider discovery should run
+    (all configured collectors). A non-empty set limits collection to those
+    canonical provider ids.
+    """
+    collectors = (config or {}).get("collectors")
+    if not isinstance(collectors, dict):
+        return None
+    codexbar = collectors.get("codexbar")
+    if not isinstance(codexbar, dict):
+        return None
+    raw = codexbar.get("providers", "enabled")
+    if isinstance(raw, list):
+        items = [str(p).strip().lower() for p in raw if str(p).strip()]
+    else:
+        text = str(raw).strip().lower()
+        if text in ("", "enabled", "configured", "default", "all"):
+            return None
+        items = [p.strip().lower() for p in text.split(",") if p.strip()]
+    if not items:
+        return None
+    return frozenset(canonical_provider(p) for p in items)
+
+
+def collector_serves_requested(collector_name: str, requested: frozenset[str]) -> bool:
+    """Whether a collector should run under an explicit ``--providers`` filter."""
+    if collector_name == "codexbar":
+        return True
+    provider = SINGLE_PROVIDER_COLLECTORS.get(collector_name)
+    if provider is not None:
+        return canonical_provider(provider) in requested
+    # Multi-provider collectors may still return a requested provider.
+    return True
+
+
 # Collector entry keys that change which rows a collect emits. URLs and other
 # endpoint settings are left out; they are not the disable-list bug, and the
 # fingerprint is stored on the snapshot.
@@ -1055,9 +1093,21 @@ def _default_toml_text() -> str:
         "# openusage_sh = 90\n"
         "# tokscale = 45\n"
         "# hermes = 45\n"
+        "# grok_billing = 15\n"
+        "# openrouter = 45\n"
+        "# clinepass = 45\n"
         "\n"
         "# CLI `--timeout` / `-t` overrides every tool for that run.\n"
         "# Install tools: packaging/install-deps.sh\n"
+        "\n"
+        "[collectors]\n"
+        "# Omit a collector or set enabled = false to skip it.\n"
+        "# cswap = { enabled = true }\n"
+        '# codexbar = { enabled = true, providers = "enabled" }  # or "cursor,claude"\n'
+        '# caut = { enabled = true, providers = "all" }\n'
+        "# grok_billing = { enabled = true }\n"
+        "# openrouter = { enabled = true }\n"
+        "# clinepass = { enabled = true }\n"
         "\n"
         "# Optional macOS codesign identity for `aiuse trust sign-caut`\n"
         "# (Keychain Always Allow for cargo-installed caut). See\n"
