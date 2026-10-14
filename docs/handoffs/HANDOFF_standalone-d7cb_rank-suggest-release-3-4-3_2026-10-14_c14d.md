@@ -22,7 +22,8 @@ ranking work, then work the open P3s **in order** — `aiuse-p9f`, `aiuse-57n`,
 
 ## Where We Are
 
-- `main` is at `b6a0761`, clean, pushed. **1094 tests pass**; `just ci` green.
+- `main` is clean and pushed (`b6a0761` at the time of writing, followed by this
+  handoff and a Conventions docs commit). **1094 tests pass**; `just ci` green.
 - **aiuse 3.4.3 is released**: PyPI (OIDC, `https://pypi.org/pypi/aiuse/3.4.3/json`
   returns 200), GitHub release `v3.4.3` (not draft/pre-release), annotated tag
   pushed, Homebrew 3.4.2 → 3.4.3 with `brew test djbclark/aiuse/aiuse` passing and
@@ -122,7 +123,7 @@ none
 ## Quick Start
 
 ```bash
-cd ~/src/aiuse && git status -s && git log --oneline -6      # expect b6a0761, clean
+cd ~/src/aiuse && git status -s && git log --oneline -6      # expect clean; head is this handoff or later
 bd show aiuse-hcy                                            # + its root-cause comment
 gh release view v3.4.3
 AIUSE_SKIP_HOMEBREW_FORMULA=1 COLUMNS=170 .venv/bin/aiuse watch --once --no-color
