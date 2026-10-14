@@ -40,6 +40,55 @@ def _snap() -> Snapshot:
     )
 
 
+def _cursor_watch_snap(*, full: bool) -> Snapshot:
+    """Cursor board fixture: filtered view omits hidden auto + ceiling total."""
+    reset = utcnow() + timedelta(days=10)
+    windows: list[QuotaWindow] = []
+    if full:
+        windows.extend(
+            [
+                QuotaWindow(
+                    label="total",
+                    window_id="primary",
+                    used_percent=71,
+                    remaining_percent=29,
+                    resets_at=reset,
+                    window_minutes=44640,
+                ),
+                QuotaWindow(
+                    label="auto",
+                    window_id="secondary",
+                    used_percent=30,
+                    remaining_percent=70,
+                    resets_at=reset,
+                    window_minutes=44640,
+                ),
+            ]
+        )
+    windows.append(
+        QuotaWindow(
+            label="third-party",
+            window_id="tertiary",
+            used_percent=10,
+            remaining_percent=90,
+            resets_at=reset,
+            window_minutes=44640,
+        )
+    )
+    return Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="cursor",
+                account="user@example.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=windows,
+            )
+        ],
+    )
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -675,9 +724,20 @@ def test_render_watch_board_shows_collecting_all():
 class _LoopFakes:
     """Process-worker/Live doubles for key-handling loop tests."""
 
-    def __init__(self, monkeypatch, hold_sweep=False, hold_u=False, hold_regular_polls=0):
+    def __init__(
+        self,
+        monkeypatch,
+        hold_sweep=False,
+        hold_u=False,
+        hold_regular_polls=0,
+        *,
+        regular_snap=None,
+        sweep_snap=None,
+    ):
         self.instances = []
         self.texts = []
+        self._regular_snap = regular_snap if regular_snap is not None else _snap()
+        self._sweep_snap = sweep_snap if sweep_snap is not None else self._regular_snap
         outer = self
 
         class FakeProcessWorker:
@@ -696,7 +756,8 @@ class _LoopFakes:
                     self.config = config
                 self.starts.append({"config": config, "max_age": max_age})
                 held = (hold_sweep and self.persist is False) or (hold_u and max_age == 0.0)
-                self.pending = None if held else (_snap(), [], None)
+                snap = outer._sweep_snap if self.persist is False else outer._regular_snap
+                self.pending = None if held else (snap, [], None)
 
             def poll(self):
                 # hold_regular_polls: the regular worker's first N polls come
@@ -787,6 +848,40 @@ def test_a_key_runs_a_screen_only_all_providers_sweep(monkeypatch):
     assert any("ALL PROVIDERS · hidden + total rows shown · screen only" in text for text in fakes.texts)
     # the base config object was not mutated by the sweep
     assert config["disabled_services"] == {"grok": "burst limit"}
+
+
+def test_a_key_toggles_sweep_shows_hidden_and_total_then_filters(monkeypatch):
+    filtered_snap = _cursor_watch_snap(full=False)
+    sweep_snap = _cursor_watch_snap(full=True)
+    fakes = _LoopFakes(
+        monkeypatch,
+        regular_snap=filtered_snap,
+        sweep_snap=sweep_snap,
+    )
+    code = run_watch(
+        {"collectors": {}, "hidden_pools": {"cursor/auto": "hide"}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "a", None, "a", "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    texts = fakes.texts
+    sweep_frames = [t for t in texts if "ALL PROVIDERS · hidden + total rows shown" in t]
+    assert sweep_frames, "expected at least one all-providers sweep frame"
+    sweep_text = sweep_frames[-1]
+    assert " total " in f" {sweep_text} "
+    assert " auto " in f" {sweep_text} "
+
+    last_sweep_idx = max(i for i, t in enumerate(texts) if t == sweep_frames[-1])
+    post_toggle = texts[last_sweep_idx + 1 :]
+    assert post_toggle, "expected filtered frames after the second `a`"
+    filtered_body = "\n".join(t for t in post_toggle if "ALL PROVIDERS" not in t)
+    assert " total " not in f" {filtered_body} "
+    assert " auto " not in f" {filtered_body} "
+    assert " 3rd " in filtered_body or "third-party" in filtered_body
 
 
 def test_a_key_is_ignored_while_a_sweep_is_still_running(monkeypatch):

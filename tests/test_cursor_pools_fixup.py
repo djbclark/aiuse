@@ -293,27 +293,3 @@ def test_learned_burn_rates_per_cursor_window(tmp_path):
     assert "cursor:cursor_total:monthly" in rates
     assert "cursor:cursor_auto:monthly" in rates
     assert rates["cursor:cursor_total:monthly"] != rates["cursor:cursor_auto:monthly"]
-
-
-def test_watch_a_key_toggles_sweep_off(monkeypatch):
-    from io import StringIO
-
-    from aiuse.watch import run_watch
-    from tests.test_watch import _KeySequence, _LoopFakes
-
-    fakes = _LoopFakes(monkeypatch)
-    code = run_watch(
-        {"collectors": {}, "hidden_pools": {"cursor/auto": "hide"}},
-        interval=600,
-        no_color=True,
-        stdout=StringIO(),
-        key_reader=_KeySequence([None, "a", None, "a", "q"]),
-        sleep=lambda _s: None,
-        require_tty=False,
-    )
-    assert code == 0
-    texts = fakes.texts
-    assert any("ALL PROVIDERS · hidden + total rows shown" in t for t in texts)
-    # After the second `a`, a later frame should not mark the sweep view.
-    last_frames = texts[-3:]
-    assert any("ALL PROVIDERS" not in t for t in last_frames)
