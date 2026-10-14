@@ -1,4 +1,4 @@
-"""Self-describing quota semantics (schema 1.2) — read the JSON, no docs needed.
+"""Self-describing quota semantics (schema 1.3) — read the JSON, no docs needed.
 
 Born from three real misreads on 2026-10-03:
 
@@ -20,16 +20,24 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping
 
+from aiuse.analysis.ceilings import window_is_ceiling
 from aiuse.analysis.pace import (
+    cursor_breakdown_window,
     format_pace,
     overall_pace,
     window_pace,
     window_pace_ratio,
 )
+from aiuse.analysis.pool_keys import (
+    hidden_pool_rules,
+    normalize_pool_family,
+    parse_pool_rule_key,
+    window_matches_rule,
+)
 from aiuse.models import QuotaWindow, canonical_provider, claude_model_scope, parse_dt, utcnow
 from aiuse.timefmt import format_clock
 
-SCHEMA_VERSION = "1.2"
+SCHEMA_VERSION = "1.3"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -64,6 +72,12 @@ SEMANTICS: dict[str, str] = {
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
+    "hidden_pools": "operator-hidden pools (config [hidden_pools]) with the reason; rows are dropped at collection and omitted from human outputs and --available by default",
+    "role": "window routing role: ceiling (total umbrella), breakdown (sub-row of a ceiling), or omitted for standalone windows",
+    "effective_left_percent": "breakdown sub-row headroom after applying the ceiling: min(own remaining, ceiling remaining)",
+    "ceiling_binding": "true when effective_left_percent is lower than the sub-row's own remaining because the ceiling binds",
+    "ceiling_headroom_percent": "remaining percent on the ceiling window that caps this sub-row",
+    "ceiling_window_id": "window_id of the ceiling row binding this sub-row, when ceiling_binding",
     "context_usage": "ACP context-window fill and this turn's token counts. used/size is the session context, not a 5h or weekly plan. turn_quota is per-turn tokens. Plan windows stay on windows[]",
     "resets_at_carried_from": "present only when resets_at was not measured by this collection: the source dropped the reset, so aiuse carried forward the last one an earlier reading measured ({source, collected_at} of that reading); an estimate, shown as ~. Only carried while still in the future and usage has not fallen since",
 }
@@ -81,13 +95,28 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     ],
     "cursor": [
         ("on-demand", "on_demand", "Cursor on-demand dollar cap"),
-        ("auto", "auto", "Cursor Auto model selection (breakdown of Total)"),
-        ("total", "total", "Cursor Total included usage"),
-        ("third party", "third_party", "Cursor Third Party models (breakdown)"),
-        ("included", "included", "Cursor included models"),
-        ("other", "other", "Cursor other-models slot"),
+        ("grok-bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
+        ("grok bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
+        ("auto", "auto", "Cursor Auto/Composer models (breakdown of total)"),
+        ("total", "total", "Cursor total monthly usage (ceiling)"),
+        ("third party", "third_party", "Cursor third-party models (breakdown)"),
+        ("third-party", "third_party", "Cursor third-party models (breakdown)"),
+        ("included", "total", "Cursor total monthly usage (legacy label)"),
+        ("other", "third_party", "Cursor third-party models (legacy label)"),
     ],
 }
+
+
+def pool_family_id(provider: str, label: str, window_id: str | None = None) -> str | None:
+    """Single source of truth for a window's pool_family slug."""
+    from aiuse.analysis.pace import cursor_pool_family
+
+    if provider == "cursor":
+        family = cursor_pool_family(label, window_id=window_id)
+        if family is not None:
+            return family
+    family, _ = window_family(provider, label)
+    return family
 
 
 def window_remaining(window: Mapping[str, Any]) -> float | None:
@@ -147,19 +176,23 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
             window["shared_pool_family"] = "default"
             if model.casefold() == "fable":
                 window["max_share_of_parent_percent"] = 50.0
+    wid = str(window.get("window_id") or "").strip().casefold()
+    family = pool_family_id(provider, str(window.get("label") or ""), wid or None)
+    if family is not None:
+        window["pool_family"] = family
     if provider == "cursor":
-        wid = str(window.get("window_id") or "").strip().casefold()
-        if wid == "cursor-grok-bot":
-            window["pool_family"] = "cursor_grok"
-            window["models_hint"] = "Cursor Grok Bot weekly allowance (distinct from SuperGrok/xAI)"
-        elif wid in ("secondary", "tertiary"):
+        if wid == "cursor-grok-bot" or family == "grok_bot":
+            window["models_hint"] = "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"
+        elif family in ("auto", "third_party"):
             window["quota_scope"] = "model_sublimit"
             window["shared_pool_family"] = "total"
-        elif wid == "on-demand":
-            window["pool_family"] = "on_demand"
-    family, hint = window_family(provider, str(window.get("label") or ""))
-    if family is not None and window.get("pool_family") is None:
-        window["pool_family"] = family
+            window["role"] = "breakdown"
+        elif family == "total":
+            window["role"] = "ceiling"
+        elif family == "on_demand":
+            window["models_hint"] = "Cursor on-demand dollar cap"
+    _, hint = window_family(provider, str(window.get("label") or ""))
+    if hint is not None and window.get("models_hint") is None:
         window["models_hint"] = hint
     return window
 
@@ -262,7 +295,44 @@ def enrich_account(
         account["age_seconds"] = None
         account["fresh"] = False
         account["stale"] = False
+
+    _apply_ceiling_caps(provider, windows)
     return account
+
+
+def _apply_ceiling_caps(provider: str, windows: list[dict[str, Any]]) -> None:
+    """Set effective_left_percent and ceiling_* on breakdown sub-rows."""
+    ceilings = [w for w in windows if window_is_ceiling(provider, w.get("pool_family"))]
+    if not ceilings:
+        return
+    ceiling_by_family = {str(w.get("pool_family")): w for w in ceilings}
+    for ceiling_family, ceiling in ceiling_by_family.items():
+        from aiuse.analysis.ceilings import CEILING_FAMILIES
+
+        sub_families = CEILING_FAMILIES.get(provider, {}).get(ceiling_family, frozenset())
+        ceiling_left = window_remaining(ceiling)
+        if ceiling_left is None:
+            continue
+        from aiuse.models import classify_window_minutes
+
+        ceiling_duration = classify_window_minutes(ceiling.get("window_minutes"))
+        for window in windows:
+            family = window.get("pool_family")
+            if family not in sub_families:
+                continue
+            own = window_remaining(window)
+            if own is None:
+                continue
+            effective = min(own, ceiling_left)
+            window["effective_left_percent"] = effective
+            window["ceiling_headroom_percent"] = ceiling_left
+            window["ceiling_window_id"] = ceiling.get("window_id")
+            window["ceiling_binding"] = effective < own
+            window["role"] = "breakdown"
+            if ceiling_duration:
+                window["ceiling_duration_kind"] = ceiling_duration
+            if effective != own:
+                window["headroom_percent"] = effective
 
 
 def enrich_snapshot(
@@ -308,13 +378,15 @@ def enrich_snapshot(
                 remaining_percent=window.get("remaining_percent"),
                 resets_at=parse_dt(window.get("resets_at")),
                 window_minutes=window.get("window_minutes"),
+                window_id=window.get("window_id"),
             )
             quota_windows.append(quota)
             pct, early = window_pace(quota, pace_now)
             window["pace_percent"] = pct
             window["pace_ratio"] = window_pace_ratio(quota, pace_now)
             window["pace_early"] = early
-        ovr_pct, ovr_early = overall_pace(quota_windows, pace_now)
+        headline_windows = [w for w in quota_windows if not cursor_breakdown_window(w)]
+        ovr_pct, ovr_early = overall_pace(headline_windows, pace_now)
         account["overall_pace_percent"] = ovr_pct
         account["overall_pace_early"] = ovr_early
     snap["accounts"] = accounts
@@ -323,6 +395,7 @@ def enrich_snapshot(
     # Snapshots written before this field existed have no key; every reader
     # can rely on it being present (empty = nothing disabled).
     snap.setdefault("disabled_services", {})
+    snap.setdefault("hidden_pools", {})
     if notes:
         snap["agent_notes"] = [
             {
@@ -388,8 +461,11 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
             resets = [t for t in resets if t is not None]
 
             def effective_headroom(window: Mapping[str, Any]) -> float:
+                headroom = window.get("effective_left_percent")
+                if headroom is None:
+                    headroom = window.get("headroom_percent")
                 share = float(window.get("max_share_of_parent_percent", 100.0)) / 100.0
-                return float(window["headroom_percent"]) * share
+                return float(headroom) * share
 
             binding = min(numbered, key=effective_headroom) if numbered else None
             pools.append(
@@ -457,6 +533,20 @@ def _format_age(seconds: float | None) -> str:
     return f"{days}d{hours:02d}h" if hours else f"{days}d"
 
 
+def _sublimit_cap_fragment(window: Mapping[str, Any]) -> str:
+    """Cap note for model_sublimit rows (Claude Fable vs Cursor ceiling breakdown)."""
+    cap = window.get("max_share_of_parent_percent")
+    if cap is not None:
+        return f" [cap <={cap:g}% of shared weekly]"
+    parent = window.get("shared_pool_family")
+    if parent == "total":
+        duration = window.get("ceiling_duration_kind")
+        if duration:
+            return f" [cap within {parent} ({duration})]"
+        return f" [cap within {parent}]"
+    return " [cap within shared weekly]"
+
+
 def summary_line(pool: Mapping[str, Any]) -> str:
     """`codex 5-hour: EXHAUSTED (100% used / 0% left, resets 15:42); weekly … -> NOT usable now`"""
     provider = str(pool.get("provider") or "?")
@@ -486,8 +576,7 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         pace_text = f", pace {format_pace(pace, pace_early)}" if pace is not None else ""
         seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{pace_text}{_reset_fragment(window.get('resets_at'))})"
         if window.get("quota_scope") == "model_sublimit":
-            cap = window.get("max_share_of_parent_percent")
-            seg += f" [cap <={cap:g}% of shared weekly]" if cap is not None else " [cap within shared weekly]"
+            seg += _sublimit_cap_fragment(window)
         if window.get("state_source") == "agent-reported":
             seg += " [agent-reported]"
         segments.append(seg)
@@ -535,19 +624,22 @@ def apply_exclusions(
     """
     rules: list[tuple[str, str | None, str]] = []
     for key, value in (exclusions or {}).items():
-        provider, _, family = str(key).partition("/")
-        provider = canonical_provider(provider.strip())
+        provider, family = parse_pool_rule_key(str(key))
         if not provider:
             continue
         reason = value.strip() if isinstance(value, str) and value.strip() else "excluded by operator"
-        rules.append((provider, family.strip().casefold() or None, reason))
+        rules.append((provider, family, reason))
     kept: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     for pool in pools:
         pool_provider = canonical_provider(str(pool.get("provider") or ""))
-        pool_family = str(pool.get("pool_family") or "default").casefold()
+        pool_family = normalize_pool_family(str(pool.get("pool_family") or "default"))
         match = next(
-            (r for p, f, r in rules if p == pool_provider and (f is None or f == pool_family)),
+            (
+                r
+                for p, f, r in rules
+                if window_matches_rule(pool_provider, pool_family, p, f) or (f is None and p == pool_provider)
+            ),
             None,
         )
         if match is None:
@@ -564,3 +656,74 @@ def apply_exclusions(
                 }
             )
     return kept, excluded
+
+
+def _window_hidden_by_rules(
+    provider: str,
+    label: str,
+    window_id: str | None,
+    rules: list[tuple[str, str | None, str]],
+) -> str | None:
+    family = pool_family_id(provider, label, window_id)
+    for rule_provider, rule_family, reason in rules:
+        if window_matches_rule(provider, family, rule_provider, rule_family):
+            return reason
+    return None
+
+
+def apply_hidden_pools_dict(snap: dict[str, Any], config: dict[str, Any]) -> dict[str, str]:
+    """Drop hidden windows from a snapshot dict; return applied hidden_pools map."""
+    rules = hidden_pool_rules(config)
+    if not rules:
+        return {}
+    hidden: dict[str, str] = {}
+    accounts = snap.get("accounts") or []
+    kept_accounts: list[dict[str, Any]] = []
+    for account in accounts:
+        if not isinstance(account, dict):
+            continue
+        provider = str(account.get("provider") or "")
+        windows = [w for w in (account.get("windows") or []) if isinstance(w, dict)]
+        kept_windows: list[dict[str, Any]] = []
+        for window in windows:
+            reason = _window_hidden_by_rules(
+                provider,
+                str(window.get("label") or ""),
+                window.get("window_id"),
+                rules,
+            )
+            if reason:
+                family = pool_family_id(provider, str(window.get("label") or ""), window.get("window_id"))
+                key = f"{provider}/{family}" if family else provider
+                hidden[key] = reason
+            else:
+                kept_windows.append(window)
+        if not kept_windows and not account.get("balance_usd") and not account.get("credits_remaining"):
+            uc = account.get("usage_credits")
+            if not (isinstance(uc, dict) and uc.get("used") is not None):
+                continue
+        account = dict(account)
+        account["windows"] = kept_windows
+        kept_accounts.append(account)
+    snap["accounts"] = kept_accounts
+    snap["hidden_pools"] = hidden
+    return hidden
+
+
+def filter_ceiling_pools(
+    pools: list[dict[str, Any]],
+    *,
+    show_total_rows: bool,
+) -> list[dict[str, Any]]:
+    """Drop ceiling-only pool entries when show_total_rows is false."""
+    if show_total_rows:
+        return pools
+    kept: list[dict[str, Any]] = []
+    for pool in pools:
+        provider = str(pool.get("provider") or "")
+        family = pool.get("pool_family")
+        windows = pool.get("windows") or []
+        if window_is_ceiling(provider, family) and len(windows) == 1:
+            continue
+        kept.append(pool)
+    return kept

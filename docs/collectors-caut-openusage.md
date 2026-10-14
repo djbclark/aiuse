@@ -139,7 +139,7 @@ is rendered. `aiuse doctor` names any same-named binary it skipped.
 `aiuse` invokes `openusage-sh export --output - --format json`; it accepts only
 explicit rate-limit and plan-percent metrics as quota windows, never local
 token/cost estimates. Identical metric aliases are collapsed, while Cursor's
-Included/Auto/Other Models pools remain distinct. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
+Cursor total/auto/third-party pools remain distinct. CLI skips: `--no-caut`, `--no-openusage-ai` (legacy
 `--no-openusage`), and `--no-openusage-sh`.
 
 ### Why OpenUsage.sh is NOT recommended for ambient polling

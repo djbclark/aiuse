@@ -27,6 +27,17 @@ def compute_pace(
     if remaining is None:
         return None
     used_fraction = (100.0 - remaining) / 100.0
+    if used_fraction <= 0:
+        return PaceProfile(
+            elapsed_fraction=None,
+            used_fraction=used_fraction,
+            pace_ratio=None,
+            projected_used_fraction=None,
+            projected_waste_fraction=None,
+            projected_waste_usd=None,
+            projected_exhaust_at=None,
+            confidence="low",
+        )
 
     kind = classify_window_minutes(window.window_minutes)
     duration_minutes = window.window_minutes or nominal_window_minutes(kind)
@@ -59,7 +70,10 @@ def compute_pace(
 
     projected_used = min(1.0, used_fraction + r_hat * t_left_days)
     waste = 1.0 - projected_used
-    exhaust_at = now + timedelta(days=(1.0 - used_fraction) / r_hat) if r_hat > 1e-9 else None
+    exhaust_at = None
+    if r_hat > 1e-9:
+        if window.refill_capacity_unit != "usd" or used_fraction > 0:
+            exhaust_at = now + timedelta(days=(1.0 - used_fraction) / r_hat)
 
     return PaceProfile(
         elapsed_fraction=elapsed,
@@ -186,8 +200,8 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
 
     If any window is completely exhausted (0% remaining), it becomes the governing
     window because it temporarily blocks the entire pool, overriding longer durations.
-    When durations tie (e.g. Cursor Included/Auto/other-models all monthly), prefer a
-    window whose label looks like the overall included bar, then list order.
+    When durations tie (e.g. Cursor total/auto/third-party all monthly), prefer the
+    total ceiling window (window id ``primary`` or label ``total``), then list order.
     Claude model caps are children, never whole-pool governing windows.
     """
     usable = [w for w in windows if w.remaining() is not None and claude_model_scope(w.label) is None]
@@ -200,7 +214,7 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
         exhausted.sort(
             key=lambda w: (
                 w.window_minutes or nominal_window_minutes(classify_window_minutes(w.window_minutes)) or 0,
-                0 if "included" in (w.label or "").casefold() else 1,
+                0 if _is_total_ceiling_window(w) else 1,
             )
         )
         governing = exhausted[0]
@@ -210,12 +224,12 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
     scored = [
         (
             w.window_minutes or nominal_window_minutes(classify_window_minutes(w.window_minutes)) or 0,
-            0 if "included" in (w.label or "").casefold() else 1,
+            0 if _is_total_ceiling_window(w) else 1,
             w,
         )
         for w in usable
     ]
-    # Longest minutes first; among ties, included (rank 0) before others.
+    # Longest minutes first; among ties, total ceiling (rank 0) before others.
     scored.sort(key=lambda pair: (-pair[0], pair[1]))
     governing = scored[0][2]
     children = [w for w in windows if w is not governing]
@@ -227,30 +241,62 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
 CURSOR_GROK_BOT_WINDOW_ID = "cursor-grok-bot"
 
 
+def _is_total_ceiling_window(window: QuotaWindow) -> bool:
+    wid = (window.window_id or "").strip().casefold()
+    if wid == "primary":
+        return True
+    return (window.label or "").strip().casefold() == "total"
+
+
+def cursor_pool_family(label: str | None, *, window_id: str | None = None) -> str | None:
+    """Canonical Cursor pool_family slug (snake_case), or None."""
+    wid = (window_id or "").strip().casefold()
+    if wid == CURSOR_GROK_BOT_WINDOW_ID:
+        return "grok_bot"
+    if wid == "primary":
+        return "total"
+    if wid == "secondary":
+        return "auto"
+    if wid == "tertiary":
+        return "third_party"
+    if wid == "on-demand":
+        return "on_demand"
+    text = (label or "").casefold()
+    if not text:
+        return None
+    if "grok bot" in text or text == "grok-bot":
+        return "grok_bot"
+    if text == "on-demand" or "on demand" in text or "on-demand" in text:
+        return "on_demand"
+    if text == "total":
+        return "total"
+    if text == "auto" or text == "cursor auto":
+        return "auto"
+    if "third party" in text or "third-party" in text:
+        return "third_party"
+    if "cursor other models" in text or "cursor api" in text:
+        return "third_party"
+    if "included" in text or "cursor included" in text:
+        return "total"
+    return None
+
+
 def independent_pool_key(label: str | None, *, window_id: str | None = None) -> str | None:
     """Hard-separated allotment family from a window label, if any.
 
     Some providers (notably Google AI / Antigravity) expose **independent**
     budgets that must not be collapsed by shared-allotment logic — e.g. Gemini
-    usage vs Claude/GPT usage. Cursor is similar: Included+Auto (first-party,
-    "Cursor Models" / Auto+Composer in Cursor's docs) is one pool, but Other
-    Models (third-party at provider rates) is a second, independent pool —
-    exhausting one has no effect on the other. Returns a stable slug for
-    grouping, or None for the residual “same pool” group (Claude 5h⊂weekly,
-    Cursor Included⊂Auto).
+    usage vs Claude/GPT usage. Cursor exposes total (monthly umbrella), auto and
+    third-party breakdown rows, on-demand spend cap, and grok-bot (weekly) as
+    separate families. Returns a stable slug for grouping, or None for the
+    residual “same pool” group (Claude 5h⊂weekly).
 
     When ``window_id`` is set (CodexBar slot or extra-window id), it wins over
     label heuristics so Cursor Grok Bot stays separate even if the title changes.
     """
-    wid = (window_id or "").strip().casefold()
-    if wid == CURSOR_GROK_BOT_WINDOW_ID:
-        return "cursor_grok"
-    if wid == "secondary":
-        return "cursor_auto"
-    if wid == "tertiary":
-        return "cursor_third_party"
-    if wid == "on-demand":
-        return "cursor_on_demand"
+    cursor_family = cursor_pool_family(label, window_id=window_id)
+    if cursor_family is not None:
+        return f"cursor_{cursor_family}"
     text = (label or "").casefold()
     if not text:
         return None
@@ -265,11 +311,6 @@ def independent_pool_key(label: str | None, *, window_id: str | None = None) -> 
         return "claude_gpt"
     if "gemini" in text:
         return "gemini"
-    # New CodexBar labels (rateWindowLabels) and legacy collector labels.
-    if "third party" in text:
-        return "cursor_third_party"
-    if "cursor other models" in text or "cursor api" in text:
-        return "cursor_other_models"
     return None
 
 
@@ -284,9 +325,12 @@ def pool_key_for_window(window: QuotaWindow | None, *, label: str | None = None)
 
 
 def cursor_breakdown_window(window: QuotaWindow) -> bool:
-    """Cursor Auto / Third Party breakdown rows — visible but not scored."""
+    """Cursor auto / third-party breakdown rows — visible but not scored."""
     wid = (window.window_id or "").strip().casefold()
-    return wid in ("secondary", "tertiary")
+    if wid in ("secondary", "tertiary"):
+        return True
+    family = cursor_pool_family(window.label, window_id=window.window_id)
+    return family in ("auto", "third_party")
 
 
 # Short human names for the pool slugs above. Lives here rather than in a
@@ -294,10 +338,10 @@ def cursor_breakdown_window(window: QuotaWindow) -> bool:
 POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "claude_gpt": "claude/gpt",
-    "cursor_other_models": "other models",
-    "cursor_third_party": "third party",
+    "cursor_total": "total",
+    "cursor_third_party": "third-party",
     "cursor_auto": "auto",
-    "cursor_grok": "grok bot",
+    "cursor_grok_bot": "grok-bot",
     "cursor_on_demand": "on-demand",
 }
 

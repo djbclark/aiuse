@@ -624,3 +624,21 @@ def test_stale_source_alone_is_still_selected():
 
     # No fresh peer exists, so the stale (but only) reading still surfaces.
     assert [account.source for account in selected] == ["codexbar"]
+
+
+def test_hidden_pools_drop_matching_windows_at_collection():
+    from aiuse.collectors.runner import _apply_hidden_pools
+
+    account = AccountUsage(
+        source="codexbar",
+        provider="cursor",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(label="auto", window_id="secondary", used_percent=10),
+            QuotaWindow(label="total", window_id="primary", used_percent=20),
+        ],
+    )
+    accounts = [account]
+    hidden = _apply_hidden_pools(accounts, {"hidden_pools": {"cursor/auto": "hide auto"}})
+    assert hidden == {"cursor/auto": "hide auto"}
+    assert [w.label for w in accounts[0].windows] == ["total"]

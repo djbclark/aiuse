@@ -132,6 +132,13 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     sweep = copy.deepcopy(config)
     sweep.pop("disabled_services", None)
+    sweep.pop("hidden_pools", None)
+    analysis = sweep.get("analysis")
+    if isinstance(analysis, dict):
+        analysis = dict(analysis)
+        analysis.pop("excluded_pools", None)
+        analysis["show_total_rows"] = True
+        sweep["analysis"] = analysis
     collectors = sweep.get("collectors")
     if isinstance(collectors, dict):
         for name, entry in collectors.items():
@@ -241,7 +248,7 @@ def render_watch_board(
     """
     header_bits = ["aiuse watch"]
     if all_providers:
-        header_bits.append("ALL PROVIDERS · screen only")
+        header_bits.append("ALL PROVIDERS · hidden + total rows shown · screen only")
     if now is not None:
         header_bits.append(f"now: {format_clock(now, seconds=True)}")
     data_at = snapshot.collected_at if snapshot is not None else last_at
@@ -811,19 +818,22 @@ def run_watch(
                     else:
                         _note_key(denial)
                 elif key in ("a", "A"):
-                    denial = _gate_manual("a")
-                    if denial is None:
-                        sweep_config_held["cfg"] = all_providers_config(live_config())
-                        if runtime.collecting:
-                            # Block all overlap: fire when the refresh finishes.
-                            manual["a_queued"] = True
-                            behind = "u update" if manual["u_in_flight"] else "scheduled refresh"
-                            elapsed = runtime.collecting_for() or 0.0
-                            _note_key(f"a: queued behind the {behind} ({elapsed:.0f}s in)")
-                        else:
-                            sweep.next_due = sweep.now()
+                    if show_all_view["v"] and sweep.snapshot is not None:
+                        show_all_view["v"] = False
                     else:
-                        _note_key(denial)
+                        denial = _gate_manual("a")
+                        if denial is None:
+                            sweep_config_held["cfg"] = all_providers_config(live_config())
+                            if runtime.collecting:
+                                # Block all overlap: fire when the refresh finishes.
+                                manual["a_queued"] = True
+                                behind = "u update" if manual["u_in_flight"] else "scheduled refresh"
+                                elapsed = runtime.collecting_for() or 0.0
+                                _note_key(f"a: queued behind the {behind} ({elapsed:.0f}s in)")
+                            else:
+                                sweep.next_due = sweep.now()
+                        else:
+                            _note_key(denial)
                 # A config.toml edit has to take effect before the interval
                 # elapses. Otherwise the board keeps the old disable list and
                 # the next refresh can overwrite a newer snapshot with it.

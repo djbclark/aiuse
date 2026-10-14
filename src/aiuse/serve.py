@@ -320,13 +320,19 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
     # Re-pick suggestion from stored alerts (stable field set).
     alerts = _alerts_from_dicts(alerts_raw)
     suggestion = suggestion_to_dict(pick_suggestion(alerts, config))
+    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict
+
+    snap = {
+        "collected_at": row.get("collected_at"),
+        "accounts": row.get("accounts") or [],
+        "cross_checks": [],
+        "collector_errors": [],
+        "disabled_services": row.get("disabled_services") or {},
+        "hidden_pools": row.get("hidden_pools") or {},
+    }
+    apply_hidden_pools_dict(snap, config)
     snap = enrich_snapshot(
-        {
-            "collected_at": row.get("collected_at"),
-            "accounts": row.get("accounts") or [],
-            "cross_checks": [],
-            "collector_errors": [],
-        },
+        snap,
         notes=load_active_notes(),
         client_limits=load_client_limits(config),
     )

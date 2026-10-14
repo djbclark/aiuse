@@ -32,7 +32,7 @@ it. Or skip all of it and call `aiuse --available`.
    ~75% left. The agent concluded "agy is exhausted" and moved to another
    vendor. In 1.1 each split-vendor window carries `pool_family`
    (`antigravity`: `gemini` vs `claude_gpt`;
-   `cursor`: `auto` / `included` / `other` / `grok`) plus a `models_hint`
+   `cursor`: `total` / `auto` / `third_party` / `on_demand` / `grok_bot`) plus a `models_hint`
    naming which models draw it. One family `exhausted` does NOT make the
    vendor unusable — retry on the other family before abandoning it.
    Claude is **not** an independent split: `default` represents the shared
@@ -57,6 +57,22 @@ alone. When data is cached rather than live, `age_seconds` (computed at read
 time) and `fresh` (age ≤ `analysis.fresh_threshold_seconds`, default 1500s)
 say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
 (`--live`) before trusting it for routing.
+
+## What's new in schema 1.3 (2026-10-14)
+
+Schema 1.3 adds ceiling/breakdown semantics, operator `[hidden_pools]`, and
+per-window learned burn rates:
+
+- **Top-level `hidden_pools`**: `{provider[/pool_family]: reason}` applied at
+  collection; omitted from human outputs and `--available` by default.
+- **Window fields**: `role` (`ceiling` | `breakdown`), `effective_left_percent`,
+  `ceiling_binding`, `ceiling_headroom_percent`, `ceiling_window_id`.
+- **Cursor `pool_family` values**: `total`, `auto`, `third_party`, `on_demand`,
+  `grok_bot` (legacy config keys such as `cursor/cursor_grok` still match via
+  alias normalization).
+- **`overall_pace_percent`**: excludes breakdown rows (e.g. Cursor auto /
+  third-party); only headline windows drive account pace and exit codes.
+- **`learned_burn_rates` keys**: `provider:pool:duration` (per window series).
 
 ## What's new in schema 1.2 (2026-10-12)
 
@@ -91,6 +107,18 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
     `overall_pace_percent`, and `overall_pace_early`.
 
 ### Changelog
+
+#### Schema 1.3 (2026-10-14)
+
+- Bump `schema_version` to **1.3** (additive).
+- Top-level **`hidden_pools`**: operator display-only hides applied at collection.
+- Window fields: **`role`** (`ceiling` | `breakdown`), **`effective_left_percent`**,
+  **`ceiling_binding`**, **`ceiling_headroom_percent`**, **`ceiling_window_id`**.
+- Cursor **`pool_family` values**: `total`, `auto`, `third_party`, `on_demand`,
+  `grok_bot` (legacy config keys such as `cursor/cursor_grok` still match).
+- **`overall_pace_percent` meaning**: excludes breakdown rows (e.g. Cursor auto /
+  third-party); only headline windows drive account pace and exit codes.
+- **`learned_burn_rates` keys**: `provider:pool:duration` (per window series).
 
 #### 2026-10-14: `suggestion` skips a burn the board's pool collapse hides (schema stays 1.2)
 
@@ -157,7 +185,7 @@ Default `aiuse --json` stdout:
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
 
@@ -222,7 +250,7 @@ operator script reads it). Enriched fields (`state`, `usable_now`,
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
   "alerts": [ ... ],
@@ -277,7 +305,7 @@ Snapshot learning insights (additive). Empty-ish when learning is off or thin.
 | `snapshot_count`               | int    | Retained files under cache                                   |
 | `learning_active`              | bool   | Whether history influences scoring this run                  |
 | `retention_days`               | int    | From config                                                  |
-| `learned_burn_rates`           | object | Map `provider:duration` → `{fraction_per_day, sample_count}` |
+| `learned_burn_rates`           | object | Map `provider:pool:duration` → `{fraction_per_day, sample_count}` |
 | `chronic_underuse`             | array  | Short windows with high avg remaining across ≥2 cycles       |
 | `usually_left_late_cycle`      | array  | Avg remaining when observed ≥70% into a window               |
 | `burn_candidates_from_history` | array  | Subset of late-cycle leftovers (≥40% left avg) as burn hints |
@@ -324,7 +352,7 @@ sorted by headroom (most left first), each with `models_hint` and the local
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "generated_at": "2026-10-03T23:05:00+00:00",
   "source": "cache",
   "age_seconds": 412.0,
@@ -445,6 +473,7 @@ into the other.
 | `cross_checks`       | array             | Informational tool comparisons                                                                                                                                                             |
 | `collector_errors`   | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
 | `disabled_services`  | object            | provider → reason from top-level `[disabled_services]` (1.1; `{}` = none). Rows for these providers are not collected — do not route to or spend them until the operator removes the entry |
+| `hidden_pools`       | object            | provider[/pool_family] → reason from `[hidden_pools]` (1.3; `{}` = none). Display-only hide applied at collection |
 | `config_fingerprint` | string \| omitted | short id of the disable list, collector switches, and `[usage_sources]` pins this snapshot was collected under. Omitted on older snapshots. Additive (schema 1.1+)                         |
 
 ### `accounts[]` (`AccountUsage`)
@@ -502,7 +531,12 @@ additive per the stability policy below.
 | `internal_throttle`           | bool                 |
 | `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                 |
 | `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                            |
-| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `auto`/`included`/`other`/`grok` |
+| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `total`/`auto`/`third_party`/`on_demand`/`grok_bot` |
+| `role`                        | string \| omitted    | 1.3 — `ceiling` (total umbrella) or `breakdown` (sub-row of a ceiling) |
+| `effective_left_percent`      | number \| omitted    | 1.3 — breakdown headroom after ceiling cap: min(own, ceiling) |
+| `ceiling_binding`             | bool \| omitted      | 1.3 — true when the ceiling row binds the sub-row |
+| `ceiling_headroom_percent`    | number \| omitted    | 1.3 — remaining on the ceiling window |
+| `ceiling_window_id`           | string \| omitted    | 1.3 — window_id of the ceiling row |
 | `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                 |
 | `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                   |
 | `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                        |

@@ -348,3 +348,19 @@ def test_disabled_services_may_still_name_the_removed_hyper_provider():
     assert not [issue for issue in validate_config(config) if "hyper" in issue or issue.startswith("error")]
     assert _disabled_services(config) == {"hyper": "operator 2026-10-08: crush uninstalled"}
     assert provider_display_name("hyper") == "Hyper"  # generic fallback, no special mapping
+
+
+def test_hidden_pools_default_and_validation():
+    assert DEFAULT_CONFIG.get("hidden_pools") == {}
+    assert DEFAULT_CONFIG["analysis"].get("show_total_rows") is False
+    assert validate_config({"hidden_pools": {"cursor/auto": "hide auto"}}) == []
+    issues = "\n".join(validate_config({"hidden_pools": {"": True}}))
+    assert "hidden_pools key '' needs a provider" in issues
+    assert "must be a" in "\n".join(validate_config({"hidden_pools": ["cursor"]}))
+
+
+def test_collection_policy_fingerprint_includes_hidden_pools():
+    from aiuse.config import collection_policy_fingerprint
+
+    base = collection_policy_fingerprint({})
+    assert base != collection_policy_fingerprint({"hidden_pools": {"cursor/auto": "hide"}})

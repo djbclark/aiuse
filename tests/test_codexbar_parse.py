@@ -666,10 +666,10 @@ def test_parse_cursor_included_auto_other_models_and_ondemand():
     assert acc.provider == "cursor"
     assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
     assert [w.label for w in acc.windows] == [
-        "Cursor included",
-        "Cursor Auto",
-        "Cursor other models",
-        "On-demand",
+        "total",
+        "auto",
+        "third-party",
+        "on-demand",
     ]
     assert all(w.resets_at is not None for w in acc.windows)
     assert abs((acc.windows[0].remaining_percent or 0) - (100 - 61.35942028985507)) < 0.01
@@ -699,11 +699,11 @@ def test_parse_cursor_included_auto_other_models_and_ondemand():
     }
     alerts = analyze_use_or_lose(snap, cfg)
     # Third Party is a breakdown row (window_id tertiary), not its own scored pool.
-    assert not [a for a in alerts if a.window_label == "Cursor other models"]
+    assert not [a for a in alerts if a.window_label == "third-party"]
     assert all(a.kind != "prepaid" for a in alerts)
     on_demand = [w for w in acc.windows if w.window_id == "on-demand"]
     assert len(on_demand) == 1
-    assert on_demand[0].label == "On-demand"
+    assert on_demand[0].label == "on-demand"
     assert all(w.window_id in ("primary", "secondary", "tertiary", "on-demand") for w in acc.windows[:4])
 
 
@@ -835,30 +835,30 @@ def test_parse_cursor_web_fixture_pools_and_ondemand():
     acc = _from_row(row)
     assert acc.provider == "cursor"
     by_id = {w.window_id: w for w in acc.windows}
-    assert by_id["primary"].label == "Total"
+    assert by_id["primary"].label == "total"
     assert abs(by_id["primary"].used_percent - 9.331160896130346) < 0.001
     assert by_id["primary"].resets_at == datetime.fromisoformat("2026-11-10T00:46:08+00:00")
     assert by_id["secondary"].label == "auto"
     assert abs(by_id["secondary"].used_percent - 9.270833333333334) < 0.001
-    assert by_id["tertiary"].label == "Third Party"
+    assert by_id["tertiary"].label == "third-party"
     assert abs(by_id["tertiary"].used_percent - 11.963636363636363) < 0.001
     grok = next(w for w in acc.windows if w.window_id == CURSOR_GROK_BOT_WINDOW_ID)
-    assert grok.label == "Grok Bot"
+    assert grok.label == "grok-bot"
     assert abs(grok.used_percent - 28.458438) < 0.001
     assert grok.window_minutes == 10080
     assert grok.resets_at == datetime.fromisoformat("2026-10-17T21:57:39+00:00")
-    assert pool_key_for_window(grok) == "cursor_grok"
+    assert pool_key_for_window(grok) == "cursor_grok_bot"
     pools = partition_independent_pools(acc.windows)
     pool_keys = {pool_key_for_window(w) for pool in pools for w in pool}
-    assert "cursor_grok" in pool_keys
-    assert pool_key_for_window(by_id["primary"]) == ""
+    assert "cursor_grok_bot" in pool_keys
+    assert pool_key_for_window(by_id["primary"]) == "cursor_total"
     assert pool_key_for_window(by_id["secondary"]) == "cursor_auto"
     assert pool_key_for_window(by_id["tertiary"]) == "cursor_third_party"
     assert acc.usage_credits is not None
     assert acc.usage_credits.used == 0
     assert acc.usage_credits.limit == 2
     on_demand = by_id["on-demand"]
-    assert on_demand.label == "On-demand"
+    assert on_demand.label == "on-demand"
     assert on_demand.used_percent == 0.0
 
 
@@ -869,8 +869,8 @@ def test_cursor_grok_bot_matches_on_id_not_title():
     row["usage"]["extraRateWindows"][0]["title"] = "Renamed By Cursor UI"
     acc = _from_row(row)
     grok = next(w for w in acc.windows if w.window_id == CURSOR_GROK_BOT_WINDOW_ID)
-    assert grok.label == "Renamed By Cursor UI"
-    assert pool_key_for_window(grok) == "cursor_grok"
+    assert grok.label == "grok-bot"
+    assert pool_key_for_window(grok) == "cursor_grok_bot"
 
 
 def test_providers_filter_skips_clinepass_collector(monkeypatch):
@@ -915,17 +915,24 @@ def test_generate_config_includes_collectors_section(monkeypatch, tmp_path):
 
 
 def test_cursor_matrix_total_scope_label():
-    from aiuse.analysis.selfdescribe import enrich_snapshot
     from aiuse.models import Snapshot
     from aiuse.report import render_clock_matrix
 
     row = json.loads((_FIXTURE_DIR / "codexbar_cursor_web.json").read_text(encoding="utf-8"))[0]
     acc = _from_row(row)
     snap = Snapshot(collected_at=datetime.now(UTC), accounts=[acc])
-    text = render_clock_matrix([], snapshot=snap, color=False, width=160)
-    total_line = next(line for line in text.splitlines() if " total " in f" {line} ")
+    hidden = render_clock_matrix([], snapshot=snap, color=False, width=160)
+    hidden_rows = [line for line in hidden.splitlines() if line.split() and line.split()[0] in {"slow", "mid", "use"}]
+    assert not any(" total " in f" {line} " for line in hidden_rows)
+    shown = render_clock_matrix(
+        [],
+        snapshot=snap,
+        color=False,
+        width=160,
+        config={"analysis": {"show_total_rows": True}},
+    )
+    total_line = next(line for line in shown.splitlines() if " total " in f" {line} ")
     assert " total " in total_line
-    assert " — " not in total_line.split("SCOPE", 1)[-1][:20]
 
 
 def test_cursor_json_ondemand_usd_and_window_ids():

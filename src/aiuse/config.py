@@ -94,8 +94,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             },
             # 5h ⊂ weekly ⊂ monthly — burning a short window draws the same Go budget.
             "opencode": {"shared_allotment": True},
-            # Included+Auto share one governing pool (Included); API is a
-            # separate independent pool (analysis/pace.py independent_pool_key()).
+            # total is the monthly ceiling; auto and third-party are breakdown rows.
             "cursor": {"shared_allotment": True},
             # ClinePass: 5h ⊂ weekly ⊂ monthly subscription limits.
             "clinepass": {"shared_allotment": True},
@@ -126,7 +125,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # reason). The quota is real and still reported; the operator has ruled
         # the pool out, so `--available` omits it and lists it under `excluded`.
         "excluded_pools": {},
+        # Hide total/ceiling rows in human outputs; JSON keeps them with role=ceiling.
+        "show_total_rows": False,
     },
+    # Operator-hidden pools ("provider" or "provider/pool_family" -> reason).
+    # Display-only: rows are dropped at collection and omitted from human outputs
+    # and --available. Stronger than excluded_pools (routing-only) but weaker
+    # than disabled_services (off-limits overall).
+    "hidden_pools": {},
     # Operator-disabled services ("provider" -> reason or true). Stronger than
     # analysis.excluded_pools (routing-only): a disabled service is off-limits
     # overall — provider-only collectors skip it, its rows are dropped from
@@ -157,8 +163,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cursor": {
             "name": "Cursor",
             "notes": (
-                "Two monthly pools: Included+Auto (Cursor Models) and Other Models "
-                "(third-party at provider rates); on-demand is a separate dollar cap."
+                "total (monthly umbrella), auto (Cursor Auto/Composer), "
+                "third-party (named third-party models), on-demand (spend cap), "
+                "grok-bot (separate weekly allowance)."
             ),
             "monthly_price": 20,
         },
@@ -339,6 +346,7 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "sampling",
         "attribution",
         "disabled_services",
+        "hidden_pools",
         "usage_sources",
     }
 )
@@ -512,8 +520,11 @@ def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
             collectors[str(name)] = item
     pins_raw = cfg.get("usage_sources")
     pins = {str(key): str(value) for key, value in pins_raw.items()} if isinstance(pins_raw, dict) else {}
+    from aiuse.analysis.pool_keys import hidden_pool_rules
+
     payload = {
         "disabled_services": canonical_disabled_services(cfg),
+        "hidden_pools": {f"{p}/{f}" if f else p: r for p, f, r in hidden_pool_rules(cfg)},
         "collectors": collectors,
         "usage_sources": pins,
     }
@@ -826,6 +837,16 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     issues.append(f"error: analysis.excluded_pools key {key!r} needs a provider")
                 if not (value is True or (isinstance(value, str) and value.strip())):
                     issues.append(f"error: analysis.excluded_pools.{key} needs a reason string or true")
+
+    hidden_pools = cfg.get("hidden_pools")
+    if hidden_pools is not None and not isinstance(hidden_pools, dict):
+        issues.append("error: hidden_pools must be a 'provider[/pool_family]' -> reason mapping")
+    elif isinstance(hidden_pools, dict):
+        for key, value in hidden_pools.items():
+            if not str(key).split("/", 1)[0].strip():
+                issues.append(f"error: hidden_pools key {key!r} needs a provider")
+            if not (value is True or (isinstance(value, str) and value.strip())):
+                issues.append(f"error: hidden_pools.{key} needs a reason string or true")
 
     disabled_services = cfg.get("disabled_services")
     if disabled_services is not None and not isinstance(disabled_services, dict):

@@ -1,97 +1,93 @@
 # Cursor quota reliability
 
 Cursor's agent CLI is `cursor-agent`. Every report line for this provider is
-named `cursor` (see `PROVIDER_DISPLAY_NAMES` in `models.py`), so `grep -i
-cursor` finds it — the display names are the CLI handles themselves rather
-than a longer vendor name carrying the handle in parentheses.
+named `cursor` (see `PROVIDER_DISPLAY_NAMES` in `models.py`).
 
-**Symptom:** `ai` showed three identical “Cursor monthly quota (1/2/3)” bars,
-invented separate dollar-at-risk for each, and raised **CONSERVE** on quota (3)
-at 0% left while the Cursor dashboard still showed **Included ~61% used**
-(~39% left) and On-Demand `$1.47 / $2`.
+**Symptom (historical):** three identical “Cursor monthly quota (1/2/3)” bars,
+invented dollar-at-risk for each, and **CONSERVE** on quota (3) at 0% left while
+the dashboard still showed **total ~61% used** (~39% left) and on-demand
+`$1.47 / $2`.
 
 ## Cause
 
 CodexBar maps Cursor’s dashboard rows to `primary` / `secondary` / `tertiary`
-plus `providerCost`:
+plus `providerCost` and `extraRateWindows`:
 
-| CodexBar                                        | Cursor UI / docs name                         | `aiuse` label             |
-| ----------------------------------------------- | --------------------------------------------- | ------------------------- |
-| `primary`                                       | **Included** / Cursor Models (overall)        | **Cursor included**       |
-| `secondary`                                     | **Auto** (category of Included)               | **Cursor Auto**           |
-| `tertiary`                                      | **Other Models** (was “API” in older UI copy) | **Cursor other models**   |
-| `providerCost` (`period: Monthly`, `limit > 0`) | **On-Demand** `$used / $limit`                | usage credits / on-demand |
+| CodexBar slot / id                              | Cursor UI / docs name                         | `aiuse` label   | `pool_family` |
+| ----------------------------------------------- | --------------------------------------------- | --------------- | ------------- |
+| `primary`                                       | **Total** (monthly umbrella)                  | **total**       | `total`       |
+| `secondary`                                     | **Auto** (Cursor Auto/Composer)             | **auto**        | `auto`        |
+| `tertiary`                                      | **Third Party** (named third-party models)    | **third-party** | `third_party` |
+| `providerCost` (`period: Monthly`, `limit > 0`) | **On-demand** `$used / $limit`                | **on-demand**   | `on_demand`   |
+| `extraRateWindows` id `cursor-grok-bot`         | **Grok Bot** weekly allowance                 | **grok-bot**    | `grok_bot`    |
 
-**Grok window naming (2026-10-09):** Cursor's dashboard calls the sand/grok
-extra allowance "Grok Bot"; CodexBar passes that through as the window title.
-aiuse maps it to pool family `grok` (one grok model pool at Cursor — GrokBot,
-the xAI app, is a different thing entirely and cannot spend this allowance).
-A proposed upstream rename "Grok Bot" → "Grok" was closed; the maintainer chose
-to keep the dashboard-aligned label so the menu matches Cursor's own naming
-([steipete/CodexBar#4383](https://github.com/steipete/CodexBar/pull/4383)).
-Downstream tools should map on the stable window id (`cursor-grok-bot`) rather
-than the display title, which can change whenever Cursor renames things.
+**Do not assume** `total = auto + third-party`. CodexBar only reports
+percentages per row; aiuse treats **total** as the monthly ceiling row and
+**auto** / **third-party** as breakdown sub-rows whose effective headroom is
+`min(own, total)`.
+
+**Grok-bot family (2026-10-14):** per xAI, Grok Bot usage is a separate weekly
+allowance — distinct from SuperGrok/xAI subscription and from the monthly Cursor
+pools. aiuse keys it on the stable window id `cursor-grok-bot` (never the display
+title alone). Display label is exactly `grok-bot`; config/JSON family is
+`grok_bot`.
 
 Without fixed slot labels, `_slot_label` fell back to “monthly quota (N)”.
-Without `shared_allotment`, Auto and Other Models were scored as independent
-burn windows, so a maxed Other Models category looked like a lockout even when
-Included still had headroom. On-Demand was ignored (only OpenCode Zen’s
-`providerCost` was read).
+On-demand was ignored (only OpenCode Zen’s `providerCost` was read initially).
 
-## Two monthly pools (not prepaid)
+## Monthly pools and spend cap (not prepaid)
 
-Cursor's confirmed billing model has **two independent monthly pools** for
-individual plans (Pro / Pro+ / Ultra). Both reset with the billing cycle.
-Other Models is **not** a non-expiring prepaid wallet (unlike DeepSeek /
-OpenRouter) — unused headroom is use-or-lose at month end.
+Cursor exposes:
 
-In `aiuse`, a Cursor CodexBar/OpenUsage row with those windows is classified as
-`billing_kind: subscription_window` (because each slot has `resetsAt`). That
-puts Other Models through pace / use-or-lose scoring like Included — burn,
-conserve, or on-pace `mid` — never the prepaid `n/a` lane.
+- **total** — umbrella for all monthly Cursor subscription usage (ceiling row;
+  hidden by default when auto/third-party sub-rows are present).
+- **auto** — Cursor Auto/Composer models (breakdown; not scored for headline pace).
+- **third-party** — named third-party models at provider rates (breakdown; not
+  scored for headline pace).
+- **on-demand** — pay-as-you-go dollar cap (`providerCost`); separate from total.
+- **grok-bot** — separate weekly allowance; never capped by total.
 
-| Pool (Cursor docs) | What burns it                                                          | Included amount (individual)                        |
-| ------------------ | ---------------------------------------------------------------------- | --------------------------------------------------- |
-| **Cursor Models**  | First-party: **Cursor Grok 4.5**, **Composer 2.5**; Auto **Cost** mode | “Generous included usage” (size not published as $) |
-| **Other Models**   | Third-party models at that model’s API price                           | Pro **$20**/mo · Pro+ **$70** · Ultra **$400**      |
+Both **total**, **auto**, and **third-party** reset with the billing cycle
+(use-or-lose). **On-demand** is a spend cap, not a prepaid wallet. **grok-bot**
+is weekly.
 
-Exhausting one pool has no effect on the other. After included Other Models is
-gone, **On-Demand** (CodexBar `providerCost`) is the optional pay-as-you-go
-dollar cap.
+| Pool (aiuse label) | What burns it                                                          |
+| ------------------ | ---------------------------------------------------------------------- |
+| **total**          | All monthly Cursor subscription usage (umbrella meter)                 |
+| **auto**           | Cursor Auto/Composer model selection                                   |
+| **third-party**    | Third-party models at that model’s API price                           |
+| **on-demand**      | Pay-as-you-go spend against the configured dollar cap                  |
+| **grok-bot**       | Grok Bot weekly allowance (separate from Grok/Cursor plans)            |
 
-### What counts as Other Models
+CodexBar percentages for total, auto, and third-party are independent readings;
+aiuse does not derive one from the others.
 
-Anything you pick that is **not** Cursor Grok 4.5 or Composer 2.5 draws from
-Other Models at the provider rate. Cursor’s model list currently includes
-families such as:
+### Third-party examples
 
-- **Anthropic** — Claude Sonnet / Opus / Haiku (4.x–5.x lines and variants)
-- **OpenAI** — GPT-5.x, GPT-5-Codex and related variants
-- **Google** — Gemini 2.5 / 3.x Flash and Pro (and image preview where listed)
-- **Moonshot** — Kimi K2.7 Code, Kimi K3
-- **Z.ai** — GLM 5.2
+Anything that is not bundled Auto/Composer draws **third-party** at provider
+rates — Anthropic Claude, OpenAI GPT, Google Gemini, Moonshot Kimi, Z.ai GLM,
+etc. Auto **Balance** / **Intelligence** can route to third-party models;
+Auto **Cost** stays on bundled pricing against the monthly pools.
 
-Auto **Balance** / **Intelligence** can also charge Other Models when the
-router picks a third-party model; Auto **Cost** stays on bundled Auto pricing
-against the Cursor Models side. Canonical pricing table:
+Canonical pricing table:
 [Models & Pricing](https://cursor.com/docs/models-and-pricing).
 
 ## What `aiuse` does
 
-1. Label slots **Cursor included** / **Cursor Auto** / **Cursor other models**.
-2. Default `analysis.provider_overrides.cursor.shared_allotment: true`, plus
-   `independent_pool_key()` hard-separating **Cursor other models** into its
-   own pool (`cursor_other_models` in `analysis/pace.py`; still matches legacy
-   “Cursor API” labels): **Included** governs the Included+Auto pool (Auto is
-   its suppressed child), while **Other Models** is pace-scored independently
-   and can raise its own CONSERVE/BURN alert without regard to Included/Auto’s
-   state, and vice versa.
-3. Parse on-demand `providerCost` into `usage_credits` when `limit > 0`.
+1. Label slots **total** / **auto** / **third-party** / **on-demand** /
+   **grok-bot** (lowercase display labels).
+2. Mark **total** as a ceiling (`role: ceiling` in JSON); **auto** and
+   **third-party** as breakdown rows capped by total headroom when lower.
+3. Default `analysis.provider_overrides.cursor.shared_allotment: true`, with
+   `independent_pool_key()` separating on-demand and grok-bot.
+4. Parse on-demand `providerCost` into `usage_credits` when `limit > 0`.
+5. Hide ceiling **total** rows by default in human outputs and `--available`
+   (`analysis.show_total_rows = false`); watch `a` / `--all-providers` shows
+   them again (operator-only).
+6. `[hidden_pools]` drops configured rows at collection; `[analysis.excluded_pools]`
+   omits them from `--available` routing only.
 
-`aiuse` sets no on-demand cap of its own. The `$used / $limit` figure is
-whatever Cursor's account reports (via CodexBar `providerCost`), so a small
-limit such as `$2` is Cursor's own setting, not an `aiuse` default — the same
-number appearing in another source just confirms it.
+`aiuse` sets no on-demand cap of its own — the figure is whatever Cursor reports.
 
 ## Verify
 
@@ -100,8 +96,6 @@ codexbar usage --provider cursor --source web --json --no-color
 aiuse --full -q --no-tui
 ```
 
-Expect Included ~39% left when the dashboard shows ~61% used, Auto as a
-breakdown line, on-demand ~$0.53 remaining, and no CONSERVE on Included/Auto
-solely because Other Models shows 100% used — but Other Models’ own exhaustion
-now correctly raises its own CONSERVE/BURN alert (as its own independent pool,
-not suppressed as a child of Included).
+Expect **total** hidden on the default board when sub-rows exist, **auto** and
+**third-party** visible, on-demand spend when configured, and **grok-bot** as its
+own weekly row. Breakdown pace does not drive the account headline or exit code.

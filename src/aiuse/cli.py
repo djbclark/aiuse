@@ -67,7 +67,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
-  aiuse watch                 full-screen quota board (q/esc quit, u update now, a all providers; default 10m)
+  aiuse watch                 full-screen quota board (q/esc quit, u update now, a toggle all-providers sweep; default 10m)
   aiuse sample                scheduled entry point: collects hourly when idle, every 15m when a
                            window moved, every 3m in a burst (docs/attribution.md)
   aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
@@ -196,9 +196,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-providers",
         action="store_true",
         help=(
-            "aiuse watch: one-time collect of EVERY provider — ignores [disabled_services] and "
-            "collector disable flags — printed once, nothing written to snapshots, ledger, or "
-            "sampler state (screen only). OPERATOR-ONLY: AI agents and automation must NOT use "
+            "aiuse watch: one-time collect of EVERY provider — ignores [disabled_services], "
+            "[hidden_pools], analysis.excluded_pools, hidden ceiling rows, and collector disable "
+            "flags — printed once, nothing written to snapshots, ledger, or sampler state "
+            "(screen only). OPERATOR-ONLY: AI agents and automation must NOT use "
             "this without explicit permission from the human operator; providers are disabled "
             "for reasons (rate limits, cost, opt-outs) that a sweep deliberately overrides. "
             "Implies --once."
@@ -674,7 +675,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
             except Exception as e:
                 print(f"Warning: could not parse --routing-context: {e}", file=sys.stderr)
 
-        print(render_chat_report(snapshot, alerts, routing_context=routing_context))
+        print(render_chat_report(snapshot, alerts, routing_context=routing_context, config=config))
         return exit_code
 
     from aiuse.tui import run_inline_report, should_use_tui
@@ -1009,8 +1010,10 @@ def diagnose(
     lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
-    lines.append("  aiuse watch               # full-screen board (q/esc quit; u update now; a all providers)")
-    lines.append("  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider, screen only")
+    lines.append("  aiuse watch               # full-screen board (q/esc quit; u update now; a toggle all-providers sweep)")
+    lines.append(
+        "  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider incl. hidden/ceiling rows"
+    )
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
     lines.append("  aiuse -t 45               # force all tool timeouts for one run")
     lines.append("  aiuse --help              # full flag list + setup epilog")
@@ -1166,8 +1169,10 @@ def _run_available(args: argparse.Namespace) -> int:
         snap_dict = snapshot.to_dict()
         source = "live"
 
+    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, filter_ceiling_pools
     from aiuse.client_limits import load_client_limits
 
+    apply_hidden_pools_dict(snap_dict, config)
     enrich_snapshot(snap_dict, notes=notes, client_limits=load_client_limits(config), threshold_seconds=threshold)
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally
@@ -1175,7 +1180,12 @@ def _run_available(args: argparse.Namespace) -> int:
     # the entry added after the snapshot) can still carry the pools — so the
     # view applies it on top of the routing-only excluded_pools rules.
     exclusions = {**(config.get("disabled_services") or {}), **(analysis_cfg.get("excluded_pools") or {})}
-    pools, excluded = apply_exclusions(available_pools(snap_dict), exclusions)
+    show_total = bool(analysis_cfg.get("show_total_rows", False))
+    pools, excluded = apply_exclusions(
+        filter_ceiling_pools(available_pools(snap_dict), show_total_rows=show_total),
+        exclusions,
+    )
+    hidden_pools = snap_dict.get("hidden_pools") or {}
 
     if args.json or args.format == "json":
         print(
@@ -1189,6 +1199,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     **fresh,
                     "available": pools,
                     "excluded": excluded,
+                    "hidden_pools": hidden_pools,
                     "disabled_services": snap_dict.get("disabled_services") or {},
                     "agent_notes": snap_dict.get("agent_notes", []),
                     "semantics": dict(SEMANTICS),
@@ -1207,6 +1218,8 @@ def _run_available(args: argparse.Namespace) -> int:
     for entry in excluded:
         family = f" {entry['pool_family']}" if entry.get("pool_family") else ""
         print(f"excluded by operator: {entry['provider']}{family} ({entry['reason']})", file=sys.stderr)
+    for key, reason in sorted(hidden_pools.items()):
+        print(f"hidden by operator: {key} ({reason})", file=sys.stderr)
     if not pools:
         print(
             "no usable pools right now — everything measured is exhausted or unknown",

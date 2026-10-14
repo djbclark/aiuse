@@ -101,7 +101,90 @@ _SCOPE_SHORT = {
     "gemini": "gem",
     "claude/gpt": "c/gpt",
     "other models": "oth",
+    "third-party": "3rd",
+    "on-demand": "dmnd",
+    "grok-bot": "grok",
 }
+
+
+def _show_total_rows(config: dict[str, Any] | None) -> bool:
+    analysis = (config or {}).get("analysis")
+    if not isinstance(analysis, dict):
+        return False
+    return bool(analysis.get("show_total_rows", False))
+
+
+def _hide_ceiling_pool_row(account: AccountUsage, pool_id: str, config: dict[str, Any] | None) -> bool:
+    if _show_total_rows(config) or not pool_id:
+        return False
+    from aiuse.analysis.ceilings import CEILING_FAMILIES
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    families = CEILING_FAMILIES.get(account.provider, {})
+    for ceiling_family, sub_families in families.items():
+        ceiling_slug = f"cursor_{ceiling_family}" if account.provider == "cursor" else ceiling_family
+        if pool_id != ceiling_slug and pool_id != ceiling_family:
+            continue
+        for window in account.windows:
+            fam = pool_family_id(account.provider, window.label, window.window_id)
+            if fam in sub_families:
+                return True
+    return False
+
+
+def _hide_ceiling_window(account: AccountUsage, window: QuotaWindow, config: dict[str, Any] | None) -> bool:
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    family = pool_family_id(account.provider, window.label, window.window_id)
+    return _hide_ceiling_pool_row(
+        account, f"cursor_{family}" if account.provider == "cursor" and family else family or "", config
+    )
+
+
+def _find_account(snapshot: Snapshot | None, provider: str, account: str | None) -> AccountUsage | None:
+    if snapshot is None:
+        return None
+    want = (account or "").casefold()
+    for row in snapshot.accounts:
+        if row.provider == provider and (row.account or "").casefold() == want:
+            return row
+    return None
+
+
+def _skip_hidden_ceiling_alert(
+    snapshot: Snapshot | None,
+    alert: UseOrLoseAlert,
+    config: dict[str, Any] | None,
+) -> bool:
+    """True when a ceiling-only alert should not add a matrix/ladder row."""
+    account = _find_account(snapshot, alert.provider, alert.account)
+    if account is None:
+        return False
+    pool_id = _pool_id_for_label(alert.window_label)
+    return _hide_ceiling_pool_row(account, pool_id, config)
+
+
+def _cursor_matrix_used_percent(
+    account: AccountUsage,
+    window: QuotaWindow,
+    used: float,
+    sublimit_notes: list[str],
+) -> float:
+    """Effective used % for Cursor breakdown rows; append binding notes when capped."""
+    from aiuse.analysis.ceilings import ceiling_binding_note, effective_remaining, window_is_breakdown
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    family = pool_family_id(account.provider, window.label, window.window_id)
+    if not window_is_breakdown(account.provider, family):
+        return used
+    effective_left, binding = effective_remaining(window, account.provider, account.windows)
+    if effective_left is None:
+        return used
+    if binding:
+        note = ceiling_binding_note(window, account.provider, account.windows)
+        if note and note not in sublimit_notes:
+            sublimit_notes.append(note)
+    return max(0.0, 100.0 - effective_left)
 
 
 @dataclass
@@ -360,6 +443,13 @@ def render_report(
                 f"  {provider_display_name(provider)}: {reason} "
                 "— off-limits entirely (no quota collected); remove the [disabled_services] entry to re-enable."
             )
+
+    if getattr(snapshot, "hidden_pools", None):
+        lines.append("")
+        lines.append(s.bold("## Hidden by operator"))
+        lines.append(s.dim("-" * width))
+        for key, reason in sorted(snapshot.hidden_pools.items()):
+            lines.append(f"  {key}: {reason} — display-only; remove the [hidden_pools] entry to show again.")
 
     lines.append("")
     lines.append(s.bold("## Per-provider usage"))
@@ -1135,6 +1225,8 @@ def render_priority_ladder(
         pools = partition_independent_pools(account.windows) if account.windows else [[]]
         for pool in pools:
             pool_id = _pool_id_for_windows(pool) if pool else ""
+            if _hide_ceiling_pool_row(account, pool_id, config):
+                continue
             cov = _ladder_coverage_key(account.provider, account.account, pool_id)
             if cov in covered:
                 continue
@@ -1248,6 +1340,8 @@ def _build_matrix_rows(
 
         for pool in partition_independent_pools(account.windows) if account.windows else [[]]:
             pool_id = _pool_id_for_windows(pool) if pool else ""
+            if _hide_ceiling_pool_row(account, pool_id, cfg):
+                continue
             clocks: dict[str, _ClockCell] = {}
             value: float | None = None
             sublimit_notes: list[str] = []
@@ -1268,6 +1362,8 @@ def _build_matrix_rows(
                     continue
                 if used is None:
                     continue
+                if account.provider == "cursor":
+                    used = _cursor_matrix_used_percent(account, window, used, sublimit_notes)
                 clock, inferred = infer_window_clock(window)
                 days = window.days_until_reset(now)
                 estimated = not window.reset_time_is_precise()
@@ -1286,7 +1382,7 @@ def _build_matrix_rows(
                             pace_early=pace_early,
                         )
                     else:
-                        # Same clock, same pool (Cursor Included ⊂ Auto): show the
+                        # Same clock, same pool (Cursor total ⊂ auto): show the
                         # most-consumed, which is the one that locks out first.
                         cell.folded += 1
                         if used > cell.used_percent:
@@ -1365,8 +1461,12 @@ def _build_matrix_rows(
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
             continue
-        key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+        pool_id = _pool_id_for_label(alert.window_label)
+        key = _ladder_coverage_key(alert.provider, alert.account, pool_id)
         if key in covered:
+            continue
+        if _skip_hidden_ceiling_alert(snapshot, alert, cfg):
+            covered.add(key)
             continue
         covered.add(key)
         rows.append(_row_from_alert(alert, now=now, pricing=pricing))
@@ -2468,6 +2568,8 @@ def _render_account(
         lines.append(f"  credits (counts down): {acc.credits_remaining}")
 
     for w in acc.windows:
+        if _hide_ceiling_window(acc, w, config):
+            continue
         rem = w.remaining()
         rem_s = f"{rem:.0f}% left" if rem is not None else "n/a"
         used_s = f"{w.used_percent:.0f}% used" if w.used_percent is not None else ""
@@ -2490,8 +2592,13 @@ def _render_account(
                 rem_colored = s.cyan(rem_padded)
             else:
                 rem_colored = s.green(rem_padded)
+        from aiuse.analysis.ceilings import ceiling_binding_note
+
+        bind_note = ceiling_binding_note(w, acc.provider, acc.windows)
         lines.append(f"  quota: {w.label}")
         lines.append(f"    {bar} {rem_colored} {used_s:10} {s.dim(reset_s)}")
+        if bind_note:
+            lines.append(s.dim(f"    ^ {bind_note}"))
 
         if rem is not None and w.window_minutes:
             detail = _consumption_line(w, acc.provider, analysis)

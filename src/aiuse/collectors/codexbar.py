@@ -81,17 +81,12 @@ _SLOT_LABELS: dict[str, tuple[str, str, str]] = {
         "GitHub Copilot chat messages",
         "GitHub Copilot quota 3",
     ),
-    # Cursor's confirmed billing model (2026-08, see docs/cursor-quota.md): two
-    # independent monthly subscription windows — Included+Auto (first-party,
-    # "Cursor Models") and Other Models (third-party at provider rates). Both
-    # reset with the billing cycle (use-or-lose); neither is a prepaid wallet.
-    # On-Demand is separate again (providerCost). Primary governs Included+Auto;
-    # Other Models is its own independent pool (analysis/pace.py
-    # independent_pool_key()), not a suppressed child of Included.
+    # Cursor pools (see docs/cursor-quota.md): total (monthly umbrella), auto,
+    # third-party (breakdown rows), on-demand (spend cap), grok-bot (weekly).
     "cursor": (
-        "Cursor included",
-        "Cursor Auto",
-        "Cursor other models",
+        "total",
+        "auto",
+        "third-party",
     ),
     # ClinePass: official 5h / weekly / monthly subscription limits (nested).
     "clinepass": (
@@ -564,6 +559,17 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         title = str(extra.get("title") or extra_id or "Unnamed CodexBar quota")
         window = _window(title, extra["window"], window_id=extra_id or None)
         if window:
+            if extra_id == "cursor-grok-bot":
+                window = QuotaWindow(
+                    label="grok-bot",
+                    used_percent=window.used_percent,
+                    remaining_percent=window.remaining_percent,
+                    resets_at=window.resets_at,
+                    window_minutes=window.window_minutes,
+                    window_id=extra_id,
+                    reset_description=window.reset_description,
+                    raw=window.raw,
+                )
             extra_windows.append(window)
     windows.extend(extra_windows)
 
@@ -654,7 +660,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     rem_pct = max(0.0, 100.0 - used_pct) if used_pct is not None else None
                     windows.append(
                         QuotaWindow(
-                            label="On-demand",
+                            label="on-demand",
                             window_id="on-demand",
                             used_percent=used_pct,
                             remaining_percent=rem_pct,
@@ -830,7 +836,13 @@ def _cursor_rate_label(index: int, rate_labels: dict[str, Any]) -> str | None:
     low = text.casefold()
     if low == "cursor":
         return "auto"
-    return text
+    if low == "total":
+        return "total"
+    if low == "third party":
+        return "third-party"
+    if low == "on demand":
+        return "on-demand"
+    return text.lower() if text.isascii() else text
 
 
 def _slot_label(

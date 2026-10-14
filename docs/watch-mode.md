@@ -36,7 +36,7 @@ a different beast from the default stdout report that
 | -------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `-i`, `--interval SECONDS` | `600`   | Refresh cadence; `>0`. Suffixes `10m` / `90s` accepted.                                                                                                                             |
 | `--once`                   | off     | Collect + render a single frame and exit (scripts / tmux status).                                                                                                                   |
-| `--all-providers`          | off     | **Operator-only** one-shot sweep (the `a` key as a switch): every provider incl. `[disabled_services]` / disabled collectors, printed once, **nothing recorded**. Implies `--once`. |
+| `--all-providers`          | off     | **Operator-only** one-shot sweep (the `a` key as a switch): every provider incl. `[disabled_services]`, `[hidden_pools]`, `analysis.excluded_pools`, disabled collectors, and ceiling/total rows (`show_total_rows`), printed once, **nothing recorded**. Press `a` again to return to the normal filtered view. Implies `--once`. |
 | `-q` / `--quiet`           | off     | Suppress the capacity / detail blurb inside the board.                                                                                                                              |
 | `--no-color`               | off     | Honor `NO_COLOR` as everywhere.                                                                                                                                                     |
 | `-t` / `--timeout`         | config  | Per-collector timeout for the run.                                                                                                                                                  |
@@ -224,8 +224,11 @@ not reach the vendors (operator rule). Four constraints, enforced in
 The sweep is **operator-only**: AI agents and automation must not trigger it
 (`a` key or `aiuse watch --all-providers`) without explicit permission from
 the human operator. Providers are disabled for reasons — vendor rate limits,
-cost, opt-outs — that the sweep deliberately overrides. The restriction is
-flagged in `--help`, the stderr warning, README, and AGENTS.md.
+cost, opt-outs — that the sweep deliberately overrides. While the sweep is
+active the header reads `ALL PROVIDERS · hidden + total rows shown · screen
+only`; pressing `a` again exits the sweep and restores the normal filtered
+board (respecting `[hidden_pools]`, exclusions, and hidden ceiling rows). The
+restriction is flagged in `--help`, the stderr warning, README, and AGENTS.md.
 
 ## One polling pipeline with `aiuse sample`
 

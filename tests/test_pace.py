@@ -187,7 +187,7 @@ def test_independent_pool_key_gemini_vs_claude_gpt():
     assert independent_pool_key("Claude/GPT 5-hour") == "claude_gpt"
     assert independent_pool_key("Antigravity nonGeminiWeekly") == "claude_gpt"
     assert independent_pool_key("Claude Code weekly") is None
-    assert independent_pool_key("Cursor included") is None
+    assert independent_pool_key("total", window_id="primary") == "cursor_total"
 
 
 def test_partition_independent_pools_antigravity_splits_families():
@@ -206,30 +206,30 @@ def test_partition_independent_pools_antigravity_splits_families():
     assert {"Claude/GPT 5-hour", "Claude/GPT weekly"} in labels
 
 
-def test_partition_independent_pools_cursor_included_auto_stay_one_pool():
+def test_partition_independent_pools_cursor_total_auto_third_party_split():
     from aiuse.analysis.pace import partition_independent_pools
 
     windows = [
-        QuotaWindow(label="Cursor included", remaining_percent=39.0, window_minutes=44640),
-        QuotaWindow(label="Cursor Auto", remaining_percent=45.0, window_minutes=44640),
-        QuotaWindow(label="Cursor other models", remaining_percent=0.0, window_minutes=44640),
+        QuotaWindow(label="total", window_id="primary", remaining_percent=39.0, window_minutes=44640),
+        QuotaWindow(label="auto", window_id="secondary", remaining_percent=45.0, window_minutes=44640),
+        QuotaWindow(label="third-party", window_id="tertiary", remaining_percent=0.0, window_minutes=44640),
     ]
     pools = partition_independent_pools(windows)
-    # Included+Auto (first-party "Cursor Models") is one pool; Other Models
-    # (third-party) is a second, independent pool (issue #21 / Phase 2).
-    assert len(pools) == 2
+    assert len(pools) == 3
     pool_labels = [sorted(w.label for w in pool) for pool in pools]
-    assert ["Cursor Auto", "Cursor included"] in pool_labels
-    assert ["Cursor other models"] in pool_labels
+    assert ["total"] in pool_labels
+    assert ["auto"] in pool_labels
+    assert ["third-party"] in pool_labels
 
 
-def test_independent_pool_key_cursor_other_models():
+def test_independent_pool_key_cursor_families():
     from aiuse.analysis.pace import independent_pool_key
 
-    assert independent_pool_key("Cursor other models") == "cursor_other_models"
-    assert independent_pool_key("Cursor API") == "cursor_other_models"
-    assert independent_pool_key("Cursor included") is None
-    assert independent_pool_key("Cursor Auto") is None
+    assert independent_pool_key("third-party", window_id="tertiary") == "cursor_third_party"
+    assert independent_pool_key("Cursor API") == "cursor_third_party"
+    assert independent_pool_key("total", window_id="primary") == "cursor_total"
+    assert independent_pool_key("auto", window_id="secondary") == "cursor_auto"
+    assert independent_pool_key("grok-bot", window_id="cursor-grok-bot") == "cursor_grok_bot"
 
 
 def test_early_window_on_pace_even_if_usage_looks_high():

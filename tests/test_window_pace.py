@@ -58,7 +58,7 @@ def snapshot():
 
 def test_json_and_available_use_collection_time():
     data = enrich_snapshot(snapshot().to_dict(), now=NOW + timedelta(days=20))
-    assert SCHEMA_VERSION == "1.2"
+    assert SCHEMA_VERSION == "1.3"
     assert data["accounts"][0]["overall_pace_percent"] == 50
     assert data["accounts"][0]["windows"][0]["pace_percent"] == -50
     assert data["accounts"][0]["windows"][0]["pace_ratio"] == 0.5
