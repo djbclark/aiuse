@@ -11,6 +11,14 @@ three gets you to the other two immediately.
 
 ## Active priorities (what to do next)
 
+**Start every session by syncing with GitHub:** `git fetch origin && git pull --ff-only`
+(a rebase instead of `--ff-only` only when the tree already carries your own unpushed
+commits). Parallel sessions land features and releases here between handoffs, so a stale
+checkout is the most common cause of a confusing session — that is how the 3.5.0 release
+and the Cursor-pools batch arrived after a handoff written against 3.4.3 (djbclark,
+2026-10-14). Check `git log --oneline -6` and `git branch -r --no-merged origin/main`
+before assuming the tree is what the handoff describes.
+
 **Status (2026-10-14):** Package/CLI **`aiuse`**, packaging **3.5.0**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.2** (self-describing output, `aiuse --available`,
