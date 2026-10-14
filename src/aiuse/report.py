@@ -25,6 +25,7 @@ from aiuse.analysis.pace import (
     window_pace,
 )
 from aiuse.analysis.ranking import (
+    _BAND_ATTENTION,
     _BAND_CONSERVE,
     _BAND_EMPTY,
     _BAND_ERROR,
@@ -33,7 +34,9 @@ from aiuse.analysis.ranking import (
     _BAND_USE,
     _alert_queue_priority,
     _known_reset_priority,
+    _ladder_coverage_key,
     _ladder_sort_key,
+    _pool_id_for_label,
     _Pricing,
     _Priority,
     alert_priority_band,
@@ -634,15 +637,6 @@ def _pool_queue_priority(
     return max(candidates) if candidates else _account_queue_priority(account, band, pricing=pricing, now=now)
 
 
-def _ladder_coverage_key(provider: str, account: str | None, pool_id: str = "") -> tuple[str, str, str]:
-    """Provider + account + independent pool (Gemini vs Claude/GPT, etc.)."""
-    return (provider.casefold(), (account or "").casefold(), pool_id)
-
-
-def _pool_id_for_label(label: str | None) -> str:
-    return independent_pool_key(label) or ""
-
-
 def _pool_id_for_windows(windows: list[QuotaWindow]) -> str:
     for window in windows:
         key = independent_pool_key(window.label)
@@ -1167,17 +1161,8 @@ def render_priority_ladder(
     return "\n".join(out)
 
 
-# Which band wins when several alerts describe one pool. Attention-grabbing
-# states outrank quiet ones, so a pool with an exhausted weekly and a healthy
-# 5h still reads as exhausted.
-_BAND_ATTENTION = {
-    _BAND_ERROR: 5,
-    _BAND_EMPTY: 4,
-    _BAND_CONSERVE: 3,
-    _BAND_USE: 2,
-    _BAND_MID: 1,
-    _BAND_NA: 0,
-}
+# Which band wins when several alerts describe one pool lives in ranking
+# (attention-grabbing states outrank quiet ones); see ``_BAND_ATTENTION``.
 
 
 def _used_percent(window: QuotaWindow) -> float | None:

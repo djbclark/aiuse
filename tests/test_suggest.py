@@ -47,6 +47,54 @@ def test_pick_suggestion_prefers_highest_burn_score():
     assert winner.score == 90
 
 
+def _alert(
+    provider: str,
+    account: str | None,
+    label: str,
+    remaining: float,
+    days: float,
+    *,
+    kind: str,
+    score: float,
+    urgency: Urgency = Urgency.HIGH,
+    minutes: int | None = None,
+) -> UseOrLoseAlert:
+    return UseOrLoseAlert(
+        urgency=urgency,
+        provider=provider,
+        account=account,
+        window_label=label,
+        remaining_percent=remaining,
+        days_until_reset=days,
+        plan=None,
+        message=f"{kind} {label}",
+        source="test",
+        score=score,
+        kind=kind,
+        window_minutes=minutes,
+    )
+
+
+def test_a_burn_masked_by_a_conserve_sibling_is_not_suggested():
+    # aiuse-57n: a Codex 5h burn next to its own pool's weekly conserve.  The board collapses the
+    # pool onto the conserve (the stronger attention), so suggest must not offer the burn it hides.
+    burn = _alert("codex", "g@x.com", "5h", 20.0, 0.2, kind="burn", score=80.0, minutes=300)
+    conserve = _alert("codex", "g@x.com", "weekly", 30.0, 5.0, kind="conserve", score=90.0, minutes=10080)
+    assert pick_suggestion([burn, conserve]) is None
+    # The sibling is the cause: alone, the burn is the answer.
+    assert pick_suggestion([burn]) is burn
+
+
+def test_a_burn_survives_a_weaker_sibling_and_a_conserve_in_another_pool():
+    burn = _alert("codex", "g@x.com", "5h", 20.0, 0.2, kind="burn", score=80.0, minutes=300)
+    # A mid-band sibling carries less attention than the use-band burn: nothing is masked.
+    mid = _alert("codex", "g@x.com", "weekly", 70.0, 5.0, kind="burn", score=30.0, urgency=Urgency.NONE, minutes=10080)
+    assert pick_suggestion([burn, mid]) is burn
+    # A conserve in a different account is a different pool: it does not hide this burn.
+    other = _alert("codex", "h@x.com", "weekly", 30.0, 5.0, kind="conserve", score=99.0, minutes=10080)
+    assert pick_suggestion([burn, other]) is burn
+
+
 def test_pick_suggestion_none_when_only_conserve():
     alerts = [
         UseOrLoseAlert(

@@ -92,6 +92,15 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### 2026-10-14: `suggestion` skips a burn the board's pool collapse hides (schema stays 1.2)
+
+Same shape, tightened meaning. The board collapses a pool onto its most attention-grabbing
+alert, so a burn next to a stronger sibling in the same pool (a Codex 5h burn behind its
+weekly conserve, say) renders as the pool's `slow` row. `suggestion` is now the
+highest-ranked burn the board actually shows, so it is `null` where it previously named that
+hidden burn. Replaying 3300 cached snapshots, 24 (0.73%) change, all to `null`; no suggestion
+is pool-masked after the change (`aiuse-57n`).
+
 #### 2026-10-13: `suggestion` follows board order (schema stays 1.2)
 
 A meaning change, not a shape change: no field was added, renamed or removed, so under the
@@ -240,7 +249,9 @@ dollars projected to expire unspent (`pace.projected_waste_fraction` × the valu
 of that window, priced per account like `value_at_risk_usd`; an alert with no pace ranks by the
 dollars it still holds), then the analyzer `score`, then the remaining percent, then the sooner
 reset. Eligibility is unchanged: only `burn` alerts with urgency above `info` qualify, so
-conserve, info and prepaid alerts never win. `score` stays the analysis score; it no longer picks
+conserve, info and prepaid alerts never win. A burn a stronger alert in its own pool hides —
+the board's pool collapse (2026-10-14) — is skipped as well, so `suggestion` can be `null`
+even while a `burn` alert exists. `score` stays the analysis score; it no longer picks
 the winner.
 
 | Field               | Type           | Notes                       |

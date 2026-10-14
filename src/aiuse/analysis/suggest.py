@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aiuse.analysis.ranking import _Pricing, alert_sort_key
+from aiuse.analysis.ranking import _Pricing, alert_sort_key, pool_masked
 from aiuse.models import Urgency, UseOrLoseAlert, provider_display_name
 
 
@@ -17,13 +17,19 @@ def pick_suggestion(alerts: list[UseOrLoseAlert], config: dict[str, Any] | None 
     Among the burns that qualify, the winner is the one the board ranks highest:
     the highest band, then the board's own priority within it (dollars projected
     to expire unspent; ``analysis.ranking``), priced from ``config`` as the board
-    prices its rows.  So the suggestion is the board's top actionable row.
+    prices its rows.  So the suggestion is the board's top actionable row.  A
+    burn the board hides behind a stronger alert in its own pool (a conserve or
+    empty sibling; ``ranking.pool_masked``) is skipped: the board is telling the
+    user to slow down, not to burn.
     """
     burns = [a for a in alerts if a.kind == "burn" and a.urgency not in (Urgency.INFO, Urgency.NONE)]
     if not burns:
         return None
     pricing = _Pricing.from_config(config)
-    return max(burns, key=lambda a: alert_sort_key(a, pricing))
+    visible = [a for a in burns if not pool_masked(a, alerts)]
+    if not visible:
+        return None
+    return max(visible, key=lambda a: alert_sort_key(a, pricing))
 
 
 def suggestion_to_dict(alert: UseOrLoseAlert | None) -> dict[str, Any] | None:

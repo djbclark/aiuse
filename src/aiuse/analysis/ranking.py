@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from aiuse.analysis.pace import compute_pace
+from aiuse.analysis.pace import compute_pace, independent_pool_key
 from aiuse.analysis.use_or_lose import (
     _DEFAULT_WAKING_HOURS,
     _compute_value_at_risk,
@@ -40,6 +40,53 @@ _BAND_NA = 2  # non-expiring prepaid / payg — no use-or-lose urgency
 _BAND_CONSERVE = 3  # pace yourself
 _BAND_MID = 4  # on pace / advisory / low urgency
 _BAND_USE = 5  # important to use soon
+
+
+# Which band wins when several alerts describe one pool: attention-grabbing
+# states outrank quiet ones, so a pool with an exhausted weekly and a healthy
+# 5h still reads as exhausted.  Shared with ``report._build_matrix_rows``,
+# which collapses a pool's alerts onto this one band, and with ``suggest``,
+# which must not offer a burn a stronger sibling hides on the board.
+_BAND_ATTENTION = {
+    _BAND_ERROR: 5,
+    _BAND_EMPTY: 4,
+    _BAND_CONSERVE: 3,
+    _BAND_USE: 2,
+    _BAND_MID: 1,
+    _BAND_NA: 0,
+}
+
+
+def _ladder_coverage_key(provider: str, account: str | None, pool_id: str = "") -> tuple[str, str, str]:
+    """Provider + account + independent pool (Gemini vs Claude/GPT, etc.)."""
+    return (provider.casefold(), (account or "").casefold(), pool_id)
+
+
+def _pool_id_for_label(label: str | None) -> str:
+    return independent_pool_key(label) or ""
+
+
+def pool_masked(alert: UseOrLoseAlert, alerts: list[UseOrLoseAlert]) -> bool:
+    """Whether a stronger alert in ``alert``'s own pool hides it on the board.
+
+    The board collapses each pool onto its most attention-grabbing alert (see
+    :data:`_BAND_ATTENTION`); a burn sitting behind a conserve or empty sibling
+    is not the board's advice, so ``pick_suggestion`` must not name it
+    (aiuse-57n).  An account-level window state the board also weighs (its
+    unalerted band) is not visible here, so this covers alert-versus-alert
+    masking only.
+    """
+    if alert.urgency == Urgency.NONE:
+        return False
+    key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+    mine = _BAND_ATTENTION[alert_priority_band(alert)]
+    for other in alerts:
+        if other is alert or other.urgency == Urgency.NONE:
+            continue
+        other_key = _ladder_coverage_key(other.provider, other.account, _pool_id_for_label(other.window_label))
+        if other_key == key and _BAND_ATTENTION[alert_priority_band(other)] > mine:
+            return True
+    return False
 
 
 def alert_priority_band(alert: UseOrLoseAlert) -> int:
