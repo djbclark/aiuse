@@ -42,9 +42,14 @@ ranking work, then work the open P3s **in order** — `aiuse-p9f`, `aiuse-57n`,
   moved from `report.py` to `analysis/ranking.py`; new `ranking.pool_masked()` gives
   `pick_suggestion` the board's pool-collapse test, so a burn hidden behind a
   conserve/empty sibling in its own pool is no longer suggested.
-- `aiuse-hcy` **open, deferred**: the upstream CodexBar root cause is recorded as a
-  bead comment (see Where We're Going 1).
+- `aiuse-hcy` **open**: upstream PR #4529 is open and green (see Where We're Going
+  1); the root cause and the fork doctrine are recorded on the bead and in
+  `~/src/CodexBar/AGENTS.DJB.md`.
 - Beads synced; no detached jobs.
+- **Written mid-session**, so the numbers above are the state at writing: a parallel
+  session landed the Cursor-pools batch (`4110d31`, `799e651`, `ea514c2`, …) and
+  released **3.5.0** (`806a832`) on top of `b6a0761` while this handoff was being
+  written. Re-derive counts from the tree rather than trusting these lines.
 
 ## What We Tried
 
@@ -98,18 +103,27 @@ ranking work, then work the open P3s **in order** — `aiuse-p9f`, `aiuse-57n`,
    CodexBar work in an aiuse session.** The operator chose to leave the branch for a
    dedicated session; the finding now lives in bead `aiuse-hcy` instead.
 2. Earlier: work the open P3s in order, then release. Both followed.
+3. Later the same session the operator reversed the keep-it-to-aiuse call for this
+   one task ("let's see if 4.1 has an issue/PR and if not if it is a super simple
+   fix"): do the CodexBar work here, never build it on this Mac, verify on GitHub
+   CI instead (Hyades has no macOS runner), and open the PR ready rather than draft
+   because this repo defers macOS tests on drafts.
 
 ## Where We're Going
 
-1. **`aiuse-hcy` in its own session.** `~/src/CodexBar` (currently on
-   `fix/antigravity-widget-row-window`, uncommitted fix + test) needs
-   `window: namedWindow.window` passed in
-   `Sources/CodexBar/UsageStore+WidgetSnapshot.swift` `antigravityWidgetRows()`, a
-   focused build/test (`swift test --filter WidgetEmptyProjectionTests`, `make
-check`), then a PR to `steipete/CodexBar` (fork remote `djbclark`, `gh` is
-   authenticated). Get an `adversary` security-review verdict and quote it in the PR
-   body. Antigravity's 5h lanes exist only as usage rows, which is why aiuse needed
-   the `f45ce72` carry-forward workaround.
+1. **`aiuse-hcy` — PR open and green, awaiting upstream review.**
+   [steipete/CodexBar#4529](https://github.com/steipete/CodexBar/pull/4529) (branch
+   `fix/antigravity-widget-row-window`, `cf7541af9`, in the `djbclark` fork):
+   `antigravityWidgetRows` now passes `window:` gated on `usageKnown`, plus two
+   focused tests. Verified by upstream GitHub macOS CI (`swift-test-macos` pass,
+   24m02s) with `lint`, the Linux CLI builds and GitGuardian also green — **no local
+   build**, per the fork doctrine in `~/src/CodexBar/AGENTS.DJB.md` (live,
+   git-excluded; recovery mirror `fork/AGENTS.DJB.md` on the fork-only branch
+   `djb/fork`, which is never a PR base). An adversarial security review caught a
+   medium regression in the first cut (unknown lanes would have rendered an invented
+   100% left), fixed before pushing and quoted in the PR body. Antigravity's 5h lanes
+   exist only as usage rows, which is why aiuse needed the `f45ce72` carry-forward
+   workaround. Next: answer upstream review; close the bead when it merges.
 2. Optional trackers, no urgency: #11 MCP, #13 History, #14 watch, #15 fixtures, #16
    DeepSeek key; #35/#36 config discoverability.
 3. `aiuse-juk` (dormant chain) still holds parked P1 beads and an Aug-decided
