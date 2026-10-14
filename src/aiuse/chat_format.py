@@ -17,6 +17,7 @@ from aiuse.analysis.pace import (
     format_pace,
     independent_pool_key,
     overall_pace,
+    pool_key_for_window,
     pool_scope_label,
     window_pace,
 )
@@ -454,7 +455,7 @@ def _group_rows_into_pools(rows: list[_WindowRow]) -> list[_PoolEntry]:
     entries: dict[tuple[str, str | None, str], _PoolEntry] = {}
     order: list[tuple[str, str | None, str]] = []
     for row in rows:
-        key = (row.provider, row.account, independent_pool_key(row.window.label) or "")
+        key = (row.provider, row.account, pool_key_for_window(row.window))
         entry = entries.get(key)
         if entry is None:
             entry = _PoolEntry(row.provider, row.account, key[2], [])

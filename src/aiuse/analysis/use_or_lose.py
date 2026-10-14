@@ -23,6 +23,7 @@ from aiuse.analysis.history import (
 from aiuse.analysis.pace import (
     classify_pace,
     compute_pace,
+    cursor_breakdown_window,
     governing_partition,
     partition_independent_pools,
 )
@@ -348,6 +349,8 @@ def analyze_use_or_lose(
         for window in account.windows:
             if claude_model_scope(window.label) is not None:
                 continue  # model caps cannot be burned as additional account quota
+            if cursor_breakdown_window(window):
+                continue  # Cursor Auto / Third Party are breakdown rows, not scored pools
             if mode == "legacy" and _is_short_window(window):
                 continue
 
@@ -760,7 +763,12 @@ def _shared_allotment_child_keys(
             if governing is None:
                 continue
             for child in children:
-                series = window_series_key(account.provider, child.label, child.window_minutes)
+                series = window_series_key(
+                    account.provider,
+                    child.label,
+                    child.window_minutes,
+                    child.window_id,
+                )
                 keys.add((series, account_key(account.account)))
                 # A history record whose account could not be resolved still
                 # belongs to this pool when the provider holds only one account.
