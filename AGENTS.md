@@ -141,7 +141,14 @@ Full path-by-path map with "read when" hints:
   the first commit (re-stage and commit again). Also run
   `uv run --extra dev mypy <changed files>`: the pre-commit mypy hook rejects
   the commit otherwise (2026-10-12: an untyped tuple unpack in a delegated
-  slice).
+  slice). Markdown is the same trap with prettier, which only _checks_ (it never
+  rewrites): run `node_modules/.bin/prettier --write <changed .md>` first, or the
+  first commit fails with "Code style issues found" (2026-10-14: a new handoff).
+- Search with `rg -n <pattern>` (`-n` = line numbers). `rg -r` is _replace_, not
+  recursive grep: `rg -rn "foo"` silently substitutes `n` for every `foo` in the
+  output, which reads like plausible data (2026-10-14: mangled `widget-snapshot`
+  hits twice before it was caught; plain `grep` also rejects `--glob`, which is
+  an `rg` flag).
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
 - Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
   (the same all-files quality gate as GitHub Actions). `pre-commit install --install-hooks`
