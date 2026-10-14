@@ -670,9 +670,13 @@ def compute_learned_burn_rates(
                 if burn_rate is None:
                     continue
                 window_minutes = effective_window_minutes(prev_window.get("label"), prev_window.get("window_minutes"))
-                duration_key = _duration_key(window_minutes)
-                if duration_key:
-                    pk = f"{provider}:{duration_key}"
+                if _duration_key(window_minutes):
+                    pk = window_series_key(
+                        provider,
+                        str(prev_window.get("label") or ""),
+                        window_minutes,
+                        prev_window.get("window_id"),
+                    )
                     provider_window_burns.setdefault(pk, []).append((burn_rate, pair_weight))
 
     rates: dict[str, tuple[float, int]] = {}
@@ -715,16 +719,12 @@ def _burn_rate_to_flexibility(burn_rate_pct_per_day: float) -> float:
 
 def merge_learned_flexibility(
     base_flex: float,
-    provider: str,
-    duration_kind: str | None,
+    series_key: str,
     learned: dict[str, float],
 ) -> float:
-    if not duration_kind or not learned:
+    if not series_key or not learned:
         return base_flex
-    # Same canonicalization the rates were stored under — spelling the provider
-    # any other way here silently never matched (antigravity vs gemini).
-    key = f"{canonical_provider(provider)}:{duration_kind}"
-    learned_flex = learned.get(key)
+    learned_flex = learned.get(series_key)
     # Exact provider match only — never blend another provider's rate for the
     # same duration bucket (Grok weekly ≠ Codex weekly).
     if learned_flex is None:
@@ -904,6 +904,10 @@ def _group_into_reset_cycles(
     return cycles
 
 
+def _normalize_label_for_match(label: str) -> str:
+    return label.strip().casefold().replace("-", " ").replace("_", " ")
+
+
 def _remaining_from_used(used: Any) -> float | None:
     if used is None:
         return None
@@ -924,7 +928,7 @@ def _find_current_remaining(
     # Anonymous rows store an explicit null, so `.get("account", "")` would
     # stringify to "none" and never match a live account of None.
     prev_account_id = str(prev_account.get("account") or "").strip().lower()
-    prev_label = str(prev_window.get("label") or "").strip().lower()
+    prev_label = _normalize_label_for_match(str(prev_window.get("label") or ""))
     prev_resets = prev_window.get("resets_at") or ""
 
     exact: list[float] = []
@@ -934,7 +938,7 @@ def _find_current_remaining(
             continue
         acc_id = (acc.account or "").strip().lower()
         for w in acc.windows:
-            if w.label.strip().lower() != prev_label:
+            if _normalize_label_for_match(w.label) != prev_label:
                 continue
             if match_resets and prev_resets:
                 w_resets = w.resets_at.isoformat() if w.resets_at else ""

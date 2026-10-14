@@ -148,8 +148,11 @@ def _compute_flexibility_profile(
     flex_class, flex_score = _classify_flexibility(window_minutes=window.window_minutes, provider=provider, config=cfg)
 
     duration_kind = classify_window_minutes(window.window_minutes)
-    if learned and duration_kind:
-        flex_score = merge_learned_flexibility(flex_score, provider, duration_kind, learned)
+    if learned:
+        from aiuse.analysis.history import window_series_key
+
+        series_key = window_series_key(provider, window.label, window.window_minutes, window.window_id)
+        flex_score = merge_learned_flexibility(flex_score, series_key, learned)
         if flex_score >= 0.9:
             flex_class = FlexibilityClass.BURSTABLE
         elif flex_score >= 0.4:
@@ -392,10 +395,15 @@ def analyze_use_or_lose(
                 pace_cfg = analysis_cfg.get("pace") or {}
                 learned_rate: float | None = None
                 learned_n = 0
-                if learned_burn_rates and duration_kind:
-                    # Learned rates are stored under the canonical provider id,
-                    # not the config key (see history.compute_learned_burn_rates).
-                    rate_key = f"{canonical_provider(account.provider)}:{duration_kind}"
+                if learned_burn_rates:
+                    from aiuse.analysis.history import window_series_key
+
+                    rate_key = window_series_key(
+                        account.provider,
+                        window.label,
+                        window.window_minutes,
+                        window.window_id,
+                    )
                     if rate_key in learned_burn_rates:
                         learned_rate, learned_n = learned_burn_rates[rate_key]
                 pace = compute_pace(

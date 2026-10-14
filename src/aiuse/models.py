@@ -751,6 +751,8 @@ class Snapshot:
     # provider id -> reason. Rows for these providers are filtered out at
     # collection, so the reason travels on the snapshot to explain the absence.
     disabled_services: dict[str, str] = field(default_factory=dict)
+    # Operator-hidden pools applied at collection (provider[/pool_family] -> reason).
+    hidden_pools: dict[str, str] = field(default_factory=dict)
     # Policy that produced this collect. Watch and serve refuse to reuse a
     # snapshot whose fingerprint does not match the config they just loaded.
     config_fingerprint: str | None = None
@@ -762,15 +764,18 @@ class Snapshot:
             "cross_checks": [check.to_dict() for check in self.cross_checks],
             "collector_errors": self.collector_errors,
             "disabled_services": dict(self.disabled_services),
+            "hidden_pools": dict(self.hidden_pools),
         }
         from aiuse.analysis.pace import (
+            cursor_breakdown_window,
             overall_pace,
             window_pace,
             window_pace_ratio,
         )
 
         for account, data in zip(self.accounts, body["accounts"], strict=True):
-            ovr_pct, ovr_early = overall_pace(account.windows, self.collected_at)
+            headline = [w for w in account.windows if not cursor_breakdown_window(w)]
+            ovr_pct, ovr_early = overall_pace(headline, self.collected_at)
             data["overall_pace_percent"] = ovr_pct
             data["overall_pace_early"] = ovr_early
             for window, entry in zip(account.windows, data["windows"], strict=True):

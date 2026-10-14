@@ -322,6 +322,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
             account for account in snapshot.accounts if canonical_provider(account.provider) in provider_filter
         ]
 
+    snapshot.hidden_pools = _apply_hidden_pools(snapshot.accounts, config)
+
     _merge_grok_extra_credits(snapshot.accounts)
     usage_sources = config.get("usage_sources") if isinstance(config.get("usage_sources"), dict) else None
     snapshot.accounts, snapshot.cross_checks = _select_and_cross_check(
@@ -336,6 +338,38 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     _apply_client_limit_notes(snapshot.accounts, config)
     snapshot.config_fingerprint = collection_policy_fingerprint(config)
     return snapshot
+
+
+def _apply_hidden_pools(accounts: list[AccountUsage], config: dict[str, Any]) -> dict[str, str]:
+    """Drop windows matching [hidden_pools]; remove empty accounts."""
+    from aiuse.analysis.pool_keys import hidden_pool_rules, window_matches_rule
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    rules = hidden_pool_rules(config)
+    if not rules:
+        return {}
+    hidden: dict[str, str] = {}
+    kept: list[AccountUsage] = []
+    for account in accounts:
+        kept_windows: list = []
+        for window in account.windows:
+            family = pool_family_id(account.provider, window.label, window.window_id)
+            matched = next(
+                (reason for p, f, reason in rules if window_matches_rule(account.provider, family, p, f)),
+                None,
+            )
+            if matched:
+                key = f"{account.provider}/{family}" if family else account.provider
+                hidden[key] = matched
+            else:
+                kept_windows.append(window)
+        has_balance = account.balance_usd is not None or account.credits_remaining is not None
+        has_usage = account.usage_credits is not None and account.usage_credits.used is not None
+        if kept_windows or has_balance or has_usage:
+            account.windows = kept_windows
+            kept.append(account)
+    accounts[:] = kept
+    return hidden
 
 
 def _apply_client_limit_notes(accounts: list[AccountUsage], config: dict[str, Any] | None) -> None:
