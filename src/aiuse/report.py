@@ -160,7 +160,7 @@ def _skip_hidden_ceiling_alert(
     account = _find_account(snapshot, alert.provider, alert.account)
     if account is None:
         return False
-    pool_id = _pool_id_for_label(alert.window_label)
+    pool_id = _pool_id_for_label(alert.window_label, alert.provider)
     return _hide_ceiling_pool_row(account, pool_id, config)
 
 
@@ -730,9 +730,9 @@ def _pool_queue_priority(
     return max(candidates) if candidates else _account_queue_priority(account, band, pricing=pricing, now=now)
 
 
-def _pool_id_for_windows(windows: list[QuotaWindow]) -> str:
+def _pool_id_for_windows(windows: list[QuotaWindow], *, provider: str | None = None) -> str:
     for window in windows:
-        key = pool_key_for_window(window)
+        key = pool_key_for_window(window, provider=provider)
         if key:
             return key
     return ""
@@ -1168,7 +1168,9 @@ def render_priority_ladder(
         if alert.urgency == Urgency.NONE:
             continue
         entries.append((alert_sort_key(alert, pricing), _priority_alert_line(alert, s, alert_priority_band(alert))))
-        covered.add(_ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label)))
+        covered.add(
+            _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label, alert.provider))
+        )
 
     accounts = _sorted_accounts(snapshot.accounts) if snapshot is not None else []
     for account in accounts:
@@ -1222,9 +1224,9 @@ def render_priority_ladder(
 
         # One ladder row per hard-separated pool (Gemini vs Claude/GPT, …);
         # single-pool providers still emit exactly one row.
-        pools = partition_independent_pools(account.windows) if account.windows else [[]]
+        pools = partition_independent_pools(account.windows, provider=account.provider) if account.windows else [[]]
         for pool in pools:
-            pool_id = _pool_id_for_windows(pool) if pool else ""
+            pool_id = _pool_id_for_windows(pool, provider=account.provider) if pool else ""
             if _hide_ceiling_pool_row(account, pool_id, config):
                 continue
             cov = _ladder_coverage_key(account.provider, account.account, pool_id)
@@ -1303,7 +1305,9 @@ def _build_matrix_rows(
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
             continue
-        key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+        key = _ladder_coverage_key(
+            alert.provider, alert.account, _pool_id_for_label(alert.window_label, alert.provider)
+        )
         band = alert_priority_band(alert)
         candidate = (band, _alert_queue_priority(alert, band, pricing))
         current = pool_alert.get(key)
@@ -1338,8 +1342,10 @@ def _build_matrix_rows(
             deferred.append(account)
             continue
 
-        for pool in partition_independent_pools(account.windows) if account.windows else [[]]:
-            pool_id = _pool_id_for_windows(pool) if pool else ""
+        for pool in (
+            partition_independent_pools(account.windows, provider=account.provider) if account.windows else [[]]
+        ):
+            pool_id = _pool_id_for_windows(pool, provider=account.provider) if pool else ""
             if _hide_ceiling_pool_row(account, pool_id, cfg):
                 continue
             clocks: dict[str, _ClockCell] = {}
@@ -1444,7 +1450,7 @@ def _build_matrix_rows(
                     service=service,
                     account=short,
                     account_full=account.account,
-                    scope=matrix_pool_scope(pool_id, pool),
+                    scope=matrix_pool_scope(pool_id, pool, provider=account.provider),
                     clocks=clocks,
                     value_usd=value,
                     pace_percent=overall_pct,
@@ -1461,7 +1467,7 @@ def _build_matrix_rows(
     for alert in alerts:
         if alert.urgency == Urgency.NONE:
             continue
-        pool_id = _pool_id_for_label(alert.window_label)
+        pool_id = _pool_id_for_label(alert.window_label, alert.provider)
         key = _ladder_coverage_key(alert.provider, alert.account, pool_id)
         if key in covered:
             continue
@@ -1568,7 +1574,7 @@ def _row_from_alert(
         service=service,
         account=_short_account(alert.account),
         account_full=alert.account,
-        scope=_POOL_SCOPE_LABELS.get(_pool_id_for_label(alert.window_label), "—"),
+        scope=_POOL_SCOPE_LABELS.get(_pool_id_for_label(alert.window_label, alert.provider), "—"),
     )
     if alert.kind == "prepaid":
         row.note = f"{alert.window_label}"

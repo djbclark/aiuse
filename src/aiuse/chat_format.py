@@ -457,9 +457,9 @@ class _PoolEntry:
         return min(row.sort_key() for row in shared or self.rows)
 
 
-def display_pool_key(window: QuotaWindow) -> str:
+def display_pool_key(window: QuotaWindow, *, provider: str | None = None) -> str:
     """Group breakdown rows under their ceiling pool for chat rendering."""
-    slug = pool_key_for_window(window)
+    slug = pool_key_for_window(window, provider=provider)
     if slug in ("cursor_auto", "cursor_third_party"):
         return "cursor_total"
     return slug
@@ -470,7 +470,7 @@ def _group_rows_into_pools(rows: list[_WindowRow]) -> list[_PoolEntry]:
     entries: dict[tuple[str, str | None, str], _PoolEntry] = {}
     order: list[tuple[str, str | None, str]] = []
     for row in rows:
-        key = (row.provider, row.account, display_pool_key(row.window))
+        key = (row.provider, row.account, display_pool_key(row.window, provider=row.provider))
         entry = entries.get(key)
         if entry is None:
             entry = _PoolEntry(row.provider, row.account, key[2], [])
@@ -719,7 +719,7 @@ def _build_action_items(
         for a in bucket:
             if len(items) >= MAX_ACTION_ITEMS:
                 break
-            pool_id = independent_pool_key(a.window_label) or ""
+            pool_id = independent_pool_key(a.window_label, provider=a.provider) or ""
             pool_key = (a.provider, a.account, pool_id)
             # Deduplicate per pool (keep the most urgent alert in each).
             if pool_key in seen_pools:
@@ -848,7 +848,7 @@ def _render_pool_entry(
     account_windows: list[QuotaWindow] | None = None,
 ) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form."""
-    headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window)]
+    headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window, provider=entry.provider)]
     overall, overall_early = (
         overall_pace(headline_windows, now) if now is not None and headline_windows else (None, False)
     )

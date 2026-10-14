@@ -777,7 +777,7 @@ class Snapshot:
         )
 
         for account, data in zip(self.accounts, body["accounts"], strict=True):
-            headline = [w for w in account.windows if not cursor_breakdown_window(w)]
+            headline = [w for w in account.windows if not cursor_breakdown_window(w, provider=account.provider)]
             ovr_pct, ovr_early = overall_pace(headline, self.collected_at)
             data["overall_pace_percent"] = ovr_pct
             data["overall_pace_early"] = ovr_early

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from aiuse.models import (
     PaceProfile,
     QuotaWindow,
+    canonical_provider,
     classify_window_minutes,
     claude_model_scope,
     nominal_window_minutes,
@@ -202,8 +203,8 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
 
     If any window is completely exhausted (0% remaining), it becomes the governing
     window because it temporarily blocks the entire pool, overriding longer durations.
-    When durations tie (e.g. Cursor total/auto/third-party all monthly), prefer the
-    total ceiling window (window id ``primary`` or label ``total``), then list order.
+    When durations tie, prefer a window whose label is ``total``, then list order.
+    CodexBar's ``primary`` slot id is not a total ceiling: every vendor uses it.
     Claude model caps are children, never whole-pool governing windows.
     """
     usable = [w for w in windows if w.remaining() is not None and claude_model_scope(w.label) is None]
@@ -244,25 +245,45 @@ CURSOR_GROK_BOT_WINDOW_ID = "cursor-grok-bot"
 
 
 def _is_total_ceiling_window(window: QuotaWindow) -> bool:
-    wid = (window.window_id or "").strip().casefold()
-    if wid == "primary":
-        return True
+    # Label only. CodexBar assigns window id ``primary`` to every vendor's first
+    # rate slot; treating that as a Cursor ceiling splits those windows off the
+    # row they share with weekly/monthly.
     return (window.label or "").strip().casefold() == "total"
 
 
-def cursor_pool_family(label: str | None, *, window_id: str | None = None) -> str | None:
-    """Canonical Cursor pool_family slug (snake_case), or None."""
+def _provider_is_cursor(provider: str | None) -> bool:
+    return provider is not None and canonical_provider(provider) == "cursor"
+
+
+def cursor_pool_family(
+    label: str | None,
+    *,
+    window_id: str | None = None,
+    provider: str | None = None,
+) -> str | None:
+    """Canonical Cursor pool_family slug (snake_case), or None.
+
+    ``primary`` / ``secondary`` / ``tertiary`` are CodexBar's generic rate-slot
+    ids. They name Cursor pools only when ``provider`` is cursor. The Grok Bot
+    extra-window id is unique and matches on its own. Passing a non-cursor
+    provider skips Cursor label heuristics too, so a foreign window is never
+    filed as ``total`` or ``auto``.
+    """
+    if provider is not None and not _provider_is_cursor(provider):
+        return None
     wid = (window_id or "").strip().casefold()
     if wid == CURSOR_GROK_BOT_WINDOW_ID:
         return "grok_bot"
-    if wid == "primary":
-        return "total"
-    if wid == "secondary":
-        return "auto"
-    if wid == "tertiary":
-        return "third_party"
-    if wid == "on-demand":
-        return "on_demand"
+    # Slot ids are ambiguous unless we know the window belongs to Cursor.
+    if _provider_is_cursor(provider):
+        if wid == "primary":
+            return "total"
+        if wid == "secondary":
+            return "auto"
+        if wid == "tertiary":
+            return "third_party"
+        if wid == "on-demand":
+            return "on_demand"
     text = (label or "").casefold()
     if not text:
         return None
@@ -283,7 +304,12 @@ def cursor_pool_family(label: str | None, *, window_id: str | None = None) -> st
     return None
 
 
-def independent_pool_key(label: str | None, *, window_id: str | None = None) -> str | None:
+def independent_pool_key(
+    label: str | None,
+    *,
+    window_id: str | None = None,
+    provider: str | None = None,
+) -> str | None:
     """Hard-separated allotment family from a window label, if any.
 
     Some providers (notably Google AI / Antigravity) expose **independent**
@@ -291,12 +317,14 @@ def independent_pool_key(label: str | None, *, window_id: str | None = None) -> 
     usage vs Claude/GPT usage. Cursor exposes total (monthly umbrella), auto and
     third-party breakdown rows, on-demand spend cap, and grok-bot (weekly) as
     separate families. Returns a stable slug for grouping, or None for the
-    residual “same pool” group (Claude 5h⊂weekly).
+    residual “same pool” group (Claude 5h⊂weekly, and every non-Cursor vendor's
+    nested clocks).
 
-    When ``window_id`` is set (CodexBar slot or extra-window id), it wins over
-    label heuristics so Cursor Grok Bot stays separate even if the title changes.
+    Cursor slot ids and the Grok Bot extra-window id select a Cursor family
+    only for that provider (see :func:`cursor_pool_family`). Other vendors keep
+    one residual pool so their 5h/weekly/monthly windows stay columns of one row.
     """
-    cursor_family = cursor_pool_family(label, window_id=window_id)
+    cursor_family = cursor_pool_family(label, window_id=window_id, provider=provider)
     if cursor_family is not None:
         return f"cursor_{cursor_family}"
     text = (label or "").casefold()
@@ -316,22 +344,35 @@ def independent_pool_key(label: str | None, *, window_id: str | None = None) -> 
     return None
 
 
-def pool_key_for_window(window: QuotaWindow | None, *, label: str | None = None) -> str:
+def pool_key_for_window(
+    window: QuotaWindow | None,
+    *,
+    label: str | None = None,
+    provider: str | None = None,
+) -> str:
     """Stable pool slug for grouping; empty string = residual pool."""
     if window is not None:
-        key = independent_pool_key(window.label, window_id=window.window_id)
+        key = independent_pool_key(window.label, window_id=window.window_id, provider=provider)
         if key is not None:
             return key
         label = window.label
-    return independent_pool_key(label) or ""
+    return independent_pool_key(label, provider=provider) or ""
 
 
-def cursor_breakdown_window(window: QuotaWindow) -> bool:
-    """Cursor auto / third-party breakdown rows — visible but not scored."""
-    wid = (window.window_id or "").strip().casefold()
-    if wid in ("secondary", "tertiary"):
-        return True
-    family = cursor_pool_family(window.label, window_id=window.window_id)
+def cursor_breakdown_window(window: QuotaWindow, *, provider: str | None = None) -> bool:
+    """Cursor auto / third-party breakdown rows — visible but not scored.
+
+    A non-cursor provider never has breakdown rows. CodexBar's ``secondary`` /
+    ``tertiary`` slot ids are that vendor's weekly/monthly clocks, not Cursor
+    auto / third-party.
+    """
+    if provider is not None and not _provider_is_cursor(provider):
+        return False
+    if _provider_is_cursor(provider):
+        wid = (window.window_id or "").strip().casefold()
+        if wid in ("secondary", "tertiary"):
+            return True
+    family = cursor_pool_family(window.label, window_id=window.window_id, provider=provider)
     return family in ("auto", "third_party")
 
 
@@ -355,11 +396,21 @@ def pool_scope_label(pool_id: str | None) -> str | None:
     return POOL_SCOPE_LABELS.get(pool_id, pool_id)
 
 
-def matrix_pool_scope(pool_id: str, pool: list[QuotaWindow] | None = None) -> str:
-    """SCOPE column label for a matrix/ladder pool row."""
+def matrix_pool_scope(
+    pool_id: str,
+    pool: list[QuotaWindow] | None = None,
+    *,
+    provider: str | None = None,
+) -> str:
+    """SCOPE column label for a matrix/ladder pool row.
+
+    A residual pool is ``—``. Cursor's ``primary`` slot (or a ``total`` label)
+    is the ceiling scope, and only for Cursor — other vendors' first rate slot
+    is not a total row.
+    """
     if pool_id:
         return POOL_SCOPE_LABELS.get(pool_id, pool_id)
-    if pool:
+    if _provider_is_cursor(provider) and pool:
         for window in pool:
             wid = (window.window_id or "").strip().casefold()
             if wid == "primary":
@@ -370,7 +421,11 @@ def matrix_pool_scope(pool_id: str, pool: list[QuotaWindow] | None = None) -> st
     return "—"
 
 
-def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWindow]]:
+def partition_independent_pools(
+    windows: list[QuotaWindow],
+    *,
+    provider: str | None = None,
+) -> list[list[QuotaWindow]]:
     """Group windows into hard-separated allotment pools.
 
     Windows that share a non-None :func:`independent_pool_key` form one pool.
@@ -385,7 +440,7 @@ def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWi
     named_order: list[str] = []
     residual: list[QuotaWindow] = []
     for window in windows:
-        key = independent_pool_key(window.label, window_id=window.window_id)
+        key = independent_pool_key(window.label, window_id=window.window_id, provider=provider)
         if key is None:
             residual.append(window)
             continue

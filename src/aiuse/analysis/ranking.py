@@ -62,8 +62,8 @@ def _ladder_coverage_key(provider: str, account: str | None, pool_id: str = "") 
     return (provider.casefold(), (account or "").casefold(), pool_id)
 
 
-def _pool_id_for_label(label: str | None) -> str:
-    return independent_pool_key(label) or ""
+def _pool_id_for_label(label: str | None, provider: str | None = None) -> str:
+    return independent_pool_key(label, provider=provider) or ""
 
 
 def pool_masked(alert: UseOrLoseAlert, alerts: list[UseOrLoseAlert]) -> bool:
@@ -78,12 +78,14 @@ def pool_masked(alert: UseOrLoseAlert, alerts: list[UseOrLoseAlert]) -> bool:
     """
     if alert.urgency == Urgency.NONE:
         return False
-    key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label))
+    key = _ladder_coverage_key(alert.provider, alert.account, _pool_id_for_label(alert.window_label, alert.provider))
     mine = _BAND_ATTENTION[alert_priority_band(alert)]
     for other in alerts:
         if other is alert or other.urgency == Urgency.NONE:
             continue
-        other_key = _ladder_coverage_key(other.provider, other.account, _pool_id_for_label(other.window_label))
+        other_key = _ladder_coverage_key(
+            other.provider, other.account, _pool_id_for_label(other.window_label, other.provider)
+        )
         if other_key == key and _BAND_ATTENTION[alert_priority_band(other)] > mine:
             return True
     return False
