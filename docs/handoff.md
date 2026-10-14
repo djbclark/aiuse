@@ -67,11 +67,11 @@ Implemented JSON schema versioning and `--for-chat` flag:
 - Suppressed redundant CLI help flags (`--doctor`, `--status`, etc.) in the main help output to declutter it while keeping epilog subcommands visible.
 - CI/CD passed. This resolves the feature requests from the two tickets discussed.
 
-## Done 2026-08-03: Cursor “other models” rename (3.0.6)
+## Done 2026-08-03: Cursor third-party rename (3.0.6)
 
-CodexBar tertiary slot display label is **Cursor other models** (Cursor docs:
-Other Models), not “API”. Pool key `cursor_other_models`; legacy “Cursor API”
-still matches. Documented in [`cursor-quota.md`](cursor-quota.md). Billing
+CodexBar tertiary slot display label is **third-party** (legacy “Cursor API” /
+“Cursor other models”), not “API”. Pool key `cursor_third_party`; legacy labels
+still match. Documented in [`cursor-quota.md`](cursor-quota.md). Billing
 remains `subscription_window` (monthly reset / use-or-lose) — not prepaid
 `n/a`. Release: https://github.com/djbclark/aiuse/releases/tag/v3.0.6
 
@@ -105,7 +105,7 @@ knowledge table, and phase-by-phase implementation plan:
 | Issue                                              | Fix                                                                                                                                                                                                                                                                                                                                                  | Commit(s)            |
 | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
 | [#19](https://github.com/djbclark/aiuse/issues/19) | Stale `pace.py`/`use_or_lose.py` docstrings said pace scoring wasn't wired in yet — it's the live default.                                                                                                                                                                                                                                           | `96adf65`            |
-| [#21](https://github.com/djbclark/aiuse/issues/21) | Cursor's Other Models pool is independent from Included/Auto (`independent_pool_key()`) — an exhausted Other Models pool used to be silently suppressed as a child of a healthy Included. (Display label was later renamed from “Cursor API” → “Cursor other models” in 3.0.6.)                                                                      | `a34dff8`, `4cbd710` |
+| [#21](https://github.com/djbclark/aiuse/issues/21) | Cursor third-party pool is independent from total/auto (`independent_pool_key()`) — an exhausted third-party pool used to be silently suppressed as a child of a healthy total row. (Display label was later renamed from “Cursor API” → “third-party” in 3.0.6; schema 1.3 formalizes families.)                                                                      | `a34dff8`, `4cbd710` |
 | [#20](https://github.com/djbclark/aiuse/issues/20) | New `PaceProfile.has_overage` qualifies conserve/burn verdicts: real vs. config-confirmed overage wallet (Claude/Cursor `usage_credits`, or OpenCode Go's manual `overage_state: enabled` override) means the real risk is unplanned $ spend, not lockout.                                                                                           | `2144333`            |
 | [#22](https://github.com/djbclark/aiuse/issues/22) | Investigated the "dual-debit" pattern (one action draining two meters at once). Confirmed real for both examples against primary vendor docs (GitHub's changelog; OpenAI's own pricing docs) — but no code change, since `aiuse` doesn't currently collect either dual-debited meter (GitHub Actions minutes, ChatGPT Desktop Voice minutes) at all. | `75f0512`            |
 

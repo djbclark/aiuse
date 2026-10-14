@@ -14,8 +14,8 @@ from aiuse.analysis.selfdescribe import FRESH_THRESHOLD_SECONDS_DEFAULT
 from aiuse.config import (
     SINGLE_PROVIDER_COLLECTORS,
     canonical_disabled_services,
-    collector_serves_requested,
     collection_policy_fingerprint,
+    collector_serves_requested,
     requested_providers,
     timeout_for,
 )

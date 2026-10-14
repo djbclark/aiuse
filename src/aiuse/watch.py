@@ -818,19 +818,22 @@ def run_watch(
                     else:
                         _note_key(denial)
                 elif key in ("a", "A"):
-                    denial = _gate_manual("a")
-                    if denial is None:
-                        sweep_config_held["cfg"] = all_providers_config(live_config())
-                        if runtime.collecting:
-                            # Block all overlap: fire when the refresh finishes.
-                            manual["a_queued"] = True
-                            behind = "u update" if manual["u_in_flight"] else "scheduled refresh"
-                            elapsed = runtime.collecting_for() or 0.0
-                            _note_key(f"a: queued behind the {behind} ({elapsed:.0f}s in)")
-                        else:
-                            sweep.next_due = sweep.now()
+                    if show_all_view["v"] and sweep.snapshot is not None:
+                        show_all_view["v"] = False
                     else:
-                        _note_key(denial)
+                        denial = _gate_manual("a")
+                        if denial is None:
+                            sweep_config_held["cfg"] = all_providers_config(live_config())
+                            if runtime.collecting:
+                                # Block all overlap: fire when the refresh finishes.
+                                manual["a_queued"] = True
+                                behind = "u update" if manual["u_in_flight"] else "scheduled refresh"
+                                elapsed = runtime.collecting_for() or 0.0
+                                _note_key(f"a: queued behind the {behind} ({elapsed:.0f}s in)")
+                            else:
+                                sweep.next_due = sweep.now()
+                        else:
+                            _note_key(denial)
                 # A config.toml edit has to take effect before the interval
                 # elapses. Otherwise the board keeps the old disable list and
                 # the next refresh can overwrite a newer snapshot with it.

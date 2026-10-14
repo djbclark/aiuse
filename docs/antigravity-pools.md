@@ -54,7 +54,7 @@ by `(provider, account)` only, so a single Antigravity row covered both families
 3. **Priority ladder** emits **one row per pool** and tracks coverage with a
    pool id so one family’s alert does not hide the other.
 
-Cursor Included/Auto stay one pool (Other Models is separate via
+Cursor total/auto/third-party stay distinct families (third-party is separate via
 `independent_pool_key`); Claude 5h⊂weekly stays a single pool (no family
 markers).
 

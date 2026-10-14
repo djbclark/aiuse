@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Mapping
 
-from aiuse.analysis.ceilings import window_is_breakdown, window_is_ceiling
+from aiuse.analysis.ceilings import window_is_ceiling
 from aiuse.analysis.pace import (
     cursor_breakdown_window,
     format_pace,

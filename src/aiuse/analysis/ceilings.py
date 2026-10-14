@@ -56,3 +56,35 @@ def window_is_breakdown(provider: str, pool_family: str | None) -> bool:
         if pool_family in sub_families:
             return True
     return False
+
+
+def effective_remaining(
+    window: QuotaWindow,
+    provider: str,
+    windows: list[QuotaWindow],
+) -> tuple[float | None, bool]:
+    """(headroom, ceiling_binding) for one window on a live account."""
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    family = pool_family_id(provider, window.label, window.window_id)
+    own = window.remaining()
+    if own is None:
+        return None, False
+    if not window_is_breakdown(provider, family):
+        return own, False
+    ceiling, _ = split_ceiling(provider, windows)
+    if ceiling is None:
+        return own, False
+    cap = ceiling.remaining()
+    if cap is None:
+        return own, False
+    effective = min(own, cap)
+    return effective, effective < own
+
+
+def ceiling_binding_note(window: QuotaWindow, provider: str, windows: list[QuotaWindow]) -> str | None:
+    own = window.remaining()
+    effective, binding = effective_remaining(window, provider, windows)
+    if not binding or own is None or effective is None:
+        return None
+    return f"{window.label}: {own:.0f}% left, but total leaves {effective:.0f}% — total binds"

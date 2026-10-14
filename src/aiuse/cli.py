@@ -67,7 +67,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
-  aiuse watch                 full-screen quota board (q/esc quit, u update now, a all providers; default 10m)
+  aiuse watch                 full-screen quota board (q/esc quit, u update now, a toggle all-providers sweep; default 10m)
   aiuse sample                scheduled entry point: collects hourly when idle, every 15m when a
                            window moved, every 3m in a burst (docs/attribution.md)
   aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
@@ -196,9 +196,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-providers",
         action="store_true",
         help=(
-            "aiuse watch: one-time collect of EVERY provider — ignores [disabled_services] and "
-            "collector disable flags — printed once, nothing written to snapshots, ledger, or "
-            "sampler state (screen only). OPERATOR-ONLY: AI agents and automation must NOT use "
+            "aiuse watch: one-time collect of EVERY provider — ignores [disabled_services], "
+            "[hidden_pools], analysis.excluded_pools, hidden ceiling rows, and collector disable "
+            "flags — printed once, nothing written to snapshots, ledger, or sampler state "
+            "(screen only). OPERATOR-ONLY: AI agents and automation must NOT use "
             "this without explicit permission from the human operator; providers are disabled "
             "for reasons (rate limits, cost, opt-outs) that a sweep deliberately overrides. "
             "Implies --once."
@@ -1009,8 +1010,10 @@ def diagnose(
     lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
-    lines.append("  aiuse watch               # full-screen board (q/esc quit; u update now; a all providers)")
-    lines.append("  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider, screen only")
+    lines.append("  aiuse watch               # full-screen board (q/esc quit; u update now; a toggle all-providers sweep)")
+    lines.append(
+        "  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider incl. hidden/ceiling rows"
+    )
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
     lines.append("  aiuse -t 45               # force all tool timeouts for one run")
     lines.append("  aiuse --help              # full flag list + setup epilog")
@@ -1166,9 +1169,8 @@ def _run_available(args: argparse.Namespace) -> int:
         snap_dict = snapshot.to_dict()
         source = "live"
 
-    from aiuse.client_limits import load_client_limits
-
     from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, filter_ceiling_pools
+    from aiuse.client_limits import load_client_limits
 
     apply_hidden_pools_dict(snap_dict, config)
     enrich_snapshot(snap_dict, notes=notes, client_limits=load_client_limits(config), threshold_seconds=threshold)

@@ -21,8 +21,9 @@ before assuming the tree is what the handoff describes.
 
 **Status (2026-10-14):** Package/CLI **`aiuse`**, packaging **3.5.0**
 (PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
-done; JSON schema **1.2** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`; 1.2 adds per-window pace and the matrix PACE column,
+done; JSON schema **1.3** (self-describing output, `aiuse --available`,
+`aiuse note-exhausted`; 1.3 adds ceiling/hidden-pool fields and per-pool learned
+burn rates; 1.2 added per-window pace and the matrix PACE column,
 early readings marked `~`); 19 registered collectors (including passive `acp`
 context logs and the opt-in `sipb` MIT status probe; `aiuse usage-sources`);
 scheduled sampling +

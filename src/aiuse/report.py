@@ -1334,7 +1334,7 @@ def _build_matrix_rows(
                             pace_early=pace_early,
                         )
                     else:
-                        # Same clock, same pool (Cursor Included ⊂ Auto): show the
+                        # Same clock, same pool (Cursor total ⊂ auto): show the
                         # most-consumed, which is the one that locks out first.
                         cell.folded += 1
                         if used > cell.used_percent:
@@ -2540,8 +2540,13 @@ def _render_account(
                 rem_colored = s.cyan(rem_padded)
             else:
                 rem_colored = s.green(rem_padded)
+        from aiuse.analysis.ceilings import ceiling_binding_note
+
+        bind_note = ceiling_binding_note(w, acc.provider, acc.windows)
         lines.append(f"  quota: {w.label}")
         lines.append(f"    {bar} {rem_colored} {used_s:10} {s.dim(reset_s)}")
+        if bind_note:
+            lines.append(s.dim(f"    ^ {bind_note}"))
 
         if rem is not None and w.window_minutes:
             detail = _consumption_line(w, acc.provider, analysis)

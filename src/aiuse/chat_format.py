@@ -393,8 +393,8 @@ class _PoolEntry:
 
     This is the unit the report renders, and it is deliberately the same unit
     the usage table renders as one row: an account, or one hard-separated pool
-    within it (Antigravity Gemini vs Claude/GPT, Cursor Included+Auto vs Other
-    Models). Rendering one entry per *window* instead made chat disagree with
+    within it (Antigravity Gemini vs Claude/GPT, Cursor total with auto /
+    third-party breakdown). Rendering one entry per *window* instead made chat disagree with
     the table about how many things there even are — four agy entries against
     two table rows.
     """
@@ -798,9 +798,14 @@ def _render_prepaid_row(account: AccountUsage) -> list[str]:
     return lines
 
 
-def _row_notes(row: _WindowRow) -> list[str]:
+def _row_notes(row: _WindowRow, *, provider: str, windows: list[QuotaWindow]) -> list[str]:
     """Continuation lines attached to a single window."""
     notes: list[str] = []
+    from aiuse.analysis.ceilings import ceiling_binding_note
+
+    bind = ceiling_binding_note(row.window, provider, windows)
+    if bind:
+        notes.append(bind)
     model = claude_model_scope(row.window.label)
     if model is not None:
         cap = "<=50% of shared weekly" if model.casefold() == "fable" else "within shared weekly"
@@ -830,7 +835,12 @@ def _window_line_label(row: _WindowRow, scope: str | None) -> str:
     return label
 
 
-def _render_pool_entry(entry: _PoolEntry, now: datetime | None = None) -> list[str]:
+def _render_pool_entry(
+    entry: _PoolEntry,
+    now: datetime | None = None,
+    *,
+    account_windows: list[QuotaWindow] | None = None,
+) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form."""
     headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window)]
     overall, overall_early = (
@@ -841,15 +851,17 @@ def _render_pool_entry(entry: _PoolEntry, now: datetime | None = None) -> list[s
     if len(entry.rows) == 1:
         row = entry.rows[0]
         lines = [f"{row.emoji} {row.heading}{pace_suffix}", f"   ↳ {row.status_line}"]
-        lines.extend(f"   ↳ {note}" for note in _row_notes(row))
+        scope = account_windows or [r.window for r in entry.rows]
+        lines.extend(f"   ↳ {note}" for note in _row_notes(row, provider=row.provider, windows=scope))
         return lines
 
     lines = [f"{entry.emoji} {entry.heading}{pace_suffix}"]
+    scope = account_windows or [r.window for r in entry.rows]
     for row in entry.rows:
         lines.append(f"   ↳ {_window_line_label(row, entry.scope)} — {row.status_line}")
         # Deeper indent so a pace line is unambiguously about the window above
         # it rather than the entry as a whole.
-        lines.extend(f"     · {note}" for note in _row_notes(row))
+        lines.extend(f"     · {note}" for note in _row_notes(row, provider=row.provider, windows=scope))
     return lines
 
 
@@ -951,7 +963,6 @@ def render_chat_report(
     # --- Build subscription window rows ---
     sub_rows: list[_WindowRow] = []
     now = snapshot.collected_at
-    from aiuse.analysis.selfdescribe import pool_family_id
     from aiuse.report import _hide_ceiling_window
 
     for account in sub_accounts:
@@ -971,10 +982,12 @@ def render_chat_report(
     # --- Render subscription windows, one entry per account/pool ---
     pool_entries = _group_rows_into_pools(sub_rows)
     pool_entries.sort(key=lambda e: e.sort_key())
+    windows_by_account = {(a.provider, a.account): a.windows for a in sub_accounts}
     if pool_entries:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
         for entry in pool_entries:
-            lines.extend(_render_pool_entry(entry, now=now))
+            acct_windows = windows_by_account.get((entry.provider, entry.account), [])
+            lines.extend(_render_pool_entry(entry, now=now, account_windows=acct_windows))
         sections.append("\n".join(lines))
 
     # --- Render prepaid/API balances ---

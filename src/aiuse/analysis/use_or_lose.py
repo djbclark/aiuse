@@ -375,7 +375,6 @@ def analyze_use_or_lose(
                 continue
             seen.add(key)
 
-            duration_kind = classify_window_minutes(window.window_minutes)
             window_value_mult = window_value_multiplier(plan_meta, window.window_minutes)
 
             flex_profile = _compute_flexibility_profile(

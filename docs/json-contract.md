@@ -108,6 +108,18 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Schema 1.3 (2026-10-14)
+
+- Bump `schema_version` to **1.3** (additive).
+- Top-level **`hidden_pools`**: operator display-only hides applied at collection.
+- Window fields: **`role`** (`ceiling` | `breakdown`), **`effective_left_percent`**,
+  **`ceiling_binding`**, **`ceiling_headroom_percent`**, **`ceiling_window_id`**.
+- Cursor **`pool_family` values**: `total`, `auto`, `third_party`, `on_demand`,
+  `grok_bot` (legacy config keys such as `cursor/cursor_grok` still match).
+- **`overall_pace_percent` meaning**: excludes breakdown rows (e.g. Cursor auto /
+  third-party); only headline windows drive account pace and exit codes.
+- **`learned_burn_rates` keys**: `provider:pool:duration` (per window series).
+
 #### 2026-10-14: `suggestion` skips a burn the board's pool collapse hides (schema stays 1.2)
 
 Same shape, tightened meaning. The board collapses a pool onto its most attention-grabbing

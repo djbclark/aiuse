@@ -22,12 +22,11 @@ design rationale behind current Cursor handling; `docs/fix-implementation-plan.m
 for this repo's established plan-format convention, which this document
 follows.
 
-**Naming note (2026-08-03 / aiuse 3.0.6+):** Cursor’s tertiary slot is labeled
-**Cursor other models** (Cursor docs: “Other Models”), not “Cursor API”. The
-independent pool key is `cursor_other_models` (legacy `"Cursor API"` labels
-still match). Historical prose below may still say “API pool”; treat that as
-the same monthly use-or-lose allotment — not prepaid. Canonical write-up:
-[`cursor-quota.md`](cursor-quota.md).
+**Naming note (2026-08-03 / aiuse 3.0.6+; schema 1.3):** Cursor’s tertiary slot
+is labeled **third-party** (`pool_family` `third_party`; legacy `"Cursor API"`
+and `"Cursor other models"` labels still match). Historical prose below may
+still say “API pool”; treat that as the same monthly use-or-lose allotment — not
+prepaid. Canonical write-up: [`cursor-quota.md`](cursor-quota.md).
 
 ## How this document came to exist
 
@@ -265,9 +264,9 @@ together with (or overlapping) Included in Cursor's model (re-verify this
 distinction specifically — round 2's confirmation was clear that Auto and
 API are separate pools, but less explicit about whether "Included" and
 "Auto" are the same number viewed two ways, or two more things worth
-distinguishing; if genuinely unclear, treat Included+Auto as one governing
+distinguishing; if genuinely unclear, treat total and auto as one governing
 pool, matching the "Auto+Composer" pool language from Cursor's own docs, and
-give API its own separate pool — this is the two-pool model, not three).
+give third-party its own separate pool — this is the two-pool model, not three).
 
 ### Proposed implementation
 
