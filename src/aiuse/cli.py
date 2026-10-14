@@ -674,7 +674,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
             except Exception as e:
                 print(f"Warning: could not parse --routing-context: {e}", file=sys.stderr)
 
-        print(render_chat_report(snapshot, alerts, routing_context=routing_context))
+        print(render_chat_report(snapshot, alerts, routing_context=routing_context, config=config))
         return exit_code
 
     from aiuse.tui import run_inline_report, should_use_tui
@@ -1168,6 +1168,9 @@ def _run_available(args: argparse.Namespace) -> int:
 
     from aiuse.client_limits import load_client_limits
 
+    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, filter_ceiling_pools
+
+    apply_hidden_pools_dict(snap_dict, config)
     enrich_snapshot(snap_dict, notes=notes, client_limits=load_client_limits(config), threshold_seconds=threshold)
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally
@@ -1175,7 +1178,12 @@ def _run_available(args: argparse.Namespace) -> int:
     # the entry added after the snapshot) can still carry the pools — so the
     # view applies it on top of the routing-only excluded_pools rules.
     exclusions = {**(config.get("disabled_services") or {}), **(analysis_cfg.get("excluded_pools") or {})}
-    pools, excluded = apply_exclusions(available_pools(snap_dict), exclusions)
+    show_total = bool(analysis_cfg.get("show_total_rows", False))
+    pools, excluded = apply_exclusions(
+        filter_ceiling_pools(available_pools(snap_dict), show_total_rows=show_total),
+        exclusions,
+    )
+    hidden_pools = snap_dict.get("hidden_pools") or {}
 
     if args.json or args.format == "json":
         print(
@@ -1189,6 +1197,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     **fresh,
                     "available": pools,
                     "excluded": excluded,
+                    "hidden_pools": hidden_pools,
                     "disabled_services": snap_dict.get("disabled_services") or {},
                     "agent_notes": snap_dict.get("agent_notes", []),
                     "semantics": dict(SEMANTICS),
@@ -1207,6 +1216,8 @@ def _run_available(args: argparse.Namespace) -> int:
     for entry in excluded:
         family = f" {entry['pool_family']}" if entry.get("pool_family") else ""
         print(f"excluded by operator: {entry['provider']}{family} ({entry['reason']})", file=sys.stderr)
+    for key, reason in sorted(hidden_pools.items()):
+        print(f"hidden by operator: {key} ({reason})", file=sys.stderr)
     if not pools:
         print(
             "no usable pools right now — everything measured is exhausted or unknown",

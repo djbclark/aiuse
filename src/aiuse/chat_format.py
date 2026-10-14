@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from aiuse.analysis.pace import (
+    cursor_breakdown_window,
     format_pace,
     independent_pool_key,
     overall_pace,
@@ -450,12 +451,20 @@ class _PoolEntry:
         return min(row.sort_key() for row in shared or self.rows)
 
 
+def display_pool_key(window: QuotaWindow) -> str:
+    """Group breakdown rows under their ceiling pool for chat rendering."""
+    slug = pool_key_for_window(window)
+    if slug in ("cursor_auto", "cursor_third_party"):
+        return "cursor_total"
+    return slug
+
+
 def _group_rows_into_pools(rows: list[_WindowRow]) -> list[_PoolEntry]:
     """Collapse per-window rows into one entry per account/pool."""
     entries: dict[tuple[str, str | None, str], _PoolEntry] = {}
     order: list[tuple[str, str | None, str]] = []
     for row in rows:
-        key = (row.provider, row.account, pool_key_for_window(row.window))
+        key = (row.provider, row.account, display_pool_key(row.window))
         entry = entries.get(key)
         if entry is None:
             entry = _PoolEntry(row.provider, row.account, key[2], [])
@@ -823,7 +832,10 @@ def _window_line_label(row: _WindowRow, scope: str | None) -> str:
 
 def _render_pool_entry(entry: _PoolEntry, now: datetime | None = None) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form."""
-    overall, overall_early = overall_pace([r.window for r in entry.rows], now) if now is not None else (None, False)
+    headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window)]
+    overall, overall_early = (
+        overall_pace(headline_windows, now) if now is not None and headline_windows else (None, False)
+    )
     pace_suffix = f" · pace {format_pace(overall, overall_early)}" if overall is not None else ""
 
     if len(entry.rows) == 1:
@@ -886,6 +898,8 @@ def render_chat_report(
     snapshot: Snapshot,
     alerts: list[UseOrLoseAlert],
     routing_context: RoutingContext | None = None,
+    *,
+    config: dict[str, Any] | None = None,
 ) -> str:
     """Deterministic rich chat-format renderer.
 
@@ -901,6 +915,12 @@ def render_chat_report(
 
     for provider, reason in sorted((getattr(snapshot, "disabled_services", None) or {}).items()):
         sections.append(f"🚫 **Disabled by operator:** {provider_display_name(provider)} — {reason}")
+
+    for key, reason in sorted((getattr(snapshot, "hidden_pools", None) or {}).items()):
+        sections.append(f"🙈 **Hidden by operator:** {key} — {reason}")
+
+    analysis_cfg = (config or {}).get("analysis") if isinstance((config or {}).get("analysis"), dict) else {}
+    show_total_rows = bool(analysis_cfg.get("show_total_rows", False))
 
     if routing_context is not None:
         sections.append(_render_routing(routing_context))
@@ -931,8 +951,13 @@ def render_chat_report(
     # --- Build subscription window rows ---
     sub_rows: list[_WindowRow] = []
     now = snapshot.collected_at
+    from aiuse.analysis.selfdescribe import pool_family_id
+    from aiuse.report import _hide_ceiling_window
+
     for account in sub_accounts:
         for window in account.windows:
+            if not show_total_rows and _hide_ceiling_window(account, window, config):
+                continue
             alert = _find_alert(alert_idx, account.provider, account.account, window.label)
             row = _WindowRow(account.provider, account.account, window, alert, now=now)
             sub_rows.append(row)

@@ -21,9 +21,9 @@ def _window_label(provider_id: str, key: str, metric: dict[object, object]) -> s
     """Give known provider metric keys stable cross-source labels."""
     if provider_id == "cursor":
         return {
-            "plan_percent_used": "Cursor Included",
-            "plan_auto_percent_used": "Cursor Auto",
-            "plan_api_percent_used": "Cursor other models",
+            "plan_percent_used": "total",
+            "plan_auto_percent_used": "auto",
+            "plan_api_percent_used": "third-party",
         }.get(key, str(metric.get("window") or key).replace("_", " "))
     label = str(metric.get("window") or key).replace("_", " ")
     return "weekly" if label.casefold() == "7d" else label

@@ -101,7 +101,44 @@ _SCOPE_SHORT = {
     "gemini": "gem",
     "claude/gpt": "c/gpt",
     "other models": "oth",
+    "third-party": "3rd",
+    "on-demand": "dmnd",
+    "grok-bot": "grok",
 }
+
+
+def _show_total_rows(config: dict[str, Any] | None) -> bool:
+    analysis = (config or {}).get("analysis")
+    if not isinstance(analysis, dict):
+        return False
+    return bool(analysis.get("show_total_rows", False))
+
+
+def _hide_ceiling_pool_row(account: AccountUsage, pool_id: str, config: dict[str, Any] | None) -> bool:
+    if _show_total_rows(config) or not pool_id:
+        return False
+    from aiuse.analysis.ceilings import CEILING_FAMILIES
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    families = CEILING_FAMILIES.get(account.provider, {})
+    for ceiling_family, sub_families in families.items():
+        ceiling_slug = f"cursor_{ceiling_family}" if account.provider == "cursor" else ceiling_family
+        if pool_id != ceiling_slug and pool_id != ceiling_family:
+            continue
+        for window in account.windows:
+            fam = pool_family_id(account.provider, window.label, window.window_id)
+            if fam in sub_families:
+                return True
+    return False
+
+
+def _hide_ceiling_window(account: AccountUsage, window: QuotaWindow, config: dict[str, Any] | None) -> bool:
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    family = pool_family_id(account.provider, window.label, window.window_id)
+    return _hide_ceiling_pool_row(
+        account, f"cursor_{family}" if account.provider == "cursor" and family else family or "", config
+    )
 
 
 @dataclass
@@ -360,6 +397,13 @@ def render_report(
                 f"  {provider_display_name(provider)}: {reason} "
                 "— off-limits entirely (no quota collected); remove the [disabled_services] entry to re-enable."
             )
+
+    if getattr(snapshot, "hidden_pools", None):
+        lines.append("")
+        lines.append(s.bold("## Hidden by operator"))
+        lines.append(s.dim("-" * width))
+        for key, reason in sorted(snapshot.hidden_pools.items()):
+            lines.append(f"  {key}: {reason} — display-only; remove the [hidden_pools] entry to show again.")
 
     lines.append("")
     lines.append(s.bold("## Per-provider usage"))
@@ -1135,6 +1179,8 @@ def render_priority_ladder(
         pools = partition_independent_pools(account.windows) if account.windows else [[]]
         for pool in pools:
             pool_id = _pool_id_for_windows(pool) if pool else ""
+            if _hide_ceiling_pool_row(account, pool_id, config):
+                continue
             cov = _ladder_coverage_key(account.provider, account.account, pool_id)
             if cov in covered:
                 continue
@@ -1248,6 +1294,8 @@ def _build_matrix_rows(
 
         for pool in partition_independent_pools(account.windows) if account.windows else [[]]:
             pool_id = _pool_id_for_windows(pool) if pool else ""
+            if _hide_ceiling_pool_row(account, pool_id, cfg):
+                continue
             clocks: dict[str, _ClockCell] = {}
             value: float | None = None
             sublimit_notes: list[str] = []
@@ -2468,6 +2516,8 @@ def _render_account(
         lines.append(f"  credits (counts down): {acc.credits_remaining}")
 
     for w in acc.windows:
+        if _hide_ceiling_window(acc, w, config):
+            continue
         rem = w.remaining()
         rem_s = f"{rem:.0f}% left" if rem is not None else "n/a"
         used_s = f"{w.used_percent:.0f}% used" if w.used_percent is not None else ""

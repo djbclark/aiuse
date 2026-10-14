@@ -132,6 +132,13 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     sweep = copy.deepcopy(config)
     sweep.pop("disabled_services", None)
+    sweep.pop("hidden_pools", None)
+    analysis = sweep.get("analysis")
+    if isinstance(analysis, dict):
+        analysis = dict(analysis)
+        analysis.pop("excluded_pools", None)
+        analysis["show_total_rows"] = True
+        sweep["analysis"] = analysis
     collectors = sweep.get("collectors")
     if isinstance(collectors, dict):
         for name, entry in collectors.items():
@@ -241,7 +248,7 @@ def render_watch_board(
     """
     header_bits = ["aiuse watch"]
     if all_providers:
-        header_bits.append("ALL PROVIDERS · screen only")
+        header_bits.append("ALL PROVIDERS · hidden + total rows shown · screen only")
     if now is not None:
         header_bits.append(f"now: {format_clock(now, seconds=True)}")
     data_at = snapshot.collected_at if snapshot is not None else last_at
