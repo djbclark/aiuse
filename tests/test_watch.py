@@ -612,6 +612,8 @@ def test_board_footer_is_centered_under_the_table():
 def test_all_providers_config_enables_everything_and_keeps_the_original():
     original = {
         "disabled_services": {"grok": "burst limit"},
+        "hidden_pools": {"cursor/auto": "hide"},
+        "analysis": {"excluded_pools": {"codex": "skip"}, "show_total_rows": False},
         "collectors": {
             "grok_billing": {"enabled": False},
             "cswap": False,
@@ -620,6 +622,9 @@ def test_all_providers_config_enables_everything_and_keeps_the_original():
     }
     sweep = all_providers_config(original)
     assert "disabled_services" not in sweep
+    assert "hidden_pools" not in sweep
+    assert sweep["analysis"]["show_total_rows"] is True
+    assert "excluded_pools" not in sweep["analysis"]
     assert sweep["collectors"]["grok_billing"]["enabled"] is True
     assert sweep["collectors"]["cswap"] is True
     assert sweep["collectors"]["codexbar"]["providers"] == "all"
@@ -658,7 +663,7 @@ def test_screen_only_sweep_collects_through_the_shared_pipeline(monkeypatch):
 
 def test_render_watch_board_marks_the_all_providers_view():
     text = render_watch_board(_snap(), [], color=False, quiet=True, all_providers=True)
-    assert "ALL PROVIDERS · screen only" in text
+    assert "ALL PROVIDERS · hidden + total rows shown · screen only" in text
     assert "u update now" in text and "a all providers" in text
 
 
@@ -779,7 +784,7 @@ def test_a_key_runs_a_screen_only_all_providers_sweep(monkeypatch):
     assert "disabled_services" not in sweep_config
     assert sweep_config["collectors"]["grok_billing"]["enabled"] is True
     assert sweep_config["collectors"]["codexbar"]["providers"] == "all"
-    assert any("ALL PROVIDERS · screen only" in text for text in fakes.texts)
+    assert any("ALL PROVIDERS · hidden + total rows shown · screen only" in text for text in fakes.texts)
     # the base config object was not mutated by the sweep
     assert config["disabled_services"] == {"grok": "burst limit"}
 
@@ -918,7 +923,7 @@ def test_a_queued_behind_a_scheduled_refresh_fires_when_it_finishes(monkeypatch)
     # One scheduled collect, then the released sweep — never overlapping.
     assert len(fakes.regular.starts) == 1
     assert len(fakes.sweep.starts) == 1
-    assert any("ALL PROVIDERS · screen only" in text for text in fakes.texts)
+    assert any("ALL PROVIDERS · hidden + total rows shown · screen only" in text for text in fakes.texts)
 
 
 def test_u_waits_for_a_queued_sweep(monkeypatch):
@@ -985,7 +990,7 @@ def test_cli_watch_all_providers_once(monkeypatch, capsys):
     monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
     assert cli.main(["watch", "--all-providers", "-q", "--no-color"]) == 0
     captured = capsys.readouterr()
-    assert "ALL PROVIDERS · screen only" in captured.out
+    assert "ALL PROVIDERS · hidden + total rows shown · screen only" in captured.out
     assert "Operator-only" in captured.err
     assert seen and "disabled_services" not in seen[0]
 

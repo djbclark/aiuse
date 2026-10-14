@@ -1,0 +1,49 @@
+{
+  "id": "cursor_total_governs",
+  "now": "2026-07-25T12:00:00+00:00",
+  "account": {
+    "source": "codexbar",
+    "provider": "cursor",
+    "account": "user@example.com",
+    "billing_kind": "subscription_window",
+    "windows": [
+      {
+        "label": "total",
+        "window_id": "primary",
+        "used_percent": 61.0,
+        "remaining_percent": 39.0,
+        "resets_at": "2026-08-04T12:00:00+00:00",
+        "window_minutes": 44640
+      },
+      {
+        "label": "auto",
+        "window_id": "secondary",
+        "used_percent": 55.0,
+        "remaining_percent": 45.0,
+        "resets_at": "2026-08-04T12:00:00+00:00",
+        "window_minutes": 44640
+      },
+      {
+        "label": "third-party",
+        "window_id": "tertiary",
+        "used_percent": 100.0,
+        "remaining_percent": 0.0,
+        "resets_at": "2026-08-04T12:00:00+00:00",
+        "window_minutes": 44640
+      }
+    ]
+  },
+  "config": {
+    "analysis": {
+      "scoring_mode": "pace",
+      "learn_from_history": false,
+      "provider_overrides": { "cursor": { "shared_allotment": true } }
+    }
+  },
+  "expected": {
+    "governing_label": "total",
+    "suggestion_eligible": false,
+    "suppressed_labels": ["third-party", "auto"],
+    "notes": "total is the monthly ceiling; auto and third-party are breakdown rows (not scored). third-party at 0% does not raise its own alert."
+  }
+}

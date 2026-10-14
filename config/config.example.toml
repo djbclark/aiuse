@@ -154,6 +154,16 @@
 # [disabled_services]
 # "grok" = "operator: vendor shelved this week (2026-10-08)"
 
+# Operator-hidden pools — display-only ("provider" or "provider/pool_family" =
+# reason). Matching windows are dropped at collection and omitted from human
+# outputs and `aiuse --available`. Weaker than [disabled_services]; stronger
+# than [analysis.excluded_pools] (routing-only).
+# [hidden_pools]
+# "cursor/auto" = "operator: not routing Auto this week"
+
+# Show total/ceiling rows in the board, --full, and --for-chat (default false).
+# show_total_rows = true
+
 [analysis.pace]
 # waste_alert_fraction = 0.30
 # min_elapsed_fraction = 0.15

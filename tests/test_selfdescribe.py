@@ -328,7 +328,7 @@ def test_cli_available_reads_cache_and_filters(tmp_path, monkeypatch, capsys):
     assert main(["--available", "--json", "-q"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["source"] == "cache"
-    assert payload["schema_version"] == "1.2"
+    assert payload["schema_version"] == "1.3"
     assert [p["pool_family"] for p in payload["available"]] == ["gemini"]
     assert payload["available"][0]["provider"] == "antigravity"
     assert payload["semantics"]["used_percent"]
@@ -456,7 +456,7 @@ def test_save_snapshot_writes_enriched_flat_and_mirror(tmp_path, monkeypatch):
     snap = _snapshot_from_fixture(_codex_fixture())
     path = history.save_snapshot(snap, [])
     data = json.loads(path.read_text())
-    assert data["schema_version"] == "1.2"
+    assert data["schema_version"] == "1.3"
     # flat path still works (aiuse-pools reads .accounts[])
     assert data["accounts"][0]["windows"][0]["state"] == "exhausted"
     assert data["accounts"][0]["usable_now"] is False

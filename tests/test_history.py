@@ -68,24 +68,24 @@ def test_burn_rate_to_flexibility():
 
 
 def test_merge_learned_flexibility_no_learned():
-    result = merge_learned_flexibility(0.7, "codex", "weekly", {})
+    result = merge_learned_flexibility(0.7, "codex:-:weekly", {})
     assert result == 0.7
 
 
 def test_merge_learned_flexibility_with_match():
-    learned = {"codex:weekly": 0.9}
-    result = merge_learned_flexibility(0.7, "codex", "weekly", learned)
+    learned = {"codex:-:weekly": 0.9}
+    result = merge_learned_flexibility(0.7, "codex:-:weekly", learned)
     assert result == 0.3 * 0.9 + 0.7 * 0.7
 
 
 def test_merge_learned_flexibility_does_not_cross_providers():
-    learned = {"grok:weekly": 0.3}
-    result = merge_learned_flexibility(0.7, "codex", "weekly", learned)
+    learned = {"grok:-:weekly": 0.3}
+    result = merge_learned_flexibility(0.7, "codex:-:weekly", learned)
     assert result == 0.7
 
 
 def test_merge_learned_flexibility_no_duration():
-    result = merge_learned_flexibility(0.5, "codex", None, {"codex:weekly": 0.9})
+    result = merge_learned_flexibility(0.5, "", {"codex:-:weekly": 0.9})
     assert result == 0.5
 
 
@@ -333,16 +333,16 @@ def test_compute_learned_flexibility_with_data(tmp_path: Path):
             ],
         )
         learned = compute_learned_flexibility(current=current, retention_days=90, min_snapshots=2)
-        assert "codex:weekly" in learned
-        assert 0.0 <= learned["codex:weekly"] <= 1.0
+        assert "codex:-:weekly" in learned
+        assert 0.0 <= learned["codex:-:weekly"] <= 1.0
 
         rates = compute_learned_burn_rates(current=current, retention_days=90, min_snapshots=2)
-        assert "codex:weekly" in rates
-        rate, n = rates["codex:weekly"]
+        assert "codex:-:weekly" in rates
+        rate, n = rates["codex:-:weekly"]
         assert n >= 2
         assert rate > 0
         # Flexibility and raw rate move together (higher burn → higher flex).
-        assert learned["codex:weekly"] == pytest.approx(_burn_rate_to_flexibility(rate * 100.0))
+        assert learned["codex:-:weekly"] == pytest.approx(_burn_rate_to_flexibility(rate * 100.0))
 
 
 def test_chronic_waste_detection(tmp_path: Path):
@@ -410,7 +410,7 @@ def test_short_interval_pair_has_negligible_weight_in_burn_rate(tmp_path: Path):
             ],
         )
         baseline = compute_learned_burn_rates(current=current, retention_days=90, min_snapshots=2)
-        assert "codex:weekly" in baseline
+        assert "codex:-:weekly" in baseline
 
         # Add a 3-minute-apart noisy pair with a huge extrapolated rate if equally weighted.
         noisy = {
@@ -433,7 +433,7 @@ def test_short_interval_pair_has_negligible_weight_in_burn_rate(tmp_path: Path):
         (tmp_path / "noisy.json").write_text(json.dumps(noisy))
         with_noise = compute_learned_burn_rates(current=current, retention_days=90, min_snapshots=2)
         # Weighted average must stay near baseline (noise weight ~3min << 1 day).
-        assert abs(with_noise["codex:weekly"][0] - baseline["codex:weekly"][0]) < 0.05
+        assert abs(with_noise["codex:-:weekly"][0] - baseline["codex:-:weekly"][0]) < 0.05
 
 
 def test_chronic_waste_requires_distinct_reset_cycles(tmp_path: Path):
@@ -714,11 +714,11 @@ def test_learned_burn_rates_key_on_canonical_provider(tmp_path: Path):
             ],
         )
         rates = compute_learned_burn_rates(current=current, retention_days=90, min_snapshots=2)
-        assert "antigravity:weekly" in rates
+        assert "antigravity:gemini:weekly" in rates
 
         learned = compute_learned_flexibility(current=current, retention_days=90, min_snapshots=2)
-        # The provider spelling used by callers must hit the stored key.
-        assert merge_learned_flexibility(0.5, "antigravity", "weekly", learned) != 0.5
+        # The series key used by callers must hit the stored key.
+        assert merge_learned_flexibility(0.5, "antigravity:gemini:weekly", learned) != 0.5
 
 
 def test_history_matches_snapshot_rows_with_null_account(tmp_path: Path):

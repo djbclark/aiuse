@@ -705,7 +705,7 @@ def test_pace_mode_learned_rate_bypasses_early_window_confidence_gate(monkeypatc
     # confidence gate is bypassed by has_learned_rate.
     monkeypatch.setattr(
         "aiuse.analysis.use_or_lose.compute_learned_burn_rates",
-        lambda **_k: {"codex:weekly": (0.01, 5)},  # 1% of window / day
+        lambda **_k: {"codex:-:weekly": (0.01, 5)},  # 1% of window / day
     )
     monkeypatch.setattr(
         "aiuse.analysis.use_or_lose.compute_learned_flexibility",
@@ -796,9 +796,7 @@ def test_pace_mode_burn_weekly():
 
 
 def test_cursor_shared_allotment_scores_included_and_other_models_independently():
-    """Cursor Included/Auto (healthy) and Other Models (exhausted) are independent
-    monthly pools (issue #21 / Phase 2): Other Models must raise its own conserve
-    alert instead of being silently suppressed as a child of Included."""
+    """Cursor total (healthy) governs; auto and third-party are breakdown rows."""
     now = _now()
     snap = Snapshot(
         collected_at=now,
@@ -810,21 +808,24 @@ def test_cursor_shared_allotment_scores_included_and_other_models_independently(
                 billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
                 windows=[
                     QuotaWindow(
-                        label="Cursor included",
+                        label="total",
+                        window_id="primary",
                         used_percent=61.0,
                         remaining_percent=39.0,
                         resets_at=now + timedelta(days=9.5),
                         window_minutes=44640,
                     ),
                     QuotaWindow(
-                        label="Cursor Auto",
+                        label="auto",
+                        window_id="secondary",
                         used_percent=55.0,
                         remaining_percent=45.0,
                         resets_at=now + timedelta(days=9.5),
                         window_minutes=44640,
                     ),
                     QuotaWindow(
-                        label="Cursor other models",
+                        label="third-party",
+                        window_id="tertiary",
                         used_percent=100.0,
                         remaining_percent=0.0,
                         resets_at=now + timedelta(days=9.5),
@@ -837,14 +838,8 @@ def test_cursor_shared_allotment_scores_included_and_other_models_independently(
     cfg = _pace_cfg()
     cfg["analysis"]["provider_overrides"] = {"cursor": {"shared_allotment": True}}
     alerts = analyze_use_or_lose(snap, cfg)
-    # Included/Auto stay governed together and are healthy → no alert for either.
-    assert not any(a.window_label in ("Cursor included", "Cursor Auto") for a in alerts)
-    # Other Models is its own independent pool and is genuinely exhausted → conserve.
-    other_alerts = [a for a in alerts if a.window_label == "Cursor other models"]
-    assert len(other_alerts) == 1
-    assert other_alerts[0].kind == "conserve"
-    assert other_alerts[0].kind != "prepaid"
-    assert other_alerts[0].days_until_reset is not None
+    # Breakdown rows (auto, third-party) are visible but not scored.
+    assert not any(a.window_label in ("auto", "third-party", "total") for a in alerts)
 
 
 def test_cursor_other_models_is_subscription_use_or_lose_not_prepaid():
