@@ -300,15 +300,15 @@ the winner.
 
 Snapshot learning insights (additive). Empty-ish when learning is off or thin.
 
-| Field                          | Type   | Notes                                                        |
-| ------------------------------ | ------ | ------------------------------------------------------------ |
-| `snapshot_count`               | int    | Retained files under cache                                   |
-| `learning_active`              | bool   | Whether history influences scoring this run                  |
-| `retention_days`               | int    | From config                                                  |
+| Field                          | Type   | Notes                                                             |
+| ------------------------------ | ------ | ----------------------------------------------------------------- |
+| `snapshot_count`               | int    | Retained files under cache                                        |
+| `learning_active`              | bool   | Whether history influences scoring this run                       |
+| `retention_days`               | int    | From config                                                       |
 | `learned_burn_rates`           | object | Map `provider:pool:duration` → `{fraction_per_day, sample_count}` |
-| `chronic_underuse`             | array  | Short windows with high avg remaining across ≥2 cycles       |
-| `usually_left_late_cycle`      | array  | Avg remaining when observed ≥70% into a window               |
-| `burn_candidates_from_history` | array  | Subset of late-cycle leftovers (≥40% left avg) as burn hints |
+| `chronic_underuse`             | array  | Short windows with high avg remaining across ≥2 cycles            |
+| `usually_left_late_cycle`      | array  | Avg remaining when observed ≥70% into a window                    |
+| `burn_candidates_from_history` | array  | Subset of late-cycle leftovers (≥40% left avg) as burn hints      |
 
 Every `provider` in this section — including the `provider:duration` keys of
 `learned_burn_rates` — is the **canonical** provider id used everywhere else in
@@ -473,7 +473,7 @@ into the other.
 | `cross_checks`       | array             | Informational tool comparisons                                                                                                                                                             |
 | `collector_errors`   | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
 | `disabled_services`  | object            | provider → reason from top-level `[disabled_services]` (1.1; `{}` = none). Rows for these providers are not collected — do not route to or spend them until the operator removes the entry |
-| `hidden_pools`       | object            | provider[/pool_family] → reason from `[hidden_pools]` (1.3; `{}` = none). Display-only hide applied at collection |
+| `hidden_pools`       | object            | provider[/pool_family] → reason from `[hidden_pools]` (1.3; `{}` = none). Display-only hide applied at collection                                                                          |
 | `config_fingerprint` | string \| omitted | short id of the disable list, collector switches, and `[usage_sources]` pins this snapshot was collected under. Omitted on older snapshots. Additive (schema 1.1+)                         |
 
 ### `accounts[]` (`AccountUsage`)
@@ -529,24 +529,24 @@ additive per the stability policy below.
 | `refill_capacity`             | number \| null       |
 | `refill_capacity_unit`        | string \| null       |
 | `internal_throttle`           | bool                 |
-| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                 |
-| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                            |
+| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                                    |
+| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                                               |
 | `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `total`/`auto`/`third_party`/`on_demand`/`grok_bot` |
-| `role`                        | string \| omitted    | 1.3 — `ceiling` (total umbrella) or `breakdown` (sub-row of a ceiling) |
-| `effective_left_percent`      | number \| omitted    | 1.3 — breakdown headroom after ceiling cap: min(own, ceiling) |
-| `ceiling_binding`             | bool \| omitted      | 1.3 — true when the ceiling row binds the sub-row |
-| `ceiling_headroom_percent`    | number \| omitted    | 1.3 — remaining on the ceiling window |
-| `ceiling_window_id`           | string \| omitted    | 1.3 — window_id of the ceiling row |
-| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                 |
-| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                   |
-| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                        |
-| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                         |
-| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                               |
-| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                |
-| `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                               |
-| `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                    |
-| `pace_early`                  | bool                 | 1.2 — true when window elapsed fraction is below 0.10; false when pace is null or not early                                                                                       |
-| `resets_at_carried_from`      | object \| omitted    | 2026-10-13 — `{source, collected_at}` of the earlier reading whose `resets_at` was carried forward because the source dropped it; an estimate (see below)                         |
+| `role`                        | string \| omitted    | 1.3 — `ceiling` (total umbrella) or `breakdown` (sub-row of a ceiling)                                                                                                                               |
+| `effective_left_percent`      | number \| omitted    | 1.3 — breakdown headroom after ceiling cap: min(own, ceiling)                                                                                                                                        |
+| `ceiling_binding`             | bool \| omitted      | 1.3 — true when the ceiling row binds the sub-row                                                                                                                                                    |
+| `ceiling_headroom_percent`    | number \| omitted    | 1.3 — remaining on the ceiling window                                                                                                                                                                |
+| `ceiling_window_id`           | string \| omitted    | 1.3 — window_id of the ceiling row                                                                                                                                                                   |
+| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                                    |
+| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                                      |
+| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                                           |
+| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                                            |
+| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                                                  |
+| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                                   |
+| `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                                                  |
+| `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                                       |
+| `pace_early`                  | bool                 | 1.2 — true when window elapsed fraction is below 0.10; false when pace is null or not early                                                                                                          |
+| `resets_at_carried_from`      | object \| omitted    | 2026-10-13 — `{source, collected_at}` of the earlier reading whose `resets_at` was carried forward because the source dropped it; an estimate (see below)                                            |
 
 #### `resets_at_carried_from` — a reset the selected source dropped
 

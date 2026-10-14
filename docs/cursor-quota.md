@@ -13,13 +13,13 @@ the dashboard still showed **total ~61% used** (~39% left) and on-demand
 CodexBar maps Cursor’s dashboard rows to `primary` / `secondary` / `tertiary`
 plus `providerCost` and `extraRateWindows`:
 
-| CodexBar slot / id                              | Cursor UI / docs name                         | `aiuse` label   | `pool_family` |
-| ----------------------------------------------- | --------------------------------------------- | --------------- | ------------- |
-| `primary`                                       | **Total** (monthly umbrella)                  | **total**       | `total`       |
-| `secondary`                                     | **Auto** (Cursor Auto/Composer)             | **auto**        | `auto`        |
-| `tertiary`                                      | **Third Party** (named third-party models)    | **third-party** | `third_party` |
-| `providerCost` (`period: Monthly`, `limit > 0`) | **On-demand** `$used / $limit`                | **on-demand**   | `on_demand`   |
-| `extraRateWindows` id `cursor-grok-bot`         | **Grok Bot** weekly allowance                 | **grok-bot**    | `grok_bot`    |
+| CodexBar slot / id                              | Cursor UI / docs name                      | `aiuse` label   | `pool_family` |
+| ----------------------------------------------- | ------------------------------------------ | --------------- | ------------- |
+| `primary`                                       | **Total** (monthly umbrella)               | **total**       | `total`       |
+| `secondary`                                     | **Auto** (Cursor Auto/Composer)            | **auto**        | `auto`        |
+| `tertiary`                                      | **Third Party** (named third-party models) | **third-party** | `third_party` |
+| `providerCost` (`period: Monthly`, `limit > 0`) | **On-demand** `$used / $limit`             | **on-demand**   | `on_demand`   |
+| `extraRateWindows` id `cursor-grok-bot`         | **Grok Bot** weekly allowance              | **grok-bot**    | `grok_bot`    |
 
 **Do not assume** `total = auto + third-party`. CodexBar only reports
 percentages per row; aiuse treats **total** as the monthly ceiling row and
@@ -51,13 +51,13 @@ Both **total**, **auto**, and **third-party** reset with the billing cycle
 (use-or-lose). **On-demand** is a spend cap, not a prepaid wallet. **grok-bot**
 is weekly.
 
-| Pool (aiuse label) | What burns it                                                          |
-| ------------------ | ---------------------------------------------------------------------- |
-| **total**          | All monthly Cursor subscription usage (umbrella meter)                 |
-| **auto**           | Cursor Auto/Composer model selection                                   |
-| **third-party**    | Third-party models at that model’s API price                           |
-| **on-demand**      | Pay-as-you-go spend against the configured dollar cap                  |
-| **grok-bot**       | Grok Bot weekly allowance (separate from Grok/Cursor plans)            |
+| Pool (aiuse label) | What burns it                                               |
+| ------------------ | ----------------------------------------------------------- |
+| **total**          | All monthly Cursor subscription usage (umbrella meter)      |
+| **auto**           | Cursor Auto/Composer model selection                        |
+| **third-party**    | Third-party models at that model’s API price                |
+| **on-demand**      | Pay-as-you-go spend against the configured dollar cap       |
+| **grok-bot**       | Grok Bot weekly allowance (separate from Grok/Cursor plans) |
 
 CodexBar percentages for total, auto, and third-party are independent readings;
 aiuse does not derive one from the others.
