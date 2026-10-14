@@ -95,8 +95,16 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     ],
     "cursor": [
         ("on-demand", "on_demand", "Cursor on-demand dollar cap"),
-        ("grok-bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
-        ("grok bot", "grok_bot", "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"),
+        (
+            "grok-bot",
+            "grok_bot",
+            "Cursor Grok Bot weekly allowance (counted on your Cursor account; not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)",
+        ),
+        (
+            "grok bot",
+            "grok_bot",
+            "Cursor Grok Bot weekly allowance (counted on your Cursor account; not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)",
+        ),
         ("auto", "auto", "Cursor Auto/Composer models (breakdown of total)"),
         ("total", "total", "Cursor total monthly usage (ceiling)"),
         ("third party", "third_party", "Cursor third-party models (breakdown)"),
@@ -182,7 +190,10 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
         window["pool_family"] = family
     if provider == "cursor":
         if wid == "cursor-grok-bot" or family == "grok_bot":
-            window["models_hint"] = "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"
+            window["models_hint"] = (
+                "Cursor Grok Bot weekly allowance (counted on your Cursor account; "
+                "not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)"
+            )
         elif family in ("auto", "third_party"):
             window["quota_scope"] = "model_sublimit"
             window["shared_pool_family"] = "total"

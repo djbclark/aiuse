@@ -227,7 +227,10 @@ def test_grok_bot_models_hint():
     )
     enriched = enrich_snapshot(data)
     grok = next(w for w in enriched["accounts"][0]["windows"] if w.get("pool_family") == "grok_bot")
-    assert grok["models_hint"] == "Cursor Grok Bot weekly allowance (separate from Grok and Cursor plans)"
+    assert grok["models_hint"] == (
+        "Cursor Grok Bot weekly allowance (counted on your Cursor account; "
+        "not shared with Grok app/CLI/grok.com usage; size may come from a linked SuperGrok plan)"
+    )
 
 
 def test_available_hides_ceiling_and_hidden_pools(tmp_path, monkeypatch, capsys):
