@@ -66,6 +66,8 @@ Open-ended “what next?” → **do not restart** fix plan at Step 1.
 | [#17](https://github.com/djbclark/aiuse/issues/17)                                                    | **Closed 2026-08-11** | OpenRouter 2nd account-credit source (native collector added)                                                          |
 | [#18](https://github.com/djbclark/aiuse/issues/18)                                                    | **Closed 2026-08-02** | Groq confirmed 3 agreeing live sources on 2 independent runs (was 0 on 2026-07-30) — resolved upstream, no code needed |
 | [#19](https://github.com/djbclark/aiuse/issues/19)–[#23](https://github.com/djbclark/aiuse/issues/23) | **Closed 2026-08-02** | quota-algorithm-audit-2026-08-01.md — pace-scoring fixes, see [`handoff.md`](handoff.md)                               |
+| [#35](https://github.com/djbclark/aiuse/issues/35)                                                    | Open                  | `--generate-config` emits no `[collectors.*]` sections; collector names / disable syntax undiscoverable                |
+| [#36](https://github.com/djbclark/aiuse/issues/36)                                                    | Open                  | `clinepass` enabled by default and logs an error row every run when unconfigured (no key / no `sudo-secretspec`)       |
 | Step **35**                                                                                           | Parked                | ccusage ≠ plan % — [`claude-local-usage.md`](claude-local-usage.md)                                                    |
 
 ---
