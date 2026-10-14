@@ -45,6 +45,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
+from aiuse.timefmt import format_lead
 
 # Windows shorter than this are rate-limits, not "monthly plan waste"
 SHORT_WINDOW_LABELS = {"5-hour", "5h", "session", "hourly"}
@@ -1037,9 +1038,11 @@ def _pace_message(
             f"{child_note}{overage_note}"
         )
     if verdict == "conserve":
+        lead = getattr(pace, "exhaustion_lead_seconds", None)
+        run_out = f"~{format_lead(lead)} before reset" if lead else "before reset"
         return (
             f"{provider_display_name(account.provider)} · {who} · {window.label}: "
-            f"pace yourself — projected to run out before reset ({rem_s} left, resets {when})."
+            f"pace yourself — projected to run out {run_out} ({rem_s} left, resets {when})."
             f"{child_note}{overage_note}"
         )
     return (

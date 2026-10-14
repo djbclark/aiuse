@@ -68,7 +68,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
-from aiuse.timefmt import format_clock
+from aiuse.timefmt import format_clock, lead_phrase
 
 URGENCY_ICON = {
     Urgency.CRITICAL: "!!!",
@@ -1878,7 +1878,10 @@ def _forecast_fragment(alert: UseOrLoseAlert, *, compact: bool = True) -> str:
     # Already-empty capacity is not "about to lock out" — skip the forecast.
     rem = float(alert.remaining_percent)
     if alert.kind == "conserve" and pace.projected_exhaust_at is not None and rem > 1.0:
-        parts.append(f"~lockout {format_clock(pace.projected_exhaust_at, weekday=True)}")
+        parts.append(
+            f"~lockout {format_clock(pace.projected_exhaust_at, weekday=True)}"
+            f"{lead_phrase(pace.exhaustion_lead_seconds)}"
+        )
     if alert.kind == "burn" and pace.projected_waste_fraction is not None:
         waste_pct = pace.projected_waste_fraction * 100.0
         if waste_pct >= 5.0:
@@ -2401,7 +2404,10 @@ def _conserve_line(alert: UseOrLoseAlert, s: _Style) -> str:
     pace = alert.pace
     lockout = ""
     if pace and pace.projected_exhaust_at:
-        lockout = f", locked out ~{format_clock(pace.projected_exhaust_at, weekday=True)}"
+        lockout = (
+            f", locked out ~{format_clock(pace.projected_exhaust_at, weekday=True)}"
+            f"{lead_phrase(pace.exhaustion_lead_seconds)}"
+        )
     waste = ""
     if pace and pace.projected_waste_fraction is not None and pace.projected_waste_fraction >= 0.05:
         waste = f", ~{pace.projected_waste_fraction:.0%} unused if pace holds"

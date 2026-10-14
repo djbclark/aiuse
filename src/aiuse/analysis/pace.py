@@ -13,6 +13,7 @@ from aiuse.models import (
     claude_model_scope,
     nominal_window_minutes,
 )
+from aiuse.timefmt import exhaustion_lead_seconds
 
 
 def compute_pace(
@@ -85,6 +86,7 @@ def compute_pace(
         projected_exhaust_at=exhaust_at,
         confidence=confidence,
         learned_sample_count=blended_n,
+        exhaustion_lead_seconds=exhaustion_lead_seconds(exhaust_at, window.resets_at),
     )
 
 

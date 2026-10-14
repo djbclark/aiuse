@@ -312,6 +312,9 @@ class PaceProfile:
     # "overage_state"). Qualifies "conserve": lockout risk (hard ceiling) vs.
     # unplanned $ spend risk (soft ceiling, overage available).
     has_overage: bool = False
+    # Seconds between projected_exhaust_at and the window's reset; set only when
+    # exhaustion is projected strictly before the reset (how early the lockout is).
+    exhaustion_lead_seconds: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

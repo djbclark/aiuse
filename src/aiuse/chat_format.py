@@ -34,7 +34,7 @@ from aiuse.models import (
     claude_model_scope,
     provider_display_name,
 )
-from aiuse.timefmt import format_clock
+from aiuse.timefmt import exhaustion_lead_seconds, format_clock, lead_phrase
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -169,6 +169,12 @@ def pace_interpretation(
 
     if _projected_exhaustion_before_reset(pace, resets_at):
         phrase = "Projected to exhaust before reset"
+        lead = pace.exhaustion_lead_seconds
+        if lead is None:
+            lead = exhaustion_lead_seconds(pace.projected_exhaust_at, resets_at)
+        if pace.projected_exhaust_at is not None and lead is not None:
+            when = format_clock(pace.projected_exhaust_at, weekday=True)
+            phrase = f"Projected to exhaust ~{when}{lead_phrase(lead)}"
         if pace.has_overage:
             phrase += " and overage may create real spending"
         return phrase

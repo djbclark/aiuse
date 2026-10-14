@@ -408,6 +408,7 @@ def _alerts_from_dicts(rows: list[Any]) -> list[UseOrLoseAlert]:
                 gated_by=pace_raw.get("gated_by"),
                 confidence=str(pace_raw.get("confidence") or "measured"),
                 learned_sample_count=int(pace_raw.get("learned_sample_count") or 0),
+                exhaustion_lead_seconds=pace_raw.get("exhaustion_lead_seconds"),
             )
         out.append(
             UseOrLoseAlert(

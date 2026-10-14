@@ -51,7 +51,7 @@ pools most worth using right now sort to the bottom.
 
 ```diff
         ## SERVICE    ACCT  SCOPE           5H              WEEK              MONTH           PACE
-- error ?? oc-zen     gmail —                                                                    — No available fetch strategy for op…
+- error ?? oc-zen     gmail —                                                                    — No available fetch strategy for opencode-zen.
 - empty  0 oc-go      gmail —                          — 100u/0l/4d12h                      —    — <- EXHAUSTED
   n/a   -- deepseek   gmail —                                                                    — $4.15 (counts down)
   n/a   -- openrouter gmail —                                                                    — $18.55 (counts down)
@@ -64,7 +64,7 @@ pools most worth using right now sort to the bottom.
 + use   91 copilot    —     —                          —                  — 58u/42l/~1d -39%  -39%
                               2d14h = until this clock resets · bold = largest unit
                         u/l = percent used / percent left — l is what you can still spend
-  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the…
+  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed
                                AI: Use `aiuse --json` for machine-readable output
 ```
 
@@ -484,7 +484,7 @@ This tool:
 4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from. Cursor **total** is the monthly ceiling; **auto** and **third-party** are breakdown rows (visible, not headline-scored). **On-demand** and **grok-bot** are separate families. Claude's **Fable cap is within the shared weekly pool** (up to 50%, not additional quota): the main row shows overall usage, with an indented cap underneath. Fable at 100% does not exhaust other Claude models; shared exhaustion blocks Fable too.
 5. Qualifies **Conserve** alerts with **overage awareness**: if the account has a real or config-confirmed overage/extra-usage wallet (Claude's usage credits, Cursor's on-demand balance, or a manually confirmed OpenCode Go overage state), the message says so — the real risk there is unplanned $ spend, not lockout, which is a different situation from a genuinely hard ceiling.
 6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH) plus a **PACE** column for the row's highest pace, each cell displaying `used% u / left% l / reset_span pace%` (`75u/25l/4h -10%`, `89u/11l/2d14h +180%`; depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
-7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout …`, projected waste %) appear on table/status lines when pace can project them.
+7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout Sat 3:00pm, 3 days before reset`, projected waste %) appear on table/status lines when pace can project them; every lockout / run-out forecast also says how far ahead of the window's reset it lands, scaled to hours, days or weeks (JSON: `pace.exhaustion_lead_seconds`).
 8. Cross-checks **all live sources** pairwise; Claude multi-account stays canonical in cswap.
 9. Optional surfaces: `aiuse suggest` (single burn winner), `aiuse status` / `prompt` (one-liner), and `aiuse serve` (loopback ranking API for agents). Snapshot history can blend into pace when enabled.
 
