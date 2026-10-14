@@ -64,7 +64,7 @@ pools most worth using right now sort to the bottom.
 + use   91 copilot    —     —                          —                  — 58u/42l/~1d -39%  -39%
                               2d14h = until this clock resets · bold = largest unit
                         u/l = percent used / percent left — l is what you can still spend
-  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the…
+  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed
                                AI: Use `aiuse --json` for machine-readable output
 ```
 

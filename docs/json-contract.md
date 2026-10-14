@@ -108,6 +108,12 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-10-14, schema stays 1.3)
+
+- `pace.exhaustion_lead_seconds` (number | null): lead time between projected
+  exhaustion and the window reset. New optional key per the stability policy; no
+  version bump.
+
 #### Schema 1.3 (2026-10-14)
 
 - Bump `schema_version` to **1.3** (additive).
@@ -657,6 +663,13 @@ otherwise `resets_at` stays `null`:
 | `confidence`               | string                      |
 | `learned_sample_count`     | int (0 if no history blend) |
 | `has_overage`              | bool                        |
+| `exhaustion_lead_seconds`  | number \| null              |
+
+`exhaustion_lead_seconds` is how far ahead of the window's reset the projected
+exhaustion lands (`resets_at - projected_exhaust_at`, in seconds). It is set only
+when exhaustion is projected strictly before the reset, else `null`. Human
+outputs render it scaled to hours, days or weeks — e.g. `locked out ~Sat 3:00pm,
+3 days before reset`.
 
 `has_overage` is `true` when the account has a real (`AccountUsage.usage_credits`) or config-confirmed (`provider_overrides.<provider>.overage_state: "enabled"`) overage/extra-usage wallet. It qualifies, never suppresses, a `conserve`/`burn` verdict — `true` means the real risk is unplanned $ spend (soft ceiling), not lockout (hard ceiling). See `docs/shared-quota-semantics/formulas/pace.md`'s rule O1.
 
