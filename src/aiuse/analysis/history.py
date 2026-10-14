@@ -245,7 +245,12 @@ def load_recent_snapshots(
     return snapshots
 
 
-def window_series_key(provider: str, label: str | None, window_minutes: Any) -> str:
+def window_series_key(
+    provider: str,
+    label: str | None,
+    window_minutes: Any,
+    window_id: str | None = None,
+) -> str:
     """Source-independent identity for one recurring quota window.
 
     Collectors label the same window differently — CodexBar reports Antigravity's
@@ -254,8 +259,9 @@ def window_series_key(provider: str, label: str | None, window_minutes: Any) -> 
     subscription into two series that never match each other or the live
     snapshot. What actually identifies the allotment is the provider, the
     independent pool within it (Gemini vs Claude/GPT), and the window duration.
+    When CodexBar supplies a stable ``window_id``, that wins over label text.
     """
-    pool = independent_pool_key(label) or "-"
+    pool = independent_pool_key(label, window_id=window_id) or "-"
     model = claude_model_scope(label) if canonical_provider(provider) == "claude" else None
     if model is not None:
         pool = f"model_{model.casefold().replace(' ', '_')}"
@@ -286,6 +292,7 @@ def live_window_index(snapshot: Snapshot) -> dict[str, list[dict[str, Any]]]:
                 account.provider,
                 window.label,
                 effective_window_minutes(window.label, window.window_minutes),
+                window.window_id,
             )
             entries = index.setdefault(key, [])
             existing = next((e for e in entries if account_key(e["account"]) == account_key(account.account)), None)
@@ -430,7 +437,7 @@ def _carry_targets(snapshot: Snapshot) -> list[_CarryTarget]:
             # An unknown duration is no series: its key would pool unrelated windows.
             if minutes is None or minutes <= 0 or _duration_key(minutes) is None:
                 continue
-            key = window_series_key(account.provider, window.label, minutes)
+            key = window_series_key(account.provider, window.label, minutes, window.window_id)
             oldest = snapshot.collected_at - timedelta(minutes=minutes)
             targets.append(_CarryTarget(window, key, account_key(account.account), used, oldest))
     return targets
@@ -454,7 +461,14 @@ def _offer_record(
             continue
         label = window.get("label")
         label = label if isinstance(label, str) else None
-        key = window_series_key(provider, label, effective_window_minutes(label, window.get("window_minutes")))
+        window_id = window.get("window_id")
+        window_id = window_id if isinstance(window_id, str) else None
+        key = window_series_key(
+            provider,
+            label,
+            effective_window_minutes(label, window.get("window_minutes")),
+            window_id,
+        )
         series = by_series.get(key)
         if series is None:
             continue
@@ -756,7 +770,9 @@ def chronic_waste_summary(
                 if prev_remaining is None:
                     continue
 
-                key = window_series_key(provider, label, window_minutes)
+                prev_window_id = prev_window.get("window_id")
+                prev_window_id = prev_window_id if isinstance(prev_window_id, str) else None
+                key = window_series_key(provider, label, window_minutes, prev_window_id)
                 # An anonymous row adopts the live account when that is
                 # unambiguous, so one subscription seen by two collectors stays
                 # one series instead of forking on the missing account.

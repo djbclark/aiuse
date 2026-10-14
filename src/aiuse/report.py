@@ -19,9 +19,10 @@ from aiuse.analysis.pace import (
     POOL_SCOPE_LABELS,
     format_pace,
     governing_partition,
-    independent_pool_key,
+    matrix_pool_scope,
     overall_pace,
     partition_independent_pools,
+    pool_key_for_window,
     window_pace,
 )
 from aiuse.analysis.ranking import (
@@ -472,6 +473,8 @@ def _account_is_spend_up_payg(account: AccountUsage) -> bool:
 
 def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
     """Short suffix when a subscription row also has Extra Usage Credits."""
+    if any((w.window_id or "").casefold() == "on-demand" for w in account.windows):
+        return ""
     uc = account.usage_credits
     if uc is None or uc.remaining is None:
         return ""
@@ -639,7 +642,7 @@ def _pool_queue_priority(
 
 def _pool_id_for_windows(windows: list[QuotaWindow]) -> str:
     for window in windows:
-        key = independent_pool_key(window.label)
+        key = pool_key_for_window(window)
         if key:
             return key
     return ""
@@ -1345,7 +1348,7 @@ def _build_matrix_rows(
                     service=service,
                     account=short,
                     account_full=account.account,
-                    scope=_POOL_SCOPE_LABELS.get(pool_id, "—"),
+                    scope=matrix_pool_scope(pool_id, pool),
                     clocks=clocks,
                     value_usd=value,
                     pace_percent=overall_pct,

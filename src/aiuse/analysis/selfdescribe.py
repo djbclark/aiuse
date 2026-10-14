@@ -80,8 +80,10 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("weekly", "default", "Claude models without a reported model cap; quota is shared with capped models"),
     ],
     "cursor": [
-        ("grok", "grok", "Cursor grok model slot"),
-        ("auto", "auto", "Cursor 'Auto' model selection"),
+        ("on-demand", "on_demand", "Cursor on-demand dollar cap"),
+        ("auto", "auto", "Cursor Auto model selection (breakdown of Total)"),
+        ("total", "total", "Cursor Total included usage"),
+        ("third party", "third_party", "Cursor Third Party models (breakdown)"),
         ("included", "included", "Cursor included models"),
         ("other", "other", "Cursor other-models slot"),
     ],
@@ -145,8 +147,18 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
             window["shared_pool_family"] = "default"
             if model.casefold() == "fable":
                 window["max_share_of_parent_percent"] = 50.0
+    if provider == "cursor":
+        wid = str(window.get("window_id") or "").strip().casefold()
+        if wid == "cursor-grok-bot":
+            window["pool_family"] = "cursor_grok"
+            window["models_hint"] = "Cursor Grok Bot weekly allowance (distinct from SuperGrok/xAI)"
+        elif wid in ("secondary", "tertiary"):
+            window["quota_scope"] = "model_sublimit"
+            window["shared_pool_family"] = "total"
+        elif wid == "on-demand":
+            window["pool_family"] = "on_demand"
     family, hint = window_family(provider, str(window.get("label") or ""))
-    if family is not None:
+    if family is not None and window.get("pool_family") is None:
         window["pool_family"] = family
         window["models_hint"] = hint
     return window
@@ -187,6 +199,16 @@ def enrich_account(
     windows = [w for w in (account.get("windows") or []) if isinstance(w, dict)]
     for window in windows:
         enrich_window(window, provider=provider)
+    uc = account.get("usage_credits")
+    if isinstance(uc, dict) and provider == "cursor":
+        for window in windows:
+            if str(window.get("window_id") or "").casefold() != "on-demand":
+                continue
+            for key in ("used", "limit", "currency"):
+                if uc.get(key) is not None:
+                    window[key] = uc[key]
+            if uc.get("resets_at") and not window.get("resets_at"):
+                window["resets_at"] = uc["resets_at"]
     account["windows"] = windows
 
     for note in notes or []:

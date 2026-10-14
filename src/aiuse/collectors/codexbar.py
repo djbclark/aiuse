@@ -552,13 +552,17 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     account = _display_account(row.get("account") or usage.get("accountEmail") or identity.get("accountEmail"))
     plan = usage.get("loginMethod") or identity.get("loginMethod")
 
+    rate_labels = row.get("rateWindowLabels")
+    rate_labels = rate_labels if isinstance(rate_labels, dict) else None
+
     windows: list[QuotaWindow] = []
     extra_windows: list[QuotaWindow] = []
     for extra in usage.get("extraRateWindows") or []:
         if not isinstance(extra, dict) or not isinstance(extra.get("window"), dict):
             continue
-        title = str(extra.get("title") or extra.get("id") or "Unnamed CodexBar quota")
-        window = _window(title, extra["window"])
+        extra_id = str(extra.get("id") or "").strip()
+        title = str(extra.get("title") or extra_id or "Unnamed CodexBar quota")
+        window = _window(title, extra["window"], window_id=extra_id or None)
         if window:
             extra_windows.append(window)
     windows.extend(extra_windows)
@@ -567,8 +571,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         block = usage.get(key)
         if not isinstance(block, dict):
             continue
-        label = _slot_label(provider, index, block)
-        window = _window(label, block)
+        label = _slot_label(provider, index, block, rate_labels=rate_labels)
+        window = _window(label, block, window_id=key)
         # Skip only when this slot is the same measurement as an already-parsed
         # extra/named window — do not drop real subscription slots just because
         # a prepaid balance blob also exists.
@@ -645,6 +649,23 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     resets_at=parse_dt(provider_cost.get("resetsAt")),
                 )
                 notes.append(f"On-demand: ${cost_used:.2f} of ${cost_limit:.2f} ({remaining:.2f} remaining).")
+                if provider == "cursor":
+                    used_pct = (cost_used / cost_limit) * 100.0 if cost_limit else None
+                    rem_pct = max(0.0, 100.0 - used_pct) if used_pct is not None else None
+                    windows.append(
+                        QuotaWindow(
+                            label="On-demand",
+                            window_id="on-demand",
+                            used_percent=used_pct,
+                            remaining_percent=rem_pct,
+                            resets_at=parse_dt(provider_cost.get("resetsAt")),
+                            window_minutes=43200,
+                            reset_description=f"On-demand ${cost_used:.2f} / ${cost_limit:.2f}",
+                            refill_capacity=cost_limit,
+                            refill_capacity_unit="usd",
+                            raw=provider_cost,
+                        )
+                    )
     reset_credits = usage.get("codexResetCredits")
     if isinstance(reset_credits, dict) and reset_credits.get("availableCount") is not None:
         notes.append(f"Codex limit-reset credits available: {reset_credits['availableCount']}.")
@@ -725,7 +746,7 @@ def _opencode_zen_from_row(row: dict[str, Any]) -> AccountUsage | None:
     )
 
 
-def _window(label: str, block: dict[str, Any]) -> QuotaWindow | None:
+def _window(label: str, block: dict[str, Any], *, window_id: str | None = None) -> QuotaWindow | None:
     used = _f(block.get("usedPercent"))
     remaining = _f(block.get("remainingPercent"))
     description = block.get("resetDescription") or block.get("reset_description")
@@ -752,6 +773,7 @@ def _window(label: str, block: dict[str, Any]) -> QuotaWindow | None:
         window_minutes=_int_or_none(block.get("windowMinutes") or block.get("window_minutes")),
         reset_description=str(description) if description else None,
         raw=block,
+        window_id=window_id,
     )
 
 
@@ -797,10 +819,34 @@ _SLOT_POOL_PREFIXES: dict[str, tuple[str, ...]] = {
 _KIND_SUFFIX = {"5h": " 5-hour", "weekly": " weekly", "monthly": " monthly"}
 
 
-def _slot_label(provider: str, index: int, block: dict[str, Any]) -> str:
-    mapped = _SLOT_LABELS.get(provider)
-    if mapped:
-        return mapped[index - 1]
+def _cursor_rate_label(index: int, rate_labels: dict[str, Any]) -> str | None:
+    slot = ("primary", "secondary", "tertiary")[index - 1]
+    raw = rate_labels.get(slot)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    low = text.casefold()
+    if low == "cursor":
+        return "auto"
+    return text
+
+
+def _slot_label(
+    provider: str,
+    index: int,
+    block: dict[str, Any],
+    *,
+    rate_labels: dict[str, Any] | None = None,
+) -> str:
+    if provider == "cursor" and rate_labels:
+        cursor_label = _cursor_rate_label(index, rate_labels)
+        if cursor_label:
+            return cursor_label
+    slot_labels = _SLOT_LABELS.get(provider)
+    if slot_labels:
+        return slot_labels[index - 1]
 
     pools = _SLOT_POOL_PREFIXES.get(provider)
     if pools and index <= len(pools):

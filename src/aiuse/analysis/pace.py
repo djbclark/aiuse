@@ -222,7 +222,12 @@ def governing_partition(windows: list[QuotaWindow]) -> tuple[QuotaWindow | None,
     return governing, children
 
 
-def independent_pool_key(label: str | None) -> str | None:
+# Stable CodexBar extra-window id for Cursor's Grok Bot weekly allowance.
+# Match on this id only — never on the display title (Cursor may rename it).
+CURSOR_GROK_BOT_WINDOW_ID = "cursor-grok-bot"
+
+
+def independent_pool_key(label: str | None, *, window_id: str | None = None) -> str | None:
     """Hard-separated allotment family from a window label, if any.
 
     Some providers (notably Google AI / Antigravity) expose **independent**
@@ -233,7 +238,19 @@ def independent_pool_key(label: str | None) -> str | None:
     exhausting one has no effect on the other. Returns a stable slug for
     grouping, or None for the residual “same pool” group (Claude 5h⊂weekly,
     Cursor Included⊂Auto).
+
+    When ``window_id`` is set (CodexBar slot or extra-window id), it wins over
+    label heuristics so Cursor Grok Bot stays separate even if the title changes.
     """
+    wid = (window_id or "").strip().casefold()
+    if wid == CURSOR_GROK_BOT_WINDOW_ID:
+        return "cursor_grok"
+    if wid == "secondary":
+        return "cursor_auto"
+    if wid == "tertiary":
+        return "cursor_third_party"
+    if wid == "on-demand":
+        return "cursor_on_demand"
     text = (label or "").casefold()
     if not text:
         return None
@@ -248,10 +265,28 @@ def independent_pool_key(label: str | None) -> str | None:
         return "claude_gpt"
     if "gemini" in text:
         return "gemini"
-    # Display label is "Cursor other models"; accept legacy "Cursor API" too.
+    # New CodexBar labels (rateWindowLabels) and legacy collector labels.
+    if "third party" in text:
+        return "cursor_third_party"
     if "cursor other models" in text or "cursor api" in text:
         return "cursor_other_models"
     return None
+
+
+def pool_key_for_window(window: QuotaWindow | None, *, label: str | None = None) -> str:
+    """Stable pool slug for grouping; empty string = residual pool."""
+    if window is not None:
+        key = independent_pool_key(window.label, window_id=window.window_id)
+        if key is not None:
+            return key
+        label = window.label
+    return independent_pool_key(label) or ""
+
+
+def cursor_breakdown_window(window: QuotaWindow) -> bool:
+    """Cursor Auto / Third Party breakdown rows — visible but not scored."""
+    wid = (window.window_id or "").strip().casefold()
+    return wid in ("secondary", "tertiary")
 
 
 # Short human names for the pool slugs above. Lives here rather than in a
@@ -260,6 +295,10 @@ POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "claude_gpt": "claude/gpt",
     "cursor_other_models": "other models",
+    "cursor_third_party": "third party",
+    "cursor_auto": "auto",
+    "cursor_grok": "grok bot",
+    "cursor_on_demand": "on-demand",
 }
 
 
@@ -268,6 +307,21 @@ def pool_scope_label(pool_id: str | None) -> str | None:
     if not pool_id:
         return None
     return POOL_SCOPE_LABELS.get(pool_id, pool_id)
+
+
+def matrix_pool_scope(pool_id: str, pool: list[QuotaWindow] | None = None) -> str:
+    """SCOPE column label for a matrix/ladder pool row."""
+    if pool_id:
+        return POOL_SCOPE_LABELS.get(pool_id, pool_id)
+    if pool:
+        for window in pool:
+            wid = (window.window_id or "").strip().casefold()
+            if wid == "primary":
+                return "total"
+            label = (window.label or "").strip().casefold()
+            if label in ("total", "cursor included"):
+                return "total"
+    return "—"
 
 
 def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWindow]]:
@@ -285,7 +339,7 @@ def partition_independent_pools(windows: list[QuotaWindow]) -> list[list[QuotaWi
     named_order: list[str] = []
     residual: list[QuotaWindow] = []
     for window in windows:
-        key = independent_pool_key(window.label)
+        key = independent_pool_key(window.label, window_id=window.window_id)
         if key is None:
             residual.append(window)
             continue

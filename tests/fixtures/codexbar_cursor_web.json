@@ -1,0 +1,83 @@
+[
+  {
+    "pace": {
+      "primary": {
+        "deltaPercent": -6,
+        "expectedUsedPercent": 15,
+        "stage": "slightlyBehind",
+        "summary": "6% in reserve | Expected 15% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "secondary": {
+        "deltaPercent": -6,
+        "expectedUsedPercent": 15,
+        "stage": "slightlyBehind",
+        "summary": "6% in reserve | Expected 15% used | Lasts until reset",
+        "willLastToReset": true
+      },
+      "tertiary": {
+        "deltaPercent": -3,
+        "expectedUsedPercent": 15,
+        "stage": "slightlyBehind",
+        "summary": "3% in reserve | Expected 15% used | Lasts until reset",
+        "willLastToReset": true
+      }
+    },
+    "provider": "cursor",
+    "rateWindowLabels": {
+      "primary": "Total",
+      "secondary": "Cursor",
+      "tertiary": "Third Party"
+    },
+    "source": "web",
+    "usage": {
+      "accountEmail": "user@example.com",
+      "extraRateWindows": [
+        {
+          "id": "cursor-grok-bot",
+          "title": "Grok Bot",
+          "window": {
+            "resetDescription": "Resets Oct 17 at 5:57PM",
+            "resetsAt": "2026-10-17T21:57:39Z",
+            "usedPercent": 28.458438,
+            "windowMinutes": 10080
+          }
+        }
+      ],
+      "identity": {
+        "accountEmail": "user@example.com",
+        "accountID": "user_PLACEHOLDER",
+        "loginMethod": "Cursor Pro+",
+        "providerID": "cursor"
+      },
+      "loginMethod": "Cursor Pro+",
+      "primary": {
+        "resetDescription": "Resets Nov 9 at 7:46PM",
+        "resetsAt": "2026-11-10T00:46:08Z",
+        "usedPercent": 9.331160896130346,
+        "windowMinutes": 44640
+      },
+      "providerCost": {
+        "currencyCode": "USD",
+        "limit": 2,
+        "period": "Monthly",
+        "resetsAt": "2026-11-10T00:46:08Z",
+        "updatedAt": "2026-10-14T18:15:29Z",
+        "used": 0
+      },
+      "secondary": {
+        "resetDescription": "Resets Nov 9 at 7:46PM",
+        "resetsAt": "2026-11-10T00:46:08Z",
+        "usedPercent": 9.270833333333334,
+        "windowMinutes": 44640
+      },
+      "tertiary": {
+        "resetDescription": "Resets Nov 9 at 7:46PM",
+        "resetsAt": "2026-11-10T00:46:08Z",
+        "usedPercent": 11.963636363636363,
+        "windowMinutes": 44640
+      },
+      "updatedAt": "2026-10-14T18:15:29Z"
+    }
+  }
+]
