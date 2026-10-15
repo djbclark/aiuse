@@ -53,7 +53,7 @@ finishes), the scheduled tick waits for a sweep, `u`/`a` share a ratified
 2-minute minimum, and a `u` within 90s of an `a` is rolled into that run.
 The sweep is **operator-only**; AI agents must not
 run it without explicit permission (flagged in `--help`, README, AGENTS.md).
-**omp (2026-10-15, unreleased on `main`):** Claude cloud-session credits
+**omp (2026-10-15, released in 3.7.0):** Claude cloud-session credits
 (an expiring dollar grant, spent by the omp TUI through the Claude API) are a
 separate provider `omp`, derived from CodexBar's Claude row. The matrix has a
 new last column **OTHER** (omp `$spent/$left`, `Fable-cap`, wallets) and PACE
