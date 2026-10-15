@@ -128,7 +128,9 @@ in half, in this order:
 
 The clock columns themselves never drop — they are the reason the table
 exists. `SCOPE` is also omitted entirely when no account has independent
-pools; `ACCT` is omitted when every row's account is `—`.
+pools. `ACCT` is omitted on a wide terminal when every displayed cell is the
+same short label or `—`, including a mix of that one label and em dashes.
+Two different short labels keep the column.
 
 `terminal_width()` honors `$COLUMNS` and falls back to `ACTION_PLAN_WIDTH` when
 stdout is not a tty. Tests pin `$COLUMNS` in `tests/conftest.py`; without that

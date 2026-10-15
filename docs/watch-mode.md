@@ -97,13 +97,18 @@ stdout report.
 - Reuse `aiuse.report.render_clock_matrix` unchanged (same bands, clocks, width
   adaptation, color roles). The watch board is just that matrix inside a
   full-screen frame plus a header / footer.
-- Claude's main WEEK cell is overall shared usage. An indented `Fable cap
-(<=50% of shared weekly)` line reports the cap separately, in the same
-  `used u/left l/reset` syntax as the cells (`19u/81l/6d11h`) followed by a
-  weekly pace delta: `(+44% pace)` is heading 44% over the cap's quota,
-  `(-22% pace)` is heading 22% under. 100% of that cap blocks Fable only, not
-  the whole account. It is not another pool or extra capacity; shared 5H/WEEK
-  exhaustion still blocks every Claude model.
+- Claude's main WEEK cell is overall shared usage. Fable is its own row
+  (`scope` `fable`) with the cap in the WEEK column and Fable-cap pace. The
+  score cell is blank: Fable is a model you can choose, not spare quota to
+  burn, and it does not enter `suggest`. On Max and premium seats Fable can
+  use at most half of the weekly limit, from that same weekly pool, and it
+  burns the allowance faster than other models. 100% of that cap blocks Fable
+  only. Shared 5H/WEEK exhaustion still blocks every Claude model. Sonnet and
+  Opus stay indented notes; they have no separate cap.
+- An arrow in an empty clock cell points at the window that row has. `->`
+  means the window is to the right. `<-` means it is to the left, including
+  a hole between two windows, which points at the earlier one. Nothing is
+  printed after the PACE column for alignment.
 - `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
   becomes a **footer line inside the screen**, not stderr (stderr would corrupt
   the alternate-screen layout). `-q` suppresses it.

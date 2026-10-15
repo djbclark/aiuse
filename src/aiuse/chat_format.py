@@ -336,11 +336,7 @@ class _WindowRow:
     @property
     def heading(self) -> str:
         """Bold heading line: **Provider · account · cadence**."""
-        parts = [provider_display_name(self.provider)]
-        if self.account:
-            parts.append(self.account)
-        parts.append(self.window.label)
-        return f"**{' · '.join(parts)}**"
+        return _chat_heading(self.provider, self.account, self.window.label)
 
     @property
     def status_line(self) -> str:
@@ -443,13 +439,7 @@ class _PoolEntry:
     @property
     def heading(self) -> str:
         """Bold heading line: **provider · account · pool**."""
-        parts = [provider_display_name(self.provider)]
-        if self.account:
-            parts.append(self.account)
-        scope = self.scope
-        if scope:
-            parts.append(scope)
-        return f"**{' · '.join(parts)}**"
+        return _chat_heading(self.provider, self.account, self.scope)
 
     def sort_key(self) -> tuple[Any, ...]:
         """Order by the entry's most severe window, so the worst float up."""
@@ -757,11 +747,11 @@ def _build_action_items(
 # ---------------------------------------------------------------------------
 
 
-def _render_prepaid_row(account: AccountUsage) -> list[str]:
+def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) -> list[str]:
     """Render a single prepaid/API balance row."""
     lines: list[str] = []
     name = provider_display_name(account.provider)
-    acct_part = f" · {account.account}" if account.account else ""
+    acct_part = f" · {account.account}" if include_account and account.account else ""
 
     uc = account.usage_credits
     spend_up = (
@@ -813,9 +803,8 @@ def _row_notes(row: _WindowRow, *, provider: str, windows: list[QuotaWindow]) ->
     if bind:
         notes.append(bind)
     model = claude_model_scope(row.window.label)
-    if model is not None:
-        cap = "<=50% of shared weekly" if model.casefold() == "fable" else "within shared weekly"
-        notes.append(f"{model} cap ({cap}); not additional quota")
+    if model is not None and model.casefold() != "fable":
+        notes.append(f"{model} draws from the shared weekly; not a separate quota")
     if row.pace_line:
         notes.append(row.pace_line)
     if row.remaining <= 0 and not row.pace_line and not row.governing_warning:
@@ -841,11 +830,62 @@ def _window_line_label(row: _WindowRow, scope: str | None) -> str:
     return label
 
 
+def _chat_heading(provider: str, account: str | None, *extra: str | None, include_account: bool = True) -> str:
+    parts = [provider_display_name(provider)]
+    if include_account and account:
+        parts.append(account)
+    parts.extend(part for part in extra if part)
+    return f"**{' · '.join(parts)}**"
+
+
+def _is_fable_row(row: _WindowRow) -> bool:
+    model = claude_model_scope(row.window.label)
+    return model is not None and model.casefold() == "fable"
+
+
+def _chat_includes_account(accounts: list[AccountUsage]) -> bool:
+    """A repeated account name does not help a person choose a pool."""
+    names = {(account.account or "").strip() for account in accounts}
+    names.discard("")
+    if "default" in {name.casefold() for name in names}:
+        names = {name for name in names if name.casefold() != "default"}
+    return len(names) > 1
+
+
+def _render_fable_block(row: _WindowRow) -> list[str]:
+    """Fable as its own human block: allowance, reset, Fable-cap pace, no score."""
+    rem = _format_remaining(row.remaining)
+    estimated = not row.window.reset_time_is_precise()
+    deadline = _chat_deadline(row.window.days_until_reset(row.now), estimated=estimated)
+    reset_part = deadline if deadline.startswith("reset") else f"resets in {deadline}"
+    parts = [f"{rem} of Fable cap left", reset_part]
+    if row.pace_percent is not None:
+        parts.append(f"Fable-cap pace {format_pace(row.pace_percent, row.pace_early)}")
+    lines = [
+        f"{EMOJI_INFO} **Claude · Fable allowance · weekly**",
+        f"   ↳ `{' · '.join(parts)}`",
+        (
+            "   ↳ Fable can use up to half of the plan's shared weekly allowance. "
+            "It consumes that allowance faster than other Claude models. "
+            "This is not extra quota, and other Claude usage can leave less available."
+        ),
+        "   ↳ Also limited by Claude's shared weekly allowance.",
+    ]
+    if row.remaining <= 0:
+        lines.append(
+            "   ↳ Fable's included allowance is used up. "
+            "Switch to another Claude model if shared allowance remains, "
+            "or continue Fable with usage credits."
+        )
+    return lines
+
+
 def _render_pool_entry(
     entry: _PoolEntry,
     now: datetime | None = None,
     *,
     account_windows: list[QuotaWindow] | None = None,
+    include_account: bool = True,
 ) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form."""
     headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window, provider=entry.provider)]
@@ -856,12 +896,17 @@ def _render_pool_entry(
 
     if len(entry.rows) == 1:
         row = entry.rows[0]
-        lines = [f"{row.emoji} {row.heading}{pace_suffix}", f"   ↳ {row.status_line}"]
+        lines = [
+            f"{row.emoji} {_chat_heading(row.provider, row.account, row.window.label, include_account=include_account)}{pace_suffix}",
+            f"   ↳ {row.status_line}",
+        ]
         scope = account_windows or [r.window for r in entry.rows]
         lines.extend(f"   ↳ {note}" for note in _row_notes(row, provider=row.provider, windows=scope))
         return lines
 
-    lines = [f"{entry.emoji} {entry.heading}{pace_suffix}"]
+    lines = [
+        f"{entry.emoji} {_chat_heading(entry.provider, entry.account, entry.scope, include_account=include_account)}{pace_suffix}"
+    ]
     scope = account_windows or [r.window for r in entry.rows]
     for row in entry.rows:
         lines.append(f"   ↳ {_window_line_label(row, entry.scope)} — {row.status_line}")
@@ -937,7 +982,8 @@ def render_chat_report(
     for key, reason in sorted((getattr(snapshot, "hidden_pools", None) or {}).items()):
         sections.append(f"🙈 **Hidden by operator:** {key} — {reason}")
 
-    analysis_cfg = (config or {}).get("analysis") if isinstance((config or {}).get("analysis"), dict) else {}
+    raw_analysis = (config or {}).get("analysis")
+    analysis_cfg = raw_analysis if isinstance(raw_analysis, dict) else {}
     show_total_rows = bool(analysis_cfg.get("show_total_rows", False))
 
     if routing_context is not None:
@@ -989,11 +1035,24 @@ def render_chat_report(
     pool_entries = _group_rows_into_pools(sub_rows)
     pool_entries.sort(key=lambda e: e.sort_key())
     windows_by_account = {(a.provider, a.account): a.windows for a in sub_accounts}
+    include_account = _chat_includes_account(snapshot.accounts)
     if pool_entries:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
         for entry in pool_entries:
+            fable_rows = [row for row in entry.rows if _is_fable_row(row)]
+            entry.rows = [row for row in entry.rows if not _is_fable_row(row)]
             acct_windows = windows_by_account.get((entry.provider, entry.account), [])
-            lines.extend(_render_pool_entry(entry, now=now, account_windows=acct_windows))
+            if entry.rows:
+                lines.extend(
+                    _render_pool_entry(
+                        entry,
+                        now=now,
+                        account_windows=acct_windows,
+                        include_account=include_account,
+                    )
+                )
+            for row in fable_rows:
+                lines.extend(_render_fable_block(row))
         sections.append("\n".join(lines))
 
     # --- Render prepaid/API balances ---
@@ -1001,7 +1060,7 @@ def render_chat_report(
         prepaid_accounts.sort(key=_prepaid_sort_key)
         lines = [f"{EMOJI_PREPAID} **PREPAID / API BALANCES**"]
         for account in prepaid_accounts:
-            lines.extend(_render_prepaid_row(account))
+            lines.extend(_render_prepaid_row(account, include_account=include_account))
         sections.append("\n".join(lines))
 
     # --- Action section ---

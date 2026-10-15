@@ -805,7 +805,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["##", "SERVICE", "ACCT", "5H", "WEEK", "MONTH", "PACE"]
+    assert lines[0].split() == ["##", "SERVICE", "5H", "WEEK", "MONTH", "PACE"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -1828,7 +1828,7 @@ def test_clock_matrix_splits_independent_pools_into_their_own_rows():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
     agy = [line for line in text.splitlines() if " agy " in line]
     assert len(agy) == 2
-    scopes = sorted(line.split()[4] for line in agy)
+    scopes = sorted(line.split()[3] for line in agy)
     assert scopes == ["claude/gpt", "gemini"]
 
 
@@ -1916,8 +1916,11 @@ def test_clock_matrix_sheds_columns_before_truncating_numbers():
 
 
 def test_clock_matrix_shortens_emails_to_their_domain():
-    text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
+    snap = _matrix_snapshot()
+    snap.accounts.append(AccountUsage(provider="codex", source="test", account="other@mit.edu", error="down"))
+    text = render_clock_matrix([], snapshot=snap, color=False)
     assert "gmail" in text
+    assert "mit" in text
     assert "me@gmail.com" not in text
 
 
@@ -2264,9 +2267,9 @@ def test_clock_column_stays_aligned_when_marker_and_countdown_share_it():
         assert len(rows) == 2
         assert any("↻" in line for line in rows)
         marker_row = next(line for line in rows if "↻" in line)
-        # The next column (an em-dash for no weekly window) starts at the same
+        # The next column (an arrow toward the 5h window) starts at the same
         # character in both rows, so the marker's extra cell was budgeted.
-        assert {line.index("—") for line in rows} == {marker_row.index("—")}
+        assert {line.index("<-") for line in rows} == {marker_row.index("<-")}
 
 
 @pytest.mark.parametrize(
@@ -2303,14 +2306,14 @@ def test_clock_matrix_compacts_deadline_before_dropping_identity():
         ],
     )
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    # Cells carry the used/left pair now (~6 cols wider), so the identity-fold
-    # boundary moved from 43 to 49 — compaction order itself is unchanged.
-    mid = render_clock_matrix([], snapshot=snap, color=False, width=49)
+    # One account, so ACCT is omitted at every width. Deadline compaction
+    # still happens before the service name is lost; that boundary is 45.
+    mid = render_clock_matrix([], snapshot=snap, color=False, width=45)
     assert "10u/90l/3h43m" in wide
     assert "10u/90l/3h" in mid
     assert "3h43m" not in mid
     assert "claude" in mid
-    assert "gmail" in mid
+    assert "gmail" not in mid
 
 
 def test_clock_matrix_shortens_then_folds_colliding_identity():

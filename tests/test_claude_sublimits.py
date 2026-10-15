@@ -102,18 +102,17 @@ def test_unknown_model_cap_is_not_evidence_of_model_availability():
 
 
 @pytest.mark.parametrize("width", [80, 110])
-def test_table_keeps_overall_week_and_indents_fable_cap(width):
+def test_table_keeps_overall_week_and_shows_fable_row(width):
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=width)
-    row = next(line for line in text.splitlines() if " claude " in line)
+    row = next(line for line in text.splitlines() if " claude " in f" {line} " and " fable " not in f" {line} ")
     assert "85u/15l" in row
     assert "100u/0l" not in row
     assert "EXHAUSTED" not in row
-    cap = next(line for line in text.splitlines() if "Fable cap" in line)
-    assert cap.startswith("        ")
-    assert "<=50% of shared weekly" in cap
-    assert "100u/0l/3d EXHAUSTED" in cap
-    assert "resets" not in cap
-    assert not cap.endswith("…")
+    fable = next(line for line in text.splitlines() if " fable " in f" {line} ")
+    assert "100u/0l" in fable
+    assert "Fable-cap" in fable
+    assert "Fable's included allowance is used up" in text
+    assert "<=50% of shared weekly" not in text
     assert all(len(line) <= width for line in text.splitlines())
 
 
@@ -121,13 +120,12 @@ def test_table_keeps_overall_week_and_indents_fable_cap(width):
     "fable_used,sign",
     [(20.0, "-"), (95.0, "+")],
 )
-def test_fable_cap_line_matches_row_syntax_and_shows_pace(fable_used, sign):
-    text = render_clock_matrix([], snapshot=_snapshot(fable_used=fable_used), color=False, width=110)
-    cap = next(line for line in text.splitlines() if "Fable cap" in line)
-    # "<used>u/<left>l/<reset>" with no spaces, then the signed pace delta in parentheses.
-    match = re.search(r": (\d+)u/(\d+)l/(\d+d(?:\d+h)?) \(([+-])(\d+)% pace\)$", cap)
-    assert match is not None, cap
-    assert match.group(4) == sign
+def test_fable_row_shows_pace_without_a_score(fable_used, sign):
+    text = render_clock_matrix([], snapshot=_snapshot(fable_used=fable_used), color=False, width=160)
+    fable = next(line for line in text.splitlines() if " fable " in f" {line} ")
+    assert fable[:5].strip() == ""
+    assert re.search(rf"\{sign}\d+%", fable)
+    assert "Fable-cap" in fable
 
 
 def test_chat_keeps_shared_account_status_and_explains_cap():
@@ -135,7 +133,10 @@ def test_chat_keeps_shared_account_status_and_explains_cap():
     heading = next(line for line in text.splitlines() if "**claude" in line)
     assert not heading.startswith("🔴")
     assert "15% left" in text
-    assert "Fable cap (<=50% of shared weekly); not additional quota" in text
+    assert "Fable allowance" in text
+    assert "half of the plan's shared weekly allowance" in text
+    assert "not extra quota" in text
+    assert "Fable cap (<=" not in text
     assert "same exhausted" not in text
 
 

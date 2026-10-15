@@ -610,11 +610,19 @@ class TestRenderChatReport:
         assert "Negative balance" not in output
 
     def test_account_email_shown(self):
-        """Spec §10: always show account email when known."""
+        """One person on the board does not need the account repeated in every heading."""
         acc = _account(account="djbclark@gmail.com")
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
-        assert "djbclark@gmail.com" in output
+        assert "djbclark@gmail.com" not in output
+
+    def test_two_accounts_stay_in_the_heading(self):
+        first = _account(account="one@gmail.com")
+        second = _account(provider="codex", account="two@example.com")
+        snap = _snapshot([first, second])
+        output = render_chat_report(snap, [])
+        assert "one@gmail.com" in output
+        assert "two@example.com" in output
 
     def test_account_omitted_when_none(self):
         """Spec §10: omit (default) when no real account identity."""
@@ -979,7 +987,7 @@ class TestPoolGrouping:
             accounts=[_account(windows=[_window("Claude Code weekly", remaining=50.0)])],
         )
         output = render_chat_report(snap, [])
-        assert "**claude · user@example.com · Claude Code weekly**" in output
+        assert "**claude · Claude Code weekly**" in output
         # No per-window sub-line: the status follows the heading directly.
         assert "Claude Code weekly — `" not in output
 
@@ -1147,7 +1155,7 @@ class TestPaceHeadlinesAndWindowPace:
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
         # Header line gets overall pace (highest = +64%)
-        assert "**claude · user@example.com** · pace +64%" in output
+        assert "**claude** · pace +64%" in output
         # Windows get their respective pace
         assert "5-hour — `94% left · resets in 1h 30m · pace -91%`" in output
         assert "weekly — `22% left · resets in 3d 15h · pace +64%`" in output
