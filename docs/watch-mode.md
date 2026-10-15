@@ -97,19 +97,21 @@ stdout report.
 - Reuse `aiuse.report.render_clock_matrix` unchanged (same bands, clocks, width
   adaptation, color roles). The watch board is just that matrix inside a
   full-screen frame plus a header / footer.
-- Claude's main WEEK cell is overall shared usage. Fable is its own row
-  (`scope` `fable`) with the cap in the WEEK column and Fable-cap pace. The
-  score cell is blank: Fable is a model you can choose, not spare quota to
-  burn, and it does not enter `suggest`. On Max and premium seats Fable can
-  use at most half of the weekly limit, from that same weekly pool, and it
-  burns the allowance faster than other models. 100% of that cap blocks Fable
-  only. Shared 5H/WEEK exhaustion still blocks every Claude model. Sonnet and
-  Opus stay indented notes; they have no separate cap. A 2026-10-14 consult
-  (Claude Fable, review-only) recommended scoring this row as a peer that can
-  be tagged `empty`: the band would be the tighter of the Fable cap and the
-  shared Claude window, so a spent shared window also empties the Fable row,
-  while a spent Fable cap leaves the shared row's band unchanged, and the row
-  stays out of cross-vendor rank sums. That scoring is not implemented.
+- Claude's main WEEK cell is overall shared usage. Fable is its own scored
+  row (`scope` `fable`) with the cap in the WEEK column and Fable-cap pace.
+  The score is Fable's own and is not added into a cross-vendor total, and
+  the row does not enter `suggest`. On Max and premium seats Fable can use at
+  most half of the weekly limit, from that same weekly pool, and it burns the
+  allowance faster than other models. The row's band uses that half-share,
+  further limited by every shared clock: a spent shared window makes the row
+  `empty` (score 0) even when the cap cell still shows percent left. A
+  half-share at or under 5% of the weekly pool (a cap at 10% left, and a cap
+  at 2% left in particular) is `slow`, with the score at the bottom of 25–49
+  (2% of the cap is 27). More room is `mid`. When that dollar score would
+  meet or beat the shared Claude row, Fable drops 12 points and stays in
+  `mid`, because it burns the pool faster. A spent Fable cap does
+  not change the shared row. Sonnet and Opus stay indented notes; they have
+  no separate cap.
 - An arrow in an empty clock cell points at the window that row has. `->`
   means the window is to the right. `<-` means it is to the left, including
   a hole between two windows, which points at the earlier one. Nothing is

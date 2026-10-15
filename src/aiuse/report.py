@@ -1492,13 +1492,14 @@ def _build_matrix_rows(
             if fable_windows:
                 rows.append(
                     _fable_display_row(
-                        parent_sort=parent_sort,
                         service=service,
                         account=short,
                         account_full=account.account,
                         windows=fable_windows,
                         shared_windows=pool,
                         now=now,
+                        pricing=pricing,
+                        shared_score=rows[-1].queue_score,
                     )
                 )
             covered.add(key)
@@ -1719,17 +1720,46 @@ def _fable_weekly_bind_note(fable_windows: list[QuotaWindow], shared_windows: li
     )
 
 
+# Fable may spend at most half the shared weekly pool. At or under this share
+# of that pool the row is scarce: ``slow``, at the bottom of 25–49. 2% of the
+# cap is 1% of the pool, which scores 27.
+_FABLE_OF_WEEKLY = 0.5
+_FABLE_SCARCE_WEEKLY_PERCENT = 5.0
+_FABLE_SCARCE_SCORE_SPAN = 8
+
+
+def _fable_weekly_share(fable_windows: list[QuotaWindow], shared_windows: list[QuotaWindow]) -> float | None:
+    """Percent of the shared weekly pool Fable can still use.
+
+    The cap's remaining percent is of its half-share, so it is halved before
+    it is compared with a shared window. Any spent shared clock binds at 0.
+    """
+    owns = [window.remaining() for window in fable_windows if window.remaining() is not None]
+    if not owns:
+        return None
+    share = min(owns) * _FABLE_OF_WEEKLY
+    shared = [
+        window.remaining()
+        for window in shared_windows
+        if claude_model_scope(window.label) is None and window.remaining() is not None
+    ]
+    if shared:
+        share = min(share, min(shared))
+    return share
+
+
 def _fable_display_row(
     *,
-    parent_sort: tuple,
     service: str,
     account: str,
     account_full: str | None,
     windows: list[QuotaWindow],
     shared_windows: list[QuotaWindow],
     now: datetime,
+    pricing: _Pricing,
+    shared_score: int | None,
 ) -> _MatrixRow:
-    """A visible Fable row: pace, no score, not a burn target."""
+    """A scored Fable row. Its score is not a second pile of Claude quota."""
     clocks: dict[str, _ClockCell] = {}
     for window in windows:
         used = _used_percent(window)
@@ -1767,10 +1797,40 @@ def _fable_display_row(
             "or continue Fable with usage credits."
         )
     pace_percent, pace_early = overall_pace(windows, now)
+    share = _fable_weekly_share(windows, shared_windows)
+    weekly_minutes = 7 * 24 * 60
+    if share is None:
+        band = _BAND_NA
+        priority: _Priority = (0.0, 0.0, 0.0)
+        queue_score = None
+    elif share <= 0.0:
+        band = _BAND_EMPTY
+        days = windows[0].days_until_reset(now) if windows else None
+        known, sooner = _known_reset_priority(days)
+        priority = (known, sooner, 0.0)
+        queue_score = 0
+    elif share <= _FABLE_SCARCE_WEEKLY_PERCENT:
+        band = _BAND_CONSERVE
+        # Linear across the scarce slice so 1% of the weekly pool (2% of the
+        # cap) is 27, the bottom of slow, instead of a mid score from leftover
+        # dollars.
+        queue_score = 25 + round((share / _FABLE_SCARCE_WEEKLY_PERCENT) * _FABLE_SCARCE_SCORE_SPAN)
+        priority = (float(queue_score), 0.0, 0.0)
+    else:
+        band = _BAND_MID
+        dollars = pricing.capacity_usd("claude", account_full, share, weekly_minutes, "Claude weekly")
+        priority = (dollars, 0.0, 0.0, 0.0)
+        queue_score = _queue_score(band, priority)
+        # The log scale flattens a half-share into the same mid numbers as the
+        # shared row. Fable burns that pool faster, so when its dollar score
+        # would meet or beat the shared row it drops 12 points, staying in mid.
+        if shared_score is not None and queue_score is not None and queue_score >= shared_score:
+            queue_score = max(50, shared_score - 12)
+        priority = (float(queue_score or 0), 0.0, 0.0, 0.0)
     return _MatrixRow(
-        sort_key=(*parent_sort, 1),
-        band=_BAND_NA,
-        queue_score=None,
+        sort_key=_ladder_sort_key(band, priority, "claude", account_full),
+        band=band,
+        queue_score=queue_score,
         service=service,
         account=account,
         account_full=account_full,
@@ -1780,7 +1840,6 @@ def _fable_display_row(
         pace_early=pace_early,
         tail_note="Fable-cap",
         sublimit_notes=notes,
-        unranked=True,
     )
 
 

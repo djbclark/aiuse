@@ -277,8 +277,8 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     shared = next(row for row in claude if row.scope == "—")
     fable = next(row for row in claude if row.scope == "fable")
     assert set(shared.clocks) == {"5h", "weekly"}
-    assert fable.unranked is True
-    assert fable.queue_score is None
+    assert fable.unranked is False
+    assert fable.queue_score == 27
     assert set(fable.clocks) == {"weekly"}
     assert fable.tail_note == "Fable-cap"
     assert not any("Fable" in note for note in shared.sublimit_notes)

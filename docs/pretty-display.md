@@ -85,8 +85,8 @@ The bands are fixed in that order and each is also a deliberate queue. Read
 - **empty** puts a known sooner refill lower; unknown/lapsed capacity stays
   higher. A row reads `empty` whenever a clock on it is fully depleted, even
   when a sibling clock still has headroom and raised a conserve alert: a
-  depleted window blocks the whole pool, so a sibling `slow` must not mask it
-  (the row still prints the `EXHAUSTED` marker either way).
+  depleted window blocks the whole pool, so a sibling `slow` must not mask it.
+  The clock cell already shows that as `100u/0l`.
 - **n/a** stays explicitly non-urgent, but larger comparable count-down
   inventory sits lower than smaller inventory; spend-up PAYG remains neutral.
 - **slow** puts the pool with the least capacity (dollars still unspent in its

@@ -106,5 +106,6 @@ aiuse --full -q --no-tui
 ```
 
 Expect **total** hidden on the default board when sub-rows exist, **auto** and
-**third-party** visible, on-demand spend when configured, and **grok-bot** as its
-own weekly row. Breakdown pace does not drive the account headline or exit code.
+**3rd-party** visible, on-demand dollars after the last column when configured,
+and **grok-bot** as its own weekly row. Breakdown pace does not drive the
+account headline or exit code.
