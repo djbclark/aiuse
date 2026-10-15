@@ -117,6 +117,9 @@ CodexBar's widget snapshot (aiuse's default cached path) has no credit data.
 When the cache serves a Claude row, `_live_omp_supplement` makes one live
 `codexbar usage --provider claude` (through the usual query gate and hang
 backoff) just for this row. Failure drops the `omp` row, not the cached rows.
+Upstream request to carry the row in the snapshot:
+[steipete/CodexBar#4546](https://github.com/steipete/CodexBar/issues/4546)
+(filed 2026-10-15); drop the live call once it ships.
 
 ## Disabling
 
