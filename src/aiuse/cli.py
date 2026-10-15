@@ -196,13 +196,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--all-providers",
         action="store_true",
         help=(
-            "aiuse watch: one-time collect of EVERY provider — ignores [disabled_services], "
+            "aiuse watch: live board of EVERY provider — ignores [disabled_services], "
             "[hidden_pools], analysis.excluded_pools, hidden ceiling rows, and collector disable "
-            "flags — printed once, nothing written to snapshots, ledger, or sampler state "
+            "flags. Nothing is written to snapshots, ledger, or sampler state "
             "(screen only). OPERATOR-ONLY: AI agents and automation must NOT use "
             "this without explicit permission from the human operator; providers are disabled "
             "for reasons (rate limits, cost, opt-outs) that a sweep deliberately overrides. "
-            "Implies --once."
+            "Add --once to print one frame and exit."
         ),
     )
     p.add_argument(
@@ -1013,9 +1013,7 @@ def diagnose(
     lines.append(
         "  aiuse watch               # full-screen board (q/esc quit; u update now; a toggle all-providers sweep)"
     )
-    lines.append(
-        "  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider incl. hidden/ceiling rows"
-    )
+    lines.append("  aiuse watch --all-providers  # OPERATOR-ONLY live board: every provider, screen only")
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
     lines.append("  aiuse -t 45               # force all tool timeouts for one run")
     lines.append("  aiuse --help              # full flag list + setup epilog")
@@ -1043,7 +1041,7 @@ def _run_watch(args: argparse.Namespace, config: dict[str, Any]) -> int:
     except WatchError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ALERTS
-    one_shot = bool(args.once or args.all_providers)
+    one_shot = bool(args.once)
     if interval < 30 and not one_shot:
         print(
             f"warning: watch interval {interval:g}s is below 30s; collectors may not keep up",

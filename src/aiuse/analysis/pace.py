@@ -382,11 +382,23 @@ POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "claude_gpt": "claude/gpt",
     "cursor_total": "total",
-    "cursor_third_party": "third-party",
+    "cursor_third_party": "3rd-party",
     "cursor_auto": "auto",
     "cursor_grok_bot": "grok-bot",
     "cursor_on_demand": "on-demand",
 }
+
+
+def human_window_label(label: str) -> str:
+    """Display label. The stored label and JSON pool_family stay unchanged."""
+    if label.casefold() in {"third-party", "third party"}:
+        return "3rd-party"
+    return label
+
+
+def is_cursor_on_demand_window(window: QuotaWindow, *, provider: str | None = None) -> bool:
+    """Cursor's dollar overage cap. It is a wallet, not a percent-left pool."""
+    return cursor_pool_family(window.label, window_id=window.window_id, provider=provider) == "on_demand"
 
 
 def pool_scope_label(pool_id: str | None) -> str | None:

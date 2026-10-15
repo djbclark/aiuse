@@ -70,7 +70,7 @@ def test_for_chat_headline_pace_ignores_breakdown_rows():
     # third-party alone would be +176% pace; total is modest.
     snap = Snapshot(collected_at=_now(), accounts=[_cursor_account(third_used=95.0, total_used=71.0)])
     text = render_chat_report(snap, [], config={})
-    assert "third-party" in text
+    assert "3rd-party" in text
     assert "pace +176%" not in text
 
 
@@ -434,3 +434,50 @@ def test_learned_burn_rates_per_cursor_window(tmp_path):
     assert "cursor:cursor_total:monthly" in rates
     assert "cursor:cursor_auto:monthly" in rates
     assert rates["cursor:cursor_total:monthly"] != rates["cursor:cursor_auto:monthly"]
+
+
+def test_cursor_on_demand_is_a_wallet_suffix_not_a_percent_row():
+    from aiuse.models import UsageCredits
+
+    account = _cursor_account(auto_used=12.0, total_used=13.0, third_used=89.0)
+    account.usage_credits = UsageCredits(remaining=1.64, used=18.36, limit=20.0)
+    account.windows.append(
+        QuotaWindow(
+            label="on-demand",
+            window_id="on-demand",
+            used_percent=92.0,
+            remaining_percent=8.0,
+            resets_at=_now() + timedelta(days=10),
+            window_minutes=43200,
+        )
+    )
+    text = render_clock_matrix(
+        [],
+        snapshot=Snapshot(collected_at=_now(), accounts=[account]),
+        config={"analysis": {}},
+        color=False,
+        width=180,
+    )
+    auto = next(line for line in text.splitlines() if " auto " in f" {line} ")
+    assert "13u/87l" in auto
+    assert "92u" not in auto
+    assert "$1.64 (counts down)" in auto
+    assert not any(" on-demand " in f" {line} " for line in text.splitlines())
+
+
+def test_on_demand_does_not_bind_account_headroom():
+    data = _cursor_fixture_dict()
+    data["accounts"][0]["windows"].append(
+        {
+            "label": "on-demand",
+            "window_id": "on-demand",
+            "used_percent": 100.0,
+            "remaining_percent": 0.0,
+            "window_minutes": 43200,
+        }
+    )
+    enriched = enrich_snapshot(data)
+    account = enriched["accounts"][0]
+    assert account["binding_window"] != "on-demand"
+    assert account["usable_now"] is True
+    assert "on_demand" not in {pool.get("pool_family") for pool in available_pools(enriched)}

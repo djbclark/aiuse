@@ -529,8 +529,8 @@ def run_watch(
 
     ``config_loader`` re-reads config.toml (and reapplies CLI overrides) so a
     long-lived board does not keep the disable list from the moment it started.
-    ``all_providers`` is the one-shot ``--all-providers`` sweep: every provider
-    collected once (``a`` key's function), printed to stdout, nothing recorded.
+    ``all_providers`` keeps the live board on the all-providers view (screen
+    only, nothing recorded). ``once`` prints one frame and exits.
     """
     out = stdout if stdout is not None else sys.stdout
     err = stderr if stderr is not None else sys.stderr
@@ -562,14 +562,22 @@ def run_watch(
         loaded["error"] = None
         return fresh
 
-    collect_fn = collect or (lambda: collect_watch_frame(live_config(), max_age=interval))
-    runtime = WatchRuntime(interval=interval, collect=collect_fn, now=now or time.monotonic)
+    def frame_config() -> dict[str, Any]:
+        current = live_config()
+        return all_providers_config(current) if all_providers else current
 
-    if all_providers:
-        sweep_config = all_providers_config(live_config())
+    def default_collect() -> tuple[Snapshot, list[UseOrLoseAlert]]:
+        if all_providers:
+            return collect_watch_frame(frame_config(), persist=False)
+        return collect_watch_frame(live_config(), max_age=interval)
+
+    collect_fn = collect or default_collect
+
+    if once:
+        current = frame_config()
         frame_error: str | None = None
         try:
-            snapshot, alerts = collect_watch_frame(sweep_config, persist=False)
+            snapshot, alerts = collect_fn()
         except Exception as exc:  # noqa: BLE001 — show the board error line, not a traceback
             frame_error = f"{exc.__class__.__name__}: {exc}"
             snapshot, alerts = None, []
@@ -577,7 +585,7 @@ def run_watch(
             render_watch_board(
                 snapshot,
                 alerts,
-                config=sweep_config,
+                config=current,
                 color=color,
                 quiet=quiet,
                 last_at=utcnow() if snapshot is not None else None,
@@ -585,33 +593,14 @@ def run_watch(
                 collecting_for=None,
                 error=frame_error,
                 now=utcnow(),
-                sample_schedule=_sample_schedule(sweep_config),
-                all_providers=True,
+                sample_schedule=_sample_schedule(current),
+                all_providers=all_providers,
             ),
             file=out,
         )
         return 0
 
-    if once:
-        runtime._run_collect()
-        current = live_config()
-        print(
-            render_watch_board(
-                runtime.snapshot,
-                runtime.alerts,
-                config=current,
-                color=color,
-                quiet=quiet,
-                last_at=runtime.last_wall,
-                next_in=None,
-                collecting_for=None,
-                error=runtime.error,
-                now=utcnow(),
-                sample_schedule=_sample_schedule(current),
-            ),
-            file=out,
-        )
-        return 0
+    runtime = WatchRuntime(interval=interval, collect=collect_fn, now=now or time.monotonic)
 
     tty = bool(getattr(out, "isatty", lambda: False)())
     if require_tty is None:
@@ -639,7 +628,15 @@ def run_watch(
     )
     reader = key_reader or StdinKeyReader()
     stop = threading.Event()
-    process_worker = _WatchCollectionProcess(config, max_age=interval) if collect is None else None
+    process_worker = (
+        _WatchCollectionProcess(
+            config,
+            max_age=None if all_providers else interval,
+            persist=False if all_providers else None,
+        )
+        if collect is None
+        else None
+    )
     # The ``a``-key sweep: its own worker so it can run beside the regular
     # cycle, collecting every provider once with nothing written to disk.
     sweep_worker = _WatchCollectionProcess(persist=False) if collect is None else None
@@ -703,7 +700,7 @@ def run_watch(
         return None
 
     def start_worker(fn: Callable[[], None]) -> None:
-        fresh = live_config()
+        fresh = frame_config()
         collected_policy["fingerprint"] = collection_policy_fingerprint(fresh)
         force = manual["forced"]
         manual["forced"] = False
@@ -783,7 +780,7 @@ def run_watch(
                     error=error,
                     now=utcnow(),
                     sample_schedule=_sample_schedule(current),
-                    all_providers=showing_all,
+                    all_providers=all_providers or showing_all,
                     key_note=key_note,
                 )
             )

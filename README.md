@@ -52,7 +52,7 @@ pools most worth using right now sort to the bottom.
 ```diff
         ## SERVICE    SCOPE           5H              WEEK              MONTH           PACE
 - error ?? oc-zen     —                                                                    — No available fetch strategy for opencode-zen.
-- empty  0 oc-go      —               ->           100u/0l/4d12h         <-                — EXHAUSTED
+- empty  0 oc-go      —               ->           100u/0l/4d12h         <-                —
   n/a   -- deepseek   —                                                                    — $4.15 (counts down)
   n/a   -- openrouter —                                                                    — $18.55 (counts down)
   slow  38 agy        claude/gpt      ->           78u/22l/1d5h          <-                —
@@ -110,7 +110,7 @@ is never carried: its reported reset only slides with every query.
   window is early. It shows an em-dash (`—`)
   when no window has a pace reading or when **any** window in the row is exhausted (since the
   row is locked out until that reset).
-- **Column alignment**: all free text notes (`<-`, `EXHAUSTED`, extra credits, prepaid notes)
+- **Column alignment**: all free text notes (`<-`, prepaid wallet, prepaid notes)
   appear after all fixed columns so columns align on every row. Narrow terminals shed `PACE` first,
   then individual cell pace suffixes.
 
@@ -369,7 +369,7 @@ aiuse serve                # loopback HTTP API for agents
 aiuse watch                # full-screen board (q/esc quit · u update now · a toggle all-providers sweep; default 10m)
 aiuse watch -i 2m          # faster refresh
 aiuse watch --once         # one frame on stdout (scripts / tmux)
-aiuse watch --all-providers  # OPERATOR-ONLY: every provider once, screen only (see below)
+aiuse watch --all-providers  # OPERATOR-ONLY: live board of every provider, screen only (see below)
 aiuse attribute            # what spent the quota: points burned beside tokens per client
 aiuse attribute --since 7d --provider clinepass --intervals
 aiuse sample               # scheduled entry point: samples faster while quota is moving
@@ -453,7 +453,7 @@ not require importing its Python package.
 | `--generate-config`                                                                                             | Write default `~/.config/aiuse/config.toml`; never overwrites existing                                                                                                                                                                                                                            |
 | `--show-config-path`                                                                                            | Print the active config path                                                                                                                                                                                                                                                                      |
 | `watch` / `--watch` `-i SECONDS` `--once`                                                                       | Full-screen board; keys: `q`/esc quit, `u` collect now (bypasses the cached snapshot), `a` toggle all-providers sweep (shows hidden/ceiling/excluded rows; press `a` again for normal view). No collect ever overlaps another (`a` queues behind a running refresh); `u`/`a` share a 2min minimum |
-| `watch --all-providers`                                                                                         | **Operator-only** one-shot: every provider incl. `[disabled_services]`, `[hidden_pools]`, exclusions, ceiling rows, and disabled collectors — printed once, **nothing recorded** (no snapshot/ledger/sampler writes; query throttling still applies)                                              |
+| `watch --all-providers`                                                                                         | **Operator-only** live board: every provider incl. `[disabled_services]`, `[hidden_pools]`, exclusions, ceiling rows, and disabled collectors — refreshes on the watch interval, **nothing recorded** (no snapshot/ledger/sampler writes; query throttling still applies)                         |
 | `doctor` / `--doctor`                                                                                           | Check tools on PATH, config presence, effective timeouts; no collect                                                                                                                                                                                                                              |
 | `note-exhausted <provider> [--family F] --resets-in 4h53m\|--resets-at ISO [--reason T]`                        | Record an agent-reported exhaustion override (advisory, expires at reset; honoured by `--json`/`--available` labelled `source: agent-reported`)                                                                                                                                                   |
 | `trust` …                                                                                                       | macOS: codesign status, sign caut, and Keychain grant guide                                                                                                                                                                                                                                       |

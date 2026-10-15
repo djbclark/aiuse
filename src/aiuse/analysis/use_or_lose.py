@@ -25,6 +25,7 @@ from aiuse.analysis.pace import (
     compute_pace,
     cursor_breakdown_window,
     governing_partition,
+    is_cursor_on_demand_window,
     partition_independent_pools,
 )
 from aiuse.config import plan_monthly_price
@@ -354,7 +355,9 @@ def analyze_use_or_lose(
             if claude_model_scope(window.label) is not None:
                 continue  # model caps cannot be burned as additional account quota
             if cursor_breakdown_window(window, provider=account.provider):
-                continue  # Cursor Auto / Third Party are breakdown rows, not scored pools
+                continue  # Cursor Auto / 3rd-party are breakdown rows, not scored pools
+            if is_cursor_on_demand_window(window, provider=account.provider):
+                continue  # dollar overage wallet, not a percent-left pool
             if mode == "legacy" and _is_short_window(window):
                 continue
 

@@ -881,7 +881,7 @@ def test_a_key_toggles_sweep_shows_hidden_and_total_then_filters(monkeypatch):
     filtered_body = "\n".join(t for t in post_toggle if "ALL PROVIDERS" not in t)
     assert " total " not in f" {filtered_body} "
     assert " auto " not in f" {filtered_body} "
-    assert " 3rd " in filtered_body or "third-party" in filtered_body
+    assert "3rd-party" in filtered_body
 
 
 def test_a_key_is_ignored_while_a_sweep_is_still_running(monkeypatch):
@@ -1083,7 +1083,7 @@ def test_cli_watch_all_providers_once(monkeypatch, capsys):
     monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
     monkeypatch.setattr("aiuse.watch.save_snapshot", lambda *a, **k: pytest.fail("must not record the sweep"))
     monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
-    assert cli.main(["watch", "--all-providers", "-q", "--no-color"]) == 0
+    assert cli.main(["watch", "--all-providers", "--once", "-q", "--no-color"]) == 0
     captured = capsys.readouterr()
     assert "ALL PROVIDERS · hidden + total rows shown · screen only" in captured.out
     assert "Operator-only" in captured.err
@@ -1093,3 +1093,14 @@ def test_cli_watch_all_providers_once(monkeypatch, capsys):
 def test_cli_watch_all_providers_rejects_json(monkeypatch):
     monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
     assert cli.main(["watch", "--all-providers", "--json"]) == 2
+
+
+def test_cli_watch_all_providers_without_once_needs_a_tty(monkeypatch, capsys):
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _config: _snap())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
+    assert cli.main(["watch", "--all-providers", "-q", "--no-color"]) == 2
+    captured = capsys.readouterr()
+    assert "interactive terminal" in captured.err
+    assert "Operator-only" in captured.err

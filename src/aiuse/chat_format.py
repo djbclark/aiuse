@@ -16,7 +16,9 @@ from typing import Any
 from aiuse.analysis.pace import (
     cursor_breakdown_window,
     format_pace,
+    human_window_label,
     independent_pool_key,
+    is_cursor_on_demand_window,
     overall_pace,
     pool_key_for_window,
     pool_scope_label,
@@ -336,7 +338,7 @@ class _WindowRow:
     @property
     def heading(self) -> str:
         """Bold heading line: **Provider · account · cadence**."""
-        return _chat_heading(self.provider, self.account, self.window.label)
+        return _chat_heading(self.provider, self.account, human_window_label(self.window.label))
 
     @property
     def status_line(self) -> str:
@@ -821,13 +823,12 @@ def _window_line_label(row: _WindowRow, scope: str | None) -> str:
     "5-hour" — the heading already carries the pool.
     """
     label = row.window.label
-    if not scope:
-        return label
-    if label.casefold().startswith(scope.casefold()):
+    shown = label
+    if scope and label.casefold().startswith(scope.casefold()):
         trimmed = label[len(scope) :].strip(" ·-—")
         if trimmed:
-            return trimmed
-    return label
+            shown = trimmed
+    return human_window_label(shown)
 
 
 def _chat_heading(provider: str, account: str | None, *extra: str | None, include_account: bool = True) -> str:
@@ -897,7 +898,7 @@ def _render_pool_entry(
     if len(entry.rows) == 1:
         row = entry.rows[0]
         lines = [
-            f"{row.emoji} {_chat_heading(row.provider, row.account, row.window.label, include_account=include_account)}{pace_suffix}",
+            f"{row.emoji} {_chat_heading(row.provider, row.account, human_window_label(row.window.label), include_account=include_account)}{pace_suffix}",
             f"   ↳ {row.status_line}",
         ]
         scope = account_windows or [r.window for r in entry.rows]
@@ -1021,6 +1022,8 @@ def render_chat_report(
         for window in account.windows:
             if not show_total_rows and _hide_ceiling_window(account, window, config):
                 continue
+            if is_cursor_on_demand_window(window, provider=account.provider):
+                continue
             alert = _find_alert(alert_idx, account.provider, account.account, window.label)
             row = _WindowRow(account.provider, account.account, window, alert, now=now)
             sub_rows.append(row)
@@ -1051,6 +1054,21 @@ def render_chat_report(
                         include_account=include_account,
                     )
                 )
+                if entry.provider == "cursor" and entry.scope == "auto":
+                    host = next(
+                        (
+                            account
+                            for account in sub_accounts
+                            if account.provider == "cursor" and account.account == entry.account
+                        ),
+                        None,
+                    )
+                    if host is not None:
+                        from aiuse.report import _extra_usage_wallet_fragment
+
+                        wallet = _extra_usage_wallet_fragment(host).strip(" ·")
+                        if wallet:
+                            lines.append(f"   ↳ {wallet}")
             for row in fable_rows:
                 lines.extend(_render_fable_block(row))
         sections.append("\n".join(lines))

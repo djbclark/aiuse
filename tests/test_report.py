@@ -1305,7 +1305,7 @@ def test_grok_extra_usage_wallet_fragment():
         source="codexbar",
         usage_credits=UsageCredits(remaining=18.93, currency="USD"),
     )
-    assert _extra_usage_wallet_fragment(account) == " · $18.93 extra credits"
+    assert _extra_usage_wallet_fragment(account) == " · $18.93 (counts down)"
     assert _extra_usage_wallet_fragment(AccountUsage(provider="grok", source="codexbar")) == ""
 
 
@@ -1335,8 +1335,7 @@ def test_clock_matrix_shows_reset_clock_beside_wallet_note():
     text = render_clock_matrix([], snapshot=snap, color=False)
     grok_line = next(line for line in text.splitlines() if "grok" in line)
     assert "100u/0l/3d14h" in grok_line
-    assert "EXHAUSTED" in grok_line
-    assert "$14.46 extra credits" in grok_line
+    assert "$14.46 (counts down)" in grok_line
 
 
 def test_clock_matrix_depleted_clock_reads_empty_despite_sibling_conserve_alert():
@@ -1395,7 +1394,6 @@ def test_clock_matrix_depleted_clock_reads_empty_despite_sibling_conserve_alert(
     assert with_alert.startswith("empty")
     assert with_alert.split()[1] == "0"
     assert "100u/0l/2h12m" in with_alert
-    assert "EXHAUSTED" in with_alert
 
     # Same row without the sibling alert was already ``empty``; it must stay so.
     without_alert = next(
@@ -1419,7 +1417,7 @@ def test_clock_matrix_wallet_only_row_stays_note_only():
     )
     text = render_clock_matrix([], snapshot=snap, color=False)
     grok_line = next(line for line in text.splitlines() if "grok" in line)
-    assert "$14.46 extra credits" in grok_line
+    assert "$14.46 (counts down)" in grok_line
     assert "%/" not in grok_line
 
 

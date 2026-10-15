@@ -153,7 +153,7 @@ Full path-by-path map with "read when" hints:
   slice). Markdown is the same trap with prettier, which only _checks_ (it never
   rewrites): run `node_modules/.bin/prettier --write <changed .md>` first, or the
   first commit fails with "Code style issues found" (2026-10-14: a new handoff).
-- **Cursor pool vocabulary:** display labels `total` / `auto` / `third-party` /
+- **Cursor pool vocabulary:** display labels `total` / `auto` / `3rd-party` /
   `on-demand` / `grok-bot`; JSON/config `pool_family` keys `total`, `auto`,
   `third_party`, `on_demand`, `grok_bot`; the string `grokbot` (no separator) is
   banned in code. Total rows are ceilings (hidden by default), not routable pools.

@@ -44,7 +44,7 @@ live-collects** (scheduled snapshots densify History only); `aiuse watch`
 reuses a fresh snapshot instead, after re-reading `config.toml`, and skips one
 collected under a different disable list or collector switch. Watch keys:
 `u` collects now bypassing the cached snapshot; `a` (and
-`aiuse watch --all-providers`) runs a one-time sweep of every provider —
+`aiuse watch --all-providers`) opens the live board on a screen-only sweep of every provider —
 `[disabled_services]` and collector disable flags cleared — shown on screen
 only: no snapshot, ledger, or sampler-state writes (the cross-process query
 throttle still applies). No collect ever overlaps another: manual `u`/`a`

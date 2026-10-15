@@ -250,7 +250,7 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert len(grok) == 1
     assert grok[0].scope == "—"
     assert set(grok[0].clocks) == {"weekly"}
-    assert grok[0].tail_note is not None and "extra credits" in grok[0].tail_note
+    assert grok[0].tail_note is not None and "(counts down)" in grok[0].tail_note
 
     zai = _rows("zai/zcode")
     assert len(zai) == 1
@@ -292,8 +292,7 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     scopes = {row.scope: set(row.clocks) for row in cursor}
     assert "total" not in scopes
     assert scopes["auto"] == {"monthly"}
-    assert scopes["third-party"] == {"monthly"}
-    assert scopes["on-demand"] == {"monthly"}
+    assert scopes["3rd-party"] == {"monthly"}
     assert scopes["grok-bot"] == {"weekly"}
 
 
@@ -321,8 +320,8 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
     auto = _line(text, "cursor", "auto")
 
     assert "ACCT" not in text.splitlines()[0]
-    assert "100u/0l" in grok and "extra credits" in grok
-    assert grok.index("->") < grok.index("100u/0l") < grok.index("<-") < grok.index("extra credits")
+    assert "100u/0l" in grok and "(counts down)" in grok
+    assert grok.index("->") < grok.index("100u/0l") < grok.index("<-") < grok.index("(counts down)")
     _no_post_pace_arrow(grok)
 
     assert zai.index("43u/57l") < zai.index("17u/83l") < zai.index("<-")
@@ -334,8 +333,6 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
 
     for line in (gemini, claude_gpt):
         assert line.index("0u/100l") < line.index("100u/0l") < line.index("<-")
-        assert "EXHAUSTED" in line
-        assert line.index("<-") < line.index("EXHAUSTED")
         _no_post_pace_arrow(line)
 
     assert claude.index("0u/100l") < claude.index("98u/2l") < claude.index("<-")

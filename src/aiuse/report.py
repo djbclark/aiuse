@@ -101,7 +101,7 @@ _SCOPE_SHORT = {
     "gemini": "gem",
     "claude/gpt": "c/gpt",
     "other models": "oth",
-    "third-party": "3rd",
+    "3rd-party": "3rd",
     "on-demand": "dmnd",
     "grok-bot": "grok",
 }
@@ -563,17 +563,42 @@ def _account_is_spend_up_payg(account: AccountUsage) -> bool:
     )
 
 
-def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
-    """Short suffix when a subscription row also has Extra Usage Credits."""
-    if any((w.window_id or "").casefold() == "on-demand" for w in account.windows):
-        return ""
+def _overage_remaining_usd(account: AccountUsage) -> float | None:
+    """Prepaid overage dollars still left. Not a quota percent."""
     uc = account.usage_credits
-    if uc is None or uc.remaining is None:
+    if uc is not None and uc.remaining is not None:
+        return float(uc.remaining)
+    for window in account.windows:
+        if (window.window_id or "").casefold() != "on-demand":
+            continue
+        if window.refill_capacity is None or window.remaining() is None:
+            continue
+        return float(window.refill_capacity) * float(window.remaining()) / 100.0
+    return None
+
+
+def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
+    """Short suffix when a subscription row also has a prepaid overage wallet."""
+    remaining = _overage_remaining_usd(account)
+    if remaining is None:
         return ""
-    remaining = float(uc.remaining)
-    if remaining <= 0:
-        return " · extra credits empty"
-    return f" · ${remaining:.2f} extra credits"
+    return f" · ${remaining:.2f} (counts down)"
+
+
+def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
+    """One wallet suffix per account. Cursor shows it on auto, not on every pool."""
+    if account.provider != "cursor":
+        return pool_id != "cursor_on_demand"
+    from aiuse.analysis.pace import cursor_pool_family
+
+    families = {
+        cursor_pool_family(window.label, window_id=window.window_id, provider="cursor") for window in account.windows
+    }
+    if "auto" in families:
+        return pool_id == "cursor_auto"
+    if "third_party" in families:
+        return pool_id == "cursor_third_party"
+    return pool_id not in {"cursor_on_demand", ""}
 
 
 def _api_inventory_note(account: AccountUsage) -> str:
@@ -1039,13 +1064,10 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
         total += 1 + max(
             [4] + [len(format_pace(row.pace_percent, row.pace_early)) for row in rows if row.pace_percent is not None]
         )
-    # Reserve a fixed amount for status text, never the length of a free-text
-    # note. This keeps EXHAUSTED readable before squeezing numeric cells.
-    if any(
-        row.note or row.tail_note or row.stale or any(cell.used_percent >= 99 for cell in row.clocks.values())
-        for row in rows
-    ):
-        total += 1 + len("EXHAUSTED")
+    # Reserve a fixed amount for a short tail (wallet, STALE), never a free-text
+    # note, so those suffixes stay readable before numeric cells are squeezed.
+    if any(row.note or row.tail_note or row.stale for row in rows):
+        total += 1 + len("STALE")
     return total
 
 
@@ -1348,6 +1370,8 @@ def _build_matrix_rows(
             partition_independent_pools(account.windows, provider=account.provider) if account.windows else [[]]
         ):
             pool_id = _pool_id_for_windows(pool, provider=account.provider) if pool else ""
+            if pool_id == "cursor_on_demand":
+                continue
             if _hide_ceiling_pool_row(account, pool_id, cfg):
                 continue
             clocks: dict[str, _ClockCell] = {}
@@ -1433,13 +1457,12 @@ def _build_matrix_rows(
                         note = window.reset_description
                         break
             extra_note = _extra_usage_wallet_fragment(account).strip(" ·")
-            if extra_note:
-                # A wallet is inventory, not a clock: it may annotate a row
-                # that renders reset cells, but never replace or suppress
-                # them. Rows with no clocks at all keep the note as the row.
+            if extra_note and _matrix_row_shows_wallet(account, pool_id):
+                # A wallet is inventory, not a clock: it annotates the row
+                # after the reset cells and never replaces them. Rows with
+                # no clocks at all keep the note as the row.
                 if clocks:
-                    if band == _BAND_EMPTY:
-                        tail_note = extra_note
+                    tail_note = extra_note
                 else:
                     note = extra_note if note is None else f"{note} · {extra_note}"
             data_age = _account_data_age(account, now)
@@ -1914,12 +1937,9 @@ def render_clock_matrix(
             continue
 
         tail: list[str] = []
-        row_exhausted = False
         for idx, (key, label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
             w_clock = w_clocks[idx]
-            if cell is not None and 100.0 - float(cell.used_percent) <= 1.0:
-                row_exhausted = True
             if cell is None:
                 glyph = _missing_clock_glyph(row, idx)
                 any_arrow = any_arrow or glyph != "—"
@@ -1955,8 +1975,6 @@ def render_clock_matrix(
         if layout.show_value:
             value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
             tail.append(f"{value_text:>{w_value}}")
-        if row_exhausted and not row.unranked:
-            tail.append(s.red(s.bold("EXHAUSTED")))
         if row.tail_note:
             tail.append(s.dim(row.tail_note))
         if row.stale:
@@ -2754,6 +2772,10 @@ def _render_account(
     for w in acc.windows:
         if _hide_ceiling_window(acc, w, config):
             continue
+        from aiuse.analysis.pace import is_cursor_on_demand_window
+
+        if is_cursor_on_demand_window(w, provider=acc.provider):
+            continue
         rem = w.remaining()
         rem_s = f"{rem:.0f}% left" if rem is not None else "n/a"
         used_s = f"{w.used_percent:.0f}% used" if w.used_percent is not None else ""
@@ -2779,7 +2801,9 @@ def _render_account(
         from aiuse.analysis.ceilings import ceiling_binding_note
 
         bind_note = ceiling_binding_note(w, acc.provider, acc.windows)
-        lines.append(f"  quota: {w.label}")
+        from aiuse.analysis.pace import human_window_label
+
+        lines.append(f"  quota: {human_window_label(w.label)}")
         lines.append(f"    {bar} {rem_colored} {used_s:10} {s.dim(reset_s)}")
         if bind_note:
             lines.append(s.dim(f"    ^ {bind_note}"))

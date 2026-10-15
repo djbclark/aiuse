@@ -260,7 +260,9 @@ def enrich_account(
             if _note_matches(note, provider, window):
                 _apply_note_to_window(window, note)
 
-    applicable = [w for w in windows if w.get("quota_scope") != "model_sublimit"]
+    applicable = [
+        w for w in windows if w.get("quota_scope") != "model_sublimit" and w.get("pool_family") != "on_demand"
+    ]
     states = [str(w.get("state")) for w in applicable]
     if any(s == "exhausted" for s in states):
         usable_now: bool | None = False
@@ -455,6 +457,8 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
             if window.get("models_hint"):
                 hints[family] = str(window["models_hint"])
         for family, windows in by_family.items():
+            if family == "on_demand":
+                continue
             model_sublimit = provider == "claude" and family != "default"
             family_has_data = any(str(w.get("state") or "unknown") != "unknown" for w in windows)
             shared = by_family.get("default", []) if model_sublimit else windows
