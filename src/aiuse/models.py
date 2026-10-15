@@ -115,6 +115,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "devin": "devin",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
+    "omp": "omp",
     "openrouter": "openrouter",
     "muse": "muse",
     "qwencloud": "qwen",
@@ -191,6 +192,7 @@ PROVIDER_CLI_BINARIES: dict[str, str] = {
     "muse": "muse",  # Meta Muse Code CLI (`muse login`)
     "opencode-go": "opencode",
     "opencode-zen": "opencode",
+    "omp": "omp",  # oh-my-pi TUI; spends the Claude cloud-session credits via the API
     "qwencloud": "qwen",  # Qwen Code TUI; `qwencloud` itself is the quota CLI
     "alibaba": "qwen",  # Bailian coding plan is spent via the qwen TUI (BAILIAN_CODING_PLAN_API_KEY)
 }

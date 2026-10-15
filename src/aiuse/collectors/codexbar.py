@@ -186,9 +186,9 @@ def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -
     account = _from_row(row)
     account.notes.append(f"Cached widget snapshot age: {int(age_seconds)}s.")
     result = [account]
-    zen = _opencode_zen_from_row(row)
-    if zen is not None:
-        result.append(zen)
+    for sibling in (_opencode_zen_from_row(row), _omp_credits_from_row(row)):
+        if sibling is not None:
+            result.append(sibling)
     return result
 
 
@@ -256,6 +256,8 @@ def collect_codexbar(
     cache_path: Path | str | None = None,
 ) -> list[AccountUsage]:
     provider_list = _normalize_providers(providers)
+    # CodexBar has no `omp` provider: its credits ride on the Claude row.
+    provider_list = list(dict.fromkeys("claude" if p == "omp" else p for p in provider_list))
     if use_cache:
         cached = _read_widget_snapshot(
             cache_path=cache_path,
@@ -264,7 +266,13 @@ def collect_codexbar(
             skip_providers=skip_providers,
         )
         if cached is not None:
-            return cached
+            return cached + _live_omp_supplement(
+                cached,
+                skip_providers=skip_providers,
+                timeout=provider_timeouts.get("claude", timeout) if provider_timeouts else timeout,
+                min_intervals=min_intervals,
+                backoff=TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None,
+            )
 
     if not which("codexbar"):
         raise CollectorError("codexbar not found on PATH")
@@ -314,9 +322,9 @@ def collect_codexbar(
                 if provider_arg is not None and provider_arg in reuse_notes:
                     account.notes = list(account.notes) + [reuse_notes[provider_arg]]
                 accounts.append(account)
-                zen = _opencode_zen_from_row(row)
-                if zen is not None:
-                    accounts.append(zen)
+                for sibling in (_opencode_zen_from_row(row), _omp_credits_from_row(row)):
+                    if sibling is not None:
+                        accounts.append(sibling)
 
     if not accounts and errors:
         raise CollectorError("; ".join(errors))
@@ -330,6 +338,33 @@ def collect_codexbar(
             )
         )
     return accounts
+
+
+def _live_omp_supplement(
+    cached: list[AccountUsage],
+    *,
+    skip_providers: frozenset[str] | None,
+    timeout: float,
+    min_intervals: dict[str, float] | None,
+    backoff: TimeoutBackoff | None,
+) -> list[AccountUsage]:
+    """The ``omp`` row for a cache-served run.
+
+    The widget snapshot carries no cloud-session credits, so when it serves a
+    Claude row the credits need one live ``codexbar usage --provider claude``
+    (through the usual query gate and hang backoff). Best-effort: a failure
+    leaves the run without an ``omp`` row rather than failing the cached rows.
+    """
+    if "omp" in (skip_providers or ()) or not any(a.provider == "claude" for a in cached):
+        return []
+    outcome = _query_providers(
+        ["claude"], timeout=timeout, min_intervals=min_intervals, reuse_notes={}, backoff=backoff
+    )[0][1]
+    if isinstance(outcome, CollectorError):
+        return []
+    rows = outcome if isinstance(outcome, list) else [outcome]
+    found = (_omp_credits_from_row(row) for row in rows if isinstance(row, dict))
+    return [account for account in found if account is not None]
 
 
 def _normalize_providers(providers: str | list[str] | None) -> list[str | None]:
@@ -749,6 +784,78 @@ def _opencode_zen_from_row(row: dict[str, Any]) -> AccountUsage | None:
         balance_usd=balance,
         notes=[f"Live data fetched by CodexBar via {source_tag}.", f"OpenCode Zen balance: ${balance:.2f}."],
         raw={"provider": "opencode-zen", "source_row": row},
+    )
+
+
+_CLOUD_CREDITS_ROW_ID = "claude-cloud-credits"
+
+
+def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
+    """Extract Claude's promotional cloud-session credits as the ``omp`` service.
+
+    claude.ai grants an expiring dollar credit that applies to cloud sessions,
+    which is what the omp TUI (Claude via the API) spends. CodexBar surfaces
+    it as the ``claude-cloud-credits`` row of ``usage.details``; it is not a
+    Claude plan window, so it becomes its own provider. The credit does not
+    refill: ``resets_at`` is its *expiry*, which makes the unused balance
+    use-it-or-lose-it.
+    """
+    if str(row.get("provider") or "").lower() != "claude":
+        return None
+    usage = row.get("usage")
+    details = usage.get("details") if isinstance(usage, dict) else None
+    credit_row = next(
+        (
+            item
+            for section in details or []
+            if isinstance(section, dict)
+            for item in section.get("rows") or []
+            if isinstance(item, dict) and item.get("id") == _CLOUD_CREDITS_ROW_ID
+        ),
+        None,
+    )
+    if credit_row is None:
+        return None
+    progress = credit_row.get("progress")
+    progress = progress if isinstance(progress, dict) else {}
+    total = _f(progress.get("total"))
+    remaining = _f(credit_row.get("usageValue"))
+    used = _f(progress.get("used"))
+    if remaining is None and total is not None and used is not None:
+        remaining = max(0.0, total - used)
+    if remaining is None:
+        return None
+    expiry = re.search(r"\d{4}-\d{2}-\d{2}T[\d:.]+Z", str(credit_row.get("secondaryValue") or ""))
+    expires_at = parse_dt(expiry.group(0)) if expiry else None
+    window: QuotaWindow | None = None
+    if total is not None and total > 0:
+        remaining_percent = max(0.0, min(100.0, remaining / total * 100.0))
+        window = QuotaWindow(
+            label="credits",
+            used_percent=100.0 - remaining_percent,
+            remaining_percent=remaining_percent,
+            resets_at=expires_at,
+            reset_description=f"${remaining:.2f} of ${total:.2f} left, expires",
+            refill_capacity=total,
+            refill_capacity_unit="usd",
+            window_id=_CLOUD_CREDITS_ROW_ID,
+            raw=credit_row,
+        )
+    usage_dict = usage if isinstance(usage, dict) else {}
+    source_tag = str(row.get("source") or "auto")
+    return AccountUsage(
+        source="codexbar",
+        provider="omp",
+        account=_display_account(row.get("account") or usage_dict.get("accountEmail")),
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW if window is not None else BillingKind.PREPAID_BALANCE,
+        windows=[window] if window is not None else [],
+        balance_usd=remaining,
+        notes=[
+            f"Live data fetched by CodexBar via {source_tag}.",
+            "Claude cloud-session credits (expiring; applies to omp via the Claude API).",
+        ],
+        raw={"provider": "omp", "source_row": row},
+        collected_at=parse_dt(usage_dict.get("updatedAt")),
     )
 
 
