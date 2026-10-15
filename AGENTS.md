@@ -188,8 +188,10 @@ Full path-by-path map with "read when" hints:
   `--available` entries carry `requires_operator_approval: true` and an
   `ai_notice` ("AI: Do not use without asking operator"); the matrix shows the
   same text across its 5H/WEEK cells. Never spend, route work to, or recommend
-  burning omp without asking djbclark first. aiuse reports the flag and does not
-  enforce it ([`docs/omp-cloud-credits.md`](docs/omp-cloud-credits.md)).
+  burning omp without asking djbclark first. aiuse itself only reports the
+  flag; `acp-run` and `acp-dispatch` (djbclark-ade) enforce it for delegation and
+  refuse an omp slice unless `ACP_OPERATOR_APPROVED=omp` is set for that call
+  ([`docs/omp-cloud-credits.md`](docs/omp-cloud-credits.md)).
 - **Changes to non-aiuse code go upstream as PRs** (operator rule, 2026-10-05).
   If a fix or feature needs a change in a tool aiuse depends on (CodexBar,
   OpenUsage, cswap, caut, tokscale, …), open a pull request against that

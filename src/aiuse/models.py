@@ -66,7 +66,7 @@ def claude_model_scope(label: str | None) -> str | None:
 
 # The one wording of the operator gate on a pool (omp's cloud-session credits):
 # matrix, --json (``ai_notice``), --available, --for-chat and alerts all use it.
-# Informational for agents; aiuse never enforces it.
+# aiuse only reports it; the agent toolchain's acp-run/acp-dispatch enforce it.
 OPERATOR_APPROVAL_NOTICE = "AI: Do not use without asking operator"
 
 

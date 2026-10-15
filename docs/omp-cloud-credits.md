@@ -108,9 +108,14 @@ operator)`, dim, centered across the 5H and WEEK columns in place of their
 3. **`aiuse --for-chat`**: a `↳ AI: Do not use without asking operator` line
    right under the status line, and the same suffix on an ACTION item.
 
-aiuse does not enforce the gate: the row still ranks and is still listed by
-`--available`; the flag tells agents to ask. The operator may later make the
-gate configurable per provider; today it is fixed on omp.
+aiuse itself does not enforce the gate: the row still ranks and is still listed
+by `--available`; the flag tells agents to ask. Enforcement lives in the agent
+toolchain (djbclark-ade, commits 171980a and f3ffe98): `acp-run` and
+`acp-dispatch` refuse to run an omp slice unless `ACP_OPERATOR_APPROVED=omp` is
+set for that call, which an agent does only after the operator says yes for that
+run. `bigteam`, `model-routing` and the global `home-agents.md` item 26 carry the
+same rule. Running the `omp` TUI directly is not intercepted. The operator may
+later make the gate configurable per provider; today it is fixed on omp.
 
 ## Cache caveat
 
