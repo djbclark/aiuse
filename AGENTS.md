@@ -154,6 +154,10 @@ Full path-by-path map with "read when" hints:
   slice). Markdown is the same trap with prettier, which only _checks_ (it never
   rewrites): run `node_modules/.bin/prettier --write <changed .md>` first, or the
   first commit fails with "Code style issues found" (2026-10-14: a new handoff).
+  The `typos` hook _rewrites_ files too and fails the first commit, including a
+  deliberately clipped or misspelled test literal (it "corrected" one and voided
+  the assertion, 2026-10-15): never assert on a misspelled string, and after a
+  failed commit check `git diff` before re-staging.
 - **Cursor pool vocabulary:** display labels `total` / `auto` / `3rd-party` /
   `on-demand` / `grok-bot`; JSON/config `pool_family` keys `total`, `auto`,
   `third_party`, `on_demand`, `grok_bot`; the string `grokbot` (no separator) is
