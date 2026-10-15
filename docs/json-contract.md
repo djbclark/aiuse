@@ -108,6 +108,17 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-10-15, schema stays 1.3)
+
+- `accounts[].spent_usd` (number | omitted): dollars already spent from an
+  expiring dollar grant, today only the `omp` provider (Claude cloud-session
+  credits). Omitted when not reported. See
+  [`omp` — an expiring dollar grant](#omp--an-expiring-dollar-grant).
+- `omp` windows get `pool_family: "claude"` and a `models_hint`; its
+  `--available` routing entry carries `spent_usd` and `balance_usd`; its
+  summary line states spent / left / grant size and says `expires` instead of
+  `resets`. New `semantics.spent_usd`.
+
 #### Additive (2026-10-14, schema stays 1.3)
 
 - `pace.exhaustion_lead_seconds` (number | null): lead time between projected
@@ -393,6 +404,9 @@ top-level `excluded` array — `provider`, `account`, `pool_family`,
 from "exhausted". Text mode prints one `excluded by operator: …` line per pool
 on stderr. The exit code counts only `available`.
 
+An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
+routing entry, so a reader sees the dollars without opening the account.
+
 Providers in top-level `[disabled_services]` (the stronger, overall disable)
 are also never listed: their rows are filtered at collection, and the view
 additionally drops them from any cache that still carries them — so they can
@@ -495,6 +509,7 @@ into the other.
 | `windows`                  | array             | quota windows                                                                                                                                                                                                                                |
 | `balance_usd`              | number \| null    | prepaid balance                                                                                                                                                                                                                              |
 | `credits_remaining`        | number \| null    | legacy credits field                                                                                                                                                                                                                         |
+| `spent_usd`                | number \| omitted | 2026-10-15 — dollars already spent from an expiring dollar grant (`omp`); pairs with `balance_usd` (left). Not `usage_credits`. Omitted when not reported                                                                                    |
 | `usage_credits`            | object \| omitted | extra/pay-as-you-go wallet when present                                                                                                                                                                                                      |
 | `error`                    | string \| null    | row-level error                                                                                                                                                                                                                              |
 | `notes`                    | string[]          | human notes (age, hydrate, etc.)                                                                                                                                                                                                             |
@@ -535,24 +550,24 @@ additive per the stability policy below.
 | `refill_capacity`             | number \| null       |
 | `refill_capacity_unit`        | string \| null       |
 | `internal_throttle`           | bool                 |
-| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                                    |
-| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                                               |
-| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `total`/`auto`/`third_party`/`on_demand`/`grok_bot` |
-| `role`                        | string \| omitted    | 1.3 — `ceiling` (total umbrella) or `breakdown` (sub-row of a ceiling)                                                                                                                               |
-| `effective_left_percent`      | number \| omitted    | 1.3 — breakdown headroom after ceiling cap: min(own, ceiling)                                                                                                                                        |
-| `ceiling_binding`             | bool \| omitted      | 1.3 — true when the ceiling row binds the sub-row                                                                                                                                                    |
-| `ceiling_headroom_percent`    | number \| omitted    | 1.3 — remaining on the ceiling window                                                                                                                                                                |
-| `ceiling_window_id`           | string \| omitted    | 1.3 — window_id of the ceiling row                                                                                                                                                                   |
-| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                                    |
-| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                                      |
-| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                                           |
-| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                                            |
-| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                                                  |
-| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                                   |
-| `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                                                  |
-| `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                                       |
-| `pace_early`                  | bool                 | 1.2 — true when window elapsed fraction is below 0.10; false when pace is null or not early                                                                                                          |
-| `resets_at_carried_from`      | object \| omitted    | 2026-10-13 — `{source, collected_at}` of the earlier reading whose `resets_at` was carried forward because the source dropped it; an estimate (see below)                                            |
+| `state`                       | string               | 1.1 — `exhausted` (≤1% left) \| `tight` (<15% left) \| `ok` \| `unknown` (no data); computed so you never have to                                                                                                      |
+| `headroom_percent`            | number \| null       | 1.1 — alias of `remaining_percent`, spelled for humans                                                                                                                                                                 |
+| `pool_family`                 | string \| omitted    | 1.1 — routing family: `antigravity` → independent `gemini`/`claude_gpt`; `claude` → shared `default` with model caps such as `fable`; `cursor` → `total`/`auto`/`third_party`/`on_demand`/`grok_bot`; `omp` → `claude` |
+| `role`                        | string \| omitted    | 1.3 — `ceiling` (total umbrella) or `breakdown` (sub-row of a ceiling)                                                                                                                                                 |
+| `effective_left_percent`      | number \| omitted    | 1.3 — breakdown headroom after ceiling cap: min(own, ceiling)                                                                                                                                                          |
+| `ceiling_binding`             | bool \| omitted      | 1.3 — true when the ceiling row binds the sub-row                                                                                                                                                                      |
+| `ceiling_headroom_percent`    | number \| omitted    | 1.3 — remaining on the ceiling window                                                                                                                                                                                  |
+| `ceiling_window_id`           | string \| omitted    | 1.3 — window_id of the ceiling row                                                                                                                                                                                     |
+| `quota_scope`                 | string \| omitted    | Claude: `shared` or `model_sublimit`; a model cap is within shared quota, not additional capacity                                                                                                                      |
+| `shared_pool_family`          | string \| omitted    | Claude model caps: `default`, the shared parent whose windows also constrain model availability                                                                                                                        |
+| `max_share_of_parent_percent` | number \| omitted    | Fable: `50`, its maximum share of the shared weekly budget                                                                                                                                                             |
+| `models_hint`                 | string \| omitted    | 1.1 — which models draw this pool, when cheap to say (e.g. `agy models — gemini-* models draw this pool`)                                                                                                              |
+| `state_source`                | string \| omitted    | 1.1 — `agent-reported` when an active `note-exhausted` override flipped this window                                                                                                                                    |
+| `agent_reported`              | object \| omitted    | 1.1 — `{resets_at, reason}` from the active override, when present                                                                                                                                                     |
+| `pace_percent`                | int \| null          | 1.2 — `round((pace_ratio - 1) * 100)`; positive ahead, negative behind even spend; null when exhausted or unclocked                                                                                                    |
+| `pace_ratio`                  | number \| null       | 1.2 — unblended `used_fraction / elapsed_fraction` (elapsed floored at 0.05); null when exhausted or unclocked                                                                                                         |
+| `pace_early`                  | bool                 | 1.2 — true when window elapsed fraction is below 0.10; false when pace is null or not early                                                                                                                            |
+| `resets_at_carried_from`      | object \| omitted    | 2026-10-13 — `{source, collected_at}` of the earlier reading whose `resets_at` was carried forward because the source dropped it; an estimate (see below)                                                              |
 
 #### `resets_at_carried_from` — a reset the selected source dropped
 
@@ -592,6 +607,51 @@ otherwise `resets_at` stays `null`:
   when exactly one live account holds that window, and a named reading is
   adopted by a sole anonymous live window (a collector that stopped naming the
   account).
+
+### `omp` — an expiring dollar grant
+
+Added 2026-10-15. Provider `omp` (display name `omp`, `cli_binary` `omp`) is
+claude.ai's promotional **cloud-session credit**, which the omp TUI spends
+through the Claude API. It is not the Claude 5h/weekly plan and never refills:
+unused dollars are lost at expiry. Source: CodexBar's Claude row
+([`omp-cloud-credits.md`](omp-cloud-credits.md)).
+
+```json
+{
+  "provider": "omp",
+  "cli_binary": "omp",
+  "billing_kind": "subscription_window",
+  "balance_usd": 249.269521,
+  "spent_usd": 0.730479,
+  "windows": [
+    {
+      "label": "credits",
+      "window_id": "claude-cloud-credits",
+      "used_percent": 0.29,
+      "remaining_percent": 99.71,
+      "resets_at": "2026-11-05T07:59:00+00:00",
+      "window_minutes": null,
+      "refill_capacity": 250.0,
+      "refill_capacity_unit": "usd",
+      "pool_family": "claude"
+    }
+  ]
+}
+```
+
+| Field                        | Meaning                                                             |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `balance_usd`                | dollars left                                                        |
+| `spent_usd`                  | dollars spent so far                                                |
+| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)               |
+| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                |
+| `windows[0].window_minutes`  | `null`: the grant date is unknown, so there is no pace              |
+| `windows[0].pool_family`     | `claude` (the board's SCOPE column; internal pool key `omp_claude`) |
+
+Without a grant total the row falls back to `billing_kind: "prepaid_balance"`
+with no window, still carrying `balance_usd` (and `spent_usd` when CodexBar
+reports it). Summary line:
+`omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am)`.
 
 ### `usage_credits` (optional)
 

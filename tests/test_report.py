@@ -806,7 +806,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["##", "SERVICE", "5H", "WEEK", "MONTH", "PACE"]
+    assert lines[0].split() == ["##", "SERVICE", "PACE", "5H", "WEEK", "MONTH"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -1336,7 +1336,10 @@ def test_clock_matrix_shows_reset_clock_beside_wallet_note():
     text = render_clock_matrix([], snapshot=snap, color=False)
     grok_line = next(line for line in text.splitlines() if "grok" in line)
     assert "100u/0l/3d14h" in grok_line
-    assert "$14.46 (counts down)" in grok_line
+    # The wallet sits in the OTHER column, after the clocks, as bare dollars.
+    assert grok_line.endswith(" $14.46")
+    assert grok_line.index("100u/0l/3d14h") < grok_line.index("$14.46")
+    assert text.splitlines()[0].split()[-1] == "OTHER"
 
 
 def test_clock_matrix_depleted_clock_reads_empty_despite_sibling_conserve_alert():
@@ -2115,7 +2118,8 @@ def test_clock_matrix_pads_percents_and_colors_only_the_left_token():
     )
     plain = render_clock_matrix([], snapshot=snap, color=False, width=160)
     colored = render_clock_matrix([], snapshot=snap, color=True, width=160)
-    assert _strip_ansi(colored) == plain
+    # A zebra stripe pads its row out to the table width; nothing else differs.
+    assert [line.rstrip() for line in _strip_ansi(colored).splitlines()] == plain.splitlines()
 
     rows = {line.split()[2]: line for line in plain.splitlines() if line[:5].strip() in _BAND_TAGS}
     claude = rows["claude"]

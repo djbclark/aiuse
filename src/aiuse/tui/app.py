@@ -98,6 +98,8 @@ def run_usage_app(
             config=config,
             color=color if color is not None else None,
             width=width,
+            # The stderr meta already led with the AI line; -q keeps it under the table.
+            ai_note=quiet,
         )
         for line in table.splitlines():
             out.print(_as_text(line) if line else "")

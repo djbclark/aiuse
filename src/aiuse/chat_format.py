@@ -306,6 +306,7 @@ class _WindowRow:
         "now",
         "pace_percent",
         "pace_early",
+        "grant",
     )
 
     def __init__(
@@ -315,6 +316,7 @@ class _WindowRow:
         window: QuotaWindow,
         alert: UseOrLoseAlert | None,
         now: datetime | None = None,
+        grant: str | None = None,
     ) -> None:
         self.provider = provider
         self.account = account
@@ -325,6 +327,8 @@ class _WindowRow:
         self.is_monthly = _is_monthly_window(window)
         self.governing_warning: str | None = None
         self.now = now
+        # Dollar fragment of an expiring grant (omp); its reset is an expiry.
+        self.grant = grant
 
         # Pace data.
         pace = alert.pace if alert else None
@@ -349,8 +353,9 @@ class _WindowRow:
             self.window.days_until_reset(self.now),
             estimated=estimated,
         )
-        reset_part = deadline if deadline.startswith("reset") else f"resets in {deadline}"
-        parts = [f"{rem} left", reset_part]
+        verb = "expires" if self.grant else "resets"
+        reset_part = deadline if deadline.startswith("reset") else f"{verb} in {deadline}"
+        parts = [f"{rem} left", *([self.grant] if self.grant else []), reset_part]
         if self.pace_percent is not None:
             parts.append(f"pace {format_pace(self.pace_percent, self.pace_early)}")
         return f"`{' · '.join(parts)}`"
@@ -778,6 +783,11 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
             lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `$-{abs(bal):.2f} (counts down)` (negative reported)")
         elif bal == 0:
             lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
+        elif account.spent_usd is not None:
+            # An expiring grant whose size was not reported (omp without a total).
+            lines.append(
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `${account.spent_usd:.2f} spent · ${bal:.2f} left (expiring grant)`"
+            )
         else:
             lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `${bal:.2f} (counts down)`")
     elif account.credits_remaining is not None:
@@ -917,6 +927,23 @@ def _render_pool_entry(
     return lines
 
 
+def _grant_fragment(account: AccountUsage, window: QuotaWindow) -> str | None:
+    """``$0.73 spent · $249.27 left of $250.00`` for an expiring dollar grant.
+
+    Only accounts that report ``spent_usd`` (omp's Claude cloud-session
+    credits) carry one; every other window keeps its plain status line.
+    """
+    if account.spent_usd is None:
+        return None
+    parts = [f"${account.spent_usd:.2f} spent"]
+    if account.balance_usd is not None:
+        left = f"${account.balance_usd:.2f} left"
+        if window.refill_capacity_unit == "usd" and window.refill_capacity:
+            left += f" of ${window.refill_capacity:.2f}"
+        parts.append(left)
+    return " · ".join(parts)
+
+
 def _prepaid_sort_key(account: AccountUsage) -> tuple[Any, ...]:
     """Sort prepaid rows: negative/zero first, then lowest positive, then highest."""
     bal = account.balance_usd
@@ -1025,7 +1052,9 @@ def render_chat_report(
             if is_cursor_on_demand_window(window, provider=account.provider):
                 continue
             alert = _find_alert(alert_idx, account.provider, account.account, window.label)
-            row = _WindowRow(account.provider, account.account, window, alert, now=now)
+            row = _WindowRow(
+                account.provider, account.account, window, alert, now=now, grant=_grant_fragment(account, window)
+            )
             sub_rows.append(row)
 
     # Apply governing-window warnings.

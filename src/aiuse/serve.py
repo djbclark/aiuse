@@ -29,6 +29,7 @@ from aiuse.models import (
     QuotaWindow,
     Snapshot,
     Urgency,
+    UsageCredits,
     UseOrLoseAlert,
     claude_model_scope,
     parse_dt,
@@ -453,6 +454,10 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                     resets_at=parse_dt(w.get("resets_at")),
                     window_minutes=w.get("window_minutes"),
                     reset_description=w.get("reset_description"),
+                    # Grant size (omp's `$left of $total`) and the pool-key id.
+                    refill_capacity=w.get("refill_capacity"),
+                    refill_capacity_unit=w.get("refill_capacity_unit"),
+                    window_id=w.get("window_id"),
                     # Dropping this would make a cached carried reset read as measured.
                     resets_at_carried_from=carried_from if isinstance(carried_from, dict) else None,
                 )
@@ -461,6 +466,18 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
             billing = BillingKind(str(row.get("billing_kind") or "unknown"))
         except ValueError:
             billing = BillingKind.UNKNOWN
+        credits = row.get("usage_credits")
+        usage_credits = None
+        if isinstance(credits, dict):
+            # Wallets (Grok extra usage, Cursor on-demand) ride in the matrix OTHER column.
+            usage_credits = UsageCredits(
+                used=credits.get("used"),
+                limit=credits.get("limit"),
+                remaining=credits.get("remaining"),
+                currency=str(credits.get("currency") or "USD"),
+                used_percent=credits.get("used_percent"),
+                resets_at=parse_dt(credits.get("resets_at")),
+            )
         accounts.append(
             AccountUsage(
                 source=str(row.get("source") or "cache"),
@@ -471,6 +488,8 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 windows=windows,
                 balance_usd=row.get("balance_usd"),
                 credits_remaining=row.get("credits_remaining"),
+                usage_credits=usage_credits,
+                spent_usd=row.get("spent_usd"),
                 error=row.get("error"),
                 notes=list(row.get("notes") or []),
             )

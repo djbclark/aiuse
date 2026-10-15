@@ -52,8 +52,8 @@ aiuse watch
  └─ enter alternate screen (Rich Live, screen=True) or Textual app
      ├─ tick loop (interval)
      │    ├─ run_collectors (concurrent collectors, ≤90s)  ← cancellable child process
-     │    ├─ render_clock_matrix(snapshot, alerts)  ← reused, unchanged
-     │    └─ redraw board (header + matrix + footer)
+     │    ├─ render_clock_matrix_parts(snapshot, alerts)  ← same table + legend as plain aiuse
+     │    └─ redraw board (header, centered block, then the table last)
      ├─ key poll: q / Esc / Ctrl-C → terminate collection group, restore, exit 0
      └─ SIGINT handler → same restore + exit 0
 ```
@@ -94,9 +94,17 @@ stdout report.
 
 ## Display policy
 
-- Reuse `aiuse.report.render_clock_matrix` unchanged (same bands, clocks, width
-  adaptation, color roles). The watch board is just that matrix inside a
-  full-screen frame plus a header / footer.
+- Reuse the plain `aiuse` matrix (`aiuse.report.render_clock_matrix_parts`:
+  same bands, clocks, width adaptation, color roles), stacked differently.
+  Top to bottom: the header line, the `sampler:` line, any `collect error:`
+  line, then one block centered over the table (the AI line
+  ``AI: Use `aiuse --json` for machine-readable output``, the legend lines,
+  then `Collected at …` and `Detail: ai --full` with any collector errors),
+  and the table last. Nothing is printed below the table, so its bottom rows (the
+  ones most worth using) stay on screen.
+- Columns: `## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER`. `OTHER` appears
+  only when a row has a note for it: omp's `$spent/$left` grant, a wallet
+  (`$1.64`), `Fable-cap`. `STALE` follows it.
 - Claude's main WEEK cell is overall shared usage. Fable is its own scored
   row (`scope` `fable`) with the cap in the WEEK column and Fable-cap pace.
   The score is Fable's own and is not added into a cross-vendor total, and
@@ -114,11 +122,13 @@ stdout report.
   no separate cap.
 - An arrow in an empty clock cell points at the window that row has. `->`
   means the window is to the right. `<-` means it is to the left, including
-  a hole between two windows, which points at the earlier one. Nothing is
-  printed after the PACE column for alignment.
+  a hole between two windows, which points at the earlier one. Free text goes
+  in the last column (`OTHER`, or an error row's note in that position) so
+  the clock columns align.
 - `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
-  becomes a **footer line inside the screen**, not stderr (stderr would corrupt
-  the alternate-screen layout). `-q` suppresses it.
+  goes **inside the screen, above the table**, not to stderr (stderr would
+  corrupt the alternate-screen layout). `-q` suppresses it; the AI line stays,
+  exactly once.
 - Color is on by default. `NO_COLOR` / `--no-color`, `FORCE_COLOR=0`, or a
   terminal for which Rich detects no color system automatically select a
   monochrome board without disabling alternate-screen control. A nonzero

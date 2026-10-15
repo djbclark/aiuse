@@ -41,6 +41,20 @@ and OpenCode Go history rendered as the title-case fallback `Opencode`. It also 
 `merge_learned_flexibility()`, which looked up `antigravity:5h` in a table
 keyed `gemini:5h` and therefore never matched.
 
+## Providers derived from another vendor's row
+
+A provider can come from a sibling vendor's row instead of its own collector.
+It is still its own canonical id, never an alias of the parent:
+
+| Canonical id | Display | CLI binary | Derived from                                             | Board SCOPE / pool key  |
+| ------------ | ------- | ---------- | -------------------------------------------------------- | ----------------------- |
+| `omp`        | `omp`   | `omp`      | CodexBar's Claude row, its `claude-cloud-credits` detail | `claude` / `omp_claude` |
+
+`omp` is claude.ai's expiring cloud-session dollar grant, spent by the omp
+(oh-my-pi) TUI through the Claude API; it is not a Claude plan window, so it
+must not be folded into `claude`. Details:
+[`omp-cloud-credits.md`](omp-cloud-credits.md).
+
 ## Window identity across collectors
 
 Provider identity is not enough. Two collectors describe the _same_ window

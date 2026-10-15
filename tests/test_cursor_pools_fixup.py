@@ -461,7 +461,8 @@ def test_cursor_on_demand_is_a_wallet_suffix_not_a_percent_row():
     auto = next(line for line in text.splitlines() if " auto " in f" {line} ")
     assert "13u/87l" in auto
     assert "92u" not in auto
-    assert "$1.64 (counts down)" in auto
+    assert auto.endswith(" $1.64")
+    assert "(counts down)" not in auto
     assert not any(" on-demand " in f" {line} " for line in text.splitlines())
 
 

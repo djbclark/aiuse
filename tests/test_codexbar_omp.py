@@ -37,6 +37,14 @@ def test_omp_row_carries_balance_and_expiry_window():
     assert window.resets_at == datetime(2026, 11, 5, 7, 59, tzinfo=UTC)
     assert window.refill_capacity == 250.0
     assert round(window.remaining_percent or 0, 2) == 99.71
+    assert account.spent_usd == 0.730479
+
+
+def test_omp_spent_falls_back_to_total_minus_remaining():
+    account = _omp_credits_from_row(_claude_row(progress={"total": 250}))
+
+    assert account is not None
+    assert account.spent_usd == 0.730479
 
 
 def test_omp_row_without_total_is_a_plain_balance():
@@ -48,6 +56,15 @@ def test_omp_row_without_total_is_a_plain_balance():
     assert account.windows == []
     assert account.billing_kind == BillingKind.PREPAID_BALANCE
     assert account.balance_usd == 249.269521
+    assert account.spent_usd is None
+
+
+def test_omp_plain_balance_keeps_spent_when_codexbar_reports_it():
+    account = _omp_credits_from_row(_claude_row(progress={"used": 0.73}))
+
+    assert account is not None
+    assert account.windows == []
+    assert account.spent_usd == 0.73
 
 
 def test_omp_row_absent_without_cloud_credits_or_for_other_providers():

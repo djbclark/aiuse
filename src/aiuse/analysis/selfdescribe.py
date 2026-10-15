@@ -79,6 +79,7 @@ SEMANTICS: dict[str, str] = {
     "ceiling_headroom_percent": "remaining percent on the ceiling window that caps this sub-row",
     "ceiling_window_id": "window_id of the ceiling row binding this sub-row, when ceiling_binding",
     "context_usage": "ACP context-window fill and this turn's token counts. used/size is the session context, not a 5h or weekly plan. turn_quota is per-turn tokens. Plan windows stay on windows[]",
+    "spent_usd": "dollars already spent from an expiring dollar grant (omp's Claude cloud-session credits); balance_usd is dollars left, windows[0].refill_capacity the grant size, windows[0].resets_at its expiry (no refill: unused dollars are lost then). Not usage_credits (an overage wallet)",
     "resets_at_carried_from": "present only when resets_at was not measured by this collection: the source dropped the reset, so aiuse carried forward the last one an earlier reading measured ({source, collected_at} of that reading); an estimate, shown as ~. Only carried while still in the future and usage has not fallen since",
 }
 
@@ -111,6 +112,13 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("third-party", "third_party", "Cursor third-party models (breakdown)"),
         ("included", "total", "Cursor total monthly usage (legacy label)"),
         ("other", "third_party", "Cursor third-party models (legacy label)"),
+    ],
+    "omp": [
+        (
+            "credits",
+            "claude",
+            "omp TUI — Claude models via the API; an expiring dollar grant (cloud-session credits), not the Claude plan windows",
+        ),
     ],
 }
 
@@ -505,6 +513,11 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                     ),
                     "available_at": min(resets).isoformat() if resets else None,
                     "models_hint": hints.get(family),
+                    **(
+                        {"spent_usd": account["spent_usd"], "balance_usd": account.get("balance_usd")}
+                        if account.get("spent_usd") is not None
+                        else {}
+                    ),
                     "age_seconds": account.get("age_seconds"),
                     "fresh": account.get("fresh"),
                     "stale": account.get("stale"),
@@ -527,12 +540,27 @@ def _fmt_pct(value: float | None) -> str:
     return f"{value:.0f}"
 
 
-def _reset_fragment(resets_at: Any) -> str:
+def _reset_fragment(resets_at: Any, verb: str = "resets") -> str:
     dt = parse_dt(resets_at)
     if dt is None:
         return ""
     # Local 12-hour time, the same form the watch board uses.
-    return f", resets {format_clock(dt, date=dt - utcnow() > timedelta(hours=24))}"
+    return f", {verb} {format_clock(dt, date=dt - utcnow() > timedelta(hours=24))}"
+
+
+def _grant_fragment(pool: Mapping[str, Any], window: Mapping[str, Any]) -> str:
+    """``, $0.73 spent / $249.27 left of $250.00 expiring grant`` (omp only)."""
+    spent = pool.get("spent_usd")
+    if spent is None:
+        return ""
+    text = f", ${float(spent):.2f} spent"
+    left = pool.get("balance_usd")
+    if left is not None:
+        text += f" / ${float(left):.2f} left"
+        cap = window.get("refill_capacity")
+        if cap and window.get("refill_capacity_unit") == "usd":
+            text += f" of ${float(cap):.2f}"
+    return text + " expiring grant"
 
 
 def _format_age(seconds: float | None) -> str:
@@ -593,7 +621,9 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         pace = window.get("pace_percent")
         pace_early = bool(window.get("pace_early"))
         pace_text = f", pace {format_pace(pace, pace_early)}" if pace is not None else ""
-        seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{pace_text}{_reset_fragment(window.get('resets_at'))})"
+        grant = _grant_fragment(pool, window)
+        reset = _reset_fragment(window.get("resets_at"), "expires" if grant else "resets")
+        seg = f"{label}: {word} ({_fmt_pct(used)}% used / {_fmt_pct(left)}% left{pace_text}{grant}{reset})"
         if window.get("quota_scope") == "model_sublimit":
             seg += _sublimit_cap_fragment(window)
         if window.get("state_source") == "agent-reported":

@@ -250,7 +250,9 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert len(grok) == 1
     assert grok[0].scope == "—"
     assert set(grok[0].clocks) == {"weekly"}
-    assert grok[0].tail_note is not None and "(counts down)" in grok[0].tail_note
+    # The wallet rides in the OTHER column as bare dollars, no "(counts down)".
+    assert grok[0].tail_note is not None and grok[0].tail_note.startswith("$")
+    assert "(counts down)" not in grok[0].tail_note
 
     zai = _rows("zai/zcode")
     assert len(zai) == 1
@@ -320,8 +322,8 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
     auto = _line(text, "cursor", "auto")
 
     assert "ACCT" not in text.splitlines()[0]
-    assert "100u/0l" in grok and "(counts down)" in grok
-    assert grok.index("->") < grok.index("100u/0l") < grok.index("<-") < grok.index("(counts down)")
+    assert "100u/0l" in grok and grok.endswith("$1.69")
+    assert grok.index("->") < grok.index("100u/0l") < grok.index("<-") < grok.index("$1.69")
     _no_post_pace_arrow(grok)
 
     assert zai.index("43u/57l") < zai.index("17u/83l") < zai.index("<-")

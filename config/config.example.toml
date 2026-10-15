@@ -153,6 +153,7 @@
 # entry). For TUIs that must temporarily not be used even with headroom.
 # [disabled_services]
 # "grok" = "operator: vendor shelved this week (2026-10-08)"
+# "omp" = "operator: not tracking Claude cloud-session credits" # also skips its live CodexBar query
 
 # Operator-hidden pools — display-only ("provider" or "provider/pool_family" =
 # reason). Matching windows are dropped at collection and omitted from human

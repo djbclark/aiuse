@@ -37,6 +37,7 @@ QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
     "antigravity": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
     "opencode-go": ("opencode_go", "codexbar", "openusage_ai", "openusage_sh", "tokscale"),
     "opencode-zen": ("opencode_zen",),
+    "omp": ("codexbar",),  # Claude cloud-session credits ride on CodexBar's Claude row
     "deepseek": ("deepseek", "codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
     "openrouter": ("openrouter", "codexbar", "openusage_ai", "hermes"),
     "qwencloud": ("qwencloud", "codexbar"),

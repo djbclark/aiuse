@@ -82,8 +82,11 @@ config & setup:
   aiuse --no-tui              classic plain-text report (skip Rich styling)
   aiuse --print-completion bash|zsh   shell completion script to stdout
 
-matrix: u/l = percent used / percent left; signed pace = ahead (+) or behind (-)
-  of even spend across the window. PACE = the row’s highest window pace.
+matrix: ## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER. u/l = percent used / percent
+  left; signed pace = ahead (+) or behind (-) of even spend across the window.
+  PACE = the row’s highest window pace. OTHER = per-row notes: dollars (omp
+  `$spent/$left` of its expiring Claude cloud-session grant; JSON spent_usd /
+  balance_usd), Fable model cap, grok wallet.
 
 exit codes (collect runs):
   0  success, no burn/conserve alerts
@@ -715,6 +718,9 @@ def _main_inner(argv: list[str] | None = None) -> int:
             traditional_summary=args.traditional_summary,
             full=bool(args.full),
             brief=bool(args.brief),
+            # The stderr meta above already led with the AI line; -q keeps it
+            # under the table instead.
+            ai_note=bool(args.quiet),
         )
     )
     return exit_code

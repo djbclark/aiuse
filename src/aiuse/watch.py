@@ -22,7 +22,7 @@ from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
 from aiuse.models import Snapshot, UseOrLoseAlert, utcnow
-from aiuse.report import _strip_ansi, render_clock_matrix, render_stderr_meta
+from aiuse.report import render_clock_matrix_parts, render_stderr_meta
 from aiuse.timefmt import format_clock
 
 DEFAULT_INTERVAL_S = 600.0
@@ -237,7 +237,9 @@ def render_watch_board(
     all_providers: bool = False,
     key_note: str | None = None,
 ) -> str:
-    """Header + clock matrix + optional footer for the alternate-screen board.
+    """Header, then one centered block (AI line, legend, collection footer), then the table.
+
+    Nothing follows the table, so its last rows stay on screen.
 
     ``last`` is when the data on the board was collected, which is not when
     the board last refreshed: a frame can come from a snapshot the scheduled
@@ -277,15 +279,14 @@ def render_watch_board(
     if error:
         lines.append(f"collect error: {error}")
     if snapshot is not None:
-        matrix = render_clock_matrix(alerts, snapshot=snapshot, config=config, color=color).rstrip()
-        lines.append(matrix)
+        parts = render_clock_matrix_parts(alerts, snapshot=snapshot, config=config, color=color)
+        if parts.ai_line is not None:
+            lines.append(parts.ai_line)
+        lines.extend(parts.legend)
         if not quiet:
-            footer = render_stderr_meta(snapshot, alerts, color=color).rstrip()
-            if footer:
-                # Centered under the table, like the legend lines above it.
-                width = max((len(_strip_ansi(row)) for row in matrix.splitlines()), default=0)
-                for row in footer.splitlines():
-                    lines.append(" " * max(0, (width - len(_strip_ansi(row))) // 2) + row)
+            footer = render_stderr_meta(snapshot, alerts, color=color, ai_note=False).rstrip()
+            lines.extend(parts.center(row) for row in footer.splitlines())
+        lines.extend(parts.table)
     else:
         lines.append("waiting for first collection…")
     return "\n".join(lines)

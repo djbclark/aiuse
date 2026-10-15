@@ -638,6 +638,11 @@ class AccountUsage:
     balance_usd: float | None = None
     credits_remaining: float | None = None
     usage_credits: UsageCredits | None = None
+    # Dollars already spent from an expiring dollar grant (omp's Claude
+    # cloud-session credits). Pairs with ``balance_usd`` (dollars left); the
+    # grant's size and expiry live on its window (``refill_capacity``,
+    # ``resets_at``). Not an overage wallet, so it is not ``usage_credits``.
+    spent_usd: float | None = None
     error: str | None = None
     notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
@@ -676,6 +681,8 @@ class AccountUsage:
             d["collected_at"] = self.collected_at.isoformat()
         if self.usage_credits is not None:
             d["usage_credits"] = self.usage_credits.to_dict()
+        if self.spent_usd is not None:
+            d["spent_usd"] = self.spent_usd
         if self.context_usage is not None:
             d["context_usage"] = self.context_usage.to_dict()
         return d

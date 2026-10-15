@@ -380,6 +380,7 @@ def render_report(
     full: bool = False,
     brief: bool = False,
     glance_width: int | None = None,
+    ai_note: bool = True,
 ) -> str:
     """
     Pretty report.
@@ -392,12 +393,13 @@ def render_report(
     **Full** (``full=True``): long report with per-provider detail.
 
     ``brief`` is kept for CLI compatibility and is ignored when ``full=True``.
+    ``ai_note`` is passed to ``render_clock_matrix`` (default mode only).
     """
     del brief  # Alias of default; retained so callers need not change overnight.
     s = _Style(use_color(force=color))
     if not full:
         width = glance_width if glance_width is not None else terminal_width()
-        return render_clock_matrix(alerts, snapshot=snapshot, config=config, s=s, width=width)
+        return render_clock_matrix(alerts, snapshot=snapshot, config=config, s=s, width=width, ai_note=ai_note)
 
     lines: list[str] = []
     width = ACTION_PLAN_WIDTH
@@ -1057,18 +1059,34 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
     if layout.show_scope:
         w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
         total += 1 + w_scope
+    if layout.show_value:
+        total += 1 + _pace_column_width(rows)
     w_pct, w_spans = _clock_column_widths(rows, layout)
     for w_span in w_spans:
         total += 1 + (w_pct + ((1 + w_span) if w_span else 0))
-    if layout.show_value:
-        total += 1 + max(
-            [4] + [len(format_pace(row.pace_percent, row.pace_early)) for row in rows if row.pace_percent is not None]
-        )
-    # Reserve a fixed amount for a short tail (wallet, STALE), never a free-text
-    # note, so those suffixes stay readable before numeric cells are squeezed.
-    if any(row.note or row.tail_note or row.stale for row in rows):
+    w_other = _other_column_width(rows)
+    if w_other:
+        total += 1 + w_other
+    # Reserve a fixed amount for STALE, or for the start of a free-text note
+    # (never the whole note), so those stay readable before numeric cells are
+    # squeezed.
+    if any(row.stale for row in rows) or (not w_other and any(row.note for row in rows)):
         total += 1 + len("STALE")
     return total
+
+
+def _pace_column_width(rows: list[_MatrixRow]) -> int:
+    """Width of the PACE column: its header or the widest row pace."""
+    return max(
+        [len("PACE")]
+        + [len(format_pace(row.pace_percent, row.pace_early)) for row in rows if row.pace_percent is not None]
+    )
+
+
+def _other_column_width(rows: list[_MatrixRow]) -> int:
+    """Width of the OTHER column (wallet, grant, Fable-cap); 0 when no row has a tail note."""
+    notes = [len(row.tail_note) for row in rows if row.tail_note and row.note is None]
+    return max([len("OTHER")] + notes) if notes else 0
 
 
 def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple[int, list[int]]:
@@ -1462,9 +1480,14 @@ def _build_matrix_rows(
                 # after the reset cells and never replaces them. Rows with
                 # no clocks at all keep the note as the row.
                 if clocks:
-                    tail_note = extra_note
+                    # The OTHER column is already inventory; "(counts down)"
+                    # only adds width there.
+                    tail_note = extra_note.removesuffix(" (counts down)")
                 else:
                     note = extra_note if note is None else f"{note} · {extra_note}"
+            if clocks and account.spent_usd is not None and account.balance_usd is not None:
+                # An expiring dollar grant (omp): spent / left.
+                tail_note = f"${account.spent_usd:.2f}/${account.balance_usd:.2f}"
             data_age = _account_data_age(account, now)
             stale = data_age is not None and data_age > fresh_threshold
             pace_windows = [window for window in pool if claude_model_scope(window.label) is None]
@@ -1883,6 +1906,31 @@ def _style_clock_percent(s: _Style, cell: _ClockCell, *, width: int) -> str:
     return padded[: slash + 1] + _cell_color(s, cell.used_percent)(padded[slash + 1 :])
 
 
+AI_JSON_NOTE = "AI: Use `aiuse --json` for machine-readable output"
+
+
+@dataclass
+class ClockMatrixParts:
+    """The clock matrix's pieces, for callers that stack them in another order.
+
+    ``legend`` and ``ai_line`` are already centered over the table; ``center``
+    centers any other line (watch's collection footer) the same way.
+    ``ai_line`` is None when there is no table to explain.
+    """
+
+    table: list[str]
+    legend: list[str] = field(default_factory=list)
+    ai_line: str | None = None
+    center_width: int = 0
+    avail: int = ACTION_PLAN_WIDTH
+
+    def center(self, text: str) -> str:
+        visible = len(_strip_ansi(text))
+        if visible >= self.avail:
+            return _clamp_display_width(text, self.avail)
+        return _clamp_display_width(" " * max(0, (self.center_width - visible) // 2) + text, self.avail)
+
+
 def render_clock_matrix(
     alerts: list[UseOrLoseAlert],
     *,
@@ -1891,7 +1939,29 @@ def render_clock_matrix(
     s: _Style | None = None,
     color: bool | None = None,
     width: int | None = None,
+    ai_note: bool = True,
 ) -> str:
+    """Table, then legend, then (with ``ai_note``) the AI ``--json`` line.
+
+    Pass ``ai_note=False`` when the caller already printed the AI line, as
+    ``render_stderr_meta`` does at the top of plain ``aiuse``.
+    """
+    parts = render_clock_matrix_parts(alerts, snapshot=snapshot, config=config, s=s, color=color, width=width)
+    lines = parts.table + parts.legend
+    if ai_note and parts.ai_line is not None:
+        lines.append(parts.ai_line)
+    return "\n".join(lines)
+
+
+def render_clock_matrix_parts(
+    alerts: list[UseOrLoseAlert],
+    *,
+    snapshot: Snapshot | None = None,
+    config: dict[str, Any] | None = None,
+    s: _Style | None = None,
+    color: bool | None = None,
+    width: int | None = None,
+) -> ClockMatrixParts:
     """Stdout body: one row per account/pool, one column per reset clock.
 
     Every row is measured on the same three clocks, so a column can be read
@@ -1919,10 +1989,10 @@ def render_clock_matrix(
     if s is None:
         s = _Style(use_color(force=color))
     rows = _build_matrix_rows(alerts, snapshot, config)
-    if not rows:
-        return s.green("use   nothing urgent under current thresholds")
-
     avail = width or terminal_width()
+    if not rows:
+        return ClockMatrixParts(table=[s.green("use   nothing urgent under current thresholds")], avail=avail)
+
     layout = _MatrixLayout(
         show_scope=any(row.scope != "—" for row in rows),
         show_account=_matrix_shows_account(rows),
@@ -1939,16 +2009,17 @@ def render_clock_matrix(
     w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
     w_pct, w_spans = _clock_column_widths(rows, layout)
     w_clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
-    w_value = max(
-        [4] + [len(format_pace(row.pace_percent, row.pace_early)) for row in rows if row.pace_percent is not None]
-    )
+    w_value = _pace_column_width(rows)
+    w_other = _other_column_width(rows)
 
-    def _line(tag: str, score: str, service: str, account: str, scope: str, tail: list[str]) -> str:
+    def _line(tag: str, score: str, service: str, account: str, scope: str, pace: str, tail: list[str]) -> str:
         cells = [tag, score, service]
         if layout.show_account:
             cells.append(account)
         if layout.show_scope:
             cells.append(scope)
+        if layout.show_value:
+            cells.append(pace)
         cells.extend(tail)
         return _clamp_display_width(" ".join(cells).rstrip(), avail)
 
@@ -1966,7 +2037,8 @@ def render_clock_matrix(
                 f"{'SERVICE':<{w_service}}",
                 f"{'ACCT':<{w_account}}",
                 f"{'SCOPE':<{w_scope}}",
-                header_clocks + ([f"{'PACE':>{w_value}}"] if layout.show_value else []),
+                f"{'PACE':>{w_value}}",
+                header_clocks + ([f"{'OTHER':<{w_other}}"] if w_other else []),
             )
         )
     ]
@@ -1992,9 +2064,7 @@ def render_clock_matrix(
 
         if row.note is not None:
             blanks = [" " * size for size in w_clocks]
-            if layout.show_value:
-                blanks.append(f"{'—':>{w_value}}")
-            line = _line(tag, score, service, account, scope, blanks + [s.dim(row.note)])
+            line = _line(tag, score, service, account, scope, f"{'—':>{w_value}}", blanks + [s.dim(row.note)])
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             for note in row.sublimit_notes:
                 lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
@@ -2007,8 +2077,9 @@ def render_clock_matrix(
             if cell is None:
                 glyph = _missing_clock_glyph(row, idx)
                 any_arrow = any_arrow or glyph != "—"
-                under_label = f"{f'{glyph:^{len(label)}}':>{w_pct}}"
-                tail.append(s.dim(f"{under_label:<{w_clock}}"))
+                under_label = f"{f'{glyph:^{len(label)}}':>{w_pct}}".rstrip()
+                # Pad outside the dim codes: the last clock can end the line.
+                tail.append(s.dim(under_label) + " " * (w_clock - len(under_label)))
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
@@ -2036,15 +2107,15 @@ def render_clock_matrix(
                 styled += " " * pad
             tail.append(styled)
 
-        if layout.show_value:
-            value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
-            tail.append(f"{value_text:>{w_value}}")
-        if row.tail_note:
-            tail.append(s.dim(row.tail_note))
+        value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
+        if w_other:
+            other = row.tail_note or ""
+            # Pad outside the dim codes so a trailing blank still rstrips.
+            tail.append((s.dim(other) if other else "") + " " * (w_other - len(other)))
         if row.stale:
             tail.append(s.yellow("STALE"))
 
-        line = _line(tag, score, service, account, scope, tail)
+        line = _line(tag, score, service, account, scope, f"{value_text:>{w_value}}", tail)
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
         for note in row.sublimit_notes:
             lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
@@ -2087,26 +2158,16 @@ def render_clock_matrix(
         pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · ~ = early: under a tenth of the window has elapsed"
         legend_items.append((pace_note, s.dim(pace_note)))
 
-    plain_ai_note = "AI: Use `aiuse --json` for machine-readable output"
-    fmt_ai_note = s.dim(plain_ai_note)
-    legend_items.append((plain_ai_note, fmt_ai_note))
-
-    table_width = zebra_width
+    parts = ClockMatrixParts(table=lines, center_width=min(zebra_width, avail), avail=avail)
+    parts.ai_line = parts.center(s.dim(AI_JSON_NOTE))
     for plain_text, fmt_text in legend_items:
         visible = len(_strip_ansi(fmt_text))
         if visible >= avail and fmt_text == s.dim(plain_text) and _LEGEND_SEP in plain_text:
             chunks = [(chunk, s.dim(chunk)) for chunk in _wrap_on_separator(plain_text, avail - 1)]
         else:
             chunks = [(plain_text, fmt_text)]
-        for chunk_plain, chunk_fmt in chunks:
-            visible = len(chunk_plain)
-            if visible >= avail:
-                lines.append(_clamp_display_width(chunk_fmt, avail))
-                continue
-            margin_size = max(0, (min(table_width, avail) - visible) // 2)
-            lines.append(_clamp_display_width(" " * margin_size + chunk_fmt, avail))
-
-    return "\n".join(lines)
+        parts.legend.extend(parts.center(chunk_fmt) for _chunk_plain, chunk_fmt in chunks)
+    return parts
 
 
 def _format_used_percent(used: float) -> str:
@@ -2243,13 +2304,18 @@ def render_stderr_meta(
     alerts: list[UseOrLoseAlert],
     *,
     color: bool | None = None,
+    ai_note: bool = True,
 ) -> str:
-    """Collection meta, errors, and ``ai --full`` hint for stderr (default mode)."""
+    """Collection meta, errors, and ``ai --full`` hint for stderr (default mode).
+
+    With ``ai_note`` the AI ``--json`` line leads, so an AI reader meets it
+    before the table; pair it with ``render_clock_matrix(ai_note=False)``.
+    """
     s = _Style(use_color(force=color))
     accounts = _sorted_accounts(snapshot.accounts)
     n_accounts = len(accounts)
     n_actionable = sum(1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE))
-    lines: list[str] = []
+    lines: list[str] = [s.dim(AI_JSON_NOTE)] if ai_note else []
     meta = f"Collected at {format_clock(snapshot.collected_at, date=True)}"
     meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
     if n_actionable:

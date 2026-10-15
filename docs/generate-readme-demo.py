@@ -40,7 +40,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     utcnow,
 )
-from aiuse.report import render_clock_matrix
+from aiuse.report import AI_JSON_NOTE, render_clock_matrix
 
 # The real current instant. render_clock_matrix computes "days until
 # reset" (and lockout forecasts) for *unalerted* windows via
@@ -256,10 +256,13 @@ def render_demo_diff_block() -> str:
         # clamped with "…" (the pace legend alone is ~155 cols), so the README
         # shows everything. GitHub scrolls a wide fence horizontally.
         width=_DEMO_WIDTH,
+        # Plain `aiuse` prints the AI line first (with the Collected/Detail meta
+        # lines), above the table; mirror that instead of the -q bottom placement.
+        ai_note=False,
     )
     if "…" in text:
         raise SystemExit(f"demo output truncated at width={_DEMO_WIDTH}; raise _DEMO_WIDTH")
-    lines = []
+    lines = [f"  {AI_JSON_NOTE}"]
     for line in text.splitlines():
         tag = line.split(None, 1)[0] if line.strip() else ""
         if tag in _LEGEND_LINE_PREFIXES:
