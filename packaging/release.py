@@ -99,7 +99,7 @@ def _validate_version_increment(current: str, target: str, *, allow_major: bool)
         return
 
     major, minor, patch = before
-    allowed = {
+    allowed: dict[tuple[int, ...], str] = {
         (major, minor, patch + 1): "patch",
         (major, minor + 1, 0): "minor",
         (major + 1, 0, 0): "major",
@@ -481,6 +481,9 @@ def _sync_tap(version: str, *, tap_path: Path, dry_run: bool) -> None:
     if dry_run:
         _log(f"[dry-run] copy formula → {dest} and push tap")
         return
+    # Other sessions push the tap too; a stale clone would reject the push.
+    _run(["git", "fetch", "origin", "main"], cwd=tap_path)
+    _run(["git", "merge", "--ff-only", "origin/main"], cwd=tap_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(HOMEBREW_FORMULA, dest)
     _run(["git", "add", "Formula/aiuse.rb"], cwd=tap_path)

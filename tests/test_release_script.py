@@ -183,6 +183,36 @@ def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release, 
     ]
 
 
+def test_sync_tap_fast_forwards_before_commit(monkeypatch, release, tmp_path: Path):
+    calls: list[list[str]] = []
+    tap = tmp_path / "homebrew-aiuse"
+    tap.mkdir()
+    formula = tmp_path / "aiuse.rb"
+    formula.write_text("formula\n", encoding="utf-8")
+
+    def fake_run(argv, **kwargs):
+        from subprocess import CompletedProcess
+
+        calls.append(argv)
+        stdout = "M  Formula/aiuse.rb\n" if argv[:3] == ["git", "status", "--porcelain"] else ""
+        return CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(release, "_run", fake_run)
+    monkeypatch.setattr(release, "HOMEBREW_FORMULA", formula)
+
+    release._sync_tap("3.6.1", tap_path=tap, dry_run=False)
+
+    assert calls == [
+        ["git", "fetch", "origin", "main"],
+        ["git", "merge", "--ff-only", "origin/main"],
+        ["git", "add", "Formula/aiuse.rb"],
+        ["git", "status", "--porcelain"],
+        ["git", "commit", "-m", "aiuse 3.6.1"],
+        ["git", "push", "origin", "HEAD"],
+    ]
+    assert (tap / "Formula" / "aiuse.rb").read_text(encoding="utf-8") == "formula\n"
+
+
 def test_verify_default_path_does_not_upgrade_pipx(monkeypatch, release):
     calls: list[tuple[list[str], dict]] = []
 
