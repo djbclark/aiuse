@@ -4,8 +4,8 @@ Moved out of `AGENTS.md` (loaded into every agent session). Update this file,
 not `AGENTS.md`, when the status line changes; keep the one-paragraph summary in
 `AGENTS.md` in step.
 
-**Status (2026-10-03):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.2.6**
+**Status (2026-10-15):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+done. Product issues **#1–#9** done. Packaging **3.6.1**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
 **Schema 1.1 (2026-10-03):** self-describing output — per-window
 `state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
@@ -53,6 +53,13 @@ finishes), the scheduled tick waits for a sweep, `u`/`a` share a ratified
 2-minute minimum, and a `u` within 90s of an `a` is rolled into that run.
 The sweep is **operator-only**; AI agents must not
 run it without explicit permission (flagged in `--help`, README, AGENTS.md).
+**omp (2026-10-15, unreleased on `main`):** Claude cloud-session credits
+(an expiring dollar grant, spent by the omp TUI through the Claude API) are a
+separate provider `omp`, derived from CodexBar's Claude row. The matrix has a
+new last column **OTHER** (omp `$spent/$left`, `Fable-cap`, wallets) and PACE
+now follows SCOPE; JSON carries `spent_usd`, `requires_operator_approval` and
+`ai_notice` (schema stays 1.3). AI agents must not use omp without asking the
+operator. See [`docs/omp-cloud-credits.md`](omp-cloud-credits.md).
 **No mandatory
 numbered step.** Open-ended
 "what next?" → [`docs/next-options.md`](docs/next-options.md) +

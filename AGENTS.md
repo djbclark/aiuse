@@ -19,8 +19,9 @@ and the Cursor-pools batch arrived after a handoff written against 3.4.3 (djbcla
 2026-10-14). Check `git log --oneline -6` and `git branch -r --no-merged origin/main`
 before assuming the tree is what the handoff describes.
 
-**Status (2026-10-14):** Package/CLI **`aiuse`**, packaging **3.6.0**
-(PyPI/GitHub/Homebrew). Fix-plan Steps **1–34** and product issues **#1–#9**
+**Status (2026-10-15):** Package/CLI **`aiuse`**, packaging **3.6.1**
+(PyPI/GitHub/Homebrew; unreleased on `main`: the `omp` row, OTHER column, and
+PACE-after-SCOPE layout). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.3** (self-describing output, `aiuse --available`,
 `aiuse note-exhausted`; 1.3 adds ceiling/hidden-pool fields and per-pool learned
 burn rates; 1.2 added per-window pace and the matrix PACE column,
