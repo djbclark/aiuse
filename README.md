@@ -50,28 +50,32 @@ pools most worth using right now sort to the bottom.
 <!-- readme-demo:start -->
 
 ```diff
-        ## SERVICE    ACCT  SCOPE           5H              WEEK              MONTH           PACE
-- error ?? oc-zen     gmail —                                                                    — No available fetch strategy for opencode-zen.
-- empty  0 oc-go      gmail —                          — 100u/0l/4d12h                      —    — <- EXHAUSTED
-  n/a   -- deepseek   gmail —                                                                    — $4.15 (counts down)
-  n/a   -- openrouter gmail —                                                                    — $18.55 (counts down)
-  slow  38 agy        gmail claude/gpt                 — 78u/22l/1d5h                       —    — <-
-  mid   50 claude     gmail —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                  — +38% <-
-  mid   50 grok       gmail —                          —  6u/94l/6d14h                      —    — <-
-  mid   63 codex      gmail —                          — 54u/46l/2d7h -20%                  — -20% <-
-  mid   66 cursor     gmail total                      —                  — 71u/29l/3d7h -20% -20%
-  mid   66 agy        gmail gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                    — -63% <-
-+ use   91 copilot    —     —                          —                  — 58u/42l/~1d -39%  -39%
-                              2d14h = until this clock resets · bold = largest unit
-                        u/l = percent used / percent left — l is what you can still spend
+        ## SERVICE    SCOPE           5H              WEEK              MONTH           PACE
+- error ?? oc-zen     —                                                                    — No available fetch strategy for opencode-zen.
+- empty  0 oc-go      —                         -> 100u/0l/4d12h                     <-    — EXHAUSTED
+  n/a   -- deepseek   —                                                                    — $4.15 (counts down)
+  n/a   -- openrouter —                                                                    — $18.55 (counts down)
+  slow  38 agy        claude/gpt                -> 78u/22l/1d5h                      <-    —
+  mid   50 claude     —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                 <- +38%
+  mid   50 grok       —                         ->  6u/94l/6d14h                     <-    —
+  mid   63 codex      —                         -> 54u/46l/2d7h -20%                 <- -20%
+  mid   66 cursor     total                     ->                 -> 71u/29l/3d7h -20% -20%
+  mid   66 agy        gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                   <- -63%
++ use   91 copilot    —                         ->                 -> 58u/42l/~1d -39%  -39%
+                         2d14h = until this clock resets · bold = largest unit
+        -> / <- in an empty clock points at this row's window; a hole points at the earlier one
+                   u/l = percent used / percent left — l is what you can still spend
   +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed
-                               AI: Use `aiuse --json` for machine-readable output
+                           AI: Use `aiuse --json` for machine-readable output
 ```
 
 <!-- readme-demo:end -->
 
 Every row is measured on the same three clocks, so a column reads top to
-bottom. An em-dash means that service has no window on that clock at all.
+bottom. An arrow in an empty clock points at the window that row does have:
+`->` when it is to the right, `<-` when it is to the left, including a hole
+between two windows, which points at the earlier one. An em-dash in a clock
+cell means the row has no windows to point at.
 Each cell displays `used% u / left% l / reset_span pace%`: **`u/l` = percent used /
 percent left** (`l` is what you can still spend). For example, `12u/88l/3h7m -68%`
 means 12% consumed, 88% remaining, resetting in 3 hours 7 minutes, and burning 68%
@@ -481,7 +485,7 @@ This tool:
 1. Pulls **remaining %** and **reset times** from **cswap** (Claude multi-account), **CodexBar** (broad live quotas), **caut**, **caam**, **OpenUsage.ai**, **OpenUsage.sh** (cross-check peers / fill-in), and **tokscale** (independent measurement; preferred for Copilot).
 2. Scores windows with **pace-based** logic (default): compare how far through the cycle you are vs how much you've used, then project waste or early lockout.
 3. Classifies each window as **Burn** (will leave capacity unused), **Conserve** (on track to exhaust before reset — slow down), or **On pace** (no alert).
-4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from. Cursor **total** is the monthly ceiling; **auto** and **third-party** are breakdown rows (visible, not headline-scored). **On-demand** and **grok-bot** are separate families. Claude's **Fable cap is within the shared weekly pool** (up to 50%, not additional quota): the main row shows overall usage, with an indented cap underneath. Fable at 100% does not exhaust other Claude models; shared exhaustion blocks Fable too.
+4. For **shared-allotment** providers (Claude, Gemini by default), scores the longest governing window only so a fresh 5-hour bar does not outrank the weekly budget it draws from. Cursor **total** is the monthly ceiling; **auto** and **third-party** are breakdown rows (visible, not headline-scored). **On-demand** and **grok-bot** are separate families. Claude **Fable** is its own row (scope `fable`, weekly cell, Fable-cap pace, no score): on Max and premium seats it can use at most half of the shared weekly pool, and that is not extra quota. Fable at 100% does not exhaust other Claude models; shared exhaustion blocks Fable too. Sonnet and Opus are not separate rows.
 5. Qualifies **Conserve** alerts with **overage awareness**: if the account has a real or config-confirmed overage/extra-usage wallet (Claude's usage credits, Cursor's on-demand balance, or a manually confirmed OpenCode Go overage state), the message says so — the real risk there is unplanned $ spend, not lockout, which is a different situation from a genuinely hard ceiling.
 6. Default pretty output is a **clock matrix** on stdout — one row per account/pool, one column per reset clock (5H/WEEK/MONTH) plus a **PACE** column for the row's highest pace, each cell displaying `used% u / left% l / reset_span pace%` (`75u/25l/4h -10%`, `89u/11l/2d14h +180%`; depleted → prepaid n/a → conserve → mid → use-soon at bottom; read bottom→top). Meta goes to stderr. Use `aiuse --full` for per-provider detail.
 7. On `--full`, keeps the trailing plan within ~**23 lines × console width** when possible; if the detailed plan is taller, both detailed and **at a glance** are printed (glance last). Forecast fragments (`~lockout Sat 3:00pm, 3 days before reset`, projected waste %) appear on table/status lines when pace can project them; every lockout / run-out forecast also says how far ahead of the window's reset it lands, scaled to hours, days or weeks (JSON: `pace.exhaustion_lead_seconds`).

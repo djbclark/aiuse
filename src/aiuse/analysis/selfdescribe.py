@@ -478,6 +478,8 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                 if headroom is None:
                     headroom = window.get("headroom_percent")
                 share = float(window.get("max_share_of_parent_percent", 100.0)) / 100.0
+                if headroom is None:
+                    return 0.0
                 return float(headroom) * share
 
             binding = min(numbered, key=effective_headroom) if numbered else None

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from aiuse.analysis.history import window_series_key
 from aiuse.analysis.pace import independent_pool_key, partition_independent_pools
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, UsageCredits
-from aiuse.report import _build_matrix_rows, _show_alignment_arrow, render_clock_matrix
+from aiuse.report import _build_matrix_rows, _matrix_shows_account, _missing_clock_glyph, render_clock_matrix
 
 NOW = datetime(2026, 10, 14, 21, 0, tzinfo=timezone.utc)
 
@@ -273,10 +273,15 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert all(set(row.clocks) == {"5h", "weekly"} for row in agy)
 
     claude = _rows("claude")
-    assert len(claude) == 1
-    assert claude[0].scope == "—"
-    assert set(claude[0].clocks) == {"5h", "weekly"}
-    assert any("Fable" in note for note in claude[0].sublimit_notes)
+    assert len(claude) == 2
+    shared = next(row for row in claude if row.scope == "—")
+    fable = next(row for row in claude if row.scope == "fable")
+    assert set(shared.clocks) == {"5h", "weekly"}
+    assert fable.unranked is True
+    assert fable.queue_score is None
+    assert set(fable.clocks) == {"weekly"}
+    assert fable.tail_note == "Fable-cap"
+    assert not any("Fable" in note for note in shared.sublimit_notes)
 
     oc = _rows("oc-go")
     assert len(oc) == 1
@@ -292,52 +297,69 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert scopes["grok-bot"] == {"weekly"}
 
 
-def test_alignment_arrow_only_on_paced_rows_that_stop_before_monthly():
+def _no_post_pace_arrow(line: str) -> None:
+    """The in-cell arrow is not repeated after the PACE column."""
+    assert "% <-" not in line
+    assert "%<-" not in line
+
+
+def test_empty_clock_arrows_point_at_the_windows_the_row_has():
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=220)
     grok = _line(text, "grok")
     zai = _line(text, "zai/zcode")
     codex = _line(text, "codex")
     gemini = _line(text, "agy", "gemini")
     claude_gpt = _line(text, "agy", "claude/gpt")
-    claude = _line(text, "claude")
+    claude = next(
+        line
+        for line in text.splitlines()
+        if " claude " in f" {line} " and " fable " not in f" {line} " and not line.startswith("        ")
+    )
+    fable = next(line for line in text.splitlines() if " fable " in f" {line} ")
     oc = _line(text, "oc-go")
     grok_bot = _line(text, "cursor", "grok-bot")
     auto = _line(text, "cursor", "auto")
 
-    assert "100u/0l" in grok and "extra credits" in grok and "<-" not in grok
-    assert " total " not in f" {grok} "
-    assert grok.index("100u/0l") < grok.index("extra credits")
+    assert "ACCT" not in text.splitlines()[0]
+    assert "100u/0l" in grok and "extra credits" in grok
+    assert grok.index("->") < grok.index("100u/0l") < grok.index("<-") < grok.index("extra credits")
+    _no_post_pace_arrow(grok)
 
-    assert zai.index("43u/57l") < zai.index("17u/83l")
-    assert "0u/100l" not in zai
-    assert " total " not in f" {zai} " and " auto " not in f" {zai} "
-    assert "<-" in zai
+    assert zai.index("43u/57l") < zai.index("17u/83l") < zai.index("<-")
+    assert "->" not in zai
+    _no_post_pace_arrow(zai)
 
-    assert codex.index("0u/100l") < codex.index("44u/56l")
-    assert " total " not in f" {codex} " and " auto " not in f" {codex} "
-    assert "<-" in codex
+    assert codex.index("0u/100l") < codex.index("44u/56l") < codex.index("<-")
+    _no_post_pace_arrow(codex)
 
     for line in (gemini, claude_gpt):
-        assert line.index("0u/100l") < line.index("100u/0l")
-        assert "<-" not in line
+        assert line.index("0u/100l") < line.index("100u/0l") < line.index("<-")
         assert "EXHAUSTED" in line
+        assert line.index("<-") < line.index("EXHAUSTED")
+        _no_post_pace_arrow(line)
 
-    assert claude.index("0u/100l") < claude.index("98u/2l")
-    assert "<-" in claude
-    assert "Fable cap" in text
+    assert claude.index("0u/100l") < claude.index("98u/2l") < claude.index("<-")
+    assert "Fable cap" not in claude
+    assert "fable" in fable
+    assert fable.index("->") < fable.index("<-")
+    assert "Fable-cap" in fable
+    _no_post_pace_arrow(fable)
 
     assert oc.index("1u/99l") < oc.index("87u/13l") < oc.index("94u/6l")
-    assert "<-" not in oc
+    assert "<-" not in oc and "->" not in oc
 
     assert "31u/69l" in grok_bot
-    assert "<-" not in grok_bot
-    assert "<-" not in auto
+    assert grok_bot.index("->") < grok_bot.index("31u/69l") < grok_bot.index("<-")
+    assert "->" in auto and "<-" not in auto
     assert "13u/87l" in auto or "12u/88l" in auto
+    for line in (grok, zai, codex, oc, grok_bot, auto, fable):
+        _no_post_pace_arrow(line)
 
-    built = {row.service: row for row in _build_matrix_rows([], _snapshot(), None) if row.service != "cursor"}
-    assert _show_alignment_arrow(built["grok"]) is False
-    assert _show_alignment_arrow(built["zai/zcode"]) is True
-    assert _show_alignment_arrow(built["oc-go"]) is False
-    grok_bot_row = next(row for row in _rows("cursor") if row.scope == "grok-bot")
-    assert grok_bot_row.pace_percent is not None
-    assert _show_alignment_arrow(grok_bot_row) is False
+    built = _build_matrix_rows([], _snapshot(), None)
+    by_service = {}
+    for row in built:
+        by_service.setdefault(row.service, []).append(row)
+    grok_row = by_service["grok"][0]
+    assert _missing_clock_glyph(grok_row, 0) == "->"
+    assert _missing_clock_glyph(grok_row, 2) == "<-"
+    assert not _matrix_shows_account(built)

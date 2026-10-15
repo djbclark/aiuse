@@ -75,10 +75,8 @@ def test_matrix_pace_fixed_columns_and_footer():
     prepaid = next(line for line in lines if "Jev" in line)
     assert "-50%" in first and "+50%" in first
     assert "-50%" not in second
-    # PACE sits at one offset whether the row has a pace or "—" (exhausted).
-    assert first.find(" <-") == second.find(" <-")
     assert second.index("EXHAUSTED") > second.rfind("+50%")
-    assert second.index("<-") > second.rfind("+50%")
+    assert "% <-" not in first and "% <-" not in second
     assert prepaid.index("$5.00") > first.rfind("+50%")
     assert "$" not in first + second
     assert "PACE = the row" in text and "+N%/-N%" in text

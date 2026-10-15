@@ -213,6 +213,8 @@ class _MatrixRow:
     tail_note: str | None = None
     stale: bool = False
     sublimit_notes: list[str] = field(default_factory=list)
+    # A routing limit (Claude Fable), not a pool to burn. Blank tag and score.
+    unranked: bool = False
 
 
 @dataclass
@@ -1043,7 +1045,7 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
         row.note or row.tail_note or row.stale or any(cell.used_percent >= 99 for cell in row.clocks.values())
         for row in rows
     ):
-        total += 1 + len("<- EXHAUSTED")
+        total += 1 + len("EXHAUSTED")
     return total
 
 
@@ -1351,20 +1353,21 @@ def _build_matrix_rows(
             clocks: dict[str, _ClockCell] = {}
             value: float | None = None
             sublimit_notes: list[str] = []
+            fable_windows: list[QuotaWindow] = []
 
             for window in pool:
                 used = _used_percent(window)
                 model = claude_model_scope(window.label) if account.provider == "claude" else None
                 if model is not None:
-                    cap = "<=50% of shared weekly" if model.casefold() == "fable" else "within shared weekly"
+                    if model.casefold() == "fable":
+                        fable_windows.append(window)
+                        continue
                     meter = "unknown" if used is None else f"{used:.0f}u/{window.remaining():.0f}l"
-                    exhausted = window.remaining() == 0
                     span = _format_reset_span(window.days_until_reset(now))
                     reset = f"/{span.plain()}" if span else ""
                     pace_percent, pace_early = window_pace(window, now)
                     trend = f" ({format_pace(pace_percent, pace_early)} pace)" if pace_percent is not None else ""
-                    status = " EXHAUSTED" if exhausted else ""
-                    sublimit_notes.append(f"{model} cap ({cap}): {meter}{reset}{trend}{status}")
+                    sublimit_notes.append(f"{model} draws from the shared weekly: {meter}{reset}{trend}")
                     continue
                 if used is None:
                     continue
@@ -1441,10 +1444,12 @@ def _build_matrix_rows(
                     note = extra_note if note is None else f"{note} · {extra_note}"
             data_age = _account_data_age(account, now)
             stale = data_age is not None and data_age > fresh_threshold
-            overall_pct, overall_early = overall_pace(pool, now)
+            pace_windows = [window for window in pool if claude_model_scope(window.label) is None]
+            overall_pct, overall_early = overall_pace(pace_windows or pool, now)
+            parent_sort = _ladder_sort_key(band, priority, account.provider, account.account)
             rows.append(
                 _MatrixRow(
-                    sort_key=_ladder_sort_key(band, priority, account.provider, account.account),
+                    sort_key=parent_sort,
                     band=band,
                     queue_score=_queue_score(band, priority),
                     service=service,
@@ -1461,6 +1466,18 @@ def _build_matrix_rows(
                     sublimit_notes=sublimit_notes,
                 )
             )
+            if fable_windows:
+                rows.append(
+                    _fable_display_row(
+                        parent_sort=parent_sort,
+                        service=service,
+                        account=short,
+                        account_full=account.account,
+                        windows=fable_windows,
+                        shared_windows=pool,
+                        now=now,
+                    )
+                )
             covered.add(key)
 
     # Alerts about pools no account row rendered.
@@ -1608,23 +1625,122 @@ def _row_from_alert(
     return row
 
 
-def _show_alignment_arrow(row: _MatrixRow) -> bool:
-    """Whether a trailing ``<-`` belongs after this row's fixed columns.
+def _missing_clock_glyph(row: _MatrixRow, idx: int) -> str:
+    """Glyph for an empty clock cell.
 
-    The marker is column alignment, not an alert: it points back at a leading
-    run of clocks (5H, or 5H+WEEK) that stops before MONTH, and only when the
-    row has a pace reading to sit beside. A weekly-only pool (Cursor grok-bot)
-    is not that run — the arrow would land after its pace and read as an alert.
-    A row with no pace at all does not get one either.
+    ``->`` when every window this row has is to the right. ``<-`` when every
+    window is to the left, and also when the cell sits between two windows
+    (that hole points left, at the earlier window). ``—`` when the row has no
+    windows at all.
     """
-    present = [idx for idx, (key, _label) in enumerate(CLOCK_COLUMNS) if row.clocks.get(key) is not None]
-    if not present or present != list(range(present[-1] + 1)):
-        return False
-    if present[-1] >= len(CLOCK_COLUMNS) - 1:
-        return False
-    if row.pace_percent is not None:
-        return True
-    return any(cell.pace_percent is not None for cell in row.clocks.values())
+    present = [i for i, (key, _label) in enumerate(CLOCK_COLUMNS) if row.clocks.get(key) is not None]
+    if not present:
+        return "—"
+    if idx < present[0]:
+        return "->"
+    return "<-"
+
+
+def _fable_weekly_bind_note(fable_windows: list[QuotaWindow], shared_windows: list[QuotaWindow]) -> str | None:
+    """Say when the shared weekly is tighter than Fable's own half-share.
+
+    Fable's percent-left is of its cap (at most half the weekly pool). The
+    shared weekly's percent-left is of the whole pool. A raw minimum of those
+    two numbers mixes denominators, so the note compares both as a share of
+    the weekly pool.
+    """
+    owns = [window.remaining() for window in fable_windows if window.remaining() is not None]
+    if not owns:
+        return None
+    own = min(owns)
+    fable_of_weekly = own * 0.5
+    weekly = next(
+        (
+            window
+            for window in shared_windows
+            if claude_model_scope(window.label) is None and infer_window_clock(window)[0] == "weekly"
+        ),
+        None,
+    )
+    if weekly is None or weekly.remaining() is None:
+        return None
+    shared_left = float(weekly.remaining())
+    if shared_left >= fable_of_weekly:
+        return None
+    return (
+        f"Fable cap is {own:.0f}% of its half-share ({fable_of_weekly:.0f}% of the weekly pool); "
+        f"shared weekly has {shared_left:.0f}% left — weekly binds"
+    )
+
+
+def _fable_display_row(
+    *,
+    parent_sort: tuple,
+    service: str,
+    account: str,
+    account_full: str | None,
+    windows: list[QuotaWindow],
+    shared_windows: list[QuotaWindow],
+    now: datetime,
+) -> _MatrixRow:
+    """A visible Fable row: pace, no score, not a burn target."""
+    clocks: dict[str, _ClockCell] = {}
+    for window in windows:
+        used = _used_percent(window)
+        if used is None:
+            continue
+        clock, inferred = infer_window_clock(window)
+        if clock is None:
+            continue
+        pace_pct, pace_early = window_pace(window, now)
+        cell = clocks.get(clock)
+        fresh = _ClockCell(
+            used_percent=used,
+            inferred=inferred,
+            days_until_reset=window.days_until_reset(now),
+            reset_estimated=not window.reset_time_is_precise(),
+            window_minutes=effective_window_minutes(window.label, window.window_minutes),
+            pace_percent=pace_pct,
+            pace_early=pace_early,
+        )
+        if cell is None:
+            clocks[clock] = fresh
+            continue
+        cell.folded += 1
+        if used > cell.used_percent:
+            clocks[clock] = fresh
+            clocks[clock].folded = cell.folded
+    notes: list[str] = []
+    bind = _fable_weekly_bind_note(windows, shared_windows)
+    if bind:
+        notes.append(bind)
+    if any((window.remaining() or 0.0) <= 0.0 for window in windows):
+        notes.append(
+            "Fable's included allowance is used up. "
+            "Switch to another Claude model if shared allowance remains, "
+            "or continue Fable with usage credits."
+        )
+    pace_percent, pace_early = overall_pace(windows, now)
+    return _MatrixRow(
+        sort_key=(*parent_sort, 1),
+        band=_BAND_NA,
+        queue_score=None,
+        service=service,
+        account=account,
+        account_full=account_full,
+        scope="fable",
+        clocks=clocks,
+        pace_percent=pace_percent,
+        pace_early=pace_early,
+        tail_note="Fable-cap",
+        sublimit_notes=notes,
+        unranked=True,
+    )
+
+
+def _matrix_shows_account(rows: list[_MatrixRow]) -> bool:
+    """ACCT is noise when every shown cell is one short label or an em dash."""
+    return len({row.account for row in rows} - {"—"}) > 1
 
 
 def _cell_color(s: _Style, used: float) -> Any:
@@ -1699,7 +1815,7 @@ def render_clock_matrix(
     avail = width or terminal_width()
     layout = _MatrixLayout(
         show_scope=any(row.scope != "—" for row in rows),
-        show_account=any(row.account != "—" for row in rows),
+        show_account=_matrix_shows_account(rows),
     )
     while _matrix_needed_width(rows, layout) > avail:
         if not _advance_matrix_layout(layout, rows):
@@ -1748,12 +1864,17 @@ def render_clock_matrix(
     any_folded = False
     any_deadline = False
     any_unstarted = False
+    any_arrow = False
     zebra_width = _matrix_needed_width(rows, layout)
     for row_idx, row in enumerate(rows):
-        tag_plain, tag_color = _BAND_TAG[row.band]
-        tag = getattr(s, tag_color)(s.bold(f"{tag_plain:<5}"))
-        score_plain = "??" if row.band == _BAND_ERROR else "--" if row.queue_score is None else str(row.queue_score)
-        score = getattr(s, tag_color)(s.bold(f"{score_plain:>2}"))
+        if row.unranked:
+            tag = "     "
+            score = "  "
+        else:
+            tag_plain, tag_color = _BAND_TAG[row.band]
+            tag = getattr(s, tag_color)(s.bold(f"{tag_plain:<5}"))
+            score_plain = "??" if row.band == _BAND_ERROR else "--" if row.queue_score is None else str(row.queue_score)
+            score = getattr(s, tag_color)(s.bold(f"{score_plain:>2}"))
         service_text, account_text, scope_text = identities[row_idx]
         service = s.bold(f"{service_text:<{w_service}}")
         account = s.dim(f"{account_text:<{w_account}}")
@@ -1777,7 +1898,9 @@ def render_clock_matrix(
             if cell is not None and 100.0 - float(cell.used_percent) <= 1.0:
                 row_exhausted = True
             if cell is None:
-                tail.append(s.dim(f"{'—':>{w_clock}}"))
+                glyph = _missing_clock_glyph(row, idx)
+                any_arrow = any_arrow or glyph != "—"
+                tail.append(s.dim(f"{glyph:>{w_clock}}"))
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
@@ -1808,9 +1931,7 @@ def render_clock_matrix(
         if layout.show_value:
             value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
             tail.append(f"{value_text:>{w_value}}")
-        if _show_alignment_arrow(row):
-            tail.append(s.dim("<-"))
-        if row_exhausted:
+        if row_exhausted and not row.unranked:
             tail.append(s.red(s.bold("EXHAUSTED")))
         if row.tail_note:
             tail.append(s.dim(row.tail_note))
@@ -1838,6 +1959,9 @@ def render_clock_matrix(
         legend_items.append(
             ("+ = >1 window on that clock, showing most-used", s.dim("+ = >1 window on that clock, showing most-used"))
         )
+    if any_arrow:
+        arrow_note = "-> / <- in an empty clock points at this row's window; a hole points at the earlier one"
+        legend_items.append((arrow_note, s.dim(arrow_note)))
     if any(row.stale for row in rows):
         legend_items.append(
             (
