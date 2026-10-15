@@ -168,22 +168,22 @@ def _cursor_matrix_used_percent(
     account: AccountUsage,
     window: QuotaWindow,
     used: float,
-    sublimit_notes: list[str],
 ) -> float:
-    """Effective used % for Cursor breakdown rows; append binding notes when capped."""
-    from aiuse.analysis.ceilings import ceiling_binding_note, effective_remaining, window_is_breakdown
+    """Effective used % for Cursor breakdown rows when the shared total is tighter.
+
+    The matrix shows that lower remaining figure and does not print the
+    "own N% left, capped by total" sentence. ``--full`` and ``--for-chat``
+    still explain the cap.
+    """
+    from aiuse.analysis.ceilings import effective_remaining, window_is_breakdown
     from aiuse.analysis.selfdescribe import pool_family_id
 
     family = pool_family_id(account.provider, window.label, window.window_id)
     if not window_is_breakdown(account.provider, family):
         return used
-    effective_left, binding = effective_remaining(window, account.provider, account.windows)
+    effective_left, _ = effective_remaining(window, account.provider, account.windows)
     if effective_left is None:
         return used
-    if binding:
-        note = ceiling_binding_note(window, account.provider, account.windows)
-        if note and note not in sublimit_notes:
-            sublimit_notes.append(note)
     return max(0.0, 100.0 - effective_left)
 
 
@@ -1372,7 +1372,7 @@ def _build_matrix_rows(
                 if used is None:
                     continue
                 if account.provider == "cursor":
-                    used = _cursor_matrix_used_percent(account, window, used, sublimit_notes)
+                    used = _cursor_matrix_used_percent(account, window, used)
                 clock, inferred = infer_window_clock(window)
                 days = window.days_until_reset(now)
                 estimated = not window.reset_time_is_precise()

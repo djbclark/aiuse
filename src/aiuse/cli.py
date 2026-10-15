@@ -1010,7 +1010,9 @@ def diagnose(
     lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
-    lines.append("  aiuse watch               # full-screen board (q/esc quit; u update now; a toggle all-providers sweep)")
+    lines.append(
+        "  aiuse watch               # full-screen board (q/esc quit; u update now; a toggle all-providers sweep)"
+    )
     lines.append(
         "  aiuse watch --all-providers  # OPERATOR-ONLY one-time sweep: every provider incl. hidden/ceiling rows"
     )

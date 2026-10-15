@@ -81,6 +81,9 @@ Canonical pricing table:
    **grok-bot** (lowercase display labels).
 2. Mark **total** as a ceiling (`role: ceiling` in JSON); **auto** and
    **third-party** as breakdown rows capped by total headroom when lower.
+   The default clock matrix shows that tighter remaining figure on the
+   breakdown row and omits the "own N% left, capped by total" sentence.
+   `aiuse --full` and `aiuse --for-chat` still print it.
 3. Default `analysis.provider_overrides.cursor.shared_allotment: true`, with
    `independent_pool_key()` separating on-demand and grok-bot.
 4. Parse on-demand `providerCost` into `usage_credits` when `limit > 0`.

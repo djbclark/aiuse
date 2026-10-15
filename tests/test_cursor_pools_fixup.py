@@ -159,12 +159,12 @@ def test_matrix_shows_total_when_it_is_the_only_cursor_row():
     assert any(" total " in f" {line} " for line in _cursor_matrix_lines(text))
 
 
-def test_matrix_auto_shows_effective_left_and_binding_note():
+def test_matrix_auto_shows_effective_left_without_binding_note():
     snap = Snapshot(collected_at=_now(), accounts=[_cursor_account(auto_used=30.0, total_used=71.0)])
     text = render_clock_matrix([], snapshot=snap, config={"analysis": {}}, color=False, width=160)
     auto_line = next(line for line in text.splitlines() if " auto " in f" {line} ")
     assert "71u/29l" in auto_line
-    assert any("total binds" in line for line in text.splitlines())
+    assert not any("total binds" in line for line in text.splitlines())
 
 
 def test_no_tui_board_hides_total_row(tmp_path, monkeypatch, capsys):
