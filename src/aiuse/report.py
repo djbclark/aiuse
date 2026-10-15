@@ -1641,6 +1641,29 @@ def _missing_clock_glyph(row: _MatrixRow, idx: int) -> str:
     return "<-"
 
 
+_LEGEND_SEP = " · "
+
+
+def _wrap_on_separator(text: str, width: int) -> list[str]:
+    """Greedily pack ``·``-separated clauses into lines no wider than ``width``.
+
+    Breaks fall only between clauses, so a clause is never split; one longer
+    than ``width`` gets a line of its own.
+    """
+    lines: list[str] = []
+    current = ""
+    for clause in text.split(_LEGEND_SEP):
+        candidate = f"{current}{_LEGEND_SEP}{clause}" if current else clause
+        if current and len(candidate) > width:
+            lines.append(current)
+            current = clause
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
 def _fable_weekly_bind_note(fable_windows: list[QuotaWindow], shared_windows: list[QuotaWindow]) -> str | None:
     """Say when the shared weekly is tighter than Fable's own half-share.
 
@@ -1892,7 +1915,7 @@ def render_clock_matrix(
 
         tail: list[str] = []
         row_exhausted = False
-        for idx, (key, _label) in enumerate(CLOCK_COLUMNS):
+        for idx, (key, label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
             w_clock = w_clocks[idx]
             if cell is not None and 100.0 - float(cell.used_percent) <= 1.0:
@@ -1900,7 +1923,8 @@ def render_clock_matrix(
             if cell is None:
                 glyph = _missing_clock_glyph(row, idx)
                 any_arrow = any_arrow or glyph != "—"
-                tail.append(s.dim(f"{glyph:>{w_clock}}"))
+                under_label = f"{f'{glyph:^{len(label)}}':>{w_pct}}"
+                tail.append(s.dim(f"{under_label:<{w_clock}}"))
                 continue
             any_inferred = any_inferred or cell.inferred
             any_folded = any_folded or bool(cell.folded)
@@ -1975,10 +1999,10 @@ def render_clock_matrix(
     fmt_note = s.dim("u/l = ") + s.bold("percent used / percent left") + s.dim(" — l is what you can still spend")
     legend_items.append((plain_note, fmt_note))
     if layout.show_value:
-        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed"
+        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under a tenth of the window has elapsed"
         legend_items.append((pace_note, s.dim(pace_note)))
     elif layout.show_pace:
-        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · ~ = early: under 10% of the window has elapsed"
+        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · ~ = early: under a tenth of the window has elapsed"
         legend_items.append((pace_note, s.dim(pace_note)))
 
     plain_ai_note = "AI: Use `aiuse --json` for machine-readable output"
@@ -1988,11 +2012,17 @@ def render_clock_matrix(
     table_width = zebra_width
     for plain_text, fmt_text in legend_items:
         visible = len(_strip_ansi(fmt_text))
-        if visible >= avail:
-            lines.append(_clamp_display_width(fmt_text, avail))
-            continue
-        margin_size = max(0, (min(table_width, avail) - visible) // 2)
-        lines.append(_clamp_display_width(" " * margin_size + fmt_text, avail))
+        if visible >= avail and fmt_text == s.dim(plain_text) and _LEGEND_SEP in plain_text:
+            chunks = [(chunk, s.dim(chunk)) for chunk in _wrap_on_separator(plain_text, avail - 1)]
+        else:
+            chunks = [(plain_text, fmt_text)]
+        for chunk_plain, chunk_fmt in chunks:
+            visible = len(chunk_plain)
+            if visible >= avail:
+                lines.append(_clamp_display_width(chunk_fmt, avail))
+                continue
+            margin_size = max(0, (min(table_width, avail) - visible) // 2)
+            lines.append(_clamp_display_width(" " * margin_size + chunk_fmt, avail))
 
     return "\n".join(lines)
 

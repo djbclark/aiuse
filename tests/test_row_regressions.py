@@ -363,3 +363,23 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
     assert _missing_clock_glyph(grok_row, 0) == "->"
     assert _missing_clock_glyph(grok_row, 2) == "<-"
     assert not _matrix_shows_account(built)
+
+
+def test_empty_clock_arrows_sit_centered_under_the_column_label():
+    text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=220)
+    header = text.splitlines()[0]
+    grok = _line(text, "grok")
+    for label, glyph in (("5H", "->"), ("MONTH", "<-")):
+        label_mid = header.index(label) * 2 + len(label)
+        glyph_mid = grok.index(glyph) * 2 + len(glyph)
+        assert abs(label_mid - glyph_mid) <= 1, (label, header, grok)
+
+
+def test_overflowing_legend_wraps_between_clauses_and_centers():
+    text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=150)
+    lines = text.splitlines()
+    assert all(len(line) <= 150 for line in lines)
+    pace = next(line for line in lines if "+N%/-N% = pace" in line)
+    assert pace.startswith(" ") and pace.rstrip().endswith("PACE = the row’s highest")
+    early = lines[lines.index(pace) + 1]
+    assert early.startswith(" ") and early.strip() == "~ = early: under a tenth of the window has elapsed"

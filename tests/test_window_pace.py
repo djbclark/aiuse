@@ -216,7 +216,7 @@ def test_matrix_cell_shows_tilde_and_columns_aligned():
     # Month column in oc-go shows ~ and PACE column shows +1360%~
     assert oc_line.count("+1360%~") == 2
     # Ensure footer explains ~
-    assert "~ = early: under 10% of the window has elapsed" in text
+    assert "~ = early: under a tenth of the window has elapsed" in text
 
 
 def test_json_fields_pace_early_and_overall_pace_early():

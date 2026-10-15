@@ -52,20 +52,20 @@ pools most worth using right now sort to the bottom.
 ```diff
         ## SERVICE    SCOPE           5H              WEEK              MONTH           PACE
 - error ?? oc-zen     —                                                                    — No available fetch strategy for opencode-zen.
-- empty  0 oc-go      —                         -> 100u/0l/4d12h                     <-    — EXHAUSTED
+- empty  0 oc-go      —               ->           100u/0l/4d12h         <-                — EXHAUSTED
   n/a   -- deepseek   —                                                                    — $4.15 (counts down)
   n/a   -- openrouter —                                                                    — $18.55 (counts down)
-  slow  38 agy        claude/gpt                -> 78u/22l/1d5h                      <-    —
-  mid   50 claude     —          12u/88l/3h7m -68% 77u/23l/3d2h +38%                 <- +38%
-  mid   50 grok       —                         ->  6u/94l/6d14h                     <-    —
-  mid   63 codex      —                         -> 54u/46l/2d7h -20%                 <- -20%
-  mid   66 cursor     total                     ->                 -> 71u/29l/3d7h -20% -20%
-  mid   66 agy        gemini      4u/96l/4h5m -78% 16u/84l/4d -63%                   <- -63%
-+ use   91 copilot    —                         ->                 -> 58u/42l/~1d -39%  -39%
+  slow  38 agy        claude/gpt      ->           78u/22l/1d5h          <-                —
+  mid   50 claude     —          12u/88l/3h7m -68% 77u/23l/3d2h +38%     <-             +38%
+  mid   50 grok       —               ->            6u/94l/6d14h         <-                —
+  mid   63 codex      —               ->           54u/46l/2d7h -20%     <-             -20%
+  mid   66 cursor     total           ->               ->             71u/29l/3d7h -20% -20%
+  mid   66 agy        gemini      4u/96l/4h5m -78% 16u/84l/4d -63%       <-             -63%
++ use   91 copilot    —               ->               ->             58u/42l/~1d -39%  -39%
                          2d14h = until this clock resets · bold = largest unit
         -> / <- in an empty clock points at this row's window; a hole points at the earlier one
                    u/l = percent used / percent left — l is what you can still spend
-  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under 10% of the window has elapsed
+  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under a tenth of the window has elapsed
                            AI: Use `aiuse --json` for machine-readable output
 ```
 
