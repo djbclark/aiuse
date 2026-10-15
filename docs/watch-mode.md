@@ -104,7 +104,12 @@ stdout report.
   use at most half of the weekly limit, from that same weekly pool, and it
   burns the allowance faster than other models. 100% of that cap blocks Fable
   only. Shared 5H/WEEK exhaustion still blocks every Claude model. Sonnet and
-  Opus stay indented notes; they have no separate cap.
+  Opus stay indented notes; they have no separate cap. A 2026-10-14 consult
+  (Claude Fable, review-only) recommended scoring this row as a peer that can
+  be tagged `empty`: the band would be the tighter of the Fable cap and the
+  shared Claude window, so a spent shared window also empties the Fable row,
+  while a spent Fable cap leaves the shared row's band unchanged, and the row
+  stays out of cross-vendor rank sums. That scoring is not implemented.
 - An arrow in an empty clock cell points at the window that row has. `->`
   means the window is to the right. `<-` means it is to the left, including
   a hole between two windows, which points at the earlier one. Nothing is
