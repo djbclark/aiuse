@@ -237,6 +237,8 @@ class _ClockCell:
 
 _UNSTARTED_MARK = "↻"  # a rolling window's clock starts on first use
 _OPERATOR_GATE_TEXT = f"({OPERATOR_APPROVAL_NOTICE})"
+# Shorter wording for terminals too narrow for the full text; keeps the instruction readable.
+_OPERATOR_GATE_SHORT = "(AI: ask operator)"
 # The two adjacent clock columns the operator-gate text spans, centered.
 _GATE_CLOCKS = ("5h", "weekly")
 _GATE_FIRST = [key for key, _label in CLOCK_COLUMNS].index(_GATE_CLOCKS[0])
@@ -1018,10 +1020,16 @@ def _gate_span_width(w_clocks: list[int]) -> int:
 
 
 def _gate_cell(s: _Style, width: int) -> str:
-    """The operator-gate text centered in ``width`` columns, dim, clamped if narrower."""
-    text = (
-        _OPERATOR_GATE_TEXT if len(_OPERATOR_GATE_TEXT) <= width else _clamp_display_width(_OPERATOR_GATE_TEXT, width)
-    )
+    """The operator-gate text centered in ``width`` columns, dim.
+
+    The full notice when it fits, else the short wording, else the short wording clamped.
+    """
+    if len(_OPERATOR_GATE_TEXT) <= width:
+        text = _OPERATOR_GATE_TEXT
+    elif len(_OPERATOR_GATE_SHORT) <= width:
+        text = _OPERATOR_GATE_SHORT
+    else:
+        text = _clamp_display_width(_OPERATOR_GATE_SHORT, width)
     left = (width - len(text)) // 2
     # Pad outside the dim codes, like the other empty cells.
     return " " * left + s.dim(text) + " " * (width - left - len(text))

@@ -142,7 +142,10 @@ def test_matrix_narrow_terminal_clamps_without_misaligning():
         table = lines[:3]
         assert all(len(_strip_ansi(line)) <= width for line in table)
         row = _omp_line(table)
-        assert "(AI: Do not use" in row
+        # Too narrow for the full notice: the short wording stays whole, never a clipped copy of the long one.
+        assert GATE_TEXT in row or "(AI: ask operator)" in row
+        if GATE_TEXT not in row:
+            assert "Do not use" not in row
         header = table[0]
         if "MONTH" in header and ">0u/100l" in row:
             assert row.index(">0u/100l") + len(">0u/100l") == header.index("MONTH") + len("MONTH")
@@ -291,3 +294,13 @@ def test_notice_literal_lives_only_in_models():
     hits = [p.relative_to(src).as_posix() for p in src.rglob("*.py") if "Do not use without asking" in p.read_text()]
 
     assert hits == ["models.py"]
+
+
+def test_gate_cell_falls_back_to_the_short_wording_then_clamps():
+    from aiuse.report import _gate_cell, _Style
+
+    style = _Style(False)
+    assert _gate_cell(style, 40).strip() == GATE_TEXT
+    assert _gate_cell(style, 30).strip() == "(AI: ask operator)"
+    assert len(_gate_cell(style, 30)) == 30
+    assert _gate_cell(style, 10).strip().endswith("…")
