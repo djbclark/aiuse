@@ -124,7 +124,10 @@ stdout report.
   means the window is to the right. `<-` means it is to the left, including
   a hole between two windows, which points at the earlier one. Free text goes
   in the last column (`OTHER`, or an error row's note in that position) so
-  the clock columns align.
+  the clock columns align. The one exception: a row the operator gated for AI
+  (omp) shows `(AI: Do not use without asking operator)` centered across its
+  empty 5H and WEEK cells instead of arrows
+  ([`omp-cloud-credits.md`](omp-cloud-credits.md#operator-gate)).
 - `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
   goes **inside the screen, above the table**, not to stderr (stderr would
   corrupt the alternate-screen layout). `-q` suppresses it; the AI line stays,

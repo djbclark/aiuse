@@ -427,6 +427,7 @@ def _alerts_from_dicts(rows: list[Any]) -> list[UseOrLoseAlert]:
                 kind=str(row.get("kind") or "burn"),
                 pace=pace,
                 deadline_is_estimated=bool(row.get("deadline_is_estimated", False)),
+                requires_operator_approval=bool(row.get("requires_operator_approval", False)),
             )
         )
     return out
@@ -490,6 +491,7 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 credits_remaining=row.get("credits_remaining"),
                 usage_credits=usage_credits,
                 spent_usd=row.get("spent_usd"),
+                requires_operator_approval=bool(row.get("requires_operator_approval", False)),
                 error=row.get("error"),
                 notes=list(row.get("notes") or []),
             )

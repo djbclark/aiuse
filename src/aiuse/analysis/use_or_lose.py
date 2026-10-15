@@ -30,6 +30,7 @@ from aiuse.analysis.pace import (
 )
 from aiuse.config import plan_monthly_price
 from aiuse.models import (
+    OPERATOR_APPROVAL_NOTICE,
     WINDOW_5H_MAX_MINUTES,
     AccountUsage,
     BillingKind,
@@ -718,7 +719,34 @@ def analyze_use_or_lose(
                 )
             )
 
+    _mark_operator_gate(alerts, snapshot)
     return alerts
+
+
+def _mark_operator_gate(alerts: list[UseOrLoseAlert], snapshot: Snapshot) -> None:
+    """Flag alerts on operator-gated accounts and end their message with the notice.
+
+    One pass over the finished list instead of at each construction site, so a
+    new alert kind cannot forget it. An alert with no account (history) matches
+    any gated account of its provider.
+    """
+    gated = {
+        (canonical_provider(account.provider), account_key(account.account))
+        for account in snapshot.accounts
+        if account.requires_operator_approval
+    }
+    if not gated:
+        return
+    gated_providers = {provider for provider, _account in gated}
+    for alert in alerts:
+        provider = canonical_provider(alert.provider)
+        if (provider, account_key(alert.account)) not in gated and not (
+            alert.account is None and provider in gated_providers
+        ):
+            continue
+        alert.requires_operator_approval = True
+        if OPERATOR_APPROVAL_NOTICE not in alert.message:
+            alert.message = f"{alert.message} — {OPERATOR_APPROVAL_NOTICE}"
 
 
 def _series_exhausted(entries: list[dict[str, Any]] | None) -> bool:

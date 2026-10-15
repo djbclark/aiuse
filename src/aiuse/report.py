@@ -53,6 +53,7 @@ from aiuse.analysis.use_or_lose import (
     window_value_multiplier,
 )
 from aiuse.models import (
+    OPERATOR_APPROVAL_NOTICE,
     AccountUsage,
     BillingKind,
     CrossCheck,
@@ -215,6 +216,9 @@ class _MatrixRow:
     sublimit_notes: list[str] = field(default_factory=list)
     # A routing limit (Claude Fable), not a pool to burn. Blank tag and score.
     unranked: bool = False
+    # The account requires operator approval before an agent spends it (omp):
+    # the empty 5H and WEEK cells carry _OPERATOR_GATE_TEXT instead.
+    operator_gate: bool = False
 
 
 @dataclass
@@ -232,6 +236,10 @@ class _ClockCell:
 
 
 _UNSTARTED_MARK = "↻"  # a rolling window's clock starts on first use
+_OPERATOR_GATE_TEXT = f"({OPERATOR_APPROVAL_NOTICE})"
+# The two adjacent clock columns the operator-gate text spans, centered.
+_GATE_CLOCKS = ("5h", "weekly")
+_GATE_FIRST = [key for key, _label in CLOCK_COLUMNS].index(_GATE_CLOCKS[0])
 _UNSTARTED_LEGEND = f"{_UNSTARTED_MARK} = clock starts on first use"
 
 
@@ -262,6 +270,9 @@ class _MatrixLayout:
     show_scope: bool = True
     show_account: bool = True
     fold_identity: bool = False
+    # Widen 5H + WEEK so an operator-gate row's text fits whole; the last
+    # thing a narrow terminal gives up (the text is then clamped).
+    reserve_gate: bool = True
 
 
 def terminal_width(default: int = ACTION_PLAN_WIDTH) -> int:
@@ -987,7 +998,33 @@ def _advance_matrix_layout(layout: _MatrixLayout, rows: list[_MatrixRow]) -> boo
         layout.show_scope = False
         layout.show_account = False
         return True
+    if layout.reserve_gate and any(_row_shows_gate(row) for row in rows):
+        layout.reserve_gate = False
+        return True
     return False
+
+
+def _row_shows_gate(row: _MatrixRow) -> bool:
+    """An operator-gated row whose 5H and WEEK cells are both empty.
+
+    Data in either cell wins: the notice only ever replaces empty cells.
+    """
+    return row.operator_gate and not any(key in row.clocks for key in _GATE_CLOCKS)
+
+
+def _gate_span_width(w_clocks: list[int]) -> int:
+    """Width of the 5H and WEEK cells plus the one-space gap between them."""
+    return w_clocks[_GATE_FIRST] + 1 + w_clocks[_GATE_FIRST + 1]
+
+
+def _gate_cell(s: _Style, width: int) -> str:
+    """The operator-gate text centered in ``width`` columns, dim, clamped if narrower."""
+    text = (
+        _OPERATOR_GATE_TEXT if len(_OPERATOR_GATE_TEXT) <= width else _clamp_display_width(_OPERATOR_GATE_TEXT, width)
+    )
+    left = (width - len(text)) // 2
+    # Pad outside the dim codes, like the other empty cells.
+    return " " * left + s.dim(text) + " " * (width - left - len(text))
 
 
 def _row_identity(
@@ -1116,6 +1153,16 @@ def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple
                 ]
             )
             w_spans[idx] += suffix
+    if layout.reserve_gate and any(_row_shows_gate(row) for row in rows):
+        clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
+        deficit = len(_OPERATOR_GATE_TEXT) - _gate_span_width(clocks)
+        if deficit > 0:
+            # Split the extra width between the two spans; a span that was 0
+            # also gains its separating space, so it needs one column less.
+            for idx, extra in ((_GATE_FIRST, deficit // 2), (_GATE_FIRST + 1, deficit - deficit // 2)):
+                if extra <= 0:
+                    continue
+                w_spans[idx] = w_spans[idx] + extra if w_spans[idx] else max(1, extra - 1)
     return w_pct, w_spans
 
 
@@ -1510,6 +1557,7 @@ def _build_matrix_rows(
                     tail_note=tail_note,
                     stale=stale,
                     sublimit_notes=sublimit_notes,
+                    operator_gate=account.requires_operator_approval,
                 )
             )
             if fable_windows:
@@ -1540,6 +1588,7 @@ def _build_matrix_rows(
             continue
         covered.add(key)
         rows.append(_row_from_alert(alert, now=now, pricing=pricing))
+        rows[-1].operator_gate = alert.requires_operator_approval
 
     for account in deferred:
         if _ladder_coverage_key(account.provider, account.account, "") in covered:
@@ -1612,6 +1661,7 @@ def _build_matrix_rows(
                 account=short,
                 account_full=account.account,
                 note=note,
+                operator_gate=account.requires_operator_approval,
             )
         )
 
@@ -2062,8 +2112,11 @@ def render_clock_matrix_parts(
         account = s.dim(f"{account_text:<{w_account}}")
         scope = s.dim(f"{scope_text:<{w_scope}}")
 
+        gate = _gate_cell(s, _gate_span_width(w_clocks)) if _row_shows_gate(row) else None
         if row.note is not None:
             blanks = [" " * size for size in w_clocks]
+            if gate is not None:
+                blanks[_GATE_FIRST : _GATE_FIRST + 2] = [gate]
             line = _line(tag, score, service, account, scope, f"{'—':>{w_value}}", blanks + [s.dim(row.note)])
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             for note in row.sublimit_notes:
@@ -2074,6 +2127,11 @@ def render_clock_matrix_parts(
         for idx, (key, label) in enumerate(CLOCK_COLUMNS):
             cell = row.clocks.get(key)
             w_clock = w_clocks[idx]
+            if gate is not None and key in _GATE_CLOCKS:
+                # One cell across both columns; no arrow, so no arrow legend.
+                if idx == _GATE_FIRST:
+                    tail.append(gate)
+                continue
             if cell is None:
                 glyph = _missing_clock_glyph(row, idx)
                 any_arrow = any_arrow or glyph != "—"

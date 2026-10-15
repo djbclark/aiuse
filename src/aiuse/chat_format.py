@@ -25,6 +25,7 @@ from aiuse.analysis.pace import (
     window_pace,
 )
 from aiuse.models import (
+    OPERATOR_APPROVAL_NOTICE,
     AccountUsage,
     BillingKind,
     PaceProfile,
@@ -730,21 +731,22 @@ def _build_action_items(
                 acct += f" · {scope}"
             rem = _format_remaining(a.remaining_percent)
             pace_pct, pace_early = _alert_pace(a, sub_rows, now)
+            gate = f" — {OPERATOR_APPROVAL_NOTICE}" if a.requires_operator_approval else ""
 
             if a.kind == "conserve":
                 # Nothing left to conserve — the plain report tags these `empty`
                 # rather than advising pace, and this must say the same thing.
                 if a.remaining_percent < 1:
-                    items.append(f"{name}{acct} is exhausted")
+                    items.append(f"{name}{acct} is exhausted{gate}")
                     continue
                 pace_s = f" and pace `{format_pace(pace_pct, pace_early)}`" if pace_pct is not None else ""
-                items.append(f"Conserve {name}{acct}: `{rem}` remains{pace_s}")
+                items.append(f"Conserve {name}{acct}: `{rem}` remains{pace_s}{gate}")
             elif a.kind == "burn":
                 pace_s = f" pacing at `{format_pace(pace_pct, pace_early)}`" if pace_pct is not None else ""
                 if a.remaining_percent < 1:
-                    items.append(f"{name}{acct} is exhausted")
+                    items.append(f"{name}{acct} is exhausted{gate}")
                 else:
-                    items.append(f"{name}{acct} has `{rem}` remaining{pace_s}; capacity may be wasted")
+                    items.append(f"{name}{acct} has `{rem}` remaining{pace_s}; capacity may be wasted{gate}")
 
     return items
 
@@ -803,6 +805,8 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
     else:
         lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: API")
 
+    if account.requires_operator_approval:
+        lines.append(f"   ↳ {OPERATOR_APPROVAL_NOTICE}")
     return lines
 
 
@@ -897,8 +901,14 @@ def _render_pool_entry(
     *,
     account_windows: list[QuotaWindow] | None = None,
     include_account: bool = True,
+    operator_gate: bool = False,
 ) -> list[str]:
-    """Render one account/pool. Single-window pools stay in the compact form."""
+    """Render one account/pool. Single-window pools stay in the compact form.
+
+    ``operator_gate`` adds the operator-approval notice right under the status
+    line (under the heading for a multi-window entry).
+    """
+    gate_lines = [f"   ↳ {OPERATOR_APPROVAL_NOTICE}"] if operator_gate else []
     headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window, provider=entry.provider)]
     overall, overall_early = (
         overall_pace(headline_windows, now) if now is not None and headline_windows else (None, False)
@@ -910,13 +920,15 @@ def _render_pool_entry(
         lines = [
             f"{row.emoji} {_chat_heading(row.provider, row.account, human_window_label(row.window.label), include_account=include_account)}{pace_suffix}",
             f"   ↳ {row.status_line}",
+            *gate_lines,
         ]
         scope = account_windows or [r.window for r in entry.rows]
         lines.extend(f"   ↳ {note}" for note in _row_notes(row, provider=row.provider, windows=scope))
         return lines
 
     lines = [
-        f"{entry.emoji} {_chat_heading(entry.provider, entry.account, entry.scope, include_account=include_account)}{pace_suffix}"
+        f"{entry.emoji} {_chat_heading(entry.provider, entry.account, entry.scope, include_account=include_account)}{pace_suffix}",
+        *gate_lines,
     ]
     scope = account_windows or [r.window for r in entry.rows]
     for row in entry.rows:
@@ -1067,6 +1079,7 @@ def render_chat_report(
     pool_entries = _group_rows_into_pools(sub_rows)
     pool_entries.sort(key=lambda e: e.sort_key())
     windows_by_account = {(a.provider, a.account): a.windows for a in sub_accounts}
+    gated_accounts = {(a.provider, a.account) for a in sub_accounts if a.requires_operator_approval}
     include_account = _chat_includes_account(snapshot.accounts)
     if pool_entries:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
@@ -1081,6 +1094,7 @@ def render_chat_report(
                         now=now,
                         account_windows=acct_windows,
                         include_account=include_account,
+                        operator_gate=(entry.provider, entry.account) in gated_accounts,
                     )
                 )
                 if entry.provider == "cursor" and entry.scope == "auto":

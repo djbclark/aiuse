@@ -64,6 +64,12 @@ def claude_model_scope(label: str | None) -> str | None:
     return None
 
 
+# The one wording of the operator gate on a pool (omp's cloud-session credits):
+# matrix, --json (``ai_notice``), --available, --for-chat and alerts all use it.
+# Informational for agents; aiuse never enforces it.
+OPERATOR_APPROVAL_NOTICE = "AI: Do not use without asking operator"
+
+
 # Window-duration boundaries (minutes) shared by every collector that buckets a
 # raw `windowMinutes` value into a human quota kind, and by the analysis layer
 # that decides whether a window is a short rate-limit (not "monthly waste").
@@ -643,6 +649,9 @@ class AccountUsage:
     # grant's size and expiry live on its window (``refill_capacity``,
     # ``resets_at``). Not an overage wallet, so it is not ``usage_credits``.
     spent_usd: float | None = None
+    # An agent must ask the operator before spending or routing work to this
+    # account (omp's grant). Emitted with ``ai_notice`` only when true.
+    requires_operator_approval: bool = False
     error: str | None = None
     notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
@@ -683,6 +692,9 @@ class AccountUsage:
             d["usage_credits"] = self.usage_credits.to_dict()
         if self.spent_usd is not None:
             d["spent_usd"] = self.spent_usd
+        if self.requires_operator_approval:
+            d["requires_operator_approval"] = True
+            d["ai_notice"] = OPERATOR_APPROVAL_NOTICE
         if self.context_usage is not None:
             d["context_usage"] = self.context_usage.to_dict()
         return d
@@ -709,6 +721,9 @@ class UseOrLoseAlert:
     pace: PaceProfile | None = None
     deadline_is_estimated: bool = False
     priority_weight: int = 0
+    # Raised for an account with ``requires_operator_approval``; ``message``
+    # then ends with OPERATOR_APPROVAL_NOTICE.
+    requires_operator_approval: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -734,6 +749,9 @@ class UseOrLoseAlert:
             d["consumption_analysis"] = self.flexibility_profile.to_dict()
         if self.pace is not None:
             d["pace"] = self.pace.to_dict()
+        if self.requires_operator_approval:
+            d["requires_operator_approval"] = True
+            d["ai_notice"] = OPERATOR_APPROVAL_NOTICE
         return d
 
 

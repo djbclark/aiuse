@@ -50,6 +50,8 @@ OpenCode Go row):
      "billing_kind": "subscription_window",
      "balance_usd": 249.269521,
      "spent_usd": 0.730479,
+     "requires_operator_approval": true,
+     "ai_notice": "AI: Do not use without asking operator",
      "windows": [
        {
          "label": "credits",
@@ -69,7 +71,7 @@ OpenCode Go row):
    line reads:
 
    ```text
-   omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am)
+   omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator
    ```
 
    Contract: [`json-contract.md`](json-contract.md#omp--an-expiring-dollar-grant).
@@ -79,9 +81,35 @@ OpenCode Go row):
    ```text
    🟢 **omp · credits**
       ↳ `100% left · $0.73 spent · $249.27 left of $250.00 · expires in 20d 20h`
+      ↳ AI: Do not use without asking operator
    ```
 
 4. **`aiuse usage-sources`** lists `omp` with its one quota source, `codexbar`.
+
+## Operator gate
+
+The operator (djbclark, 2026-10-15) gated this grant for AI agents: **an agent
+must not spend it, route work to omp, or recommend burning it without asking
+the operator first**, however much is left or how soon it expires. The
+collector sets `AccountUsage.requires_operator_approval`; the wording lives
+once, in `models.OPERATOR_APPROVAL_NOTICE`.
+
+1. **Board / matrix**: the omp row shows `(AI: Do not use without asking
+operator)`, dim, centered across the 5H and WEEK columns in place of their
+   `->` arrows (so no arrow legend line comes from this row). The table widens
+   5H + WEEK to fit it; a terminal too narrow for the rest of the row clamps it.
+   Data in 5H or WEEK would win over the notice.
+2. **`aiuse --json`**: the account carries `requires_operator_approval: true`
+   and `ai_notice: "AI: Do not use without asking operator"` (both omitted on
+   every ungated account). `--available` routing entries and any alert raised
+   for omp carry the same pair; the alert `message` (so `--alerts-only` too)
+   and the summary line end with `— AI: Do not use without asking operator`.
+3. **`aiuse --for-chat`**: a `↳ AI: Do not use without asking operator` line
+   right under the status line, and the same suffix on an ACTION item.
+
+aiuse does not enforce the gate: the row still ranks and is still listed by
+`--available`; the flag tells agents to ask. The operator may later make the
+gate configurable per provider; today it is fixed on omp.
 
 ## Cache caveat
 

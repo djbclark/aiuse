@@ -854,6 +854,8 @@ def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
         windows=[window] if window is not None else [],
         balance_usd=remaining,
         spent_usd=spent,
+        # An expiring promotional grant: agents ask the operator before spending it.
+        requires_operator_approval=True,
         notes=[
             f"Live data fetched by CodexBar via {source_tag}.",
             "Claude cloud-session credits (expiring; applies to omp via the Claude API).",

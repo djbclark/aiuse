@@ -31,7 +31,7 @@ from aiuse.config import (
     timeout_for,
     validate_config,
 )
-from aiuse.models import Snapshot, Urgency, UseOrLoseAlert, provider_display_name
+from aiuse.models import OPERATOR_APPROVAL_NOTICE, Snapshot, Urgency, UseOrLoseAlert, provider_display_name
 from aiuse.report import render_report, render_status_line, render_stderr_meta
 from aiuse.tty import restore_stdin_tty, save_stdin_tty
 
@@ -86,7 +86,9 @@ matrix: ## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER. u/l = percent used / per
   left; signed pace = ahead (+) or behind (-) of even spend across the window.
   PACE = the row’s highest window pace. OTHER = per-row notes: dollars (omp
   `$spent/$left` of its expiring Claude cloud-session grant; JSON spent_usd /
-  balance_usd), Fable model cap, grok wallet.
+  balance_usd), Fable model cap, grok wallet. A row gated for AI (omp) shows
+  `({OPERATOR_APPROVAL_NOTICE})` across 5H/WEEK; JSON
+  requires_operator_approval / ai_notice.
 
 exit codes (collect runs):
   0  success, no burn/conserve alerts

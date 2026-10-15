@@ -118,6 +118,15 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
   `--available` routing entry carries `spent_usd` and `balance_usd`; its
   summary line states spent / left / grant size and says `expires` instead of
   `resets`. New `semantics.spent_usd`.
+- **Operator gate.** `accounts[].requires_operator_approval` (bool | omitted)
+  and `accounts[].ai_notice` (string | omitted), present only when true —
+  today only on `omp`. The same pair is on that account's `--available` routing
+  entries and on any `alerts[]` raised for it (whose `message` then ends with
+  `— AI: Do not use without asking operator`); its summary line ends the same
+  way. New `semantics.requires_operator_approval` and `semantics.ai_notice`.
+  **Agents must not spend, route work to, or recommend burning a gated pool
+  without asking the operator first.** See
+  [`omp` — an expiring dollar grant](#omp--an-expiring-dollar-grant).
 
 #### Additive (2026-10-14, schema stays 1.3)
 
@@ -407,6 +416,12 @@ on stderr. The exit code counts only `available`.
 An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
 routing entry, so a reader sees the dollars without opening the account.
 
+A routing entry for an operator-gated account (today `omp`) carries
+`requires_operator_approval: true` and `ai_notice`, and its summary line ends
+with `— AI: Do not use without asking operator`. It is still listed when
+usable — the gate is informational and aiuse does not enforce it — but an agent
+must ask the operator before spending or routing work to it.
+
 Providers in top-level `[disabled_services]` (the stronger, overall disable)
 are also never listed: their rows are filtered at collection, and the view
 additionally drops them from any cache that still carries them — so they can
@@ -498,33 +513,35 @@ into the other.
 
 ### `accounts[]` (`AccountUsage`)
 
-| Field                      | Type              | Stable?                                                                                                                                                                                                                                      |
-| -------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`                   | string            | yes — `cswap` \| `codexbar` \| `caut` \| `caam` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing` \| `acp`; grows as collectors are added |
-| `provider`                 | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                                                                                                                                                                   |
-| `cli_binary`               | string \| null    | local CLI binary that spends this quota; `null` = API-only / cloud-run (see below)                                                                                                                                                           |
-| `account`                  | string \| null    | email or label when known                                                                                                                                                                                                                    |
-| `plan`                     | string \| null    | plan name if reported                                                                                                                                                                                                                        |
-| `billing_kind`             | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                                                                                                                                                                        |
-| `windows`                  | array             | quota windows                                                                                                                                                                                                                                |
-| `balance_usd`              | number \| null    | prepaid balance                                                                                                                                                                                                                              |
-| `credits_remaining`        | number \| null    | legacy credits field                                                                                                                                                                                                                         |
-| `spent_usd`                | number \| omitted | 2026-10-15 — dollars already spent from an expiring dollar grant (`omp`); pairs with `balance_usd` (left). Not `usage_credits`. Omitted when not reported                                                                                    |
-| `usage_credits`            | object \| omitted | extra/pay-as-you-go wallet when present                                                                                                                                                                                                      |
-| `error`                    | string \| null    | row-level error                                                                                                                                                                                                                              |
-| `notes`                    | string[]          | human notes (age, hydrate, etc.)                                                                                                                                                                                                             |
-| `provider_id`              | string            | canonical provider id used for matching/history (equals `provider` unless the row carries an alias spelling)                                                                                                                                 |
-| `service_id`               | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                                            |
-| `collector_id`             | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                                            |
-| `collected_at`             | string \| omitted | 1.1 — the source's own measurement time for this row (CodexBar `usage.updatedAt`); older than the snapshot's `collected_at` means the row was a cached read. Omitted when the source reports none                                            |
-| `context_usage`            | object \| omitted | ACP context-window fill and this turn's tokens, when a recent acp-run log has them. Not a plan window. See [`acp-usage.md`](acp-usage.md). Omitted when there is no reading.                                                                 |
-| `usable_now`               | bool              | 1.1 — false if any applicable window is exhausted or no window has data. For Claude, only shared limits affect account usability; model caps affect their routing family in `--available`                                                    |
-| `binding_window`           | string \| null    | 1.1 — label of the applicable window with the least remaining; Claude model caps do not bind the shared account                                                                                                                              |
-| `binding_headroom_percent` | number \| null    | 1.1 — that window's remaining share                                                                                                                                                                                                          |
-| `available_at`             | string \| null    | 1.1 — earliest `resets_at` among applicable exhausted windows; Claude model caps are excluded from the shared account. Null when nothing applicable is exhausted or no reset is known                                                        |
-| `age_seconds`              | number \| null    | 1.1 — seconds since this account's `collected_at`, computed at read time                                                                                                                                                                     |
-| `overall_pace_percent`     | int \| null       | 1.2 — highest non-null window `pace_percent`; null when no window has pace or any window in the account is exhausted                                                                                                                         |
-| `overall_pace_early`       | bool              | 1.2 — true when the window that supplied `overall_pace_percent` is early (<10% elapsed); false when null or not early                                                                                                                        |
+| Field                        | Type              | Stable?                                                                                                                                                                                                                                       |
+| ---------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                     | string            | yes — `cswap` \| `codexbar` \| `caut` \| `caam` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing` \| `acp`; grows as collectors are added  |
+| `provider`                   | string            | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                                                                                                                                                                    |
+| `cli_binary`                 | string \| null    | local CLI binary that spends this quota; `null` = API-only / cloud-run (see below)                                                                                                                                                            |
+| `account`                    | string \| null    | email or label when known                                                                                                                                                                                                                     |
+| `plan`                       | string \| null    | plan name if reported                                                                                                                                                                                                                         |
+| `billing_kind`               | string            | `subscription_window` \| `prepaid_balance` \| `payg_api` \| `unknown`                                                                                                                                                                         |
+| `windows`                    | array             | quota windows                                                                                                                                                                                                                                 |
+| `balance_usd`                | number \| null    | prepaid balance                                                                                                                                                                                                                               |
+| `credits_remaining`          | number \| null    | legacy credits field                                                                                                                                                                                                                          |
+| `spent_usd`                  | number \| omitted | 2026-10-15 — dollars already spent from an expiring dollar grant (`omp`); pairs with `balance_usd` (left). Not `usage_credits`. Omitted when not reported                                                                                     |
+| `requires_operator_approval` | bool \| omitted   | 2026-10-15 — `true` when the operator gated this account (today `omp`): an agent must not spend it, route work to it, or recommend burning it without asking the operator first. Informational; aiuse does not enforce it. Omitted when false |
+| `ai_notice`                  | string \| omitted | 2026-10-15 — the gate in words, `AI: Do not use without asking operator`; present exactly when `requires_operator_approval` is true                                                                                                           |
+| `usage_credits`              | object \| omitted | extra/pay-as-you-go wallet when present                                                                                                                                                                                                       |
+| `error`                      | string \| null    | row-level error                                                                                                                                                                                                                               |
+| `notes`                      | string[]          | human notes (age, hydrate, etc.)                                                                                                                                                                                                              |
+| `provider_id`                | string            | canonical provider id used for matching/history (equals `provider` unless the row carries an alias spelling)                                                                                                                                  |
+| `service_id`                 | string \| null    | reserved per-service split within a provider; always `null` today                                                                                                                                                                             |
+| `collector_id`               | string            | collector that produced the row (equals `source` unless a collector overrides it)                                                                                                                                                             |
+| `collected_at`               | string \| omitted | 1.1 — the source's own measurement time for this row (CodexBar `usage.updatedAt`); older than the snapshot's `collected_at` means the row was a cached read. Omitted when the source reports none                                             |
+| `context_usage`              | object \| omitted | ACP context-window fill and this turn's tokens, when a recent acp-run log has them. Not a plan window. See [`acp-usage.md`](acp-usage.md). Omitted when there is no reading.                                                                  |
+| `usable_now`                 | bool              | 1.1 — false if any applicable window is exhausted or no window has data. For Claude, only shared limits affect account usability; model caps affect their routing family in `--available`                                                     |
+| `binding_window`             | string \| null    | 1.1 — label of the applicable window with the least remaining; Claude model caps do not bind the shared account                                                                                                                               |
+| `binding_headroom_percent`   | number \| null    | 1.1 — that window's remaining share                                                                                                                                                                                                           |
+| `available_at`               | string \| null    | 1.1 — earliest `resets_at` among applicable exhausted windows; Claude model caps are excluded from the shared account. Null when nothing applicable is exhausted or no reset is known                                                         |
+| `age_seconds`                | number \| null    | 1.1 — seconds since this account's `collected_at`, computed at read time                                                                                                                                                                      |
+| `overall_pace_percent`       | int \| null       | 1.2 — highest non-null window `pace_percent`; null when no window has pace or any window in the account is exhausted                                                                                                                          |
+| `overall_pace_early`         | bool              | 1.2 — true when the window that supplied `overall_pace_percent` is early (<10% elapsed); false when null or not early                                                                                                                         |
 
 `raw` is **not** included in JSON (internal only).
 
@@ -623,6 +640,8 @@ unused dollars are lost at expiry. Source: CodexBar's Claude row
   "billing_kind": "subscription_window",
   "balance_usd": 249.269521,
   "spent_usd": 0.730479,
+  "requires_operator_approval": true,
+  "ai_notice": "AI: Do not use without asking operator",
   "windows": [
     {
       "label": "credits",
@@ -647,11 +666,23 @@ unused dollars are lost at expiry. Source: CodexBar's Claude row
 | `windows[0].resets_at`       | the grant's **expiry**, not a refill                                |
 | `windows[0].window_minutes`  | `null`: the grant date is unknown, so there is no pace              |
 | `windows[0].pool_family`     | `claude` (the board's SCOPE column; internal pool key `omp_claude`) |
+| `requires_operator_approval` | always `true` on `omp`: the operator gate (below)                   |
+| `ai_notice`                  | `AI: Do not use without asking operator`                            |
 
 Without a grant total the row falls back to `billing_kind: "prepaid_balance"`
 with no window, still carrying `balance_usd` (and `spent_usd` when CodexBar
 reports it). Summary line:
-`omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am)`.
+`omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator`.
+
+**Operator gate (rule for agents).** `omp` carries
+`requires_operator_approval: true` and `ai_notice` on the account, on its
+`--available` routing entry, and on any alert raised for it (the alert's
+`message` and summary line end with `— AI: Do not use without asking
+operator`). Do not spend this grant, route work to omp, or recommend burning
+it without asking the operator first, even when it is usable and expiring.
+aiuse does not enforce the gate; it only reports it. The board shows
+`(AI: Do not use without asking operator)` across the empty 5H and WEEK cells,
+and `--for-chat` adds a `↳ AI: Do not use without asking operator` line.
 
 ### `usage_credits` (optional)
 
@@ -676,24 +707,26 @@ reports it). Summary line:
 
 ## `alerts[]` (`UseOrLoseAlert`)
 
-| Field                   | Type              | Notes                                                         |
-| ----------------------- | ----------------- | ------------------------------------------------------------- |
-| `urgency`               | string            | `critical` \| `high` \| `medium` \| `low` \| `info` \| `none` |
-| `provider`              | string            |                                                               |
-| `account`               | string \| null    |                                                               |
-| `window_label`          | string            |                                                               |
-| `remaining_percent`     | number            | share of the window still available                           |
-| `used_percent`          | number \| null    | share already consumed; null when the source reports neither  |
-| `days_until_reset`      | number \| null    |                                                               |
-| `deadline_is_estimated` | bool              | true when the reset is a date alone or was carried forward    |
-| `plan`                  | string \| null    |                                                               |
-| `message`               | string            | human sentence                                                |
-| `source`                | string            | data source for the window                                    |
-| `score`                 | number            | sort priority (higher = more important)                       |
-| `window_minutes`        | int \| null       |                                                               |
-| `kind`                  | string            | `burn` \| `conserve` \| `prepaid` (non-expiring API balance)  |
-| `consumption_analysis`  | object \| omitted | flexibility profile when present                              |
-| `pace`                  | object \| omitted | pace profile when present                                     |
+| Field                        | Type              | Notes                                                                                                                          |
+| ---------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `urgency`                    | string            | `critical` \| `high` \| `medium` \| `low` \| `info` \| `none`                                                                  |
+| `provider`                   | string            |                                                                                                                                |
+| `account`                    | string \| null    |                                                                                                                                |
+| `window_label`               | string            |                                                                                                                                |
+| `remaining_percent`          | number            | share of the window still available                                                                                            |
+| `used_percent`               | number \| null    | share already consumed; null when the source reports neither                                                                   |
+| `days_until_reset`           | number \| null    |                                                                                                                                |
+| `deadline_is_estimated`      | bool              | true when the reset is a date alone or was carried forward                                                                     |
+| `plan`                       | string \| null    |                                                                                                                                |
+| `message`                    | string            | human sentence                                                                                                                 |
+| `source`                     | string            | data source for the window                                                                                                     |
+| `score`                      | number            | sort priority (higher = more important)                                                                                        |
+| `window_minutes`             | int \| null       |                                                                                                                                |
+| `kind`                       | string            | `burn` \| `conserve` \| `prepaid` (non-expiring API balance)                                                                   |
+| `consumption_analysis`       | object \| omitted | flexibility profile when present                                                                                               |
+| `pace`                       | object \| omitted | pace profile when present                                                                                                      |
+| `requires_operator_approval` | bool \| omitted   | 2026-10-15 — `true` for an alert on an operator-gated account (`omp`); `message` then ends with the notice. Omitted when false |
+| `ai_notice`                  | string \| omitted | 2026-10-15 — `AI: Do not use without asking operator`, with the flag above                                                     |
 
 ### `consumption_analysis` (optional)
 
