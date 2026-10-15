@@ -327,6 +327,9 @@ def independent_pool_key(
     cursor_family = cursor_pool_family(label, window_id=window_id, provider=provider)
     if cursor_family is not None:
         return f"cursor_{cursor_family}"
+    # omp spends Claude cloud-session credits: one pool, scoped to the model family.
+    if provider is not None and canonical_provider(provider) == "omp":
+        return "omp_claude"
     text = (label or "").casefold()
     if not text:
         return None
@@ -381,6 +384,7 @@ def cursor_breakdown_window(window: QuotaWindow, *, provider: str | None = None)
 POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "claude_gpt": "claude/gpt",
+    "omp_claude": "claude",
     "cursor_total": "total",
     "cursor_third_party": "3rd-party",
     "cursor_auto": "auto",

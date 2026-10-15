@@ -93,3 +93,13 @@ def test_cached_run_survives_a_failed_live_query(monkeypatch):
     monkeypatch.setattr(codexbar, "_query_providers", lambda *a, **k: [("claude", codexbar.CollectorError("boom"))])
 
     assert [a.provider for a in collect_codexbar(providers=["claude"], use_cache=True)] == ["claude"]
+
+
+def test_omp_scope_is_claude():
+    from aiuse.analysis.pace import independent_pool_key, matrix_pool_scope
+
+    pool_id = independent_pool_key("credits", provider="omp")
+
+    assert pool_id == "omp_claude"
+    assert matrix_pool_scope(pool_id, provider="omp") == "claude"
+    assert independent_pool_key("credits", provider="claude") is None
