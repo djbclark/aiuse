@@ -1785,8 +1785,13 @@ def _fable_display_row(
 
 
 def _matrix_shows_account(rows: list[_MatrixRow]) -> bool:
-    """ACCT is noise when every shown cell is one short label or an em dash."""
-    return len({row.account for row in rows} - {"—"}) > 1
+    """ACCT only when one service has two account labels that differ.
+
+    Different services can each carry their own account without a column:
+    the service name already tells those rows apart. A second, different
+    account on the same service is the only case the column earns its width.
+    """
+    return bool(_services_needing_account(rows))
 
 
 def _cell_color(s: _Style, used: float) -> Any:

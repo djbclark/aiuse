@@ -28,6 +28,7 @@ from aiuse.report import (
     _extra_usage_wallet_fragment,
     _format_reset_span,
     _human_deadline,
+    _matrix_shows_account,
     _MatrixLayout,
     _physical_line_count,
     _render_brief_action_plan,
@@ -1915,11 +1916,21 @@ def test_clock_matrix_sheds_columns_before_truncating_numbers():
 
 def test_clock_matrix_shortens_emails_to_their_domain():
     snap = _matrix_snapshot()
-    snap.accounts.append(AccountUsage(provider="codex", source="test", account="other@mit.edu", error="down"))
+    snap.accounts.append(AccountUsage(provider="claude", source="test", account="other@mit.edu", error="down"))
     text = render_clock_matrix([], snapshot=snap, color=False)
+    assert "ACCT" in text.splitlines()[0]
     assert "gmail" in text
     assert "mit" in text
     assert "me@gmail.com" not in text
+
+
+def test_clock_matrix_hides_acct_when_no_service_has_two_different_accounts():
+    snap = _matrix_snapshot()
+    snap.accounts.append(AccountUsage(provider="codex", source="test", account="other@mit.edu", error="down"))
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    assert "ACCT" not in text.splitlines()[0]
+    built = _build_matrix_rows([], snap, None)
+    assert not _matrix_shows_account(built)
 
 
 def test_clock_matrix_keeps_full_account_when_short_names_collide():
