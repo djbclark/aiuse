@@ -97,8 +97,9 @@ once, in `models.OPERATOR_APPROVAL_NOTICE`.
 1. **Board / matrix**: the omp row shows `(AI: Do not use without asking
 operator)`, dim, centered across the 5H and WEEK columns in place of their
    `->` arrows (so no arrow legend line comes from this row). The table widens
-   5H + WEEK to fit it; a terminal too narrow for the rest of the row clamps it.
-   Data in 5H or WEEK would win over the notice.
+   5H + WEEK to fit it. A terminal too narrow for the full text shows the short
+   wording `(AI: ask operator)` instead, and clamps even that only as a last
+   resort. Data in 5H or WEEK would win over the notice.
 2. **`aiuse --json`**: the account carries `requires_operator_approval: true`
    and `ai_notice: "AI: Do not use without asking operator"` (both omitted on
    every ungated account). `--available` routing entries and any alert raised
