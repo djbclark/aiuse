@@ -128,7 +128,38 @@ def _codexbar_bin() -> str:
     return os.path.realpath(cmd) if cmd else "codexbar"
 
 
+_KIND_MINUTES = {"5h": 300, "weekly": 10080, "monthly": 43200}
+
+
+def _row_window_kind(rid: str, title: str) -> str | None:
+    """Duration bucket a widget-snapshot ``usageRows`` entry names in its id or title."""
+    if "5h" in rid or "5-hour" in title:
+        return "5h"
+    if "weekly" in rid or "weekly" in title:
+        return "weekly"
+    if "monthly" in rid or "monthly" in title:
+        return "monthly"
+    return None
+
+
+def _row_slot_candidates(provider: str, title: str, slots: tuple[Any, ...]) -> list[dict[str, Any]]:
+    """The slot blocks a ``usageRows`` entry may borrow its clock from.
+
+    A provider whose slots are named pools (``_SLOT_POOL_PREFIXES``) lends a
+    row only its own pool's slot: "Claude/GPT weekly" never takes the Gemini
+    slot's reset just because both pools happen to sit at the same percent.
+    """
+    pools = _SLOT_POOL_PREFIXES.get(provider)
+    if pools:
+        for index, prefix in enumerate(pools):
+            if title.startswith(prefix.lower()):
+                block = slots[index] if index < len(slots) else None
+                return [block] if isinstance(block, dict) else []
+    return [block for block in slots if isinstance(block, dict)]
+
+
 def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -> list[AccountUsage]:
+    provider = str(entry.get("provider") or "").lower()
     primary = entry.get("primary")
     secondary = entry.get("secondary")
     tertiary = entry.get("tertiary")
@@ -140,31 +171,39 @@ def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -
         rid = str(r.get("id") or "").lower()
         if rid in ("primary", "secondary", "tertiary", "session", "weekly"):
             continue
-        w_dict = r.get("window")
-        if isinstance(w_dict, dict):
-            w_dict = dict(w_dict)
+        w_dict: dict[str, Any]
+        row_window = r.get("window")
+        if isinstance(row_window, dict):
+            w_dict = dict(row_window)
         else:
+            # The snapshot gives these rows a percent and a title only; the
+            # clock (length, reset) has to come from the slot block that is the
+            # same measurement. Matching on percent alone picked the first slot
+            # for every row once all pools sat at 0%, so Antigravity's weekly
+            # rows inherited the 5-hour slot's 300 minutes and reset and the
+            # matrix stacked all five in the 5H column (2026-10-17). The row's
+            # own duration kind and pool now gate the match; a row no slot
+            # describes keeps its title's nominal length and no reset.
             used = (100.0 - float(r["percentLeft"])) if r.get("percentLeft") is not None else 0.0
             w_dict = {"usedPercent": used}
-            for cand in (primary, secondary, tertiary):
-                if isinstance(cand, dict) and cand.get("usedPercent") is not None:
-                    if abs(float(cand["usedPercent"]) - used) < 0.05:
-                        w_dict.update(
-                            {
-                                "windowMinutes": cand.get("windowMinutes"),
-                                "resetsAt": cand.get("resetsAt"),
-                                "resetDescription": cand.get("resetDescription"),
-                            }
-                        )
-                        break
-            if "windowMinutes" not in w_dict:
-                rtitle = str(r.get("title") or "").lower()
-                if "5h" in rid or "5-hour" in rtitle:
-                    w_dict["windowMinutes"] = 300
-                elif "weekly" in rid or "weekly" in rtitle:
-                    w_dict["windowMinutes"] = 10080
-                elif "monthly" in rid or "monthly" in rtitle:
-                    w_dict["windowMinutes"] = 43200
+            rtitle = str(r.get("title") or "").lower()
+            kind = _row_window_kind(rid, rtitle)
+            for cand in _row_slot_candidates(provider, rtitle, (primary, secondary, tertiary)):
+                if cand.get("usedPercent") is None or abs(float(cand["usedPercent"]) - used) >= 0.05:
+                    continue
+                cand_kind = _block_window_kind(cand)
+                if kind and cand_kind and cand_kind != kind:
+                    continue
+                w_dict.update(
+                    {
+                        "windowMinutes": cand.get("windowMinutes"),
+                        "resetsAt": cand.get("resetsAt"),
+                        "resetDescription": cand.get("resetDescription"),
+                    }
+                )
+                break
+            if not w_dict.get("windowMinutes") and kind:
+                w_dict["windowMinutes"] = _KIND_MINUTES[kind]
         extra_windows.append({"title": r.get("title"), "id": r.get("id"), "window": w_dict})
 
     row = {

@@ -166,3 +166,23 @@ antigravity account and its routing entries. `usable_now` is unchanged, and
 the summary line says "agy cli rate-limited … ACP may still work". Format,
 config knob and limits: [`json-contract.md`](json-contract.md) (section
 `client_limits`). aiuse never sends a probe for this.
+
+## Widget-snapshot rows and their clocks (2026-10-17)
+
+CodexBar's `widget-snapshot.json` lists the five Antigravity pools as
+`usageRows` with a title and `percentLeft` only; the length and reset live on
+the two slot blocks (`primary`/`secondary`), which are the two pools' 5-hour
+_or_ weekly windows depending on what CodexBar last showed. aiuse borrows a
+row's clock from a slot block only when the row's duration kind (`5h` /
+`weekly` from its id or title) and pool prefix (`Gemini` / `Claude/GPT`) agree
+with that block and the percents match; a row no block describes keeps its
+title's nominal length and no reset. Before this rule every row at 0% matched
+the first slot, so both weeklies carried 300 minutes and the 5-hour reset and
+the matrix stacked all five windows in the 5H column (the cross-check line
+"Claude/GPT weekly reset times differ by 9295 minutes" was the symptom). An
+unused weekly's reset slides with the clock, so the empty WEEK span is honest;
+an in-use one gets its reset carried forward from the last OpenUsage reading
+(`history.find_carried_resets`). The live `codexbar usage --provider
+antigravity` call carries full per-row windows but costs ~6.5 s, so it is not
+used to patch the cache; upstream could write per-row `window` blocks into the
+snapshot instead (aiuse already reads them when present).

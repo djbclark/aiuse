@@ -247,3 +247,56 @@ def test_cli_codexbar_live_flag():
 
     args_default = parser.parse_args([])
     assert args_default.codexbar_live is False
+
+
+def _antigravity_rows(percent_left: float) -> list[dict[str, object]]:
+    return [
+        {"id": "antigravity-quota-summary-gemini-5h", "title": "Gemini 5-hour", "percentLeft": percent_left},
+        {"id": "antigravity-quota-summary-gemini-weekly", "title": "Gemini weekly", "percentLeft": percent_left},
+        {"id": "antigravity-quota-summary-3p-5h", "title": "Claude/GPT 5-hour", "percentLeft": percent_left},
+        {"id": "antigravity-quota-summary-3p-weekly", "title": "Claude/GPT weekly", "percentLeft": percent_left},
+    ]
+
+
+def test_widget_rows_keep_their_own_clock_when_every_pool_is_unused():
+    # Both slots are 5-hour blocks and every pool sits at 0%: a weekly row must
+    # not borrow the 5-hour slot's clock just because the percents agree.
+    five_hour = {"usedPercent": 0, "windowMinutes": 300, "resetsAt": "2026-10-18T07:24:46Z"}
+    entry = {
+        "provider": "antigravity",
+        "updatedAt": "2026-10-18T02:24:48Z",
+        "primary": dict(five_hour),
+        "secondary": dict(five_hour),
+        "usageRows": _antigravity_rows(100),
+    }
+    acc = _parse_widget_snapshot_entry(entry, age_seconds=1.0)[0]
+    by_id = {w.window_id: w for w in acc.windows}
+    assert len(acc.windows) == 4
+    for weekly in ("antigravity-quota-summary-gemini-weekly", "antigravity-quota-summary-3p-weekly"):
+        assert by_id[weekly].window_minutes == 10080
+        assert by_id[weekly].resets_at is None
+    for short in ("antigravity-quota-summary-gemini-5h", "antigravity-quota-summary-3p-5h"):
+        assert by_id[short].window_minutes == 300
+        assert by_id[short].resets_at == datetime(2026, 10, 18, 7, 24, 46, tzinfo=timezone.utc)
+
+
+def test_widget_rows_borrow_only_their_own_pool_slot():
+    # Both slots are weekly blocks at the same percent with different resets:
+    # each weekly row takes its pool's slot, and the 5-hour rows take neither.
+    entry = {
+        "provider": "antigravity",
+        "updatedAt": "2026-10-13T11:57:00Z",
+        "primary": {"usedPercent": 100.0, "windowMinutes": 10080, "resetsAt": "2026-10-15T19:09:49Z"},
+        "secondary": {"usedPercent": 100.0, "windowMinutes": 10080, "resetsAt": "2026-10-17T18:18:05Z"},
+        "usageRows": _antigravity_rows(0.0),
+    }
+    acc = _parse_widget_snapshot_entry(entry, age_seconds=1.0)[0]
+    by_id = {w.window_id: w for w in acc.windows}
+    gemini_weekly = by_id["antigravity-quota-summary-gemini-weekly"]
+    claude_weekly = by_id["antigravity-quota-summary-3p-weekly"]
+    assert gemini_weekly.resets_at == datetime(2026, 10, 15, 19, 9, 49, tzinfo=timezone.utc)
+    assert claude_weekly.resets_at == datetime(2026, 10, 17, 18, 18, 5, tzinfo=timezone.utc)
+    assert gemini_weekly.window_minutes == claude_weekly.window_minutes == 10080
+    for short in ("antigravity-quota-summary-gemini-5h", "antigravity-quota-summary-3p-5h"):
+        assert by_id[short].window_minutes == 300
+        assert by_id[short].resets_at is None
