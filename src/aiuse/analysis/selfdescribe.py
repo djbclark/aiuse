@@ -75,7 +75,8 @@ SEMANTICS: dict[str, str] = {
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
     "stale": "age_seconds > fresh threshold; the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
-    "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins",
+    "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
+    "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m); upstream reading may be lagging — usable_now is false so --available will not route on it",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
@@ -190,6 +191,9 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
     """
     window.pop("state_source", None)
     window.pop("agent_reported", None)
+    window.pop("measurement_frozen", None)
+    window.pop("frozen_span_seconds", None)
+    window.pop("frozen_note", None)
     window["state"] = window_state(window)
     window["headroom_percent"] = window_remaining(window)
     for key in ("quota_scope", "shared_pool_family", "max_share_of_parent_percent"):
@@ -372,17 +376,28 @@ def enrich_snapshot(
     notes: list[Mapping[str, Any]] | None = None,
     client_limits: Mapping[str, list[dict[str, Any]]] | None = None,
     threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
+    history: list[Mapping[str, Any]] | None = None,
+    min_frozen_seconds: float | None = None,
+    check_frozen: bool = False,
 ) -> dict[str, Any]:
     """Enrich accounts in place and attach summary_lines / semantics.
 
     ``client_limits`` (provider -> entries, from aiuse.client_limits) replaces
     each matching account's ``client_limits``; read-time evidence wins over
     whatever a cached snapshot carried.
+
+    When ``check_frozen`` is true, identical ``used_percent`` values that span
+    ``min_frozen_seconds`` of ``history`` (or recent on-disk snapshots when
+    ``history`` is omitted) mark the window ``measurement_frozen`` and force
+    ``usable_now`` false — Google's Antigravity endpoint has served a frozen
+    weekly % for over an hour. Production ``--json`` / ``--available`` / serve
+    enable this; unit tests leave it off so they stay hermetic.
     """
     now = now or utcnow()
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
     collected = snap.get("collected_at")
     for account in accounts:
+        account.pop("measurement_frozen", None)
         enrich_account(
             account,
             collected_at=collected,
@@ -422,6 +437,11 @@ def enrich_snapshot(
         account["overall_pace_percent"] = ovr_pct
         account["overall_pace_early"] = ovr_early
     snap["accounts"] = accounts
+    if check_frozen:
+        from aiuse.analysis.frozen_quota import DEFAULT_MIN_FROZEN_SECONDS, apply_frozen_measurements
+
+        frozen_s = DEFAULT_MIN_FROZEN_SECONDS if min_frozen_seconds is None else float(min_frozen_seconds)
+        apply_frozen_measurements(snap, now=now, history=history, min_frozen_seconds=frozen_s)
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     snap["semantics"] = dict(SEMANTICS)
     # Snapshots written before this field existed have no key; every reader
@@ -483,7 +503,8 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                 windows = shared + windows
             states = [str(w.get("state") or "unknown") for w in windows]
             numbered = [w for w in windows if w.get("headroom_percent") is not None]
-            if any(s == "exhausted" for s in states):
+            frozen = any(w.get("measurement_frozen") for w in windows) or bool(account.get("measurement_frozen"))
+            if any(s == "exhausted" for s in states) or frozen:
                 usable: bool | None = False
             elif family_has_data and any(str(w.get("state") or "unknown") != "unknown" for w in shared):
                 usable = True
@@ -533,8 +554,9 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                         else {}
                     ),
                     "age_seconds": account.get("age_seconds"),
-                    "fresh": account.get("fresh"),
-                    "stale": account.get("stale"),
+                    "fresh": False if frozen else account.get("fresh"),
+                    "stale": True if frozen else account.get("stale"),
+                    **({"measurement_frozen": True} if frozen else {}),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
                     "windows": windows,
                 }

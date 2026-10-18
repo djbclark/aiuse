@@ -77,31 +77,61 @@ def write_note(
     return path
 
 
-def load_active_notes(*, now: datetime | None = None, prune: bool = True) -> list[dict[str, Any]]:
-    """All unexpired notes; expired note files are removed (advisory expiry)."""
+def load_active_notes(
+    *,
+    now: datetime | None = None,
+    prune: bool = True,
+    discover_acp: bool = True,
+) -> list[dict[str, Any]]:
+    """All unexpired notes; expired note files are removed (advisory expiry).
+
+    When ``discover_acp`` is true (default), recent acp-run logs that show a
+    multi-day ``Individual quota`` / ``QUOTA_EXHAUSTED`` refusal are persisted
+    as notes before the list is returned — so a bare acp-run 429 still fails
+    closed for ``--available`` even when acp-dispatch never called
+    ``note-exhausted``.
+    """
     now = now or utcnow()
     directory = notes_dir()
-    if not directory.is_dir():
-        return []
     notes: list[dict[str, Any]] = []
-    for entry in sorted(directory.iterdir()):
-        if not entry.is_file() or entry.suffix.lower() != ".json":
-            continue
-        try:
-            note = json.loads(entry.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
-        resets = parse_dt(note.get("resets_at"))
-        if resets is None:
-            continue
-        if resets <= now:
-            if prune:
-                try:
-                    entry.unlink()
-                except OSError:
-                    pass
-            continue
-        notes.append(note)
+    if directory.is_dir():
+        for entry in sorted(directory.iterdir()):
+            if not entry.is_file() or entry.suffix.lower() != ".json":
+                continue
+            try:
+                note = json.loads(entry.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            resets = parse_dt(note.get("resets_at"))
+            if resets is None:
+                continue
+            if resets <= now:
+                if prune:
+                    try:
+                        entry.unlink()
+                    except OSError:
+                        pass
+                continue
+            notes.append(note)
+    if discover_acp:
+        from aiuse.quota_refusals import scan_acp_quota_refusals
+
+        known = {(str(n.get("provider") or ""), n.get("pool_family")) for n in notes}
+        for refusal in scan_acp_quota_refusals(now=now):
+            key = (str(refusal.get("provider") or ""), refusal.get("pool_family"))
+            if key in known:
+                continue
+            resets = parse_dt(refusal.get("resets_at"))
+            if resets is None:
+                continue
+            write_note(
+                provider=str(refusal["provider"]),
+                pool_family=refusal.get("pool_family"),
+                resets_at=resets,
+                reason=str(refusal.get("reason") or "acp quota refusal"),
+            )
+            notes.append(refusal)
+            known.add(key)
     return notes
 
 

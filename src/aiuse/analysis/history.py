@@ -142,7 +142,12 @@ def save_snapshot(
     # the cache file cannot misread a consumed share as free headroom.
     from aiuse.client_limits import load_client_limits
 
-    snap_dict = enrich_snapshot(snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits())
+    snap_dict = enrich_snapshot(
+        snapshot.to_dict(),
+        notes=load_active_notes(),
+        client_limits=load_client_limits(),
+        check_frozen=True,
+    )
     payload = {
         "schema_version": SCHEMA_VERSION,
         "collection_id": f"{ts}-{os.getpid()}",

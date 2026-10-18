@@ -82,7 +82,7 @@ since schema 1.1 aiuse surfaces it as `collected_at` on the account with a
 computed `age_seconds`, so "this Claude/GPT number is 40 minutes old" is
 visible in `--json` itself.
 
-Can `Claude/GPT 5-hour` lag a real exhaustion? Two distinct cases:
+Can `Claude/GPT 5-hour` (or weekly) lag a real exhaustion? Three distinct cases:
 
 1. **Genuinely open, then drained** — the 2026-10-03 incident: the pool read
    0% used at probe time and one Opus-high review exhausted it ~35 minutes
@@ -96,6 +96,19 @@ antigravity --family claude_gpt …` so a 429 one agent sees suppresses the
    per-account `collected_at` (from `usage.updatedAt`) exposes: a row older
    than the snapshot's `collected_at` was a cached read. Treat `fresh: false`
    Antigravity rows as unproven before routing an expensive task.
+3. **Upstream frozen percent (2026-10-18)** — OpenUsage `nonGeminiWeekly` and
+   CodexBar both held **identical** Claude/GPT weekly used%
+   (`59.054479002952576` / rounded `59.0`) from 12:01Z through 13:45Z while
+   work continued. A cache read at 13:48Z still showed 41% left and
+   `fresh: true`. At 13:55Z agy returned `Individual quota reached` /
+   `QUOTA_EXHAUSTED` with `quotaResetTimeStamp:2026-10-24T18:18:05Z` (the same
+   weekly clock); by 14:00Z CodexBar reported weekly 100% used. This is
+   Google's quota reading lagging, not an aiuse percent inversion. Fail-safes
+   in aiuse: (a) `measurement_frozen` when the same used% spans ≥45 minutes of
+   snapshot history — `--available` drops the pool; (b) recent acp-run logs
+   with a multi-day Individual/QUOTA_EXHAUSTED refusal are auto-persisted as
+   agent notes (same effect as `note-exhausted`). Prefer a fresh 429 / agent
+   note over a cached "ok" percent.
 
 ## Query rate limit (2026-10-05)
 

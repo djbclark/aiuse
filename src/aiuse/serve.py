@@ -303,7 +303,10 @@ class _ServeState:
         suggestion = suggestion_to_dict(pick_suggestion(alerts, self.config))
         return {
             "snapshot": enrich_snapshot(
-                snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits(self.config)
+                snapshot.to_dict(),
+                notes=load_active_notes(),
+                client_limits=load_client_limits(self.config),
+                check_frozen=True,
             ),
             "alerts": [a.to_dict() for a in alerts],
             "suggestion": suggestion,
@@ -336,6 +339,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
         snap,
         notes=load_active_notes(),
         client_limits=load_client_limits(config),
+        check_frozen=True,
     )
     # Minimal history object without reloading learning (cheap path).
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
