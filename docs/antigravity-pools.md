@@ -184,5 +184,9 @@ unused weekly's reset slides with the clock, so the empty WEEK span is honest;
 an in-use one gets its reset carried forward from the last OpenUsage reading
 (`history.find_carried_resets`). The live `codexbar usage --provider
 antigravity` call carries full per-row windows but costs ~6.5 s, so it is not
-used to patch the cache; upstream could write per-row `window` blocks into the
-snapshot instead (aiuse already reads them when present).
+used to patch the cache. Upstream already writes a per-row `window` block for
+every measured Antigravity row since CodexBar v0.77.0
+([steipete/CodexBar#4529](https://github.com/steipete/CodexBar/pull/4529),
+merged 2026-10-16); aiuse reads it when present and the slot-matching rule is
+the fallback for snapshots written by an older build (on 2026-10-17 the
+running app was a pre-0.77.0 local build, not the installed cask).
