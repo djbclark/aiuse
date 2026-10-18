@@ -169,8 +169,13 @@ Full path-by-path map with "read when" hints:
   an `rg` flag).
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
 - Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
-  (the same all-files quality gate as GitHub Actions). `pre-commit install --install-hooks`
-  installs this check as a pre-push hook.
+  (the same all-files quality gate as GitHub Actions). The tracked
+  `.beads/hooks/pre-push` runs it on every push (`core.hooksPath` points at
+  `.beads/hooks`, so `pre-commit install` refuses and the pre-commit stanza is
+  kept in that file by hand; 2026-10-17: it was missing, and two pushes went out
+  with a red test nobody saw). It checks the working tree, so a dirty file from
+  another session can fail your push. Read the test summary line, never a
+  wrapper's or a background task's exit code.
 - This repo shells out to external tools that must already be
   installed/authenticated (`cswap`, `codexbar`, `caut`, `openusage` and/or
   OpenUsage.app, `tokscale`) — do not attempt to install, configure, or
