@@ -76,7 +76,7 @@ SEMANTICS: dict[str, str] = {
     "stale": "age_seconds > fresh threshold; the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
-    "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m); upstream reading may be lagging — usable_now is false so --available will not route on it",
+    "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
@@ -379,6 +379,7 @@ def enrich_snapshot(
     history: list[Mapping[str, Any]] | None = None,
     min_frozen_seconds: float | None = None,
     check_frozen: bool = False,
+    acp_log_dir: str | None = None,
 ) -> dict[str, Any]:
     """Enrich accounts in place and attach summary_lines / semantics.
 
@@ -388,10 +389,10 @@ def enrich_snapshot(
 
     When ``check_frozen`` is true, identical ``used_percent`` values that span
     ``min_frozen_seconds`` of ``history`` (or recent on-disk snapshots when
-    ``history`` is omitted) mark the window ``measurement_frozen`` and force
-    ``usable_now`` false — Google's Antigravity endpoint has served a frozen
-    weekly % for over an hour. Production ``--json`` / ``--available`` / serve
-    enable this; unit tests leave it off so they stay hermetic.
+    ``history`` is omitted) mark the window ``measurement_frozen`` only if an
+    acp-run turn spent that provider/pool during the flat span — idle flats
+    stay routable. Production ``--json`` / ``--available`` / serve enable this;
+    unit tests leave it off (or pass a temp ``acp_log_dir``) so they stay hermetic.
     """
     now = now or utcnow()
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
@@ -441,7 +442,13 @@ def enrich_snapshot(
         from aiuse.analysis.frozen_quota import DEFAULT_MIN_FROZEN_SECONDS, apply_frozen_measurements
 
         frozen_s = DEFAULT_MIN_FROZEN_SECONDS if min_frozen_seconds is None else float(min_frozen_seconds)
-        apply_frozen_measurements(snap, now=now, history=history, min_frozen_seconds=frozen_s)
+        apply_frozen_measurements(
+            snap,
+            now=now,
+            history=history,
+            min_frozen_seconds=frozen_s,
+            log_dir=acp_log_dir,
+        )
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     snap["semantics"] = dict(SEMANTICS)
     # Snapshots written before this field existed have no key; every reader

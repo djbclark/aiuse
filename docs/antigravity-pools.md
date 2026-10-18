@@ -105,10 +105,12 @@ antigravity --family claude_gpt …` so a 429 one agent sees suppresses the
    weekly clock); by 14:00Z CodexBar reported weekly 100% used. This is
    Google's quota reading lagging, not an aiuse percent inversion. Fail-safes
    in aiuse: (a) `measurement_frozen` when the same used% spans ≥45 minutes of
-   snapshot history — `--available` drops the pool; (b) recent acp-run logs
-   with a multi-day Individual/QUOTA_EXHAUSTED refusal are auto-persisted as
-   agent notes (same effect as `note-exhausted`). Prefer a fresh 429 / agent
-   note over a cached "ok" percent.
+   snapshot history **and** an acp-run turn spent that pool family during the
+   flat span (claude-_/gpt-_ → `claude_gpt`; gemini-* does not flag Claude/GPT)
+   — idle flats stay routable; `--available` drops only the spent-but-stuck
+   pool; (b) recent acp-run logs with a multi-day Individual/QUOTA_EXHAUSTED
+   refusal are auto-persisted as agent notes (same effect as `note-exhausted`).
+   Prefer a fresh 429 / agent note over a cached "ok" percent.
 
 ## Query rate limit (2026-10-05)
 

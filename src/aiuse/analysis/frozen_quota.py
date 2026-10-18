@@ -1,29 +1,49 @@
-"""Detect quota percentages that stopped updating while the window is still open.
+"""Detect quota percentages that froze while the pool was actively used.
 
 On 2026-10-18 Google's Antigravity Claude/GPT weekly reading stayed at the
 identical CodexBar float ``59.054479002952576`` (OpenUsage ``59.0``) from
-12:01Z through 13:45Z, then a 429 at 13:55Z and CodexBar ``100%`` at 14:00Z
-with the same weekly ``resets_at``. A ``fresh`` cache of that frozen 41% left
-routed work into an already-draining (or already-exhausted) pool.
+12:01Z through 13:45Z while agy Claude/Opus turns kept spending, then a 429
+at 13:55Z and CodexBar ``100%`` at 14:00Z. A ``fresh`` cache of that frozen
+41% left routed work into an already-draining pool.
 
-aiuse cannot fix Google's endpoint. When the same ``used_percent`` for a
-provider pool window appears across recent snapshots spanning at least
-``min_frozen_seconds``, mark the live window ``measurement_frozen`` so
-``--available`` fails closed until the upstream number moves again (or an
-agent note / live 100% reading takes over).
+aiuse cannot fix Google's endpoint. Fail closed only when **both** hold:
+
+1. The same ``used_percent`` for a provider pool window spans at least
+   ``min_frozen_seconds`` of recent snapshot history, and
+2. An acp-run log under ``~/.local/state/acp-run/`` shows a turn for that
+   provider whose applied model belongs to that pool family **during** the
+   flat span (claude-*/gpt-* → ``claude_gpt``, gemini-* → ``gemini``).
+
+Idle flat pools (overnight Gemini, unused grok/copilot reserves, quiet
+weekly windows) stay routable — those are exactly what ``--available``
+should burn. No usage evidence → no flag, whatever the span.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Mapping
 
 from aiuse.analysis.pace import independent_pool_key
+from aiuse.collectors.acp_usage import ACP_AGENT_PROVIDERS, default_acp_log_dir
 from aiuse.models import parse_dt, utcnow
+from aiuse.quota_refusals import pool_family_for_acp_model
 
 DEFAULT_MIN_FROZEN_SECONDS = 2700.0  # 45 minutes
 DEFAULT_HISTORY_HOURS = 6.0
 DEFAULT_HISTORY_MAX = 24
+_MAX_ACP_FILES = 120
+
+_LOG_NAME = re.compile(r"^(\d{8})-(\d{6})-(.+)-(\d+)\.(jsonl|stderr)$")
+_APPLIED_MODEL = re.compile(r"applied:\s*model=([A-Za-z0-9._+-]+)", re.IGNORECASE)
+_SET_MODEL = re.compile(
+    r'"id"\s*:\s*"model"[^}]*"value"\s*:\s*"([^"]+)"|'
+    r'"value"\s*:\s*"([^"]+)"[^}]*"id"\s*:\s*"model"',
+)
 
 
 def _window_fingerprint(provider: str, window: Mapping[str, Any]) -> tuple[Any, ...] | None:
@@ -78,6 +98,146 @@ def _history_rows(
     return rows[:history_max]
 
 
+def _filename_start(name: str) -> datetime | None:
+    match = _LOG_NAME.match(name)
+    if match is None:
+        return None
+    try:
+        naive = datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+    # acp-run names files in local wall time.
+    return naive.astimezone().astimezone(timezone.utc)
+
+
+def _models_from_text(text: str) -> list[str]:
+    found: list[str] = []
+    for match in _APPLIED_MODEL.finditer(text):
+        found.append(match.group(1))
+    for match in _SET_MODEL.finditer(text):
+        value = match.group(1) or match.group(2)
+        if value:
+            found.append(value)
+    # set_config JSON lines: {"kind":"set_config","data":{"id":"model","value":"…"}}
+    for line in text.splitlines():
+        if '"id"' not in line or "model" not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("kind") != "set_config":
+            continue
+        data = event.get("data")
+        if isinstance(data, dict) and data.get("id") == "model":
+            value = data.get("value")
+            if isinstance(value, str) and value:
+                found.append(value)
+    return found
+
+
+def _event_times(text: str) -> list[datetime]:
+    times: list[datetime] = []
+    for line in text.splitlines():
+        if '"t"' not in line[:40] and not line.lstrip().startswith('{"t"'):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        raw = event.get("t") if isinstance(event, dict) else None
+        if isinstance(raw, (int, float)):
+            times.append(datetime.fromtimestamp(float(raw), tz=timezone.utc))
+    return times
+
+
+def scan_acp_pool_activity(
+    *,
+    since: datetime,
+    until: datetime,
+    log_dir: str | Path | None = None,
+) -> set[tuple[str, str | None]]:
+    """``{(provider, pool_family)}`` with an acp-run turn overlapping ``[since, until]``.
+
+    ``pool_family`` is ``None`` when the provider has no split (or the model
+    could not be mapped); that still counts as activity for every window of
+    that provider whose fingerprint family is also ``None``.
+    """
+    if until < since:
+        return set()
+    root = Path(log_dir).expanduser() if log_dir is not None else default_acp_log_dir()
+    if not root.is_dir():
+        return set()
+    # Widen the mtime window slightly so a long turn that started just before
+    # ``since`` is still opened.
+    mtime_floor = (since - timedelta(hours=2)).timestamp()
+    try:
+        entries = [entry for entry in os.scandir(root) if entry.is_file()]
+    except OSError:
+        return set()
+    recent: list[tuple[float, Path]] = []
+    for entry in entries:
+        if not entry.name.endswith((".jsonl", ".stderr")):
+            continue
+        match = _LOG_NAME.match(entry.name)
+        if match is None:
+            continue
+        try:
+            mtime = entry.stat().st_mtime
+        except OSError:
+            continue
+        if mtime < mtime_floor:
+            continue
+        recent.append((mtime, Path(entry.path)))
+    recent.sort(reverse=True)
+
+    active: set[tuple[str, str | None]] = set()
+    for _mtime, path in recent[:_MAX_ACP_FILES]:
+        match = _LOG_NAME.match(path.name)
+        if match is None:
+            continue
+        agent = match.group(3)
+        provider = ACP_AGENT_PROVIDERS.get(agent)
+        if provider is None:
+            continue
+        start = _filename_start(path.name)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        times = _event_times(text)
+        if start is not None:
+            times.append(start)
+        if not times:
+            times.append(datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc))
+        if not any(since <= moment <= until for moment in times):
+            continue
+        models = _models_from_text(text)
+        if not models:
+            # A turn for this provider with no model id still counts for
+            # unsplit providers (family None).
+            active.add((provider, None))
+            continue
+        for model in models:
+            family = pool_family_for_acp_model(provider, model)
+            active.add((provider, family))
+    return active
+
+
+def _usage_covers(
+    active: set[tuple[str, str | None]],
+    *,
+    provider: str,
+    family: str | None,
+) -> bool:
+    if (provider, family) in active:
+        return True
+    # Unmapped-model activity on a split vendor does not cover a specific family.
+    if family is None and any(prov == provider for prov, _fam in active):
+        return True
+    return False
+
+
 def apply_frozen_measurements(
     snap: dict[str, Any],
     *,
@@ -86,11 +246,16 @@ def apply_frozen_measurements(
     min_frozen_seconds: float = DEFAULT_MIN_FROZEN_SECONDS,
     history_hours: float = DEFAULT_HISTORY_HOURS,
     history_max: int = DEFAULT_HISTORY_MAX,
+    log_dir: str | Path | None = None,
+    activity: set[tuple[str, str | None]] | None = None,
 ) -> dict[str, Any]:
-    """Mark windows whose used% has not moved across recent history as frozen.
+    """Mark flat-and-spent windows as frozen; idle flats stay routable.
 
     Mutates ``snap`` in place. A frozen applicable window forces
     ``usable_now`` false so ``--available`` will not advertise it.
+
+    ``activity`` is an optional precomputed ``scan_acp_pool_activity`` result
+    (tests inject it); when omitted the acp-run log dir is scanned.
     """
     now = now or utcnow()
     if min_frozen_seconds <= 0:
@@ -121,9 +286,24 @@ def apply_frozen_measurements(
                 newest = collected
             spans[fp] = (oldest, newest)
 
-    frozen_fps = {
+    candidate_fps = {
         fp for fp, (oldest, newest) in spans.items() if (newest - oldest).total_seconds() >= min_frozen_seconds
     }
+    if not candidate_fps:
+        return snap
+
+    if activity is None:
+        # One scan covering the union of candidate spans.
+        since = min(spans[fp][0] for fp in candidate_fps)
+        until = max(spans[fp][1] for fp in candidate_fps)
+        activity = scan_acp_pool_activity(since=since, until=until, log_dir=log_dir)
+
+    frozen_fps: set[tuple[Any, ...]] = set()
+    for fp in candidate_fps:
+        provider = str(fp[0])
+        family = fp[1] if isinstance(fp[1], str) or fp[1] is None else None
+        if _usage_covers(activity, provider=provider, family=family):
+            frozen_fps.add(fp)
     if not frozen_fps:
         return snap
 
@@ -145,13 +325,13 @@ def apply_frozen_measurements(
             window["stale"] = True
             window["frozen_span_seconds"] = span_s
             window["frozen_note"] = (
-                f"used_percent unchanged for {span_s // 60}m across collectors; "
-                "upstream quota reading may be lagging — not trusted for routing"
+                f"used_percent unchanged for {span_s // 60}m while acp-run "
+                "spent this pool; upstream quota reading may be lagging — "
+                "not trusted for routing"
             )
             touched = True
         if not touched:
             continue
-        # Fail closed: a frozen applicable window must not stay routable.
         applicable = [
             w
             for w in (account.get("windows") or [])

@@ -51,7 +51,12 @@ def _agent_of(name: str) -> str | None:
     return match.group(3) if match else None
 
 
-def _family_for(provider: str, model: str | None) -> str | None:
+def pool_family_for_acp_model(provider: str, model: str | None) -> str | None:
+    """Map an ACP agent model id to an aiuse pool_family for split vendors.
+
+    Antigravity: ``claude-*`` / ``gpt-*`` → ``claude_gpt``; ``gemini-*`` →
+    ``gemini``. Other providers return ``None`` (one residual pool).
+    """
     if provider != "antigravity" or not model:
         return None
     low = model.casefold()
@@ -60,6 +65,10 @@ def _family_for(provider: str, model: str | None) -> str | None:
     if low.startswith("gemini-"):
         return "gemini"
     return None
+
+
+def _family_for(provider: str, model: str | None) -> str | None:
+    return pool_family_for_acp_model(provider, model)
 
 
 def _extract_refusal(text: str, *, now: datetime) -> dict[str, Any] | None:

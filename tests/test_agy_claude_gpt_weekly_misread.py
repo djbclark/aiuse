@@ -8,13 +8,16 @@ Incident 2026-10-18 (see docs/antigravity-pools.md):
   2026-10-24T18:18:05Z (same weekly clock).
 - At 14:00Z CodexBar flipped to 100% used on that weekly window.
 
-Upstream lag cannot be fixed here; these tests lock the fail-safes.
+Upstream lag cannot be fixed here; these tests lock the fail-safes. Frozen
+readings only fail closed when an acp-run turn spent that pool during the
+flat span — idle flats stay routable.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from aiuse.analysis.frozen_quota import apply_frozen_measurements
 from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot
@@ -59,49 +62,118 @@ def _snap_at(collected: datetime, *, used: float = CODEXBAR_USED) -> dict:
     remaining = max(0.0, 100.0 - used)
     account = _agy_claude_gpt_account(used=used, remaining=remaining, source="codexbar")
     account["collected_at"] = collected.isoformat()
-    # Mirror CodexBar's long float on the weekly window only.
     account["windows"][1]["used_percent"] = used
     account["windows"][1]["remaining_percent"] = remaining
     return {"collected_at": collected.isoformat(), "accounts": [account]}
 
 
-def test_frozen_59_percent_weekly_excluded_from_available():
-    """Identical used% across ~1h45m of history must not stay routable."""
-    t0 = datetime(2026, 10, 18, 12, 1, 57, tzinfo=timezone.utc)
-    t1 = datetime(2026, 10, 18, 13, 14, 20, tzinfo=timezone.utc)
-    t2 = datetime(2026, 10, 18, 13, 34, 20, tzinfo=timezone.utc)
-    # Mix CodexBar's long float with OpenUsage's rounded 59.0 — freeze must
-    # still treat them as the same stuck reading.
-    history = [_snap_at(t0), _snap_at(t1), _snap_at(t2, used=59.0)]
-    current = _snap_at(t2, used=59.0)
-    # Without freeze: looks like 41% left and usable.
-    plain = enrich_snapshot(json.loads(json.dumps(current)), now=NOW, check_frozen=False)
-    assert plain["accounts"][0]["usable_now"] is True
-    assert any(p["pool_family"] == "claude_gpt" for p in available_pools(plain))
+def _write_agy_turn(log_dir: Path, *, when: datetime, model: str, pid: int = 1) -> Path:
+    """Write a minimal acp-run jsonl named in local wall time for ``when``."""
+    local = when.astimezone()
+    name = f"{local.strftime('%Y%m%d-%H%M%S')}-agy-{pid}.jsonl"
+    path = log_dir / name
+    events = [
+        {"t": when.timestamp(), "kind": "initialize", "data": {}},
+        {"t": when.timestamp() + 0.1, "kind": "set_config", "data": {"id": "model", "value": model}},
+        {"t": when.timestamp() + 1.0, "kind": "prompt_response", "data": {"stopReason": "end_turn"}},
+    ]
+    path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+    return path
 
-    frozen = enrich_snapshot(
+
+def test_idle_flat_pool_stays_usable(tmp_path):
+    """(a) Flat for 3 h with no acp-run activity must stay routable."""
+    t0 = datetime(2026, 10, 18, 10, 0, 0, tzinfo=timezone.utc)
+    t1 = datetime(2026, 10, 18, 11, 30, 0, tzinfo=timezone.utc)
+    t2 = datetime(2026, 10, 18, 13, 0, 0, tzinfo=timezone.utc)
+    history = [_snap_at(t0, used=59.0), _snap_at(t1, used=59.0), _snap_at(t2, used=59.0)]
+    current = _snap_at(t2, used=59.0)
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    snap = enrich_snapshot(
         json.loads(json.dumps(current)),
         now=NOW,
         history=history,
         check_frozen=True,
         min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
     )
-    account = frozen["accounts"][0]
+    assert snap["accounts"][0]["usable_now"] is True
+    assert snap["accounts"][0].get("measurement_frozen") is not True
+    assert any(p.get("pool_family") == "claude_gpt" for p in available_pools(snap))
+
+
+def test_incident_flat_with_agy_claude_turn_is_frozen(tmp_path):
+    """(b) Flat 12:01–13:45 with an agy claude/opus turn inside → frozen."""
+    t0 = datetime(2026, 10, 18, 12, 1, 57, tzinfo=timezone.utc)
+    t1 = datetime(2026, 10, 18, 13, 14, 20, tzinfo=timezone.utc)
+    t2 = datetime(2026, 10, 18, 13, 34, 20, tzinfo=timezone.utc)
+    history = [_snap_at(t0), _snap_at(t1), _snap_at(t2, used=59.0)]
+    current = _snap_at(t2, used=59.0)
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(log_dir, when=datetime(2026, 10, 18, 13, 0, 0, tzinfo=timezone.utc), model="claude-opus-5-5")
+
+    plain = enrich_snapshot(json.loads(json.dumps(current)), now=NOW, check_frozen=False)
+    assert plain["accounts"][0]["usable_now"] is True
+
+    snap = enrich_snapshot(
+        json.loads(json.dumps(current)),
+        now=NOW,
+        history=history,
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+    account = snap["accounts"][0]
     assert account["usable_now"] is False
     assert account.get("measurement_frozen") is True
     weekly = next(w for w in account["windows"] if "weekly" in w["label"])
     assert weekly.get("measurement_frozen") is True
-    assert weekly["remaining_percent"] == 41.0  # numbers untouched
-    assert not any(p.get("pool_family") == "claude_gpt" for p in available_pools(frozen))
+    assert weekly["remaining_percent"] == 41.0
+    assert not any(p.get("pool_family") == "claude_gpt" for p in available_pools(snap))
+
+
+def test_gemini_activity_does_not_freeze_claude_gpt(tmp_path):
+    """(c) Gemini acp-run turns must not freeze the Claude/GPT pool."""
+    t0 = datetime(2026, 10, 18, 12, 1, 57, tzinfo=timezone.utc)
+    t1 = datetime(2026, 10, 18, 13, 14, 20, tzinfo=timezone.utc)
+    t2 = datetime(2026, 10, 18, 13, 34, 20, tzinfo=timezone.utc)
+    history = [_snap_at(t0, used=59.0), _snap_at(t1, used=59.0), _snap_at(t2, used=59.0)]
+    current = _snap_at(t2, used=59.0)
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(
+        log_dir,
+        when=datetime(2026, 10, 18, 13, 0, 0, tzinfo=timezone.utc),
+        model="gemini-3.8-flash",
+        pid=2,
+    )
+    snap = enrich_snapshot(
+        json.loads(json.dumps(current)),
+        now=NOW,
+        history=history,
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+    assert snap["accounts"][0].get("measurement_frozen") is not True
+    weekly = next(w for w in snap["accounts"][0]["windows"] if "weekly" in w["label"])
+    assert weekly.get("measurement_frozen") is not True
+    assert snap["accounts"][0]["usable_now"] is True
+    assert any(p.get("pool_family") == "claude_gpt" for p in available_pools(snap))
 
 
 def test_apply_frozen_measurements_requires_span(tmp_path):
-    """A single reading or a short span must not freeze."""
+    """A short span must not freeze even with matching ACP activity."""
     t0 = datetime(2026, 10, 18, 13, 30, 0, tzinfo=timezone.utc)
     t1 = datetime(2026, 10, 18, 13, 34, 0, tzinfo=timezone.utc)
     history = [_snap_at(t0), _snap_at(t1)]
     snap = _snap_at(t1)
-    apply_frozen_measurements(snap, now=NOW, history=history, min_frozen_seconds=2700)
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(log_dir, when=t0 + timedelta(minutes=1), model="claude-sonnet-5-5")
+    apply_frozen_measurements(snap, now=NOW, history=history, min_frozen_seconds=2700, log_dir=log_dir)
     assert snap["accounts"][0].get("measurement_frozen") is not True
 
 
@@ -112,7 +184,6 @@ def test_acp_quota_refusal_overrides_cached_41_percent(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_notes, "notes_dir", lambda: tmp_path / "agent-notes")
     log_dir = tmp_path / "acp-run"
     log_dir.mkdir()
-    # Filename shape matches collectors/acp_usage._LOG_NAME.
     log = log_dir / "20261018-095528-agy-99999.jsonl"
     payload = {
         "t": 1792331728.815,
@@ -139,8 +210,6 @@ def test_acp_quota_refusal_overrides_cached_41_percent(tmp_path, monkeypatch):
     assert refusals[0]["provider"] == "antigravity"
     assert refusals[0]["pool_family"] == "claude_gpt"
 
-    notes = agent_notes.load_active_notes(now=NOW, discover_acp=False)
-    # Persist via discover path with overridden log dir.
     monkeypatch.setattr("aiuse.quota_refusals.default_acp_log_dir", lambda: log_dir)
     notes = agent_notes.load_active_notes(now=NOW, discover_acp=True)
     assert any(n.get("provider") == "antigravity" and n.get("pool_family") == "claude_gpt" for n in notes)
@@ -156,7 +225,7 @@ def test_acp_quota_refusal_overrides_cached_41_percent(tmp_path, monkeypatch):
     weekly = next(w for w in account["windows"] if "weekly" in w["label"])
     assert weekly["state"] == "exhausted"
     assert weekly["state_source"] == "agent-reported"
-    assert weekly["remaining_percent"] == 41.0  # note flips state, not the %
+    assert weekly["remaining_percent"] == 41.0
     assert not any(p.get("pool_family") == "claude_gpt" for p in available_pools(snap))
 
 
