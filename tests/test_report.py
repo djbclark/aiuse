@@ -2138,7 +2138,7 @@ def test_clock_matrix_pads_percents_and_colors_only_the_left_token():
     assert "\033[32m4u" not in colored
 
 
-def test_style_clock_percent_pads_and_keeps_fold_mark_in_the_left_token():
+def test_style_clock_percent_pads_and_leaves_the_fold_mark_to_the_span():
     from aiuse.report import _ClockCell, _style_clock_percent
 
     on = _Style(True)
@@ -2146,9 +2146,11 @@ def test_style_clock_percent_pads_and_keeps_fold_mark_in_the_left_token():
     assert _strip_ansi(short) == "  4u/96l"
     assert short == "  4u/\033[32m96l\033[0m"
 
+    # The `+` hangs after the reset span (like ↻), not inside the pair, so a
+    # folded cell's `l` stays in the same column as its neighbours'.
     folded = _style_clock_percent(on, _ClockCell(used_percent=56.0, folded=2), width=8)
-    assert _strip_ansi(folded) == "56u/44l+"
-    assert folded == "56u/\033[36m44l+\033[0m"
+    assert _strip_ansi(folded) == " 56u/44l"
+    assert folded == " 56u/\033[36m44l\033[0m"
 
     inferred = _style_clock_percent(on, _ClockCell(used_percent=4.0, inferred=True), width=8)
     assert inferred == on.dim("  4u/96l")
@@ -2566,3 +2568,56 @@ class TestZebraStriping:
         ]
         text = render_priority_ladder(alerts, color=False, width=100)
         assert "\033[" not in text
+
+
+def test_fold_mark_hangs_after_the_pair_so_the_l_column_stays_aligned():
+    # Two Gemini weeklies fold into one WEEK cell (`+`); the Claude/GPT pool has
+    # one. The `u/l` pair must end in the same column on both rows, with or
+    # without the mark, and whether or not the cell carries a reset span.
+    now = datetime.now(timezone.utc)
+
+    def weekly(label: str, used: float, *, resets_at: datetime | None) -> QuotaWindow:
+        return QuotaWindow(
+            label=label,
+            used_percent=used,
+            remaining_percent=100.0 - used,
+            resets_at=resets_at,
+            window_minutes=10080,
+        )
+
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="antigravity",
+                source="codexbar",
+                account="a@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    weekly("Gemini weekly", 0.0, resets_at=None),
+                    weekly("Gemini weekly", 0.0, resets_at=None),
+                    weekly("Claude/GPT weekly", 0.0, resets_at=None),
+                ],
+            ),
+            AccountUsage(
+                provider="codex",
+                source="codexbar",
+                account="a@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[weekly("Codex weekly quota (2)", 2.0, resets_at=now + timedelta(days=6))],
+            ),
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=140)
+    # Matrix rows start with a band tag; the `u/l = …` legend line does not.
+    lines = [line for line in text.splitlines() if line[:5].strip() in {"empty", "slow", "mid", "use"}]
+    assert len(lines) == 3, text
+    folded = next(line for line in lines if "gemini" in line)
+    plain = next(line for line in lines if "claude/gpt" in line)
+    spanned = next(line for line in lines if "codex" in line)
+    assert "0u/100l+" in folded
+    assert "0u/100l+/" not in folded
+    assert "98l/" in spanned
+    # Same column for the end of the `u/l` pair on every row.
+    assert folded.index("100l") == plain.index("100l") == spanned.index("98l") - 1
+    assert "+ = >1 window on that clock" in text

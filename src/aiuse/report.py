@@ -243,6 +243,8 @@ _OPERATOR_GATE_SHORT = "(AI: ask operator)"
 _GATE_CLOCKS = ("5h", "weekly")
 _GATE_FIRST = [key for key, _label in CLOCK_COLUMNS].index(_GATE_CLOCKS[0])
 _UNSTARTED_LEGEND = f"{_UNSTARTED_MARK} = clock starts on first use"
+_FOLD_MARK = "+"  # more than one window on this clock, showing the most-used
+_FOLD_LEGEND = f"{_FOLD_MARK} = >1 window on that clock, showing most-used"
 
 
 @dataclass(frozen=True)
@@ -1055,12 +1057,20 @@ def _row_identity(
 
 
 def _clock_percent_text(cell: _ClockCell) -> str:
-    """`100u/0l` — percent used / percent left, labeled so the pair cannot be misread."""
-    mark = "+" if cell.folded else ""
+    """`100u/0l` — percent used / percent left, labeled so the pair cannot be misread.
+
+    The fold mark (``+``, more windows on this clock) is not part of it: it hangs
+    after the reset span like ``↻`` (``_fold_mark``), so the right-aligned pair is
+    the same width in every row and the ``l`` lines up down the column.
+    """
     used_txt = _format_used_percent(cell.used_percent).rstrip("%")
     left = max(0.0, 100.0 - float(cell.used_percent))
     left_txt = _format_remaining_percent(left).rstrip("%")
-    return f"{used_txt}u/{left_txt}l{mark}"
+    return f"{used_txt}u/{left_txt}l"
+
+
+def _fold_mark(cell: _ClockCell) -> str:
+    return _FOLD_MARK if cell.folded else ""
 
 
 def _clock_span(cell: _ClockCell, *, compact: bool) -> tuple[_ResetSpan | None, bool]:
@@ -1146,8 +1156,14 @@ def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple
                 continue
             w_pct = max(w_pct, len(_clock_percent_text(cell)))
             span, unstarted = _clock_span(cell, compact=layout.compact_deadline)
+            mark_width = len(_fold_mark(cell))
             if span is not None:
-                w_spans[idx] = max(w_spans[idx], len(span.plain()) + (len(_UNSTARTED_MARK) if unstarted else 0))
+                w_spans[idx] = max(
+                    w_spans[idx], len(span.plain()) + (len(_UNSTARTED_MARK) if unstarted else 0) + mark_width
+                )
+            elif mark_width:
+                # No span, but the mark still needs its column after the pair.
+                w_spans[idx] = max(w_spans[idx], mark_width)
     for idx, (_key, label) in enumerate(CLOCK_COLUMNS):
         w_pct = max(w_pct, len(label))
     if layout.show_pace:
@@ -1948,9 +1964,9 @@ def _cell_color(s: _Style, used: float) -> Any:
 def _style_clock_percent(s: _Style, cell: _ClockCell, *, width: int) -> str:
     """Right-align ``NNu/NNl`` into ``width`` and color only the left token.
 
-    The used side (``44u/``) stays the default color. The left side (``56l``
-    or ``56l+``) is one colored token, so the ``l`` does not drop out between
-    the number and the reset span. An inferred clock is dim end to end.
+    The used side (``44u/``) stays the default color. The left side (``56l``)
+    is one colored token, so the ``l`` does not drop out between the number
+    and the reset span. An inferred clock is dim end to end.
     Visible width is always ``width``: a short pair is padded on the left,
     and the color codes are not part of that width, so the next column starts
     on the same character in every row.
@@ -2151,24 +2167,26 @@ def render_clock_matrix_parts(
             any_folded = any_folded or bool(cell.folded)
             span, unstarted = _clock_span(cell, compact=layout.compact_deadline)
             colored = _style_clock_percent(s, cell, width=w_pct)
+            mark = _fold_mark(cell)
             if span is None:
-                tail.append(colored + (" " * (w_clock - w_pct)))
+                # The mark takes the separator's column: `0u/100l+` under `0u/100l/4h`.
+                tail.append(colored + s.dim(mark) + (" " * (w_clock - w_pct - len(mark))))
                 continue
             if unstarted:
                 any_unstarted = True
-                styled = colored + s.dim("/") + _style_reset_span(s, span) + s.dim(_UNSTARTED_MARK)
-                pad = w_clock - (w_pct + 1 + len(span.plain()) + len(_UNSTARTED_MARK))
+                styled = colored + s.dim("/") + _style_reset_span(s, span) + s.dim(_UNSTARTED_MARK + mark)
+                pad = w_clock - (w_pct + 1 + len(span.plain()) + len(_UNSTARTED_MARK) + len(mark))
                 tail.append(styled + " " * pad if pad > 0 else styled)
                 continue
             any_deadline = True
-            styled = colored + s.dim("/") + _style_reset_span(s, span)
+            styled = colored + s.dim("/") + _style_reset_span(s, span) + s.dim(mark)
             suffix = (
                 f" {format_pace(cell.pace_percent, cell.pace_early)}"
                 if layout.show_pace and cell.pace_percent is not None
                 else ""
             )
             styled += s.dim(suffix)
-            pad = w_clock - (w_pct + 1 + len(span.plain()) + len(suffix))
+            pad = w_clock - (w_pct + 1 + len(span.plain()) + len(mark) + len(suffix))
             if pad > 0:
                 styled += " " * pad
             tail.append(styled)
@@ -2199,9 +2217,7 @@ def render_clock_matrix_parts(
     if any_inferred:
         legend_items.append(("dim u/l = inferred, not reported", s.dim("dim u/l = inferred, not reported")))
     if any_folded:
-        legend_items.append(
-            ("+ = >1 window on that clock, showing most-used", s.dim("+ = >1 window on that clock, showing most-used"))
-        )
+        legend_items.append((_FOLD_LEGEND, s.dim(_FOLD_LEGEND)))
     if any_arrow:
         arrow_note = "-> / <- in an empty clock points at this row's window; a hole points at the earlier one"
         legend_items.append((arrow_note, s.dim(arrow_note)))
