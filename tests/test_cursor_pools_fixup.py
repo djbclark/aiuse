@@ -429,7 +429,13 @@ def test_learned_burn_rates_per_cursor_window(tmp_path):
             )
         ],
     )
-    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+    # The retention cutoff is measured from the real clock; pin it to the
+    # fixture's `now` so the 2026-07 snapshots never age out of the 90 days
+    # (they did on 2026-10-18 and this test failed on the date alone).
+    with (
+        patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path),
+        patch("aiuse.analysis.history.utcnow", return_value=now),
+    ):
         rates = compute_learned_burn_rates(current=current, retention_days=90, min_snapshots=2)
     assert "cursor:cursor_total:monthly" in rates
     assert "cursor:cursor_auto:monthly" in rates
