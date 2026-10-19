@@ -652,6 +652,9 @@ class AccountUsage:
     # An agent must ask the operator before spending or routing work to this
     # account (omp's grant). Emitted with ``ai_notice`` only when true.
     requires_operator_approval: bool = False
+    # Human label for a credits pool whose provider name is a tool name (omp = "Claude API
+    # credits"); emitted in --json as ``credits_label`` when set, never widening a column.
+    credits_label: str | None = None
     error: str | None = None
     notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
@@ -695,6 +698,8 @@ class AccountUsage:
         if self.requires_operator_approval:
             d["requires_operator_approval"] = True
             d["ai_notice"] = OPERATOR_APPROVAL_NOTICE
+        if self.credits_label:
+            d["credits_label"] = self.credits_label
         if self.context_usage is not None:
             d["context_usage"] = self.context_usage.to_dict()
         return d

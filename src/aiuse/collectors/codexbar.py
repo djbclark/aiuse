@@ -893,11 +893,16 @@ def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
         windows=[window] if window is not None else [],
         balance_usd=remaining,
         spent_usd=spent,
-        # An expiring promotional grant: agents ask the operator before spending it.
-        requires_operator_approval=True,
+        # The Claude Max plan's monthly API credits (a promotional grant that expires): a normal
+        # tier since 2026-10-19 (operator), api-only work first, then code/bulk via omp, never
+        # left unspent. The per-run operator gate was lifted the same day; the row keeps the
+        # provider name "omp" because other tools look it up by that name.
+        requires_operator_approval=False,
+        credits_label="Claude API credits",
         notes=[
             f"Live data fetched by CodexBar via {source_tag}.",
-            "Claude cloud-session credits (expiring; applies to omp via the Claude API).",
+            "Claude API credits: the Max plan's monthly promotional grant (expiring); spent by omp "
+            "or any ANTHROPIC_API_KEY path. Normal tier since 2026-10-19; use before expiry.",
         ],
         raw={"provider": "omp", "source_row": row},
         collected_at=parse_dt(usage_dict.get("updatedAt")),
