@@ -513,11 +513,16 @@ time (`--json`, `--available`, `serve`), so a cached snapshot is corrected too. 
 2. A newer CodexBar reading that shows _more_ credits than the override is contradicted (a grant never grows), so the override still wins; the replaced reading is kept as `superseded_reading`.
 3. A newer CodexBar reading that shows the same or less wins (credits were spent since).
 4. A CodexBar reading older than 24 h that no override supersedes is expired: `reading_expired: true`, balance and percentages dropped, state `unknown`, and the pool leaves `--available`.
+5. An override is ignored once its `--expires` time has passed (a lapsed grant; a date alone means 00:00 UTC) and once it is older than 7 days, so refresh it with `aiuse set-credits`; rules 2-4 then apply to CodexBar alone. An `observed_at` in the future is invalid.
+6. A malformed override file (non-finite or non-numeric figures, remaining above total, bad timestamps, a pool other than `omp`) is ignored with one line on stderr and never stops `aiuse --available`. `set-credits` refuses the same input with exit 2.
+7. An override never brings back an omp pool you hid (`[hidden_pools]`) or disabled (`[disabled_services]`).
+
+When CodexBar gives no `updatedAt`, `observed_at` falls back to the snapshot's collection time. The plain `aiuse` report does not apply the override; `--json`, `--available` and `serve` do.
 
 `source` (`codexbar` or `operator-override`) and `observed_at` are in the omp account and pool JSON, and
 `age_seconds`/`stale` derive from `observed_at`. `expires_at` is on the account and the pool.
 
-When an expiring grant lapses within 21 days and more than 50% is left, the pool carries
+When an expiring grant lapses within 21 days and more than 50% is left (the bar slides down in the last 10 days: 25% at 5 days out, 5% at 1 day), the pool carries
 `burn_before_reset` (`expires_at`, `days_left`, `remaining_percent`, `remaining_usd`, `suggestion`) and
 `aiuse --available` prints `burn before reset: ...` under its line. `remaining_percent` still means
 the share left (`used_percent` is the share consumed).

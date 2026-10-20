@@ -110,6 +110,18 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 #### Additive (2026-10-15, schema stays 1.3)
 
+- `accounts[].expires_at` (ISO string | omitted): when an expiring dollar grant (`omp`)
+  lapses; also on its `--available` entry.
+- `accounts[].source` / `observed_at` (omp): the reading carried, `codexbar` or
+  `operator-override` (`aiuse set-credits`), and its time; `superseded_reading`
+  (`{source, observed_at, balance_usd}`) when an override replaced a CodexBar reading;
+  `reading_expired: true` when a CodexBar reading older than 24 h has no override, so the
+  balance is dropped and the pool is `unknown`. An override lasts 7 days and ends at
+  `expires_at`; malformed ones are ignored.
+- `available[].burn_before_reset` (object | omitted): `{expires_at, days_left,
+remaining_percent, remaining_usd, suggestion}` when an expiring grant lapses within 21
+  days with more left than a bar that slides from 50% (10+ days out) toward 0.
+
 - `accounts[].spent_usd` (number | omitted): dollars already spent from an
   expiring dollar grant, today only the `omp` provider (Claude cloud-session
   credits). Omitted when not reported. See

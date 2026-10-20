@@ -252,7 +252,7 @@ def keep_copilot_report_window(label: str) -> bool:
 
 
 def parse_dt(value: str | None) -> datetime | None:
-    if not value:
+    if not value or not isinstance(value, str):
         return None
     text = value.strip()
     if not text:

@@ -93,7 +93,7 @@ SEMANTICS: dict[str, str] = {
     "observed_at": "ISO time of the reading an omp account/pool carries (the override's set time or CodexBar's updatedAt); age_seconds/stale derive from it",
     "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
     "reading_expired": "true on an omp account whose CodexBar reading is older than 24h and no override supersedes it: balance and percentages are dropped, so the pool is state unknown and not in --available",
-    "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more than 50% is left: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
+    "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more is left than a bar that is 50% at 10+ days out and slides toward 0 at expiry: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
     "requires_operator_approval": "true on an account, --available routing entry or alert the operator gated: an agent must not spend it, route work to it, or recommend burning it without first asking the operator. aiuse only reports it; the agent toolchain's dispatchers refuse such a slice unless the operator approved that run. No account is gated since 2026-10-19 (omp's grant, the Claude API credits, became a normal tier). Omitted when false",
     "credits_label": 'human label of a credits pool whose provider name is a tool name: omp carries "Claude API credits" (the Claude Max plan\'s monthly promotional API grant). Omitted when unset',
     "ai_notice": f"the operator gate in words ({OPERATOR_APPROVAL_NOTICE}); present exactly when requires_operator_approval is true",
@@ -500,6 +500,8 @@ def freshness(
 
 BURN_BEFORE_RESET_DAYS = 21.0
 BURN_BEFORE_RESET_MIN_LEFT_PERCENT = 50.0
+# The bar slides down in the last days: 50% at 10+ days out, 25% at 5, 5% at 1.
+_BURN_SLIDE_DAYS = 10.0
 
 
 def _account_expiry(account: Mapping[str, Any]) -> datetime | None:
@@ -521,8 +523,10 @@ def burn_before_reset(
     if expiry is None or headroom_percent is None or account.get("balance_usd") is None:
         return None
     days = (expiry - now).total_seconds() / 86400.0
-    if not 0 < days <= BURN_BEFORE_RESET_DAYS or headroom_percent <= BURN_BEFORE_RESET_MIN_LEFT_PERCENT:
+    bar = BURN_BEFORE_RESET_MIN_LEFT_PERCENT * min(1.0, days / _BURN_SLIDE_DAYS)
+    if not 0 < days <= BURN_BEFORE_RESET_DAYS or headroom_percent <= bar:
         return None
+    days_text = f"{days:.1f}d" if days < 1 else f"{days:.0f}d"
     left = float(account["balance_usd"])
     provider = str(account.get("provider") or "?")
     return {
@@ -531,7 +535,7 @@ def burn_before_reset(
         "remaining_percent": headroom_percent,
         "remaining_usd": left,
         "suggestion": (
-            f"{provider}: ${left:.2f} ({headroom_percent:.0f}% of the grant) expires in {days:.0f}d "
+            f"{provider}: ${left:.2f} ({headroom_percent:.0f}% of the grant) expires in {days_text} "
             f"({expiry.date().isoformat()}); use it before it lapses"
         ),
     }

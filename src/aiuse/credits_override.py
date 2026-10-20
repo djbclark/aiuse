@@ -14,6 +14,12 @@ Which reading wins, per account:
    ``superseded_reading``;
    (When the snapshot has no omp row at all, the override alone makes the row.)
 3. a newer CodexBar reading that shows the same or less wins (credits were spent since);
+   An override is ignored once its ``expires_at`` has passed (a lapsed grant) and once it is
+   older than 7 days (``OVERRIDE_MAX_AGE``; refresh it with ``aiuse set-credits``); the
+   CodexBar rules then apply alone. An ``observed_at`` in the future is invalid. Anything
+   malformed (non-finite or non-numeric figures, remaining > total, bad timestamps, wrong pool
+   name) is ignored with one stderr line and never raises. A hidden or disabled omp pool is never
+   rebuilt or rewritten.
 4. a CodexBar reading older than 24 h with no override that supersedes it is expired:
    its balance and percentages are dropped, so the pool is ``unknown`` and not routable.
 """
@@ -21,19 +27,74 @@ Which reading wins, per account:
 from __future__ import annotations
 
 import json
+import math
 import os
+import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from aiuse.analysis import history
+from aiuse.analysis.pool_keys import parse_pool_rule_key
 from aiuse.models import parse_dt, provider_cli_binary, utcnow
 
 OVERRIDE_PROVIDER = "omp"
 OVERRIDE_SOURCE = "operator-override"
 CODEXBAR_MAX_AGE = timedelta(hours=24)
+OVERRIDE_MAX_AGE = timedelta(days=7)
+_CLOCK_SKEW = timedelta(minutes=5)
 _EPSILON = 0.005
+_KEYS = ("remaining_usd", "total_usd", "expires_at", "note", "observed_at")
+
+
+def _number(value: Any) -> float | None:
+    """A finite int/float (never bool, NaN or Infinity), else None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _timestamp(value: Any) -> datetime | None:
+    return parse_dt(value) if isinstance(value, str) else None
+
+
+def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    """Validate one override entry: ``(entry, None)`` or ``(None, why it is ignored)``.
+
+    Structure and numbers are always checked; with ``now`` the time rules are too (not yet
+    observed, past ``expires_at``, older than ``OVERRIDE_MAX_AGE``).
+    """
+    if not isinstance(raw, Mapping):
+        return None, "not an object"
+    total = _number(raw.get("total_usd"))
+    remaining = _number(raw.get("remaining_usd"))
+    if total is None or remaining is None:
+        return None, "remaining_usd/total_usd must be finite numbers"
+    if total <= 0 or not 0 <= remaining <= total:
+        return None, "need total_usd > 0 and 0 <= remaining_usd <= total_usd"
+    observed = _timestamp(raw.get("observed_at"))
+    if observed is None:
+        return None, "observed_at must be an ISO timestamp string"
+    expires_raw = raw.get("expires_at")
+    expires = _timestamp(expires_raw)
+    if expires_raw is not None and expires is None:
+        return None, "expires_at must be an ISO timestamp string or null"
+    note = raw.get("note")
+    if now is not None:
+        if observed > now + _CLOCK_SKEW:
+            return None, "observed_at is in the future"
+        if now - observed > OVERRIDE_MAX_AGE:
+            return None, "older than 7 days; refresh it with aiuse set-credits"
+        if expires is not None and now >= expires:
+            return None, "the grant's expires_at has passed"
+    return {
+        "remaining_usd": remaining,
+        "total_usd": total,
+        "expires_at": expires.isoformat() if expires else None,
+        "note": note if isinstance(note, str) else None,
+        "observed_at": observed.isoformat(),
+    }, None
 
 
 def overrides_path() -> Path:
@@ -43,9 +104,25 @@ def overrides_path() -> Path:
 def load_overrides() -> dict[str, dict[str, Any]]:
     try:
         data = json.loads(overrides_path().read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return {}
-    return {k: v for k, v in data.items() if isinstance(v, dict)} if isinstance(data, dict) else {}
+    except (OSError, ValueError, RecursionError) as exc:
+        print(f"aiuse: ignoring unreadable credit overrides ({exc.__class__.__name__})", file=sys.stderr)
+        return {}
+    if not isinstance(data, dict):
+        print("aiuse: ignoring credit overrides: not a JSON object", file=sys.stderr)
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for provider, raw in data.items():
+        if provider != OVERRIDE_PROVIDER:
+            print(f"aiuse: ignoring credit override for unknown pool {str(provider)[:40]!r}", file=sys.stderr)
+            continue
+        entry, why = clean_override(raw)
+        if entry is None:
+            print(f"aiuse: ignoring {provider} credit override: {why}", file=sys.stderr)
+            continue
+        out[provider] = entry
+    return out
 
 
 def save_override(
@@ -96,6 +173,17 @@ def _credits_window(total: float, remaining: float, expires: str | None) -> dict
     }
 
 
+def _omp_hidden(snap: Mapping[str, Any]) -> bool:
+    """omp is hidden or disabled by the operator: the override must not bring it back."""
+    for section in ("hidden_pools", "disabled_services"):
+        mapping = snap.get(section)
+        if isinstance(mapping, Mapping) and any(
+            parse_pool_rule_key(str(key))[0] == OVERRIDE_PROVIDER for key in mapping
+        ):
+            return True
+    return False
+
+
 def apply_credit_overrides(
     snap: dict[str, Any],
     overrides: Mapping[str, Mapping[str, Any]] | None,
@@ -104,12 +192,17 @@ def apply_credit_overrides(
 ) -> None:
     """Rewrite the omp account(s) of a snapshot dict in place (see the module doc)."""
     now = now or utcnow()
-    override: Mapping[str, Any] = (overrides or {}).get(OVERRIDE_PROVIDER) or {}
+    if _omp_hidden(snap):
+        return
+    override: Mapping[str, Any] = {}
+    ignored: str | None = None
+    if (overrides or {}).get(OVERRIDE_PROVIDER) is not None:
+        cleaned, ignored = clean_override(overrides[OVERRIDE_PROVIDER], now=now)  # type: ignore[index]
+        override = cleaned or {}
     accounts = snap.get("accounts")
     if (
         override
         and isinstance(accounts, list)
-        and OVERRIDE_PROVIDER not in (snap.get("disabled_services") or {})
         and not any(isinstance(a, dict) and a.get("provider") == OVERRIDE_PROVIDER for a in accounts)
     ):
         # The collection produced no omp row at all (a cache-served run whose live CodexBar
@@ -131,6 +224,8 @@ def apply_credit_overrides(
             continue
         if account.get("source") == OVERRIDE_SOURCE:
             continue
+        if ignored:
+            account["notes"] = [*(account.get("notes") or []), f"credit override ignored: {ignored}"]
         reading_at = parse_dt(account.get("collected_at") or snap.get("collected_at"))
         balance = account.get("balance_usd")
         ov_at = parse_dt(override.get("observed_at"))
@@ -186,6 +281,18 @@ def apply_credit_overrides(
         account["observed_at"] = reading_at.isoformat() if reading_at else None
 
 
+def _finite(text: str) -> float:
+    import argparse
+
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"not a finite number: {text!r}")
+    return value
+
+
 def run_set_credits(argv: list[str]) -> int:
     """CLI entry: ``aiuse set-credits omp --remaining 95.57 --total 200 --expires 2026-11-08 --note ...``."""
     import argparse
@@ -196,21 +303,21 @@ def run_set_credits(argv: list[str]) -> int:
         description="Record the console's credit balance for a pool CodexBar misreads (omp = Claude API credits).",
     )
     parser.add_argument("provider", choices=[OVERRIDE_PROVIDER])
-    parser.add_argument("--remaining", type=float, required=True, metavar="USD", help="dollars left")
-    parser.add_argument("--total", type=float, required=True, metavar="USD", help="dollars granted")
+    parser.add_argument("--remaining", type=_finite, required=True, metavar="USD", help="dollars left")
+    parser.add_argument("--total", type=_finite, required=True, metavar="USD", help="dollars granted")
     parser.add_argument("--expires", metavar="DATE", help="grant expiry, YYYY-MM-DD or ISO datetime (UTC)")
     parser.add_argument("--note", default=None, help='free text, e.g. "console 2026-10-19"')
     args = parser.parse_args(argv)
     if args.total <= 0 or not 0 <= args.remaining <= args.total:
         print("error: need 0 <= --remaining <= --total and --total > 0", file=sys.stderr)
-        return 1
+        return 2
     expires = None
     if args.expires:
         try:
             expires = parse_expiry(args.expires)
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 1
+            return 2
     save_override(args.provider, remaining=args.remaining, total=args.total, expires=expires, note=args.note)
     print(
         f"recorded: {args.provider} ${args.remaining:.2f} of ${args.total:.2f} left"

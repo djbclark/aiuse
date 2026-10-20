@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from aiuse import cli
 from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_entries, summary_line
 from aiuse.collectors.codexbar import _omp_credits_from_row
@@ -215,8 +217,8 @@ def test_set_credits_cli_round_trip(capsys):
 
 
 def test_set_credits_rejects_bad_input(capsys):
-    assert run_set_credits(["omp", "--remaining", "300", "--total", "200"]) == 1
-    assert run_set_credits(["omp", "--remaining", "1", "--total", "200", "--expires", "soon"]) == 1
+    assert run_set_credits(["omp", "--remaining", "300", "--total", "200"]) == 2
+    assert run_set_credits(["omp", "--remaining", "1", "--total", "200", "--expires", "soon"]) == 2
     assert load_overrides() == {}
     assert "error" in capsys.readouterr().err
 
@@ -260,3 +262,167 @@ def test_available_prints_burn_line(monkeypatch, capsys):
     pool = json.loads(capsys.readouterr().out)["available"][0]
     assert pool["burn_before_reset"]["remaining_usd"] == 150.0
     assert pool["source"] == "codexbar" and "observed_at" in pool
+
+
+# --- hardening: malformed, expired, stale, hidden ----------------------------------
+
+
+def _bad(**changes):
+    entry = dict(_override()["omp"])
+    entry.update(changes)
+    return {"omp": entry}
+
+
+def _applied(overrides, *, snap=None, updated=None):
+    snap = snap or _snap(_codexbar_omp(updated=updated or NOW - timedelta(hours=1)))
+    enrich_snapshot(snap, now=NOW, credit_overrides=overrides)
+    return snap
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"remaining_usd": float("nan")},
+        {"remaining_usd": float("inf")},
+        {"total_usd": float("inf")},
+        {"remaining_usd": "95.57"},
+        {"remaining_usd": True, "total_usd": True},
+        {"remaining_usd": -1.0},
+        {"remaining_usd": 1e9},
+        {"total_usd": 0},
+        {"observed_at": 12345},
+        {"observed_at": ["x"]},
+        {"observed_at": "garbage"},
+        {"expires_at": 5},
+        {"expires_at": {"a": 1}},
+        {"observed_at": (NOW + timedelta(days=3)).isoformat()},
+    ],
+)
+def test_malformed_override_is_ignored_and_never_raises(changes):
+    snap = _applied(_bad(**changes))
+    omp = _omp(snap)
+    assert omp["source"] == "codexbar"
+    assert omp["balance_usd"] == 200.0
+    assert any("credit override ignored" in n for n in omp["notes"])
+
+
+def test_malformed_override_with_no_omp_row_adds_no_row():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides=_bad(observed_at=12345))
+    assert snap["accounts"] == []
+
+
+def test_wrong_pool_name_is_ignored():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={"claude": _override()["omp"]})
+    assert snap["accounts"] == []
+
+
+def test_load_rejects_bad_entries_with_one_stderr_line_each(capsys):
+    overrides_path().parent.mkdir(parents=True, exist_ok=True)
+    overrides_path().write_text(
+        '{"omp": {"remaining_usd": NaN, "total_usd": 200, "observed_at": "2026-10-19T00:00:00Z"}, '
+        '"claude": {"remaining_usd": 1}}'
+    )
+    assert load_overrides() == {}
+    err = capsys.readouterr().err.strip().splitlines()
+    assert len(err) == 2
+    assert "finite" in err[0] and "unknown pool" in err[1]
+
+
+def test_load_rejects_non_object_and_garbage(capsys):
+    overrides_path().parent.mkdir(parents=True, exist_ok=True)
+    overrides_path().write_text("[1, 2]")
+    assert load_overrides() == {}
+    overrides_path().write_text("\x00not json")
+    assert load_overrides() == {}
+    assert capsys.readouterr().err.count("aiuse: ignoring") == 2
+
+
+def test_override_after_grant_expiry_is_ignored():
+    snap = _applied(_bad(expires_at=(NOW - timedelta(days=1)).isoformat()))
+    omp = _omp(snap)
+    assert omp["source"] == "codexbar"
+    assert any("expires_at has passed" in n for n in omp["notes"])
+
+
+def test_override_older_than_7_days_is_ignored_then_codexbar_rules_apply():
+    old = (NOW - timedelta(days=8)).isoformat()
+    snap = _applied(_bad(observed_at=old), updated=NOW - timedelta(hours=30))
+    omp = _omp(snap)
+    assert omp["source"] == "codexbar" and omp["reading_expired"] is True
+    assert omp["windows"][0]["state"] == "unknown"
+    assert [p for p in available_pools(snap) if p["provider"] == "omp"] == []
+
+
+def test_override_just_under_7_days_still_applies():
+    snap = _applied(_bad(observed_at=(NOW - timedelta(days=6, hours=23)).isoformat()))
+    assert _omp(snap)["source"] == "operator-override"
+
+
+def test_override_percent_never_exceeds_100():
+    snap = _applied(_bad(remaining_usd=200.0))
+    assert _omp(snap)["windows"][0]["remaining_percent"] == 100.0
+
+
+def test_fresher_codexbar_with_less_wins_over_override():
+    snap = _applied(_override(), snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=1), balance=50.0)))
+    omp = _omp(snap)
+    assert omp["source"] == "codexbar" and omp["windows"][0]["remaining_percent"] == 25.0
+
+
+@pytest.mark.parametrize("section", ["hidden_pools", "disabled_services"])
+@pytest.mark.parametrize("key", ["omp", "omp/claude"])
+def test_hidden_or_disabled_omp_is_not_resurrected(section, key):
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    snap[section] = {key: "operator"}
+    enrich_snapshot(snap, now=NOW, credit_overrides=_override())
+    assert snap["accounts"] == []
+
+
+def test_hidden_omp_row_is_not_rewritten():
+    snap = _snap(_codexbar_omp(updated=NOW - timedelta(hours=1)))
+    snap["hidden_pools"] = {"omp": "operator"}
+    apply_credit_overrides(snap, _override(), now=NOW)
+    assert _omp(snap)["source"] == "codexbar"
+
+
+def test_timezone_naive_timestamps_are_read_as_utc():
+    naive_obs = (NOW - timedelta(minutes=5)).replace(tzinfo=None).isoformat()
+    naive_exp = EXPIRY.replace(tzinfo=None).isoformat()
+    snap = _applied(_bad(observed_at=naive_obs, expires_at=naive_exp))
+    omp = _omp(snap)
+    assert omp["source"] == "operator-override"
+    assert omp["observed_at"] == (NOW - timedelta(minutes=5)).isoformat()
+    assert omp["expires_at"] == EXPIRY.isoformat()
+
+
+def _exit_code(argv):
+    try:
+        return run_set_credits(argv)
+    except SystemExit as exc:  # argparse rejects non-numbers and inf/nan itself
+        return exc.code
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "-5", "abc"])
+def test_set_credits_refuses_nonfinite_and_negative(value):
+    assert _exit_code(["omp", "--remaining", value, "--total", "200"]) == 2
+    assert _exit_code(["omp", "--remaining", "10", "--total", value]) == 2
+    assert load_overrides() == {}
+
+
+def test_set_credits_remaining_above_total_exits_2():
+    assert run_set_credits(["omp", "--remaining", "201", "--total", "200"]) == 2
+    assert load_overrides() == {}
+
+
+def test_burn_nudge_slides_down_near_expiry_and_prints_fraction_of_a_day():
+    account = _codexbar_omp(updated=NOW, balance=90.0)  # 45% left
+    snap = _snap(account)
+    enrich_snapshot(snap, now=NOW, credit_overrides={})
+    (pool,) = pool_entries(snap, now=EXPIRY - timedelta(days=2))
+    assert "burn_before_reset" in pool  # 45% > 10% bar at 2 days
+    (pool,) = pool_entries(snap, now=EXPIRY - timedelta(hours=10))
+    assert "expires in 0.4d" in pool["burn_before_reset"]["suggestion"]
+    (pool,) = pool_entries(snap, now=EXPIRY - timedelta(days=19))
+    assert "burn_before_reset" not in pool  # 45% <= 50% bar at 19 days
