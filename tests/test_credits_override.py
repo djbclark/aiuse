@@ -557,3 +557,53 @@ def test_serve_rebuilds_its_in_memory_cache_when_set_credits_runs(monkeypatch):
     assert len(calls) == 2
     state.get_payload(refresh=False)
     assert len(calls) == 2
+
+
+# --- Codex late findings: time-dependent evaluation behind serve's cache; file source --------------
+
+
+def test_serve_cached_payload_becomes_unknown_once_expires_at_passes_without_a_file_change(monkeypatch):
+    from aiuse import serve
+
+    clock = [NOW.timestamp()]
+    monkeypatch.setattr(serve, "_clock", lambda: clock[0])
+    save_override(
+        "omp",
+        remaining=95.0,
+        total=200.0,
+        expires=NOW + timedelta(seconds=90),
+        note=None,
+        now=NOW,
+        granted=NOW - timedelta(days=5),
+    )
+
+    def fake_live(self):
+        at = datetime.fromtimestamp(clock[0], UTC)
+        account = _codexbar_omp(updated=NOW - timedelta(minutes=30))
+        account.expires_at = NOW + timedelta(seconds=90)
+        account.windows[0].resets_at = NOW + timedelta(seconds=90)
+        snap = _snap(account)
+        enrich_snapshot(snap, now=at, credit_overrides=load_overrides({}, now=at))
+        snap["collected_at"] = datetime.now(UTC).isoformat()
+        return {"snapshot": snap}
+
+    monkeypatch.setattr(serve._ServeState, "_collect_live", fake_live)
+    monkeypatch.setattr(serve._ServeState, "_from_disk_if_fresh", lambda self: None)
+    state = serve._ServeState(config={}, max_age_seconds=10**9)
+    first = _omp(state.get_payload(refresh=False)["snapshot"])
+    assert first["balance_usd"] == 95.0 and not first.get("reading_expired")
+    clock[0] += 150  # now past expires_at, no file touched
+    later = _omp(state.get_payload(refresh=False)["snapshot"])
+    assert later["balance_usd"] is None and later["grant_expired"] is True
+
+
+def test_hand_edited_admin_api_source_in_the_overrides_file_cannot_create_a_row():
+    _write_file(
+        '{"omp": {"remaining_usd": 50, "total_usd": 200, "source": "admin-api", "observed_at": "%s"}}'
+        % datetime.now(UTC).isoformat()
+    )
+    loaded = load_overrides()
+    assert loaded["omp"]["source"] == "operator-override"
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides=loaded)
+    assert not [a for a in snap["accounts"] if a["provider"] == "omp"]

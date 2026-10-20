@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template: packaging/launchd/com.djbclark.aiuse-credits-refresh.plist
+  Install: see "Claude API credits" in README.md.
+
+  @REFRESH_BIN_PATH@ is replaced with the absolute path of the copy of packaging/launchd/aiuse-credits-refresh
+  installed in ~/.local/bin (never the checkout),
+  @AIUSE_BIN_PATH@ with the absolute path to `aiuse` (value only: the AIUSE_BIN key name stays),
+  USER_LOCAL_BIN and LOG_DIR as in
+  com.djbclark.aiuse.plist. Hourly, and once at load.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.djbclark.aiuse-credits-refresh</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@REFRESH_BIN_PATH@</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>USER_LOCAL_BIN:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>AIUSE_BIN</key>
+		<string>@AIUSE_BIN_PATH@</string>
+	</dict>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>LOG_DIR/aiuse-credits-refresh.stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>LOG_DIR/aiuse-credits-refresh.stderr.log</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
