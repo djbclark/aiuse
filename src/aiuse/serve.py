@@ -11,6 +11,7 @@ import json
 import socket
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -223,6 +224,19 @@ def run_serve(
     return 0
 
 
+def _clock() -> float:
+    return time.time()
+
+
+def _cache_stamp() -> tuple[Any, ...]:
+    """What the in-memory payload depends on besides collectors: the figure files and the minute.
+
+    Grant expiry and the override age limits are evaluated against the clock, so a payload built
+    before ``expires_at`` must not be served after it just because no file changed.
+    """
+    return (overrides_signature(), int(_clock() // 60))
+
+
 class _ServeState:
     def __init__(
         self,
@@ -251,10 +265,10 @@ class _ServeState:
                     and _payload_age_ok(self._cache, self.max_age_seconds)
                     and snapshot_matches_policy(self._cache, self.config)
                     # a set-credits or credit refresh since the cache was built must show now
-                    and self._cache_overrides_sig == overrides_signature()
+                    and self._cache_overrides_sig == _cache_stamp()
                 ):
                     return self._cache
-            sig = overrides_signature()
+            sig = _cache_stamp()
             live = self._collect_live()
             self._cache = live
             self._cache_overrides_sig = sig
