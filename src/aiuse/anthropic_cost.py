@@ -133,6 +133,11 @@ def refresh(
             "no grant parameters: run `aiuse set-credits omp --remaining N --total N --granted DATE --expires DATE` once",
         )
     total, granted_at, expires_at = grant
+    if expires_at is not None and now >= expires_at:
+        return (
+            2,
+            f"the grant expired {expires_at.date().isoformat()}: no Admin API request made; record a new grant with `aiuse set-credits omp`",
+        )
     try:
         spent = fetch_spend_usd(key, granted_at, fetch=fetch)
     except CostReportError as exc:

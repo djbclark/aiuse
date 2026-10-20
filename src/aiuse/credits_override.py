@@ -228,16 +228,20 @@ def save_override(
     now: datetime | None = None,
     granted: datetime | None = None,
 ) -> dict[str, Any]:
+    path = overrides_path()
+    data = _load_file(path, OVERRIDE_SOURCE)
+    granted_at = granted.isoformat() if granted else None
+    if granted_at is None:
+        # Omitting --granted keeps the grant metadata the credit refresh depends on.
+        granted_at = (data.get(provider) or {}).get("granted_at")
     entry = {
-        "granted_at": granted.isoformat() if granted else None,
+        "granted_at": granted_at,
         "remaining_usd": remaining,
         "total_usd": total,
         "expires_at": expires.isoformat() if expires else None,
         "note": note,
         "observed_at": (now or utcnow()).isoformat(),
     }
-    path = overrides_path()
-    data = _load_file(path, OVERRIDE_SOURCE)
     data[provider] = entry
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
@@ -421,7 +425,7 @@ def apply_credit_overrides(
 def overrides_signature() -> tuple[tuple[int, int] | None, ...]:
     """(mtime_ns, size) of the figure files, to notice a ``set-credits`` or refresh."""
     out: list[tuple[int, int] | None] = []
-    for path in (overrides_path(),):
+    for path in (overrides_path(), readings_file()):
         try:
             stat = path.stat()
             out.append((stat.st_mtime_ns, stat.st_size))

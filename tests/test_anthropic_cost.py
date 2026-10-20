@@ -315,3 +315,30 @@ def test_a_source_claimed_inside_the_override_file_is_ignored():
         )
     )
     assert co.load_overrides(now=NOW)["omp"]["source"] == "operator-override"
+
+
+# --- Codex review of the cost-report branch -----------------------------------------------------
+
+
+def test_set_credits_without_granted_keeps_the_stored_grant_date():
+    _seed_grant()
+    co.save_override("omp", remaining=80.0, total=200.0, expires=EXPIRES, note="again", now=NOW)
+    entry = co.load_overrides(config={}, now=NOW)["omp"]
+    assert entry["remaining_usd"] == 80.0 and entry["granted_at"] == GRANTED.isoformat()
+    assert co.load_grant_params()[1] == GRANTED
+
+
+def test_refresh_makes_no_request_once_the_grant_has_expired(capsys):
+    _seed_grant()
+    fetch = Canned()
+    code, msg = ac.refresh(env={ac.KEY_ENV: FAKE_KEY}, fetch=fetch, now=EXPIRES + timedelta(hours=1))
+    assert code != 0 and "expired" in msg and FAKE_KEY not in msg
+    assert fetch.calls == []
+
+
+def test_overrides_signature_changes_when_a_reading_is_written():
+    before = co.overrides_signature()
+    _seed_grant()
+    fetch = Canned((200, _page(["1000"])))
+    assert ac.refresh(env={ac.KEY_ENV: FAKE_KEY}, fetch=fetch, now=NOW)[0] == 0
+    assert co.overrides_signature() != before and co.overrides_signature()[1] is not None
