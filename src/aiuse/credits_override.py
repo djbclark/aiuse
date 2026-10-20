@@ -45,6 +45,7 @@ CODEXBAR_MAX_AGE = timedelta(hours=24)
 OVERRIDE_MAX_AGE = timedelta(days=7)
 _CLOCK_SKEW = timedelta(minutes=5)
 _EPSILON = 0.005
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _KEYS = ("remaining_usd", "total_usd", "expires_at", "note", "observed_at")
 
 
@@ -88,6 +89,10 @@ def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, 
     expires = _timestamp(expires_raw)
     if expires_raw is not None and expires is None:
         return None, "expires_at must be an ISO timestamp string or null"
+    granted_raw = raw.get("granted_at")
+    granted = _timestamp(granted_raw)
+    if granted_raw is not None and granted is None:
+        return None, "granted_at must be an ISO timestamp string or null"
     note = raw.get("note")
     if now is not None:
         if observed > now + _CLOCK_SKEW:
@@ -102,6 +107,7 @@ def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, 
         "expires_at": expires.isoformat() if expires else None,
         "note": note if isinstance(note, str) else None,
         "observed_at": observed.isoformat(),
+        "granted_at": granted.isoformat() if granted else None,
         "source": "admin-api" if raw.get("source") == "admin-api" else OVERRIDE_SOURCE,
     }, None
 
@@ -121,12 +127,40 @@ def _config_hides_omp(config: Mapping[str, Any] | None) -> bool:
     return False
 
 
+def readings_file() -> Path:
+    return overrides_path().with_name("credit-readings.json")
+
+
 def load_overrides(config: Mapping[str, Any] | None = None) -> dict[str, dict[str, Any]]:
-    """The validated overrides; empty when ``config`` hides or disables omp. Never raises."""
+    """The freshest validated figure per pool: operator override or Admin API reading.
+
+    Empty when ``config`` hides or disables omp. Never raises.
+    """
     if _config_hides_omp(config):
         return {}
+    merged = _load_file(overrides_path(), OVERRIDE_SOURCE)
+    for provider, entry in _load_file(readings_file(), "admin-api").items():
+        current = merged.get(provider)
+        if current is None or (parse_dt(entry["observed_at"]) or _EPOCH) > (parse_dt(current["observed_at"]) or _EPOCH):
+            merged[provider] = entry
+    return merged
+
+
+def load_grant_params() -> tuple[float, datetime, datetime | None] | None:
+    """``(total_usd, granted_at, expires_at)`` from the operator override, or None.
+
+    The grant's parameters do not age, so the override's 7-day limit is not applied.
+    """
+    entry = _load_file(overrides_path(), OVERRIDE_SOURCE).get(OVERRIDE_PROVIDER)
+    granted = parse_dt(entry.get("granted_at")) if entry else None
+    if entry is None or granted is None:
+        return None
+    return float(entry["total_usd"]), granted, parse_dt(entry.get("expires_at"))
+
+
+def _load_file(path: Path, source: str) -> dict[str, dict[str, Any]]:
     try:
-        with overrides_path().open("rb") as handle:
+        with path.open("rb") as handle:
             blob = handle.read(MAX_FILE_BYTES + 1)
         if len(blob) > MAX_FILE_BYTES:
             print("aiuse: ignoring credit overrides: file larger than 64 KiB", file=sys.stderr)
@@ -149,6 +183,7 @@ def load_overrides(config: Mapping[str, Any] | None = None) -> dict[str, dict[st
         if entry is None:
             print(f"aiuse: ignoring {provider} credit override: {why}", file=sys.stderr)
             continue
+        entry["source"] = source
         out[provider] = entry
     return out
 
@@ -169,8 +204,10 @@ def save_override(
     expires: datetime | None,
     note: str | None,
     now: datetime | None = None,
+    granted: datetime | None = None,
 ) -> dict[str, Any]:
     entry = {
+        "granted_at": granted.isoformat() if granted else None,
         "remaining_usd": remaining,
         "total_usd": total,
         "expires_at": expires.isoformat() if expires else None,
@@ -178,7 +215,7 @@ def save_override(
         "observed_at": (now or utcnow()).isoformat(),
     }
     path = overrides_path()
-    data = load_overrides()
+    data = _load_file(path, OVERRIDE_SOURCE)
     data[provider] = entry
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
@@ -396,6 +433,9 @@ def run_set_credits(argv: list[str]) -> int:
     parser.add_argument("--remaining", type=_finite, required=True, metavar="USD", help="dollars left")
     parser.add_argument("--total", type=_finite, required=True, metavar="USD", help="dollars granted")
     parser.add_argument("--expires", metavar="DATE", help="grant expiry, YYYY-MM-DD or ISO datetime (UTC)")
+    parser.add_argument(
+        "--granted", metavar="DATE", help="grant date, YYYY-MM-DD or ISO datetime (UTC); needed by refresh-credits"
+    )
     parser.add_argument("--note", default=None, help='free text, e.g. "console 2026-10-19"')
     args = parser.parse_args(argv)
     if args.total <= 0 or not 0 <= args.remaining <= args.total:
@@ -411,7 +451,16 @@ def run_set_credits(argv: list[str]) -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-    save_override(args.provider, remaining=args.remaining, total=args.total, expires=expires, note=args.note)
+    granted = None
+    if args.granted:
+        try:
+            granted = parse_expiry(args.granted)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    save_override(
+        args.provider, remaining=args.remaining, total=args.total, expires=expires, note=args.note, granted=granted
+    )
     print(
         f"recorded: {args.provider} ${args.remaining:.2f} of ${args.total:.2f} left"
         f"{', expires ' + expires.date().isoformat() if expires else ''} ({overrides_path()})"
