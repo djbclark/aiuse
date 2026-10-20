@@ -1,6 +1,6 @@
 ---
 name: reference-graft-wiring
-description: How graft (code-graph MCP) is wired into Claude Code on this machine, the grep nudge hook, and what alwaysLoad does/doesn't do
+description: How graft is wired on this machine (CLI-only since 2026-10-18, tools deferred since 2026-10-10), the grep nudge hooks, and the watchdog that guards it
 metadata:
   type: reference
 ---
@@ -16,3 +16,20 @@ Nudge: ~/.claude/hooks/graft_grep_nudge.py, PreToolUse matcher `Grep|Glob|Bash`;
 **Watchdog:** Hermes cron job "Graft Wiring Invariants" runs `~/.hermes/scripts/check-graft-wiring-invariants.sh` every 6h (no-agent; silent when healthy) and Telegrams the failed checks, evidence (graft version change, file mtimes, recent `graft init` in shell history, hermes config backups, last commits) plus a paste-ready Claude Code prompt to restore and find the cause. Upstream report of the retraction + dry-run omission: https://github.com/trailhq/Graft/issues/482 (2026-09-26).
 
 Housekeeping 2026-09-26: forks (crush, mobile) hide /.mcp.json, /graft/ and /.ignore via .git/info/exclude so nothing graft-related reaches upstream diffs; tendcf untracked graft's session cache and tracks .ignore like aiuse; Antigravity's ~/.gemini/config/mcp_config.json was an empty (invalid) file so graft never registered there — seeded with the graft server; ~/.hermes/config.yaml is now force-tracked (only ${ENV} key refs) so the pre_llm_call hook survives a restore.
+
+**Policy since 2026-10-18 (read this first; the paragraphs above describe the 2026-09-26 wiring and are history):**
+graft is CLI-only. On 2026-10-10 djbclark deferred the MCP tools (aiuse df5c155, tendcf 765b3cd: graft was called in 6% of
+sessions, 64% of its answers were followed by a read of the same file; `alwaysLoad` dropped, the graft_mcp_alwaysload.py
+SessionStart guard removed from ~/.claude/settings.json). On 2026-10-18 the MCP server was deregistered from every TUI (95
+MCP calls vs ~24,000 CLI uses in 14 days; djbclark-ade docs/mcp-servers.md) and `disabledMcpjsonServers` in
+~~/.claude/settings.local.json keeps a project .mcp.json from re-enabling it. The Hermes watchdog
+(~~/.hermes/scripts/check-graft-wiring-invariants.sh) still enforced the 2026-09-26 wiring until 2026-10-20 (failure streak
+37, six "failures" that were these two rulings); since ~/.hermes 94e8d95 it fails on the opposite: a graft MCP entry in
+~/.claude.json, ~/.codex/config.toml or ~/.gemini/config/mcp_config.json, the alwaysload guard wired, or `alwaysLoad: true`
+in a repo .mcp.json (the forks crush and mobile still had it; dropped 2026-10-20). What it keeps guarding: the six
+graft-hooks.cjs hooks and graft_grep_nudge.py in Claude, the Codex hooks and shim, the Antigravity skill, the Hermes
+pre_llm_call hook, repo graphs, AGENTS.md sections and fork excludes. graft 0.23.0's SessionStart reconcile re-added
+`mcpServers.graft` to ~/.claude.json after the 2026-10-16 upgrade; removed 2026-10-20 with `claude mcp remove graft -s user`
+(backup ~/.claude.json.bak-pre-graft-mcp-remove-*). Never run `graft init --agents ...` to restore anything: it registers
+the MCP server in every host it names and retracts the rest; hooks come back by inserting the raw entries and running
+graft-hook-timeout-fix.py (hermes-worktrees memory project-graft-hook-timeout-units).
