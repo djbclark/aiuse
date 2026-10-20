@@ -27,6 +27,7 @@ OPENROUTER_MANAGEMENT_KEY = { description = \"OpenRouter management key for fetc
 DEEPSEEK_API_KEY = { description = \"DeepSeek API key for the read-only prepaid balance endpoint (GET /user/balance); costs no tokens.\", required = false }
 MUSE_COOKIE = { description = \"Meta Model API (dev.meta.ai) Cookie header for Muse free-credit balance via GraphQL; refresh with aiuse credential refresh muse --from chrome.\", required = false }
 MUSE_API_KEY = { description = \"Optional Muse / Meta Model API Bearer key (same as muse login providers.meta.api_key).\", required = false }
+ANTHROPIC_ADMIN_KEY = { description = \"Anthropic Admin API key (sk-ant-admin...) for `aiuse refresh-credits omp`, read through sudo-secretspec run only; reads the org cost report.\", required = false }
 """
 
 # Keys that older manifests may lack; ensure_manifest appends any missing lines.
@@ -47,6 +48,11 @@ _OPTIONAL_SECRET_LINES = {
     "MUSE_API_KEY": (
         'MUSE_API_KEY = { description = "Optional Muse / Meta Model API Bearer key '
         '(same as muse login providers.meta.api_key).", required = false }\n'
+    ),
+    "ANTHROPIC_ADMIN_KEY": (
+        'ANTHROPIC_ADMIN_KEY = { description = "Anthropic Admin API key (sk-ant-admin...) for '
+        '`aiuse refresh-credits omp`, read through sudo-secretspec run only; reads the org cost report.", '
+        "required = false }\n"
     ),
 }
 

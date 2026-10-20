@@ -556,7 +556,7 @@ Hourly refresh with launchd (not loaded for you). The wrapper is copied out of t
 ```
 mkdir -p ~/.local/bin ~/Library/LaunchAgents ~/Library/Logs/aiuse
 install -m 755 packaging/launchd/aiuse-credits-refresh ~/.local/bin/aiuse-credits-refresh
-gsed -e "s|REFRESH_BIN|$HOME/.local/bin/aiuse-credits-refresh|" -e "s|AIUSE_BIN|$(command -v aiuse)|" \
+gsed -e "s|@REFRESH_BIN_PATH@|$HOME/.local/bin/aiuse-credits-refresh|" -e "s|@AIUSE_BIN_PATH@|$(command -v aiuse)|" \
   -e "s|USER_LOCAL_BIN|$HOME/.local/bin|" -e "s|LOG_DIR|$HOME/Library/Logs/aiuse|" \
   packaging/launchd/com.djbclark.aiuse-credits-refresh.plist \
   > ~/Library/LaunchAgents/com.djbclark.aiuse-credits-refresh.plist
