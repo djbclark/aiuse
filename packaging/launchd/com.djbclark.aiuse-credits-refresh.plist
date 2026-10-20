@@ -4,7 +4,8 @@
   Template: packaging/launchd/com.djbclark.aiuse-credits-refresh.plist
   Install: see "Claude API credits" in README.md.
 
-  REFRESH_BIN is replaced with the absolute path to packaging/launchd/aiuse-credits-refresh,
+  REFRESH_BIN is replaced with the absolute path of the copy of packaging/launchd/aiuse-credits-refresh
+  installed in ~/.local/bin (never the checkout),
   AIUSE_BIN with the absolute path to `aiuse`, USER_LOCAL_BIN and LOG_DIR as in
   com.djbclark.aiuse.plist. Hourly, and once at load.
 -->

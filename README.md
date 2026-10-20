@@ -534,7 +534,7 @@ the share left (`used_percent` is the share consumed).
 The Anthropic Admin API has no balance endpoint, but its cost report
 (`GET https://api.anthropic.com/v1/organizations/cost_report`, docs:
 <https://platform.claude.com/docs/en/api/beta/organization/cost_report/retrieve>) gives the spend since a date, so
-the balance is derived: grant total minus spend since the grant date, clamped to 0..total. Give the grant
+the balance is derived: grant total minus spend since the grant date, clamped to 0..total. It is a lower bound on the promo balance: the cost report counts all org spend since `granted_at`, including spend the grant did not cover (the first real run read $89.56 against the console's $95.57). Give the grant
 parameters once, on the override:
 
 ```
@@ -544,17 +544,19 @@ sudo-secretspec run --reason "aiuse cost report" -- aiuse refresh-credits omp
 
 The key is `ANTHROPIC_ADMIN_KEY`, supplied only by `sudo-secretspec run` (a missing key means nothing runs and
 no request is made). The reading is stored in `~/.cache/aiuse/credit-readings.json` with `source: admin-api`
-and the time it was taken. The freshest of the Admin API reading and the operator override is used, and all
-the override rules above (7-day age, expiry, hidden pools) apply to it. If the API call fails (20 s timeout,
+and the time it was taken. The freshest of the Admin API reading and the operator override is used, and the
+override rules above (expiry, hidden pools) apply to it, except that an Admin API reading lasts 24 h (like a CodexBar reading), not 7 days; after that the pool is `unknown` until a refresh succeeds.
+For the same grant a reading can only fall: it is capped at the operator's figure and at the previous reading, a rise is noted, and a report with no buckets since the grant date counts as a failure. So once the hourly job is loaded it replaces a newer `set-credits` within the hour, and can only lower the figure. A key with characters outside `[A-Za-z0-9_-]` (after trimming) is refused with exit 2 and a message that never shows it; redirects are refused so the key is never forwarded. If the API call fails (20 s timeout,
 any non-200, an unexpected body) one stderr line is printed and the previous reading is kept, so it ages and
 shows STALE. An Admin API reading may create the omp row when the collectors made none; an operator override
 may not.
 
-Hourly refresh with launchd (not loaded for you):
+Hourly refresh with launchd (not loaded for you). The wrapper is copied out of the checkout so a branch switch cannot change what launchd runs:
 
 ```
-mkdir -p ~/Library/LaunchAgents ~/Library/Logs/aiuse
-gsed -e "s|REFRESH_BIN|$PWD/packaging/launchd/aiuse-credits-refresh|" -e "s|AIUSE_BIN|$(command -v aiuse)|" \
+mkdir -p ~/.local/bin ~/Library/LaunchAgents ~/Library/Logs/aiuse
+install -m 755 packaging/launchd/aiuse-credits-refresh ~/.local/bin/aiuse-credits-refresh
+gsed -e "s|REFRESH_BIN|$HOME/.local/bin/aiuse-credits-refresh|" -e "s|AIUSE_BIN|$(command -v aiuse)|" \
   -e "s|USER_LOCAL_BIN|$HOME/.local/bin|" -e "s|LOG_DIR|$HOME/Library/Logs/aiuse|" \
   packaging/launchd/com.djbclark.aiuse-credits-refresh.plist \
   > ~/Library/LaunchAgents/com.djbclark.aiuse-credits-refresh.plist
