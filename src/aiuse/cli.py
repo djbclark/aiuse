@@ -457,6 +457,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
         from aiuse.credentials import run_credential_command
 
         return run_credential_command(raw[1:])
+    if raw and raw[0] == "refresh-credits":
+        from aiuse.anthropic_cost import run_refresh_credits
+
+        return run_refresh_credits(raw[1:])
     if raw and raw[0] == "set-credits":
         from aiuse.credits_override import run_set_credits
 

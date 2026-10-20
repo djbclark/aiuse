@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# One refresh of the omp (Claude API credits) balance from the Anthropic Admin API cost report.
+# The admin key is injected by sudo-secretspec as ANTHROPIC_ADMIN_KEY; it never touches this
+# script, its arguments or its logs. Run by launchd (com.djbclark.aiuse-credits-refresh).
+set -euo pipefail
+
+AIUSE_BIN="${AIUSE_BIN:-$(command -v aiuse)}"
+exec sudo-secretspec run --reason "aiuse cost report" -- "${AIUSE_BIN}" refresh-credits omp
