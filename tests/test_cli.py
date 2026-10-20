@@ -28,6 +28,10 @@ def test_http_probe_rejects_non_http_url():
 
 
 def _stub_probe(monkeypatch):
+    # The OpenUsage app answers on 127.0.0.1:6736 on the operator's Mac only; a Linux runner
+    # has nothing there, so doctor would report it MISSING and exit 1.
+    monkeypatch.setattr(cli, "_http_probe_ok", lambda *_a, **_k: True)
+    monkeypatch.setattr(cli, "_openusage_http_ok", lambda **_k: True)
     monkeypatch.setattr(
         cli,
         "probe_tool_version",

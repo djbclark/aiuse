@@ -252,7 +252,7 @@ def keep_copilot_report_window(label: str) -> bool:
 
 
 def parse_dt(value: str | None) -> datetime | None:
-    if not value:
+    if not value or not isinstance(value, str):
         return None
     text = value.strip()
     if not text:
@@ -649,6 +649,9 @@ class AccountUsage:
     # grant's size and expiry live on its window (``refill_capacity``,
     # ``resets_at``). Not an overage wallet, so it is not ``usage_credits``.
     spent_usd: float | None = None
+    # When an expiring dollar grant lapses (omp's Claude API credits); unused dollars are lost
+    # then. Emitted in --json as ``expires_at``; drives the ``burn_before_reset`` nudge.
+    expires_at: datetime | None = None
     # An agent must ask the operator before spending or routing work to this
     # account (omp's grant). Emitted with ``ai_notice`` only when true.
     requires_operator_approval: bool = False
@@ -695,6 +698,8 @@ class AccountUsage:
             d["usage_credits"] = self.usage_credits.to_dict()
         if self.spent_usd is not None:
             d["spent_usd"] = self.spent_usd
+        if self.expires_at is not None:
+            d["expires_at"] = self.expires_at.isoformat()
         if self.requires_operator_approval:
             d["requires_operator_approval"] = True
             d["ai_notice"] = OPERATOR_APPROVAL_NOTICE
