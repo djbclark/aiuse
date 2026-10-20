@@ -403,12 +403,14 @@ def enrich_snapshot(
     unit tests leave it off (or pass a temp ``acp_log_dir``) so they stay hermetic.
     """
     now = now or utcnow()
-    accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
-    collected = snap.get("collected_at")
-    if credit_overrides is not None or any(a.get("provider") == "omp" for a in accounts):
+    if credit_overrides is not None or any(
+        isinstance(a, dict) and a.get("provider") == "omp" for a in snap.get("accounts") or []
+    ):
         from aiuse.credits_override import apply_credit_overrides
 
         apply_credit_overrides(snap, credit_overrides, now=now)
+    accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
+    collected = snap.get("collected_at")
     for account in accounts:
         account.pop("measurement_frozen", None)
         enrich_account(

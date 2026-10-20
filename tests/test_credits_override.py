@@ -103,6 +103,29 @@ def test_override_beats_older_codexbar_100_percent():
     assert round(window["remaining_percent"], 2) == 47.78
 
 
+def test_override_makes_the_row_when_the_snapshot_has_no_omp():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides=_override())
+    (pool,) = available_pools(snap)
+    assert pool["provider"] == "omp" and pool["source"] == "operator-override"
+    assert pool["balance_usd"] == 95.57
+    assert "superseded_reading" not in _omp(snap)
+    assert _omp(snap)["credits_label"] == "Claude API credits"
+
+
+def test_no_override_and_no_omp_row_adds_nothing():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={})
+    assert snap["accounts"] == []
+
+
+def test_disabled_omp_gets_no_synthetic_row():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    snap["disabled_services"] = {"omp": "operator"}
+    enrich_snapshot(snap, now=NOW, credit_overrides=_override())
+    assert snap["accounts"] == []
+
+
 def test_newer_codexbar_showing_more_credits_is_contradicted():
     snap = _snap(_codexbar_omp(updated=NOW - timedelta(minutes=1)))
     apply_credit_overrides(snap, _override(), now=NOW)

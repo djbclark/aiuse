@@ -12,6 +12,7 @@ Which reading wins, per account:
 2. a newer CodexBar reading that shows MORE credits than the override is contradicted (a
    grant never grows), so the override still wins and the CodexBar reading is kept under
    ``superseded_reading``;
+   (When the snapshot has no omp row at all, the override alone makes the row.)
 3. a newer CodexBar reading that shows the same or less wins (credits were spent since);
 4. a CodexBar reading older than 24 h with no override that supersedes it is expired:
    its balance and percentages are dropped, so the pool is ``unknown`` and not routable.
@@ -27,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.analysis import history
-from aiuse.models import parse_dt, utcnow
+from aiuse.models import parse_dt, provider_cli_binary, utcnow
 
 OVERRIDE_PROVIDER = "omp"
 OVERRIDE_SOURCE = "operator-override"
@@ -104,6 +105,27 @@ def apply_credit_overrides(
     """Rewrite the omp account(s) of a snapshot dict in place (see the module doc)."""
     now = now or utcnow()
     override: Mapping[str, Any] = (overrides or {}).get(OVERRIDE_PROVIDER) or {}
+    accounts = snap.get("accounts")
+    if (
+        override
+        and isinstance(accounts, list)
+        and OVERRIDE_PROVIDER not in (snap.get("disabled_services") or {})
+        and not any(isinstance(a, dict) and a.get("provider") == OVERRIDE_PROVIDER for a in accounts)
+    ):
+        # The collection produced no omp row at all (a cache-served run whose live CodexBar
+        # supplement failed): the console figure alone makes the row.
+        accounts.append(
+            {
+                "source": "none",
+                "provider": OVERRIDE_PROVIDER,
+                "cli_binary": provider_cli_binary(OVERRIDE_PROVIDER),
+                "billing_kind": "subscription_window",
+                "windows": [],
+                "credits_label": "Claude API credits",
+                "notes": [],
+                "error": None,
+            }
+        )
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != OVERRIDE_PROVIDER:
             continue
@@ -125,11 +147,12 @@ def apply_credit_overrides(
                 or float(balance) > float(ov_remaining) + _EPSILON
             )
         ):
-            account["superseded_reading"] = {
-                "source": account.get("source"),
-                "observed_at": reading_at.isoformat() if reading_at else None,
-                "balance_usd": balance,
-            }
+            if account.get("source") != "none":
+                account["superseded_reading"] = {
+                    "source": account.get("source"),
+                    "observed_at": reading_at.isoformat() if reading_at else None,
+                    "balance_usd": balance,
+                }
             expires = override.get("expires_at") or account.get("expires_at")
             account.update(
                 source=OVERRIDE_SOURCE,
