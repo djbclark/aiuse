@@ -500,3 +500,60 @@ def test_fresher_lower_codexbar_flags_superseded_override():
 def test_matching_total_keeps_the_contradicted_rule():
     snap = _applied(_override(), snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=1))))
     assert _omp(snap)["source"] == "operator-override"
+
+
+# --- Codex review: grant expiry independent of reading age; set-credits cap; serve cache -------
+
+
+def test_fresh_reading_for_an_expired_grant_is_unknown_and_not_routable():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.expires_at = NOW - timedelta(hours=1)
+    account.windows[0].resets_at = NOW - timedelta(hours=1)
+    snap = _applied({}, snap=_snap(account))
+    omp = _omp(snap)
+    assert omp["grant_expired"] is True and omp["reading_expired"] is True
+    assert omp["balance_usd"] is None and omp["windows"][0]["state"] == "unknown"
+    assert [p for p in available_pools(snap) if p["provider"] == "omp"] == []
+
+
+def test_override_without_expires_inherits_a_past_codexbar_expiry():
+    account = _codexbar_omp(updated=NOW - timedelta(hours=2))
+    account.expires_at = NOW - timedelta(hours=1)
+    account.windows[0].resets_at = NOW - timedelta(hours=1)
+    ov = _bad(expires_at=None)
+    snap = _applied(ov, snap=_snap(account))
+    assert _omp(snap).get("grant_expired") is True
+    assert [p for p in available_pools(snap) if p["provider"] == "omp"] == []
+
+
+def test_unexpired_grant_is_untouched():
+    snap = _applied({}, snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=5))))
+    assert "grant_expired" not in _omp(snap) and _omp(snap)["balance_usd"] == 200.0
+
+
+def test_set_credits_refuses_values_above_the_dollar_cap():
+    save_override("omp", remaining=5.0, total=10.0, expires=None, note=None, now=datetime.now(UTC))
+    assert run_set_credits(["omp", "--remaining", "2000000000", "--total", "3000000000"]) == 2
+    assert load_overrides()["omp"]["remaining_usd"] == 5.0
+
+
+def test_serve_rebuilds_its_in_memory_cache_when_set_credits_runs(monkeypatch):
+    from aiuse import serve
+
+    calls = []
+
+    def fake_live(self):
+        calls.append(1)
+        return {"snapshot": {"collected_at": datetime.now(UTC).isoformat(), "accounts": []}}
+
+    monkeypatch.setattr(serve._ServeState, "_collect_live", fake_live)
+    monkeypatch.setattr(serve._ServeState, "_from_disk_if_fresh", lambda self: None)
+    state = serve._ServeState(config={}, max_age_seconds=3600)
+    state.get_payload(refresh=False)
+    state.get_payload(refresh=False)
+    assert len(calls) == 1
+    save_override("omp", remaining=5.0, total=10.0, expires=None, note=None, now=datetime.now(UTC))
+    state.get_payload(refresh=False)
+    assert len(calls) == 2
+    state.get_payload(refresh=False)
+    assert len(calls) == 2

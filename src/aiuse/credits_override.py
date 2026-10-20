@@ -220,7 +220,18 @@ def _omp_hidden(snap: Mapping[str, Any]) -> bool:
     return False
 
 
-def _expire_reading(account: dict[str, Any]) -> None:
+def _grant_expiry(account: Mapping[str, Any]) -> datetime | None:
+    """The effective grant expiry: ``expires_at``, else the usd credits window's reset."""
+    expiry = parse_dt(account.get("expires_at"))
+    if expiry is None:
+        for window in account.get("windows") or []:
+            if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
+                expiry = parse_dt(window.get("resets_at"))
+                break
+    return expiry
+
+
+def _expire_reading(account: dict[str, Any], why: str = "older than 24h") -> None:
     for window in account.get("windows") or []:
         if isinstance(window, dict):
             window["used_percent"] = None
@@ -230,7 +241,7 @@ def _expire_reading(account: dict[str, Any]) -> None:
     account["reading_expired"] = True
     account["notes"] = [
         *(account.get("notes") or []),
-        f"{account.get('source')} reading is older than 24h: balance unknown; "
+        f"{account.get('source')} reading {why}: balance unknown; "
         "record the console figure with `aiuse set-credits omp`.",
     ]
 
@@ -339,7 +350,25 @@ def apply_credit_overrides(
                 _expire_reading(account)
         elif reading_at is not None and now - reading_at > CODEXBAR_MAX_AGE:
             _expire_reading(account)
+        # The grant itself lapsing is independent of how fresh the reading is.
+        expiry = _grant_expiry(account)
+        if expiry is not None and now >= expiry:
+            account["grant_expired"] = True
+            if not account.get("reading_expired"):
+                _expire_reading(account, f"is for a grant that expired {expiry.date().isoformat()}")
         account["observed_at"] = reading_at.isoformat() if reading_at else None
+
+
+def overrides_signature() -> tuple[tuple[int, int] | None, ...]:
+    """(mtime_ns, size) of the figure files, to notice a ``set-credits`` or refresh."""
+    out: list[tuple[int, int] | None] = []
+    for path in (overrides_path(),):
+        try:
+            stat = path.stat()
+            out.append((stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            out.append(None)
+    return tuple(out)
 
 
 def _finite(text: str) -> float:
@@ -371,6 +400,9 @@ def run_set_credits(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if args.total <= 0 or not 0 <= args.remaining <= args.total:
         print("error: need 0 <= --remaining <= --total and --total > 0", file=sys.stderr)
+        return 2
+    if args.total > MAX_DOLLARS:
+        print(f"error: --total above the supported cap of {MAX_DOLLARS:.0f} dollars", file=sys.stderr)
         return 2
     expires = None
     if args.expires:

@@ -22,6 +22,7 @@ from aiuse.analysis.suggest import pick_suggestion, suggestion_to_dict
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import load_config, snapshot_matches_policy
+from aiuse.credits_override import overrides_signature
 from aiuse.models import (
     AccountUsage,
     BillingKind,
@@ -236,6 +237,7 @@ class _ServeState:
         self._reload_error: str | None = None
         self._lock = threading.Lock()
         self._cache: dict[str, Any] | None = None
+        self._cache_overrides_sig: tuple[Any, ...] | None = None
 
     def get_payload(self, *, refresh: bool) -> dict[str, Any]:
         with self._lock:
@@ -248,10 +250,14 @@ class _ServeState:
                     self._cache is not None
                     and _payload_age_ok(self._cache, self.max_age_seconds)
                     and snapshot_matches_policy(self._cache, self.config)
+                    # a set-credits or credit refresh since the cache was built must show now
+                    and self._cache_overrides_sig == overrides_signature()
                 ):
                     return self._cache
+            sig = overrides_signature()
             live = self._collect_live()
             self._cache = live
+            self._cache_overrides_sig = sig
             return live
 
     def _reload_config(self) -> None:
