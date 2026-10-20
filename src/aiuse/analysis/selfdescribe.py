@@ -88,6 +88,12 @@ SEMANTICS: dict[str, str] = {
     "ceiling_window_id": "window_id of the ceiling row binding this sub-row, when ceiling_binding",
     "context_usage": "ACP context-window fill and this turn's token counts. used/size is the session context, not a 5h or weekly plan. turn_quota is per-turn tokens. Plan windows stay on windows[]",
     "spent_usd": "dollars already spent from an expiring dollar grant (omp's Claude API credits); balance_usd is dollars left, windows[0].refill_capacity the grant size, windows[0].resets_at its expiry (no refill: unused dollars are lost then). Not usage_credits (an overage wallet)",
+    "expires_at": "ISO time an expiring dollar grant lapses (omp's Claude API credits); unused dollars are lost then. On accounts and on --available pool entries that have one",
+    "source": "which reading an omp account carries: codexbar, or operator-override (aiuse set-credits; the console figure, preferred while it is at least as new as CodexBar or CodexBar shows more credits than it, since a grant never grows). Pool entries carry it with observed_at",
+    "observed_at": "ISO time of the reading an omp account/pool carries (the override's set time or CodexBar's updatedAt); age_seconds/stale derive from it",
+    "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
+    "reading_expired": "true on an omp account whose CodexBar reading is older than 24h and no override supersedes it: balance and percentages are dropped, so the pool is state unknown and not in --available",
+    "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more than 50% is left: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
     "requires_operator_approval": "true on an account, --available routing entry or alert the operator gated: an agent must not spend it, route work to it, or recommend burning it without first asking the operator. aiuse only reports it; the agent toolchain's dispatchers refuse such a slice unless the operator approved that run. No account is gated since 2026-10-19 (omp's grant, the Claude API credits, became a normal tier). Omitted when false",
     "credits_label": 'human label of a credits pool whose provider name is a tool name: omp carries "Claude API credits" (the Claude Max plan\'s monthly promotional API grant). Omitted when unset',
     "ai_notice": f"the operator gate in words ({OPERATOR_APPROVAL_NOTICE}); present exactly when requires_operator_approval is true",
@@ -381,6 +387,7 @@ def enrich_snapshot(
     min_frozen_seconds: float | None = None,
     check_frozen: bool = False,
     acp_log_dir: str | None = None,
+    credit_overrides: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Enrich accounts in place and attach summary_lines / semantics.
 
@@ -398,6 +405,10 @@ def enrich_snapshot(
     now = now or utcnow()
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
     collected = snap.get("collected_at")
+    if credit_overrides is not None or any(a.get("provider") == "omp" for a in accounts):
+        from aiuse.credits_override import apply_credit_overrides
+
+        apply_credit_overrides(snap, credit_overrides, now=now)
     for account in accounts:
         account.pop("measurement_frozen", None)
         enrich_account(
@@ -485,8 +496,48 @@ def freshness(
     return {"age_seconds": round(age, 1), "fresh": age <= threshold_seconds}
 
 
-def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
+BURN_BEFORE_RESET_DAYS = 21.0
+BURN_BEFORE_RESET_MIN_LEFT_PERCENT = 50.0
+
+
+def _account_expiry(account: Mapping[str, Any]) -> datetime | None:
+    """When an expiring dollar grant lapses: ``expires_at``, else the usd window's reset."""
+    expiry = parse_dt(account.get("expires_at"))
+    if expiry is None:
+        for window in account.get("windows") or []:
+            if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
+                expiry = parse_dt(window.get("resets_at"))
+                break
+    return expiry
+
+
+def burn_before_reset(
+    account: Mapping[str, Any], headroom_percent: float | None, *, now: datetime
+) -> dict[str, Any] | None:
+    """The nudge for an expiring grant with most of it unspent (see SEMANTICS)."""
+    expiry = _account_expiry(account)
+    if expiry is None or headroom_percent is None or account.get("balance_usd") is None:
+        return None
+    days = (expiry - now).total_seconds() / 86400.0
+    if not 0 < days <= BURN_BEFORE_RESET_DAYS or headroom_percent <= BURN_BEFORE_RESET_MIN_LEFT_PERCENT:
+        return None
+    left = float(account["balance_usd"])
+    provider = str(account.get("provider") or "?")
+    return {
+        "expires_at": expiry.isoformat(),
+        "days_left": round(days, 1),
+        "remaining_percent": headroom_percent,
+        "remaining_usd": left,
+        "suggestion": (
+            f"{provider}: ${left:.2f} ({headroom_percent:.0f}% of the grant) expires in {days:.0f}d "
+            f"({expiry.date().isoformat()}); use it before it lapses"
+        ),
+    }
+
+
+def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> list[dict[str, Any]]:
     """One entry per (account, pool_family) — the unit an orchestrator routes on."""
+    now = now or utcnow()
     pools: list[dict[str, Any]] = []
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict):
@@ -533,6 +584,12 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                 return float(headroom) * share
 
             binding = min(numbered, key=effective_headroom) if numbered else None
+            nudge = (
+                burn_before_reset(account, effective_headroom(binding), now=now)
+                if binding is not None and not frozen and account.get("spent_usd") is not None
+                else None
+            )
+            grant_expiry = _account_expiry(account) if account.get("spent_usd") is not None else None
             pools.append(
                 {
                     "provider": provider,
@@ -561,6 +618,10 @@ def pool_entries(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
                         if account.get("requires_operator_approval")
                         else {}
                     ),
+                    **({"source": account["source"]} if account.get("observed_at") else {}),
+                    **({"observed_at": account["observed_at"]} if account.get("observed_at") else {}),
+                    **({"expires_at": grant_expiry.isoformat()} if grant_expiry is not None else {}),
+                    **({"burn_before_reset": nudge} if nudge else {}),
                     "age_seconds": account.get("age_seconds"),
                     "fresh": False if frozen else account.get("fresh"),
                     "stale": True if frozen else account.get("stale"),

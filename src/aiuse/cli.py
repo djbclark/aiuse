@@ -457,6 +457,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
         from aiuse.credentials import run_credential_command
 
         return run_credential_command(raw[1:])
+    if raw and raw[0] == "set-credits":
+        from aiuse.credits_override import run_set_credits
+
+        return run_set_credits(raw[1:])
     if raw and raw[0] == "note-exhausted":
         from aiuse.agent_notes import run_note_exhausted
 
@@ -578,9 +582,14 @@ def _main_inner(argv: list[str] | None = None) -> int:
     from aiuse.agent_notes import load_active_notes
     from aiuse.analysis.selfdescribe import SCHEMA_VERSION, enrich_snapshot
     from aiuse.client_limits import load_client_limits
+    from aiuse.credits_override import load_overrides
 
     snap_dict = enrich_snapshot(
-        snapshot.to_dict(), notes=load_active_notes(), client_limits=load_client_limits(config), check_frozen=True
+        snapshot.to_dict(),
+        notes=load_active_notes(),
+        client_limits=load_client_limits(config),
+        check_frozen=True,
+        credit_overrides=load_overrides(),
     )
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -1183,8 +1192,15 @@ def _run_available(args: argparse.Namespace) -> int:
     from aiuse.client_limits import load_client_limits
 
     apply_hidden_pools_dict(snap_dict, config)
+    from aiuse.credits_override import load_overrides
+
     enrich_snapshot(
-        snap_dict, notes=notes, client_limits=load_client_limits(config), threshold_seconds=threshold, check_frozen=True
+        snap_dict,
+        notes=notes,
+        client_limits=load_client_limits(config),
+        threshold_seconds=threshold,
+        check_frozen=True,
+        credit_overrides=load_overrides(),
     )
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally
@@ -1227,6 +1243,8 @@ def _run_available(args: argparse.Namespace) -> int:
         if pool.get("models_hint"):
             line += f"  [{pool['models_hint']}]"
         print(line)
+        if pool.get("burn_before_reset"):
+            print(f"  burn before reset: {pool['burn_before_reset']['suggestion']}")
     for entry in excluded:
         family = f" {entry['pool_family']}" if entry.get("pool_family") else ""
         print(f"excluded by operator: {entry['provider']}{family} ({entry['reason']})", file=sys.stderr)

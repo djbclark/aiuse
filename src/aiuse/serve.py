@@ -286,6 +286,7 @@ class _ServeState:
         from aiuse.agent_notes import load_active_notes
         from aiuse.analysis.selfdescribe import enrich_snapshot
         from aiuse.client_limits import load_client_limits
+        from aiuse.credits_override import load_overrides
 
         snapshot = run_collectors(self.config)
         alerts = analyze_use_or_lose(snapshot, self.config)
@@ -307,6 +308,7 @@ class _ServeState:
                 notes=load_active_notes(),
                 client_limits=load_client_limits(self.config),
                 check_frozen=True,
+                credit_overrides=load_overrides(),
             ),
             "alerts": [a.to_dict() for a in alerts],
             "suggestion": suggestion,
@@ -319,6 +321,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
     from aiuse.agent_notes import load_active_notes
     from aiuse.analysis.selfdescribe import enrich_snapshot
     from aiuse.client_limits import load_client_limits
+    from aiuse.credits_override import load_overrides
 
     alerts_raw = row.get("alerts") or []
     # Re-pick suggestion from stored alerts (stable field set).
@@ -340,6 +343,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
         notes=load_active_notes(),
         client_limits=load_client_limits(config),
         check_frozen=True,
+        credit_overrides=load_overrides(),
     )
     # Minimal history object without reloading learning (cheap path).
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
@@ -495,6 +499,7 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 credits_remaining=row.get("credits_remaining"),
                 usage_credits=usage_credits,
                 spent_usd=row.get("spent_usd"),
+                expires_at=parse_dt(row.get("expires_at")),
                 requires_operator_approval=bool(row.get("requires_operator_approval", False)),
                 error=row.get("error"),
                 notes=list(row.get("notes") or []),

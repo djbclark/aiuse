@@ -893,6 +893,7 @@ def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
         windows=[window] if window is not None else [],
         balance_usd=remaining,
         spent_usd=spent,
+        expires_at=expires_at,
         # The Claude Max plan's monthly API credits (a promotional grant that expires): a normal
         # tier since 2026-10-19 (operator), api-only work first, then code/bulk via omp, never
         # left unspent. The per-run operator gate was lifted the same day; the row keeps the

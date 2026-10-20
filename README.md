@@ -495,6 +495,33 @@ This tool:
 This command intentionally does not report historical local-token usage or
 API-equivalent cost estimates (use ccusage-class tools for local burn, not plan %).
 
+## Claude API credits (`omp`): override and expiry nudge
+
+CodexBar reads the Max plan's promotional API credits from claude.ai and can report "100% unused"
+while the Anthropic console shows the grant half spent. The Anthropic Admin API has no
+credit-balance endpoint (its `GET /v1/organizations/cost_report` returns cost-to-date only), so
+record the console figures yourself:
+
+```
+aiuse set-credits omp --remaining 95.57 --total 200 --expires 2026-11-08 --note "console 2026-10-19"
+```
+
+The figures go to `~/.cache/aiuse/credit-overrides.json` with a timestamp and are applied at read
+time (`--json`, `--available`, `serve`), so a cached snapshot is corrected too. Which reading wins:
+
+1. The override wins while it is at least as new as the CodexBar reading.
+2. A newer CodexBar reading that shows _more_ credits than the override is contradicted (a grant never grows), so the override still wins; the replaced reading is kept as `superseded_reading`.
+3. A newer CodexBar reading that shows the same or less wins (credits were spent since).
+4. A CodexBar reading older than 24 h that no override supersedes is expired: `reading_expired: true`, balance and percentages dropped, state `unknown`, and the pool leaves `--available`.
+
+`source` (`codexbar` or `operator-override`) and `observed_at` are in the omp account and pool JSON, and
+`age_seconds`/`stale` derive from `observed_at`. `expires_at` is on the account and the pool.
+
+When an expiring grant lapses within 21 days and more than 50% is left, the pool carries
+`burn_before_reset` (`expires_at`, `days_left`, `remaining_percent`, `remaining_usd`, `suggestion`) and
+`aiuse --available` prints `burn before reset: ...` under its line. `remaining_percent` still means
+the share left (`used_percent` is the share consumed).
+
 ## Example output
 
 ```
