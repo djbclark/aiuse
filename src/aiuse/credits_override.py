@@ -15,7 +15,8 @@ Which reading wins, per account:
    (When the snapshot has no omp row at all, the override alone makes the row.)
 3. a newer CodexBar reading that shows the same or less wins (credits were spent since);
    An override is ignored once its ``expires_at`` has passed (a lapsed grant) and once it is
-   older than 7 days (``OVERRIDE_MAX_AGE``; refresh it with ``aiuse set-credits``); the
+   older than 7 days (``OVERRIDE_MAX_AGE``; refresh it with ``aiuse set-credits``). An Admin
+   API reading (``source: admin-api``) gets the 24 h limit CodexBar readings get; the
    CodexBar rules then apply alone. An ``observed_at`` in the future is invalid. Anything
    malformed (non-finite or non-numeric figures, remaining > total, bad timestamps, wrong pool
    name) is ignored with one stderr line and never raises. A hidden or disabled omp pool is never
@@ -97,7 +98,10 @@ def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, 
     if now is not None:
         if observed > now + _CLOCK_SKEW:
             return None, "observed_at is in the future"
-        if now - observed > OVERRIDE_MAX_AGE:
+        if raw.get("source") == "admin-api":
+            if now - observed > CODEXBAR_MAX_AGE:
+                return None, "Admin API reading older than 24h"
+        elif now - observed > OVERRIDE_MAX_AGE:
             return None, "older than 7 days; refresh it with aiuse set-credits"
         if expires is not None and now >= expires:
             return None, "the grant's expires_at has passed"
@@ -131,19 +135,35 @@ def readings_file() -> Path:
     return overrides_path().with_name("credit-readings.json")
 
 
-def load_overrides(config: Mapping[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+def load_overrides(
+    config: Mapping[str, Any] | None = None, *, now: datetime | None = None
+) -> dict[str, dict[str, Any]]:
     """The freshest validated figure per pool: operator override or Admin API reading.
 
     Empty when ``config`` hides or disables omp. Never raises.
     """
     if _config_hides_omp(config):
         return {}
-    merged = _load_file(overrides_path(), OVERRIDE_SOURCE)
-    for provider, entry in _load_file(readings_file(), "admin-api").items():
-        current = merged.get(provider)
-        if current is None or (parse_dt(entry["observed_at"]) or _EPOCH) > (parse_dt(current["observed_at"]) or _EPOCH):
-            merged[provider] = entry
+    now = now or utcnow()
+    merged: dict[str, dict[str, Any]] = {}
+    # Validate every candidate with the time rules first, then take the freshest valid one, so an
+    # invalid (future-dated, expired, too old) reading can never hide a valid override.
+    for path, source in ((overrides_path(), OVERRIDE_SOURCE), (readings_file(), "admin-api")):
+        for provider, entry in _load_file(path, source).items():
+            valid, _why = _safe_clean(entry, now=now)
+            if valid is None:
+                continue
+            current = merged.get(provider)
+            if current is None or (parse_dt(valid["observed_at"]) or _EPOCH) > (
+                parse_dt(current["observed_at"]) or _EPOCH
+            ):
+                merged[provider] = valid
     return merged
+
+
+def load_file_entry(path: Path, source: str) -> dict[str, Any] | None:
+    """The structurally valid omp entry of one file (no time rules), or None."""
+    return _load_file(path, source).get(OVERRIDE_PROVIDER)
 
 
 def load_grant_params() -> tuple[float, datetime, datetime | None] | None:
@@ -179,6 +199,8 @@ def _load_file(path: Path, source: str) -> dict[str, dict[str, Any]]:
         if provider != OVERRIDE_PROVIDER:
             print(f"aiuse: ignoring credit override for unknown pool {str(provider)[:40]!r}", file=sys.stderr)
             continue
+        if isinstance(raw, Mapping):
+            raw = {**raw, "source": source}  # the file decides the source, never its content
         entry, why = _safe_clean(raw)
         if entry is None:
             print(f"aiuse: ignoring {provider} credit override: {why}", file=sys.stderr)

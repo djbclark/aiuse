@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -34,6 +35,7 @@ COST_REPORT_URL = "https://api.anthropic.com/v1/organizations/cost_report"
 KEY_ENV = "ANTHROPIC_ADMIN_KEY"
 TIMEOUT_SECONDS = 20.0
 MAX_PAGES = 20
+_KEY_RE = re.compile(r"[A-Za-z0-9_-]+")
 _MAX_BODY = 4 * 1024 * 1024
 
 # fetch(url, headers, timeout) -> (status, body bytes); injected by tests.
@@ -48,19 +50,31 @@ def readings_path() -> Path:
     return co.overrides_path().with_name("credit-readings.json")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib would forward x-api-key to the new origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise CostReportError("redirect refused")
+
+
 def _http_get(url: str, headers: Mapping[str, str], timeout: float) -> tuple[int, bytes]:
     request = urllib.request.Request(url, headers=dict(headers), method="GET")
+    opener = urllib.request.build_opener(_NoRedirect)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310  # nosemgrep
+        with opener.open(request, timeout=timeout) as response:  # nosec B310  # nosemgrep
             return response.status, response.read(_MAX_BODY)
     except urllib.error.HTTPError as exc:
         return exc.code, b""
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except CostReportError:
+        raise
+    except Exception as exc:  # never let exception text (it can echo a header) reach output
         raise CostReportError(f"request failed ({exc.__class__.__name__})") from None
 
 
-def fetch_spend_usd(api_key: str, starting_at: datetime, *, fetch: Fetch = _http_get) -> float:
+def fetch_spend_usd(api_key: str, starting_at: datetime, *, fetch: Fetch | None = None) -> float:
     """Dollars spent from ``starting_at`` to now, summed over every page of the cost report."""
+    fetch = fetch or _http_get
+    buckets = 0
     headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "accept": "application/json"}
     start = starting_at.astimezone(co.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     cents = 0.0
@@ -75,6 +89,7 @@ def fetch_spend_usd(api_key: str, starting_at: datetime, *, fetch: Fetch = _http
         try:
             doc = json.loads(body.decode("utf-8"))
             for bucket in doc["data"]:
+                buckets += 1
                 for result in bucket["results"]:
                     amount = float(result["amount"])
                     if not math.isfinite(amount) or amount < 0:
@@ -84,6 +99,8 @@ def fetch_spend_usd(api_key: str, starting_at: datetime, *, fetch: Fetch = _http
         except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
             raise CostReportError("cost_report response was not the documented shape") from None
         if not page:
+            if buckets == 0:
+                raise CostReportError("cost_report returned no buckets since the grant date")
             return cents / 100.0
     raise CostReportError(f"cost_report has more than {MAX_PAGES} pages")
 
@@ -95,11 +112,14 @@ def compute_remaining(total: float, spent: float) -> float:
 def refresh(
     *,
     env: Mapping[str, str] | None = None,
-    fetch: Fetch = _http_get,
+    fetch: Fetch | None = None,
     now: datetime | None = None,
 ) -> tuple[int, str]:
     """One refresh. Returns ``(exit code, one status line)``: 0 ok, 1 failed, 2 not run."""
-    key = (env if env is not None else os.environ).get(KEY_ENV)
+    fetch = fetch or _http_get
+    key = ((env if env is not None else os.environ).get(KEY_ENV) or "").strip()
+    if key and not _KEY_RE.fullmatch(key):
+        return 2, f"{KEY_ENV} has characters outside [A-Za-z0-9_-]; not used (value not shown)"
     if not key:
         return (
             2,
@@ -117,13 +137,30 @@ def refresh(
         spent = fetch_spend_usd(key, granted_at, fetch=fetch)
     except CostReportError as exc:
         return 1, f"aiuse: credits refresh failed, keeping the previous reading: {exc}"
+    except Exception as exc:  # noqa: BLE001 - only the class name may reach output
+        return 1, f"aiuse: credits refresh failed, keeping the previous reading ({exc.__class__.__name__})"
     remaining = compute_remaining(total, spent)
+    # Spend since the grant only grows, so for the same grant a reading can only fall: cap it at
+    # the operator's figure and at the previous reading (an empty or short report must not refill it).
+    capped_by = None
+    for label, ref in (
+        ("operator override", co.load_file_entry(co.overrides_path(), co.OVERRIDE_SOURCE)),
+        ("previous reading", co.load_file_entry(readings_path(), "admin-api")),
+    ):
+        if ref is None or abs(float(ref["total_usd"]) - total) > 0.005:
+            continue
+        granted = co.parse_dt(ref.get("granted_at"))
+        if granted is None or granted != granted_at:
+            continue
+        if remaining > float(ref["remaining_usd"]) + 0.005:
+            remaining, capped_by = float(ref["remaining_usd"]), label
     entry: dict[str, Any] = {
         "remaining_usd": round(remaining, 6),
         "total_usd": total,
         "granted_at": granted_at.isoformat(),
         "expires_at": expires_at.isoformat() if expires_at else None,
-        "note": f"admin api cost_report: ${spent:.2f} spent since {granted_at.date().isoformat()}",
+        "note": f"admin api cost_report, a lower bound (counts all org spend since {granted_at.date().isoformat()}): ${spent:.2f}"
+        + (f"; reading rose, capped at the {capped_by}'s figure" if capped_by else ""),
         "observed_at": now.isoformat(),
         "source": "admin-api",
     }
@@ -132,7 +169,11 @@ def refresh(
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
     tmp.write_text(json.dumps({co.OVERRIDE_PROVIDER: entry}, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
-    return 0, f"refreshed: omp ${remaining:.2f} of ${total:.2f} left (${spent:.2f} spent since {granted_at.date()})"
+    suffix = f"; rose above the {capped_by}, capped" if capped_by else ""
+    return (
+        0,
+        f"refreshed: omp ${remaining:.2f} of ${total:.2f} left (${spent:.2f} spent since {granted_at.date()}){suffix}",
+    )
 
 
 def run_refresh_credits(argv: list[str]) -> int:
