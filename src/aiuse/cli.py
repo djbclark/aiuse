@@ -589,7 +589,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
         notes=load_active_notes(),
         client_limits=load_client_limits(config),
         check_frozen=True,
-        credit_overrides=load_overrides(),
+        credit_overrides=load_overrides(config),
     )
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -1200,7 +1200,7 @@ def _run_available(args: argparse.Namespace) -> int:
         client_limits=load_client_limits(config),
         threshold_seconds=threshold,
         check_frozen=True,
-        credit_overrides=load_overrides(),
+        credit_overrides=load_overrides(config),
     )
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally

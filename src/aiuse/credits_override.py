@@ -48,11 +48,19 @@ _EPSILON = 0.005
 _KEYS = ("remaining_usd", "total_usd", "expires_at", "note", "observed_at")
 
 
+MAX_DOLLARS = 1e9
+MAX_FILE_BYTES = 64 * 1024
+
+
 def _number(value: Any) -> float | None:
-    """A finite int/float (never bool, NaN or Infinity), else None."""
+    """A finite int/float within +-MAX_DOLLARS (never bool, NaN, Infinity or a huge int), else None."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value) if math.isfinite(value) else None
+    try:
+        number = float(str(value))
+    except (ValueError, OverflowError, TypeError):
+        return None
+    return number if math.isfinite(number) and abs(number) <= MAX_DOLLARS else None
 
 
 def _timestamp(value: Any) -> datetime | None:
@@ -94,6 +102,7 @@ def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, 
         "expires_at": expires.isoformat() if expires else None,
         "note": note if isinstance(note, str) else None,
         "observed_at": observed.isoformat(),
+        "source": "admin-api" if raw.get("source") == "admin-api" else OVERRIDE_SOURCE,
     }, None
 
 
@@ -101,9 +110,28 @@ def overrides_path() -> Path:
     return history.snapshot_dir().parent / "credit-overrides.json"
 
 
-def load_overrides() -> dict[str, dict[str, Any]]:
+def _config_hides_omp(config: Mapping[str, Any] | None) -> bool:
+    """The operator hid or disabled omp in config: no override output at all."""
+    for section in ("hidden_pools", "disabled_services"):
+        mapping = (config or {}).get(section)
+        if isinstance(mapping, Mapping) and any(
+            parse_pool_rule_key(str(key))[0] == OVERRIDE_PROVIDER for key in mapping
+        ):
+            return True
+    return False
+
+
+def load_overrides(config: Mapping[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """The validated overrides; empty when ``config`` hides or disables omp. Never raises."""
+    if _config_hides_omp(config):
+        return {}
     try:
-        data = json.loads(overrides_path().read_text(encoding="utf-8"))
+        with overrides_path().open("rb") as handle:
+            blob = handle.read(MAX_FILE_BYTES + 1)
+        if len(blob) > MAX_FILE_BYTES:
+            print("aiuse: ignoring credit overrides: file larger than 64 KiB", file=sys.stderr)
+            return {}
+        data = json.loads(blob.decode("utf-8"))
     except FileNotFoundError:
         return {}
     except (OSError, ValueError, RecursionError) as exc:
@@ -117,12 +145,20 @@ def load_overrides() -> dict[str, dict[str, Any]]:
         if provider != OVERRIDE_PROVIDER:
             print(f"aiuse: ignoring credit override for unknown pool {str(provider)[:40]!r}", file=sys.stderr)
             continue
-        entry, why = clean_override(raw)
+        entry, why = _safe_clean(raw)
         if entry is None:
             print(f"aiuse: ignoring {provider} credit override: {why}", file=sys.stderr)
             continue
         out[provider] = entry
     return out
+
+
+def _safe_clean(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, Any] | None, str | None]:
+    """``clean_override`` that can never raise: a malformed file is never fatal."""
+    try:
+        return clean_override(raw, now=now)
+    except Exception as exc:  # noqa: BLE001 - hostile input must only ever mean "ignored"
+        return None, f"unreadable ({exc.__class__.__name__})"
 
 
 def save_override(
@@ -184,6 +220,21 @@ def _omp_hidden(snap: Mapping[str, Any]) -> bool:
     return False
 
 
+def _expire_reading(account: dict[str, Any]) -> None:
+    for window in account.get("windows") or []:
+        if isinstance(window, dict):
+            window["used_percent"] = None
+            window["remaining_percent"] = None
+    account["balance_usd"] = None
+    account["spent_usd"] = None
+    account["reading_expired"] = True
+    account["notes"] = [
+        *(account.get("notes") or []),
+        f"{account.get('source')} reading is older than 24h: balance unknown; "
+        "record the console figure with `aiuse set-credits omp`.",
+    ]
+
+
 def apply_credit_overrides(
     snap: dict[str, Any],
     overrides: Mapping[str, Mapping[str, Any]] | None,
@@ -197,16 +248,17 @@ def apply_credit_overrides(
     override: Mapping[str, Any] = {}
     ignored: str | None = None
     if (overrides or {}).get(OVERRIDE_PROVIDER) is not None:
-        cleaned, ignored = clean_override(overrides[OVERRIDE_PROVIDER], now=now)  # type: ignore[index]
+        cleaned, ignored = _safe_clean(overrides[OVERRIDE_PROVIDER], now=now)  # type: ignore[index]
         override = cleaned or {}
     accounts = snap.get("accounts")
     if (
         override
+        and override.get("source") == "admin-api"
         and isinstance(accounts, list)
         and not any(isinstance(a, dict) and a.get("provider") == OVERRIDE_PROVIDER for a in accounts)
     ):
-        # The collection produced no omp row at all (a cache-served run whose live CodexBar
-        # supplement failed): the console figure alone makes the row.
+        # An Admin API reading is collector output, so it may make the row when the snapshot
+        # has none. An operator override only decorates a row the collectors produced.
         accounts.append(
             {
                 "source": "none",
@@ -222,7 +274,7 @@ def apply_credit_overrides(
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != OVERRIDE_PROVIDER:
             continue
-        if account.get("source") == OVERRIDE_SOURCE:
+        if account.get("source") in (OVERRIDE_SOURCE, "admin-api"):
             continue
         if ignored:
             account["notes"] = [*(account.get("notes") or []), f"credit override ignored: {ignored}"]
@@ -231,6 +283,17 @@ def apply_credit_overrides(
         ov_at = parse_dt(override.get("observed_at"))
         ov_remaining = override.get("remaining_usd")
         ov_total = override.get("total_usd")
+        capacity = next(
+            (
+                w.get("refill_capacity")
+                for w in account.get("windows") or []
+                if isinstance(w, dict) and w.get("refill_capacity_unit") == "usd"
+            ),
+            None,
+        )
+        # "A grant never grows" only proves a fresher CodexBar reading wrong when both measure
+        # the same grant: the override's total must match CodexBar's. Otherwise fresher wins.
+        same_grant = isinstance(capacity, (int, float)) and abs(float(capacity) - float(ov_total or 0)) <= _EPSILON
         if (
             ov_at is not None
             and isinstance(ov_remaining, (int, float))
@@ -239,7 +302,7 @@ def apply_credit_overrides(
                 reading_at is None
                 or ov_at >= reading_at
                 or balance is None
-                or float(balance) > float(ov_remaining) + _EPSILON
+                or (same_grant and float(balance) > float(ov_remaining) + _EPSILON)
             )
         ):
             if account.get("source") != "none":
@@ -250,8 +313,8 @@ def apply_credit_overrides(
                 }
             expires = override.get("expires_at") or account.get("expires_at")
             account.update(
-                source=OVERRIDE_SOURCE,
-                collector_id=OVERRIDE_SOURCE,
+                source=override.get("source") or OVERRIDE_SOURCE,
+                collector_id=override.get("source") or OVERRIDE_SOURCE,
                 balance_usd=float(ov_remaining),
                 spent_usd=round(max(0.0, float(ov_total) - float(ov_remaining)), 6),
                 windows=[_credits_window(float(ov_total), float(ov_remaining), expires)],
@@ -260,24 +323,22 @@ def apply_credit_overrides(
                 error=None,
             )
             account["billing_kind"] = "subscription_window"
-            note = f"Operator override (aiuse set-credits) set {ov_at.isoformat()}"
+            note = f"{'Admin API reading' if override.get('source') == 'admin-api' else 'Operator override (aiuse set-credits)'} at {ov_at.isoformat()}"
             if override.get("note"):
                 note += f": {override['note']}"
             account["notes"] = [*(account.get("notes") or []), note]
             reading_at = ov_at
+        elif override and ov_at is not None and reading_at is not None and reading_at > ov_at:
+            # A fresher CodexBar reading wins: say so, and keep what the override claimed.
+            account["superseded_override"] = {
+                "source": override.get("source", OVERRIDE_SOURCE),
+                "observed_at": ov_at.isoformat(),
+                "remaining_usd": override.get("remaining_usd"),
+            }
+            if now - reading_at > CODEXBAR_MAX_AGE:
+                _expire_reading(account)
         elif reading_at is not None and now - reading_at > CODEXBAR_MAX_AGE:
-            for window in account.get("windows") or []:
-                if isinstance(window, dict):
-                    window["used_percent"] = None
-                    window["remaining_percent"] = None
-            account["balance_usd"] = None
-            account["spent_usd"] = None
-            account["reading_expired"] = True
-            account["notes"] = [
-                *(account.get("notes") or []),
-                f"{account.get('source')} reading is older than 24h: balance unknown; "
-                "record the console figure with `aiuse set-credits omp`.",
-            ]
+            _expire_reading(account)
         account["observed_at"] = reading_at.isoformat() if reading_at else None
 
 

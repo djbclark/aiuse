@@ -105,14 +105,28 @@ def test_override_beats_older_codexbar_100_percent():
     assert round(window["remaining_percent"], 2) == 47.78
 
 
-def test_override_makes_the_row_when_the_snapshot_has_no_omp():
+def test_operator_override_alone_never_makes_a_row():
     snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
     enrich_snapshot(snap, now=NOW, credit_overrides=_override())
+    assert snap["accounts"] == []
+
+
+def test_admin_api_reading_may_make_the_row_when_none_exists():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    entry = dict(_override()["omp"], source="admin-api")
+    enrich_snapshot(snap, now=NOW, credit_overrides={"omp": entry})
     (pool,) = available_pools(snap)
-    assert pool["provider"] == "omp" and pool["source"] == "operator-override"
+    assert pool["provider"] == "omp" and pool["source"] == "admin-api"
     assert pool["balance_usd"] == 95.57
     assert "superseded_reading" not in _omp(snap)
     assert _omp(snap)["credits_label"] == "Claude API credits"
+
+
+def test_admin_api_reading_does_not_resurrect_a_hidden_omp():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    snap["hidden_pools"] = {"omp": "operator"}
+    enrich_snapshot(snap, now=NOW, credit_overrides={"omp": dict(_override()["omp"], source="admin-api")})
+    assert snap["accounts"] == []
 
 
 def test_no_override_and_no_omp_row_adds_nothing():
@@ -213,7 +227,9 @@ def test_set_credits_cli_round_trip(capsys):
     assert entry["expires_at"] == "2026-11-08T00:00:00+00:00"
     assert entry["note"] == "console 2026-10-19"
     assert datetime.fromisoformat(entry["observed_at"]).tzinfo is not None
-    assert json.loads(overrides_path().read_text())["omp"] == entry
+    assert {k: v for k, v in json.loads(overrides_path().read_text())["omp"].items() if k != "source"} == {
+        k: v for k, v in entry.items() if k != "source"
+    }
 
 
 def test_set_credits_rejects_bad_input(capsys):
@@ -426,3 +442,61 @@ def test_burn_nudge_slides_down_near_expiry_and_prints_fraction_of_a_day():
     assert "expires in 0.4d" in pool["burn_before_reset"]["suggestion"]
     (pool,) = pool_entries(snap, now=EXPIRY - timedelta(days=19))
     assert "burn_before_reset" not in pool  # 45% <= 50% bar at 19 days
+
+
+# --- third pass: huge ints, config-hidden omp, mismatched totals -------------------
+
+
+def _write_file(text):
+    overrides_path().parent.mkdir(parents=True, exist_ok=True)
+    overrides_path().write_text(text)
+
+
+def test_400_digit_integer_is_ignored_not_fatal(capsys):
+    huge = "1" + "0" * 400
+    _write_file('{"omp": {"remaining_usd": %s, "total_usd": 200, "observed_at": "%s"}}' % (huge, NOW.isoformat()))
+    assert load_overrides() == {}
+    assert "finite" in capsys.readouterr().err
+    snap = _applied({"omp": {"remaining_usd": int(huge), "total_usd": 200, "observed_at": NOW.isoformat()}})
+    assert _omp(snap)["source"] == "codexbar"
+
+
+def test_dollar_cap_rejects_values_over_a_billion():
+    snap = _applied(_bad(remaining_usd=2e9, total_usd=3e9))
+    assert _omp(snap)["source"] == "codexbar"
+
+
+def test_oversized_override_file_is_not_read(capsys):
+    _write_file('{"omp": {"note": "' + "x" * 70000 + '"}}')
+    assert load_overrides() == {}
+    assert "larger than 64 KiB" in capsys.readouterr().err
+
+
+def test_config_hiding_omp_means_no_override_at_all():
+    save_override("omp", remaining=95.57, total=200.0, expires=EXPIRY, note=None, now=datetime.now(UTC))
+    assert "omp" in load_overrides()
+    for section in ("hidden_pools", "disabled_services"):
+        for key in ("omp", "omp/claude"):
+            assert load_overrides({section: {key: "operator"}}) == {}
+    assert "omp" in load_overrides({"hidden_pools": {"codex": "x"}})
+
+
+def test_mismatched_total_lets_the_fresher_codexbar_reading_win_and_flags_the_override():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=1), balance=150.0, total=200.0)  # 75%
+    ov = _bad(remaining_usd=140.0, total_usd=150.0)  # 93.3%, a mistyped total
+    snap = _applied(ov, snap=_snap(account))
+    omp = _omp(snap)
+    assert omp["source"] == "codexbar"
+    assert omp["windows"][0]["remaining_percent"] == 75.0
+    assert omp["superseded_override"]["remaining_usd"] == 140.0
+    assert omp["superseded_override"]["source"] == "operator-override"
+
+
+def test_fresher_lower_codexbar_flags_superseded_override():
+    snap = _applied(_override(), snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=1), balance=50.0)))
+    assert "superseded_override" in _omp(snap)
+
+
+def test_matching_total_keeps_the_contradicted_rule():
+    snap = _applied(_override(), snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=1))))
+    assert _omp(snap)["source"] == "operator-override"
