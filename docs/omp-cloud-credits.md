@@ -119,8 +119,16 @@ aiuse fails closed for that state (`enrich_snapshot`,
    `rate_gated_by` (`{provider, account, window_label, resets_at, evidence}`),
    `usable_now: false`, `available_at` = the gate reset, and a note; the
    summary line gains `-> NOT usable now [rate-gated: …]` and `--available`
-   omits omp. The gate clears itself once the reset passes.
-2. Positive evidence only: missing Claude data never gates (a cswap outage
+   omits omp. The gate clears itself once the reset passes. The clock matrix
+   (plain `aiuse`, watch, and the inline TUI) draws the same row as `empty`
+   with no spendable percent: `rate-gated until <reset> · $<left> left`.
+   Dollars stay in the note so the grant is still visible.
+2. Confirmed again the same day, 13:06 EDT: omp still looked like a normal
+   `mid` row (48% left, `$95.57` in OTHER) and a live call returned
+   `429` `rate_limit_error` with `retry-after-ms=147469000` (~41h), which
+   lands on the weekly reset Fri Oct 23 6:00am. That is the same block the
+   gate already computed; the matrix was the surface that still said usable.
+3. Positive evidence only: missing Claude data never gates (a cswap outage
    must not corrupt omp's own reporting — operator rule, 2026-10-21), 5h
    windows never gate (the observed 429 pins the block to the weekly reset),
    and an exhausted model sublimit (Fable) gates only that model class, never

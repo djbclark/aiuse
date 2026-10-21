@@ -91,6 +91,26 @@ def test_omp_row_tail_note_is_dollars_left():
     assert omp.note is None
 
 
+def test_rate_gated_omp_is_not_a_spendable_clock():
+    now = utcnow()
+    omp = _omp(now)
+    omp.balance_usd = 95.57
+    omp.spent_usd = 104.43
+    omp.rate_gated_by = {
+        "provider": "claude",
+        "window_label": "Claude Code weekly",
+        "resets_at": (now + timedelta(hours=41)).isoformat(),
+    }
+    snap = Snapshot(collected_at=now, accounts=[omp])
+    text = render_clock_matrix([], snapshot=snap, color=False, width=160)
+    line = _row_line(text, "omp")
+    assert line.startswith("empty")
+    assert "rate-gated until" in line
+    assert "$95.57 left" in line
+    assert "99l" not in line
+    assert "u/" not in line
+
+
 def test_pace_column_sits_after_scope_before_the_clocks():
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=200)
     header = text.splitlines()[0].split()

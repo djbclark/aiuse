@@ -65,6 +65,7 @@ from aiuse.models import (
     claude_model_scope,
     effective_window_minutes,
     infer_window_clock,
+    parse_dt,
     provider_config_key,
     provider_display_name,
     utcnow,
@@ -1564,6 +1565,21 @@ def _build_matrix_rows(
             stale = data_age is not None and data_age > fresh_threshold
             pace_windows = [window for window in pool if claude_model_scope(window.label) is None]
             overall_pct, overall_early = overall_pace(pace_windows or pool, now)
+            gate_info = account.rate_gated_by if isinstance(account.rate_gated_by, dict) else None
+            if gate_info:
+                # The grant's expiry is not a spendable clock. While the shared
+                # Claude rate window blocks omp, a mid-band percent-left cell is
+                # what gets tried and then 429s (2026-10-21, retry-after ~41h).
+                raw_reset = gate_info.get("resets_at")
+                reset = parse_dt(raw_reset if isinstance(raw_reset, str) else None)
+                until = format_clock(reset, date=reset - now > timedelta(hours=24)) if reset is not None else "reset"
+                dollars = f" · ${account.balance_usd:.2f} left" if account.balance_usd is not None else ""
+                note = f"rate-gated until {until}{dollars}"
+                clocks = {}
+                tail_note = None
+                band = _BAND_EMPTY
+                priority = (0.0, 0.0, 0.0)
+                overall_pct, overall_early = None, False
             parent_sort = _ladder_sort_key(band, priority, account.provider, account.account)
             rows.append(
                 _MatrixRow(
@@ -2142,7 +2158,10 @@ def render_clock_matrix_parts(
             blanks = [" " * size for size in w_clocks]
             if gate is not None:
                 blanks[_GATE_FIRST : _GATE_FIRST + 2] = [gate]
-            line = _line(tag, score, service, account, scope, f"{'—':>{w_value}}", blanks + [s.dim(row.note)])
+            note_tail = blanks + [s.dim(row.note)]
+            if row.stale:
+                note_tail.append(s.yellow("STALE"))
+            line = _line(tag, score, service, account, scope, f"{'—':>{w_value}}", note_tail)
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             for note in row.sublimit_notes:
                 lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))

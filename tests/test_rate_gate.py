@@ -104,6 +104,20 @@ def _omp_reset(snap: dict) -> str:
     return weekly["resets_at"]
 
 
+def test_rate_gate_suppresses_burn_before_reset_nudge():
+    omp = _omp_account()
+    omp["balance_usd"] = 180.0
+    omp["spent_usd"] = 20.0
+    window = omp["windows"][0]
+    window["used_percent"] = 10.0
+    window["remaining_percent"] = 90.0
+    window["resets_at"] = (utcnow() + timedelta(days=5)).isoformat()
+    snap = enrich_snapshot(_snap(_claude_account(100.0), omp))
+    pool = next(p for p in pool_entries(snap) if p["provider"] == "omp")
+    assert pool["usable_now"] is False
+    assert "burn_before_reset" not in pool
+
+
 def test_5h_exhaustion_alone_does_not_gate():
     snap = enrich_snapshot(_snap(_claude_account(30.0, with_5h=100.0), _omp_account()))
     omp = _omp_of(snap)

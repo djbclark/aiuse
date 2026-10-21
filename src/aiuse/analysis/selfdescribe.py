@@ -755,7 +755,7 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             binding = min(numbered, key=effective_headroom) if numbered else None
             nudge = (
                 burn_before_reset(account, effective_headroom(binding), now=now)
-                if binding is not None and not frozen and account.get("spent_usd") is not None
+                if binding is not None and not frozen and not gate and account.get("spent_usd") is not None
                 else None
             )
             grant_expiry = _account_expiry(account) if account.get("spent_usd") is not None else None
