@@ -4,8 +4,8 @@ Moved out of `AGENTS.md` (loaded into every agent session). Update this file,
 not `AGENTS.md`, when the status line changes; keep the one-paragraph summary in
 `AGENTS.md` in step.
 
-**Status (2026-10-15):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.7.1**
+**Status (2026-10-21):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
+done. Product issues **#1–#9** done. Packaging **3.9.0**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
 **Schema 1.1 (2026-10-03):** self-describing output — per-window
 `state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
@@ -19,10 +19,10 @@ replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contrac
 **Schema 1.2 (2026-10-12):** per-window pace (`pace_percent`, `pace_ratio`), per-account `overall_pace_percent`, PACE column replaces `$ UNUSED` in clock matrix with cell-level signed pace percentages and lined-up notes; pace in `summary_lines` and `aiuse --available`. Early readings (under 10% of the window elapsed) are marked `~` (JSON `pace_early`, `overall_pace_early`; released 3.4.1).
 The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
-tracks only what a fresh session must know. **18 registered collectors**
+tracks only what a fresh session must know. **21 registered collectors**
 (cswap, CodexBar, caut, caam, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale,
 hermes, muse, qwencloud, bailian, openrouter, deepseek, clinepass,
-grok_billing, and `acp` — passive context fill from acp-run logs, not plan
+grok_billing, `paseo` — the Paseo daemon's cached usage report, mapped for claude/codex/copilot/grok/antigravity, quiet when the binary is absent — and `acp` — passive context fill from acp-run logs, not plan
 quota; `aiuse
 usage-sources` lists what is active per vendor and `[usage_sources]` can pin
 one source. Native collectors are default-on and quiet when their
