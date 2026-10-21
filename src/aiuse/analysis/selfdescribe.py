@@ -37,6 +37,7 @@ from aiuse.analysis.pool_keys import (
 from aiuse.models import (
     OPERATOR_APPROVAL_NOTICE,
     QuotaWindow,
+    Snapshot,
     canonical_provider,
     classify_window_minutes,
     claude_model_scope,
@@ -455,6 +456,78 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
             f"{_GATE_NOTE_PREFIX}: the shared Claude account window ({gate_label}) is exhausted until {until} — "
             "omp spends through the same Claude API account, so credits cannot be used before it resets.",
         )
+
+
+def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | None = None) -> bool:
+    """Mirror the dict-world omp rate gate onto ``Snapshot`` model accounts.
+
+    Sets ``AccountUsage.rate_gated_by`` and a note on omp accounts so model
+    consumers (``--for-chat``, board note surfaces) see the gate without going
+    through ``enrich_snapshot``. Same positive-evidence rule as
+    ``_apply_shared_rate_gate``; returns True when a gate was applied.
+    """
+    now = now or utcnow()
+    omp_rows = [a for a in snapshot.accounts if a.provider == "omp"]
+    for account in snapshot.accounts:
+        if account.rate_gated_by is not None:
+            account.rate_gated_by = None
+        if account.notes:
+            account.notes = [n for n in account.notes if not str(n).startswith(_GATE_NOTE_PREFIX)]
+    if not omp_rows:
+        return False
+    gate_reset: datetime | None = None
+    gate_label = ""
+    gate_account = ""
+    for account in snapshot.accounts:
+        if account.provider != "claude":
+            continue
+        known = [
+            w
+            for w in account.windows
+            if claude_model_scope(w.label) is None and (w.remaining_percent is not None or w.used_percent is not None)
+        ]
+        if not known:
+            continue
+        worst: tuple[QuotaWindow, datetime] | None = None
+        for window in known:
+            remaining = window.remaining_percent
+            if remaining is None and window.used_percent is not None:
+                remaining = max(0.0, 100.0 - window.used_percent)
+            if remaining is None or remaining > EXHAUSTED_BELOW:
+                continue
+            duration = classify_window_minutes(window.window_minutes)
+            reset = window.resets_at
+            if (
+                duration in ("weekly", "monthly")
+                and reset is not None
+                and reset > now
+                and (worst is None or reset > worst[1])
+            ):
+                worst = (window, reset)
+        if worst is None:
+            return False
+        if gate_reset is None or worst[1] < gate_reset:
+            gate_reset = worst[1]
+            gate_label = worst[0].label or "weekly window"
+            gate_account = account.account or ""
+    if gate_reset is None:
+        return False
+    reset_iso = gate_reset.isoformat()
+    until = format_clock(gate_reset, date=gate_reset - now > timedelta(hours=24))
+    for account in omp_rows:
+        account.rate_gated_by = {
+            "provider": "claude",
+            "account": gate_account or None,
+            "window_label": gate_label,
+            "resets_at": reset_iso,
+            "evidence": "every observed Claude account's shared multi-day window is exhausted; Anthropic 429 retry-after matched this reset (2026-10-21)",
+        }
+        account.notes.insert(
+            0,
+            f"{_GATE_NOTE_PREFIX}: the shared Claude account window ({gate_label}) is exhausted until {until} — "
+            "omp spends through the same Claude API account, so credits cannot be used before it resets.",
+        )
+    return True
 
 
 def enrich_snapshot(

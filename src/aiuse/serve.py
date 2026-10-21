@@ -522,6 +522,7 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 expires_at=parse_dt(row.get("expires_at")),
                 requires_operator_approval=bool(row.get("requires_operator_approval", False)),
                 credits_label=row.get("credits_label"),
+                rate_gated_by=row.get("rate_gated_by"),
                 error=row.get("error"),
                 notes=list(row.get("notes") or []),
                 collected_at=parse_dt(row.get("collected_at")),

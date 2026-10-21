@@ -160,3 +160,70 @@ def test_fable_model_sublimit_is_not_the_gate_evidence():
     # Shared weekly still has headroom, so the exhausted model sublimit alone
     # must not gate omp account-wide (it only restricts Fable-class models).
     assert "rate_gated_by" not in _omp_of(snap)
+
+
+def _model_snapshot(weekly_used: float):
+    from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
+
+    now = utcnow()
+    claude = AccountUsage(
+        provider="claude",
+        account="djbclark@gmail.com",
+        source="cswap",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Claude weekly",
+                used_percent=weekly_used,
+                remaining_percent=max(0.0, 100.0 - weekly_used),
+                resets_at=now + timedelta(days=1, hours=20),
+                window_minutes=10080,
+            )
+        ],
+    )
+    omp = AccountUsage(
+        provider="omp",
+        source="codexbar",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        balance_usd=95.57,
+        spent_usd=104.43,
+        windows=[
+            QuotaWindow(
+                label="credits",
+                window_id="claude-cloud-credits",
+                used_percent=52.2,
+                remaining_percent=47.8,
+                resets_at=now + timedelta(days=18),
+            )
+        ],
+    )
+    return Snapshot(collected_at=now, accounts=[claude, omp])
+
+
+def test_snapshot_gate_sets_field_note_and_clears():
+    from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
+
+    snap = _model_snapshot(100.0)
+    assert apply_shared_rate_gate_to_snapshot(snap) is True
+    omp = next(a for a in snap.accounts if a.provider == "omp")
+    assert omp.rate_gated_by is not None
+    assert omp.rate_gated_by["window_label"] == "Claude weekly"
+    assert any(n.startswith("Rate-gated") for n in omp.notes)
+    # Headroom on the shared window clears the gate and removes the note.
+    weekly = next(w for a in snap.accounts if a.provider == "claude" for w in a.windows)
+    weekly.used_percent, weekly.remaining_percent = 40.0, 60.0
+    assert apply_shared_rate_gate_to_snapshot(snap) is False
+    omp = next(a for a in snap.accounts if a.provider == "omp")
+    assert omp.rate_gated_by is None
+    assert not any(str(n).startswith("Rate-gated") for n in omp.notes)
+
+
+def test_chat_report_renders_the_gate_line():
+    from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
+    from aiuse.chat_format import render_chat_report
+
+    snap = _model_snapshot(100.0)
+    apply_shared_rate_gate_to_snapshot(snap)
+    text = render_chat_report(snap, [])
+    assert "Rate-gated: shared Claude Claude weekly exhausted until" in text
+    assert "credits cannot be spent before it resets" in text

@@ -26,6 +26,7 @@ from aiuse.analysis.history import (
     should_persist_snapshots,
 )
 from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
+from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
@@ -119,7 +120,8 @@ def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, 
     snapshot = _snapshot_from_accounts_dict(rows[0])
     burst_applied = _overlay_burst_samples(snapshot)
     overrides_applied = apply_credit_overrides_to_snapshot(snapshot, config)
-    if burst_applied or overrides_applied:
+    gate_applied = apply_shared_rate_gate_to_snapshot(snapshot)
+    if burst_applied or overrides_applied or gate_applied:
         # The stored alerts describe the older readings; re-derive them.
         alerts = analyze_use_or_lose(snapshot, config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
@@ -201,7 +203,7 @@ def collect_watch_frame(
             sampler.save_state(sampler.advance_state(sampler.load_state(), snapshot, settings, partial=False))
         except OSError:
             pass
-    if apply_credit_overrides_to_snapshot(snapshot, config):
+    if apply_credit_overrides_to_snapshot(snapshot, config) or apply_shared_rate_gate_to_snapshot(snapshot):
         alerts = analyze_use_or_lose(snapshot, config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
     return snapshot, alerts

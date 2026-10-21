@@ -658,6 +658,9 @@ class AccountUsage:
     # Human label for a credits pool whose provider name is a tool name (omp = "Claude API
     # credits"); emitted in --json as ``credits_label`` when set, never widening a column.
     credits_label: str | None = None
+    # Set while the shared Claude account rate window gates omp (schema 1.4):
+    # {provider, account, window_label, resets_at, evidence}. Cleared at reset.
+    rate_gated_by: dict[str, Any] | None = None
     error: str | None = None
     notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
@@ -705,6 +708,8 @@ class AccountUsage:
             d["ai_notice"] = OPERATOR_APPROVAL_NOTICE
         if self.credits_label:
             d["credits_label"] = self.credits_label
+        if self.rate_gated_by is not None:
+            d["rate_gated_by"] = dict(self.rate_gated_by)
         if self.context_usage is not None:
             d["context_usage"] = self.context_usage.to_dict()
         return d

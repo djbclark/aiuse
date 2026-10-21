@@ -11,7 +11,7 @@ Spec: https://github.com/djbclark/aiuse/issues/29
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 
 from aiuse.analysis.pace import (
     cursor_breakdown_window,
@@ -35,6 +35,7 @@ from aiuse.models import (
     UseOrLoseAlert,
     classify_window_minutes,
     claude_model_scope,
+    parse_dt,
     provider_display_name,
 )
 from aiuse.timefmt import exhaustion_lead_seconds, format_clock, lead_phrase
@@ -902,13 +903,22 @@ def _render_pool_entry(
     account_windows: list[QuotaWindow] | None = None,
     include_account: bool = True,
     operator_gate: bool = False,
+    rate_gate: Mapping[str, Any] | None = None,
 ) -> list[str]:
     """Render one account/pool. Single-window pools stay in the compact form.
 
     ``operator_gate`` adds the operator-approval notice right under the status
-    line (under the heading for a multi-window entry).
+    line (under the heading for a multi-window entry); ``rate_gate`` adds the
+    shared-Claude-window omp gate the same way.
     """
     gate_lines = [f"   ↳ {OPERATOR_APPROVAL_NOTICE}"] if operator_gate else []
+    if rate_gate is not None:
+        reset = parse_dt(rate_gate.get("resets_at"))
+        until = format_clock(reset, date=True) if reset is not None else str(rate_gate.get("resets_at") or "?")
+        gate_lines.append(
+            f"   ↳ 🚫 Rate-gated: shared Claude {rate_gate.get('window_label') or 'window'} exhausted until {until} — "
+            "credits cannot be spent before it resets"
+        )
     headline_windows = [r.window for r in entry.rows if not cursor_breakdown_window(r.window, provider=entry.provider)]
     overall, overall_early = (
         overall_pace(headline_windows, now) if now is not None and headline_windows else (None, False)
@@ -1080,6 +1090,7 @@ def render_chat_report(
     pool_entries.sort(key=lambda e: e.sort_key())
     windows_by_account = {(a.provider, a.account): a.windows for a in sub_accounts}
     gated_accounts = {(a.provider, a.account) for a in sub_accounts if a.requires_operator_approval}
+    rate_gates = {(a.provider, a.account): a.rate_gated_by for a in sub_accounts if a.rate_gated_by is not None}
     include_account = _chat_includes_account(snapshot.accounts)
     if pool_entries:
         lines = ["📊 **SUBSCRIPTION WINDOWS**"]
@@ -1095,6 +1106,7 @@ def render_chat_report(
                         account_windows=acct_windows,
                         include_account=include_account,
                         operator_gate=(entry.provider, entry.account) in gated_accounts,
+                        rate_gate=rate_gates.get((entry.provider, entry.account)),
                     )
                 )
                 if entry.provider == "cursor" and entry.scope == "auto":

@@ -40,9 +40,10 @@ clean, live smoke: omp row gated until Fri Oct 23 6:00am with $89.56 left.
 - **cswap re-login is still the operator's blocker** (browser OAuth): log in
   with Claude Code, then `cswap add`. Until then Claude windows come from
   CodexBar reading cswap's cache; the new expiry logic keeps that honest.
-- The **watch board** shows the gate only via the omp row's dollars/notes;
-  board-native gate rendering (like the old operator-gate cell text) is
-  follow-up polish if wanted.
+- `--for-chat` shows a `↳ 🚫 Rate-gated …` line under omp (wired via
+  `apply_shared_rate_gate_to_snapshot` in cli/watch); the **watch board's
+  matrix cells** still do not render the gate (like the old operator-gate
+  cell text) — follow-up polish if wanted.
 - Schema 1.4 shipped without a release; next `just release` should be 3.9.0
   (minor: new field) when the operator asks.
 - The agy tab `gemini-timeout-t` can be closed; its work is fully landed.

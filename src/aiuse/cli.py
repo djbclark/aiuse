@@ -599,6 +599,9 @@ def _main_inner(argv: list[str] | None = None) -> int:
     if apply_credit_overrides_to_snapshot(snapshot, config, overrides=credit_overrides):
         alerts = analyze_use_or_lose(snapshot, config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
+    from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
+
+    apply_shared_rate_gate_to_snapshot(snapshot)
     suggestion_alert = pick_suggestion(alerts, config)
     suggestion = suggestion_to_dict(suggestion_alert)
     insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
