@@ -46,6 +46,7 @@ _COLLECTORS = (
     "muse",
     "qwencloud",
     "bailian",
+    "paseo",
     "acp",
 )
 
