@@ -367,6 +367,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip Alibaba Cloud (bailian-cli) collector",
     )
     p.add_argument(
+        "--no-paseo",
+        action="store_true",
+        help="Skip Paseo daemon collector",
+    )
+    p.add_argument(
         "--providers",
         help=(
             "CodexBar providers: 'enabled' (default), 'all', or a comma-separated list queried one provider at a time"
@@ -1334,6 +1339,8 @@ def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> No
         collectors["qwencloud"] = {"enabled": False}
     if getattr(args, "no_bailian", False):
         collectors["bailian"] = {"enabled": False}
+    if getattr(args, "no_paseo", False):
+        collectors["paseo"] = {"enabled": False}
     if args.providers:
         collectors.setdefault("codexbar", {})["providers"] = args.providers
     if getattr(args, "codexbar_live", False):

@@ -85,6 +85,13 @@
 # Surfaces token/coding-plan 5h + weekly quota windows via `bl usage`.
 # enabled = true
 
+[collectors.paseo]
+# Paseo agent daemon usage reports (`paseo usage ls --json`, five-minute
+# daemon cache — one local call, no vendor API traffic). Second source for
+# claude / codex / copilot / grok / antigravity accounts the daemon has
+# logins for. See docs/paseo.md.
+# enabled = true
+
 [collectors.sipb]
 # MIT SIPB LLM server (llms-dev-1.mit.edu). Opt-in only.
 # Unlimited quota but very slow (shared GPU) — use sparingly / as a last resort.

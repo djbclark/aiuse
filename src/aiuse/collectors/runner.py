@@ -51,6 +51,7 @@ from .openrouter import collect_openrouter
 from .openusage import app_cli_path as openusage_app_cli_path
 from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
+from .paseo import collect_paseo
 from .qwencloud import collect_qwencloud
 from .sipb import collect_sipb
 from .throttle import min_intervals
@@ -68,6 +69,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "openrouter",
     "deepseek",
     "tokscale",
+    "paseo",
     "clinepass",
     "hermes",
     "muse",
@@ -78,14 +80,36 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
-    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "tokscale", "openusage_sh", "hermes", "caam", "acp"),
+    "claude": (
+        "cswap",
+        "codexbar",
+        "caut",
+        "openusage_ai",
+        "tokscale",
+        "openusage_sh",
+        "paseo",
+        "hermes",
+        "caam",
+        "acp",
+    ),
     # caam reads vault profiles only, so it stays the last resort behind every
     # direct source (never ahead of grok_billing's own billing number).
-    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam", "acp"),
-    "grok": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "grok_billing", "caam", "acp"),
+    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "paseo", "hermes", "caam", "acp"),
+    "grok": (
+        "codexbar",
+        "caut",
+        "openusage_ai",
+        "openusage_sh",
+        "tokscale",
+        "hermes",
+        "grok_billing",
+        "paseo",
+        "caam",
+        "acp",
+    ),
     "cursor": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam", "acp"),
     # tokscale keeps distinct Copilot premium vs chat/completions semantics.
-    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "hermes", "acp"),
+    "copilot": ("tokscale", "codexbar", "caut", "openusage_ai", "openusage_sh", "paseo", "hermes", "acp"),
     # Native qwencloud CLI is the authority; CodexBar qwen-cloud (cookies) cross-checks.
     "qwencloud": ("qwencloud", "codexbar", "acp"),
     # Native bl CLI is the authority; CodexBar alibaba-*-plan (cookies) cross-checks.
@@ -108,6 +132,7 @@ SOURCE_LABELS: dict[str, str] = {
     "openrouter": "OpenRouter (native)",
     "deepseek": "DeepSeek (native)",
     "tokscale": "tokscale",
+    "paseo": "Paseo (daemon)",
     "clinepass": "ClinePass (native)",
     "hermes": "Hermes (local)",
     "muse": "Muse (native)",
@@ -274,6 +299,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
+    if _enabled(collectors_cfg, "paseo"):
+        jobs.append(("paseo", partial(collect_paseo, timeout=timeout_for(config, "paseo"))))
     if _enabled(collectors_cfg, "clinepass"):
         jobs.append(("clinepass", partial(collect_clinepass, timeout=timeout_for(config, "clinepass"))))
     if _enabled(collectors_cfg, "hermes"):
@@ -1311,6 +1338,7 @@ ALL_DATA_SOURCES: tuple[str, ...] = (
     "openusage_ai",
     "openusage_sh",
     "tokscale",
+    "paseo",
     "clinepass",
     "hermes",
     "acp",
@@ -1327,6 +1355,7 @@ def collector_tools_present() -> dict[str, bool]:
         "openusage_ai": openusage_app_cli_path() is not None,
         "openusage_sh": which("openusage-sh") is not None,
         "tokscale": which("tokscale") is not None,
+        "paseo": which("paseo") is not None,
         "hermes": True,
         "acp": default_acp_log_dir().is_dir(),
     }

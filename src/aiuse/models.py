@@ -635,7 +635,7 @@ class ContextUsage:
 class AccountUsage:
     """Normalized usage for one provider account."""
 
-    source: str  # cswap | codexbar | caut | caam | openusage_ai | openusage_sh | tokscale | clinepass | acp
+    source: str  # cswap | codexbar | caut | caam | openusage_ai | openusage_sh | tokscale | clinepass | paseo | acp
     provider: str
     account: str | None = None
     plan: str | None = None

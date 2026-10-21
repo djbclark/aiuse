@@ -29,12 +29,12 @@ ACP_SOURCE = "acp"
 # Collectors that can report plan or balance data for a provider. Multi-provider
 # tools are listed only where that tool is known to track the service.
 QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
-    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam"),
-    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam"),
-    "copilot": ("tokscale", "codexbar", "openusage_ai", "openusage_sh"),
+    "claude": ("cswap", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam", "paseo"),
+    "codex": ("codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "hermes", "caam", "paseo"),
+    "copilot": ("tokscale", "codexbar", "openusage_ai", "openusage_sh", "paseo"),
     "cursor": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "caam"),
-    "grok": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "grok_billing", "hermes", "caam"),
-    "antigravity": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
+    "grok": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "grok_billing", "hermes", "caam", "paseo"),
+    "antigravity": ("codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes", "paseo"),
     "opencode-go": ("opencode_go", "codexbar", "openusage_ai", "openusage_sh", "tokscale"),
     "opencode-zen": ("opencode_zen",),
     "omp": ("codexbar",),  # Claude cloud-session credits ride on CodexBar's Claude row
@@ -49,7 +49,7 @@ QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
     "devin": ("codexbar", "openusage_ai", "tokscale"),
 }
 
-_MULTI_PROVIDER = frozenset({"codexbar", "openusage_ai", "openusage_sh", "tokscale", "caut", "caam", "hermes"})
+_MULTI_PROVIDER = frozenset({"codexbar", "openusage_ai", "openusage_sh", "tokscale", "caut", "caam", "hermes", "paseo"})
 
 _TOOL: dict[str, str] = {
     "cswap": "cswap",
@@ -58,6 +58,7 @@ _TOOL: dict[str, str] = {
     "caam": "caam",
     "openusage_sh": "openusage-sh",
     "tokscale": "tokscale",
+    "paseo": "paseo",
     "clinepass": "cline",
     "muse": "muse",
     "qwencloud": "qwencloud",

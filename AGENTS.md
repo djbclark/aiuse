@@ -26,7 +26,7 @@ done; JSON schema **1.4** (self-describing output, `aiuse --available`,
 `aiuse note-exhausted`; 1.4 adds the omp `rate_gated_by` shared-Claude-window
 gate; 1.3 added ceiling/hidden-pool fields and per-pool learned burn rates;
 1.2 added per-window pace and the matrix PACE column,
-early readings marked `~`); 19 registered collectors (including passive `acp`
+early readings marked `~`); 20 registered collectors (including passive `acp`
 context logs and the opt-in `sipb` MIT status probe; `aiuse usage-sources`);
 scheduled sampling +
 `aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →
@@ -108,8 +108,9 @@ project knowledge in **their own** repo.
 
 `aiuse` is a CLI that aggregates live AI-subscription quota data (Claude, Codex,
 Copilot, Grok, Gemini/Antigravity, OpenCode Go, prepaid balances, …) from
-**six external data sources** (`cswap`, `CodexBar`, `caut`, `caam`, `OpenUsage`,
-`tokscale` — PATH tools and/or OpenUsage loopback HTTP), then tells the user
+**seven external data sources** (`cswap`, `CodexBar`, `caut`, `caam`, `OpenUsage`,
+`tokscale`, `paseo` — PATH tools and/or OpenUsage loopback HTTP; `paseo` is the
+Paseo agent daemon's cached usage report), then tells the user
 what to burn before it resets unused. See `README.md` for the full description,
 install steps, CLI flags, and config. Install helpers:
 `packaging/install-deps.sh` and site `just install-aiuse-deps`.

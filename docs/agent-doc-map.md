@@ -24,7 +24,8 @@ grouping see [`index.md`](index.md).
 - `docs/cswap-reliability.md` — Claude/cswap reliability: decision-stale JSON, cache hydration, fallbacks. **Read when:** When Claude rows go missing or multi-account looks wrong.
 - `docs/opencode-go-quota.md` — OpenCode Go: web vs local estimate; shared allotment; **Go ≠ Zen**. **Read when:** When Go % disagrees with the OpenCode TUI / short windows look open.
 - `docs/opencode-zen-balance.md` — OpenCode Zen prepaid wallet (separate billing from Go). **Read when:** Zen balance / credential refresh / empty Zen.
-- `docs/omp-cloud-credits.md` — Claude cloud-session credits (an expiring dollar grant) as the `omp` provider: SCOPE `claude`, OTHER `$left`, JSON `spent_usd`/`balance_usd`, chat line. **Read when:** omp balance / expiry / missing omp row.
+- `docs/omp-cloud-credits.md` — Claude cloud-session credits (an expiring dollar grant) as the `omp` provider: SCOPE `claude`, OTHER `$left`, JSON `spent_usd`/`balance_usd`, chat line, rate-window gate. **Read when:** omp balance / expiry / missing omp row / omp 429 while dollars remain.
+- `docs/paseo.md` — Paseo daemon usage (`paseo usage ls --json`) as a second source behind the direct collectors. **Read when:** a paseo row is missing, or cursor/omp/muse entries from the daemon should stay unmapped.
 - `docs/cursor-quota.md` — Cursor total/auto/third-party/on-demand/grok-bot vs CodexBar slots. **Read when:** When Cursor % or CONSERVE disagrees with the Cursor usage UI.
 - `docs/qwencloud-quota.md` — QwenCloud + sibling Alibaba Cloud (Bailian) plans via `qwencloud` / `bl` CLIs. **Read when:** Qwen/alibaba rows missing; qwencloud / bl CLI auth setup.
 - `docs/antigravity-pools.md` — Antigravity Gemini vs Claude/GPT independent pools (score + ladder rows). **Read when:** When Antigravity is listed only once or pools look merged.

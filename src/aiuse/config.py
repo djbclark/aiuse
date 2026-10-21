@@ -274,6 +274,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Same console cookie as Zen; detects a lapsed Go plan the local $cap path cannot.
         "opencode_go": {"enabled": True},
         "tokscale": {"enabled": True},
+        # Paseo agent daemon usage reports (`paseo usage ls`; five-minute
+        # daemon cache, no vendor API traffic). See docs/paseo.md.
+        "paseo": {"enabled": True},
         "hermes": {"enabled": True},
         "muse": {"enabled": True},
         "qwencloud": {"enabled": True},
