@@ -44,6 +44,6 @@ clean, live smoke: omp row gated until Fri Oct 23 6:00am with $89.56 left.
   `apply_shared_rate_gate_to_snapshot` in cli/watch); the **watch board's
   matrix cells** still do not render the gate (like the old operator-gate
   cell text) — follow-up polish if wanted.
-- Schema 1.4 shipped without a release; next `just release` should be 3.9.0
-  (minor: new field) when the operator asks.
+- **Released:** 3.9.0 shipped 2026-10-21 (PyPI + Homebrew tap, `just release
+3.9.0 --allow-dirty`; installed copy verified rendering the gate).
 - The agy tab `gemini-timeout-t` can be closed; its work is fully landed.
