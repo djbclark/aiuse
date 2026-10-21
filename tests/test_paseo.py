@@ -3,7 +3,6 @@
 import pytest
 
 import aiuse.collectors.paseo as paseo_mod
-from aiuse.collectors.base import CollectorError
 from aiuse.collectors.paseo import _from_entry, collect_paseo
 from aiuse.models import WINDOW_NOMINAL_MINUTES, claude_model_scope
 from aiuse.usage_sources import usage_source_report
@@ -159,10 +158,9 @@ def test_collect_paseo_runs_cli_and_maps_rows(monkeypatch):
     assert [a.provider for a in accounts] == ["grok"]
 
 
-def test_collect_paseo_missing_binary(monkeypatch):
+def test_collect_paseo_missing_binary_is_quiet(monkeypatch):
     monkeypatch.setattr(paseo_mod, "which", lambda cmd: None)
-    with pytest.raises(CollectorError):
-        collect_paseo()
+    assert collect_paseo() == []
 
 
 def test_usage_sources_lists_paseo_as_active_tool():

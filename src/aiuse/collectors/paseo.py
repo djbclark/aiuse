@@ -5,7 +5,8 @@ balances for every provider the daemon has logins for, served from the
 daemon's five-minute host cache — one cheap local call, no vendor API
 traffic. A reading is as of the daemon's last successful refresh
 (``successfulAt``), which drives source arbitration like any other
-collector. Daemon-down exits 1 on stderr and surfaces as a collector error;
+collector. A missing ``paseo`` binary returns no rows (the collector is optional).
+Daemon-down exits 1 on stderr and surfaces as a collector error;
 per-account login problems (``status: unavailable``) are paseo's to fix and
 emit no row here.
 
@@ -38,7 +39,7 @@ from aiuse.models import (
     parse_dt,
 )
 
-from .base import CollectorError, run_json, which
+from .base import run_json, which
 
 _PROVIDER_BY_SOURCE_ID: dict[str, str] = {
     "claude": "claude",
@@ -53,7 +54,8 @@ _WINDOW_KIND_BY_ID = {"five_hour": "5h", "weekly": "weekly", "monthly": "monthly
 
 def collect_paseo(*, timeout: float = 30.0) -> list[AccountUsage]:
     if not which("paseo"):
-        raise CollectorError("paseo not found on PATH")
+        # Optional, like qwencloud: machines without the daemon stay quiet.
+        return []
 
     payload = run_json(["paseo", "usage", "ls", "--json"], timeout=timeout)
     entries = payload if isinstance(payload, list) else [payload]

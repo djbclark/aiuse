@@ -399,6 +399,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "clinepass",
         "grok_billing",
         "acp",
+        "paseo",
     }
 )
 KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(

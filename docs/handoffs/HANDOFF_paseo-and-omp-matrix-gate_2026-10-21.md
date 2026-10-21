@@ -14,7 +14,10 @@ is committed too. Neither is released. Installed Homebrew `aiuse` is still
    copilot, grok, and antigravity, behind the direct collectors. Cursor,
    omp, opencode, pi, and muse are skipped on purpose. Docs:
    [`docs/paseo.md`](../paseo.md). Default-on, quiet when the binary is
-   absent. `--no-paseo`.
+   absent (a missing binary returns no rows; daemon-down still errors).
+   `--no-paseo`. The first push failed GitHub pytest: `paseo` was not in
+   `KNOWN_COLLECTOR_KEYS`, so `validate` warned and a partial sample left
+   it enabled. The follow-up registers the key.
 2. **`c65e51a` — matrix shows the omp rate gate.** `--json` / `--available`
    already omitted omp while the shared Claude weekly window is exhausted
    (schema 1.4). The clock matrix still drew it as `mid` with percent left

@@ -17,7 +17,8 @@ paseo usage ls --json
 
 One local call against the daemon's **five-minute host cache** — no vendor
 API traffic, never `--refresh`. Requires Paseo 0.12+ (`paseo usage` landed
-there). If the daemon is down the CLI exits 1 and the collector records a
+there). A missing `paseo` binary returns no rows. If the binary is
+present and the daemon is down, the CLI exits 1 and the collector records a
 `paseo:` error like any other broken tool; per-account login problems are
 reported by paseo as `status: unavailable` and simply emit no row.
 
