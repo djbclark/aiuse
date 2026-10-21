@@ -77,3 +77,38 @@ def prefer_homebrew_formula() -> None:
         except (ValueError, OSError):
             continue
     os.execv(os.fspath(target), [os.fspath(target), *sys.argv[1:]])
+
+
+def reexec_target(
+    module_file: str | Path = __file__,
+    argv0: str | None = None,
+    prefixes: tuple[Path, ...] | None = None,
+) -> Path | None:
+    """Return the binary a long-lived process should re-exec into after an upgrade.
+
+    When ``brew upgrade aiuse`` (or ``pipx upgrade``) replaces the running
+    install while ``aiuse watch`` is open, the old Cellar/venv directory is
+    unlinked or ``/opt/homebrew/opt/aiuse`` points at a newer Cellar version.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("AIUSE_SKIP_HOMEBREW_FORMULA"):
+        return None
+    mod_path = Path(module_file)
+    missing = not mod_path.exists()
+    cmd = argv0 if argv0 is not None else (sys.argv[0] if sys.argv else "aiuse")
+    target = formula_command(cmd, prefixes)
+    if target is None and missing:
+        target = formula_command("aiuse", prefixes)
+    if target is not None:
+        if missing:
+            return target
+        if "Cellar" in mod_path.parts:
+            try:
+                mod_path.resolve().relative_to(target.resolve().parent.parent)
+            except (ValueError, OSError):
+                return target
+        return None
+    if missing and cmd:
+        candidate = Path(cmd)
+        if os.access(candidate, os.X_OK):
+            return candidate
+    return None

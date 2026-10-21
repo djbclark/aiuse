@@ -1105,3 +1105,30 @@ def test_cli_watch_all_providers_without_once_needs_a_tty(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "interactive terminal" in captured.err
     assert "Operator-only" in captured.err
+
+
+def test_watch_reexecs_when_install_is_upgraded(monkeypatch, tmp_path):
+    import sys
+
+    assert "aiuse.serve" in sys.modules
+    assert "aiuse.ledger" in sys.modules
+
+    fakes = _LoopFakes(monkeypatch)
+    target_bin = tmp_path / "aiuse"
+    monkeypatch.setattr("aiuse.watch.reexec_target", lambda _f: target_bin)
+    monkeypatch.setattr("aiuse.watch.sys.argv", ["/old/bin/aiuse", "watch", "-i", "60"])
+    exec_calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr("aiuse.watch.os.execv", lambda path, argv: exec_calls.append((path, argv)))
+
+    code = run_watch(
+        {"collectors": {}},
+        interval=600,
+        no_color=True,
+        stdout=StringIO(),
+        key_reader=_KeySequence([None, "q"]),
+        sleep=lambda _s: None,
+        require_tty=False,
+    )
+    assert code == 0
+    assert len(fakes.regular.starts) == 1
+    assert exec_calls == [(str(target_bin), [str(target_bin), "watch", "-i", "60"])]

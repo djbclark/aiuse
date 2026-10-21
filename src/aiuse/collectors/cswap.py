@@ -72,6 +72,7 @@ def _account_from_item(
     active_number: Any,
     *,
     cache: dict[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> AccountUsage:
     email = item.get("email")
     number = item.get("number")
@@ -84,6 +85,13 @@ def _account_from_item(
     error: str | None = None
     billing_kind = BillingKind.SUBSCRIPTION_WINDOW
     usage_credits: UsageCredits | None = None
+    collected_at: datetime | None = parse_dt(item.get("usageFetchedAt"))
+    if collected_at is None and item.get("usageAgeSeconds") is not None:
+        age = _number(item.get("usageAgeSeconds"))
+        if age is not None and age >= 0:
+            collected_at = datetime.fromtimestamp(
+                (now or datetime.now(timezone.utc)).timestamp() - age, tz=timezone.utc
+            )
 
     if item.get("alias"):
         notes.append(f"cswap alias: {item['alias']}")
@@ -128,12 +136,37 @@ def _account_from_item(
             availability_note = "`cswap list --json` omitted it as decision-stale."
         if hydrated is not None:
             recovered_usage, age_s, fetched_at = hydrated
-            windows.extend(_windows_from_usage(recovered_usage))
-            if usage_credits is None:
-                usage_credits = _usage_credits_from_spend(recovered_usage)
-                _append_spend_note(notes, usage_credits)
+            now_dt = now or datetime.now(timezone.utc)
+            candidates = _windows_from_usage(recovered_usage)
+            valid_windows = [
+                w
+                for w in candidates
+                if (w.resets_at is None or w.resets_at > now_dt)
+                and not (
+                    w.resets_at is None
+                    and age_s is not None
+                    and w.window_minutes is not None
+                    and age_s >= w.window_minutes * 60
+                )
+            ]
+            # Past cswap's 30m trust window, only hydrate when a window is 100%
+            # exhausted (cswap postpones polling until reset on exhausted slots);
+            # a dead-token slot that still had headroom must not report hours-old
+            # percentages as current usage.
+            trust_expired_unexhausted = (
+                age_s is not None and age_s > 1800 and not any((w.used_percent or 0.0) >= 100.0 for w in valid_windows)
+            )
+            if not trust_expired_unexhausted:
+                windows.extend(valid_windows)
+                if usage_credits is None:
+                    usage_credits = _usage_credits_from_spend(recovered_usage)
+                    _append_spend_note(notes, usage_credits)
             if windows or usage_credits is not None:
                 error = None  # usable for reporting; age is called out in notes
+                if collected_at is None:
+                    collected_at = parse_dt(fetched_at)
+                    if collected_at is None and age_s is not None and age_s >= 0:
+                        collected_at = datetime.fromtimestamp(now_dt.timestamp() - age_s, tz=timezone.utc)
                 if age_s is not None:
                     notes.append(
                         f"Using cswap's last-known quota from {recovery_source} "
@@ -158,6 +191,7 @@ def _account_from_item(
         error=error,
         notes=notes,
         raw=item,
+        collected_at=collected_at,
     )
 
 

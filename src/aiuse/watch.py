@@ -16,13 +16,25 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, TextIO
 
-from aiuse.analysis.history import save_snapshot, should_persist_snapshots
+from aiuse import agent_notes, client_limits, quota_refusals, sampler  # noqa: F401
+from aiuse.analysis import ceilings, frozen_quota, pace, pool_keys, selfdescribe  # noqa: F401
+from aiuse.analysis.history import (
+    account_key,
+    load_recent_snapshots,
+    partial_sample_dir,
+    save_snapshot,
+    should_persist_snapshots,
+)
 from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
-from aiuse.models import Snapshot, UseOrLoseAlert, utcnow
+from aiuse.credits_override import apply_credit_overrides_to_snapshot, overrides_signature
+from aiuse.homebrew_formula import reexec_target
+from aiuse.ledger import load_json_range, save_ledger
+from aiuse.models import Snapshot, UseOrLoseAlert, canonical_provider, utcnow
 from aiuse.report import render_clock_matrix_parts, render_stderr_meta
+from aiuse.serve import _alerts_from_dicts, _disk_row_age_ok, _snapshot_from_accounts_dict
 from aiuse.timefmt import format_clock
 
 DEFAULT_INTERVAL_S = 600.0
@@ -76,11 +88,6 @@ def _overlay_burst_samples(snapshot: Snapshot) -> bool:
     board is most useful exactly then, so it shows the newer reading for those
     providers and the full snapshot for everything else.
     """
-    from aiuse.analysis.history import account_key, partial_sample_dir
-    from aiuse.ledger import load_json_range
-    from aiuse.models import canonical_provider
-    from aiuse.serve import _snapshot_from_accounts_dict
-
     applied = False
     for row in load_json_range(partial_sample_dir(), snapshot.collected_at, None):
         for fresh in _snapshot_from_accounts_dict(row).accounts:
@@ -101,9 +108,6 @@ def _overlay_burst_samples(snapshot: Snapshot) -> bool:
 
 def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, list[UseOrLoseAlert]] | None:
     """The newest full snapshot on disk, if it is younger than ``max_age`` seconds."""
-    from aiuse.analysis.history import load_recent_snapshots
-    from aiuse.serve import _alerts_from_dicts, _disk_row_age_ok, _snapshot_from_accounts_dict
-
     rows = load_recent_snapshots(max_count=1)
     if not rows or not _disk_row_age_ok(rows[0], max_age):
         return None
@@ -113,7 +117,9 @@ def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, 
     if not snapshot_matches_policy(rows[0], config):
         return None
     snapshot = _snapshot_from_accounts_dict(rows[0])
-    if _overlay_burst_samples(snapshot):
+    burst_applied = _overlay_burst_samples(snapshot)
+    overrides_applied = apply_credit_overrides_to_snapshot(snapshot, config)
+    if burst_applied or overrides_applied:
         # The stored alerts describe the older readings; re-derive them.
         alerts = analyze_use_or_lose(snapshot, config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
@@ -178,9 +184,6 @@ def collect_watch_frame(
         if cached is not None:
             return cached
 
-    from aiuse import sampler
-    from aiuse.ledger import save_ledger
-
     ledger_sample = None
     if persist:
         snapshot, ledger_sample, _ledger_error = sampler.collect_with_ledger(config, run_collectors)
@@ -198,6 +201,9 @@ def collect_watch_frame(
             sampler.save_state(sampler.advance_state(sampler.load_state(), snapshot, settings, partial=False))
         except OSError:
             pass
+    if apply_credit_overrides_to_snapshot(snapshot, config):
+        alerts = analyze_use_or_lose(snapshot, config)
+        alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
     return snapshot, alerts
 
 
@@ -208,8 +214,6 @@ def _sample_schedule(config: dict[str, Any]) -> tuple[datetime, datetime, str] |
     """When ``aiuse sample`` last ran and is next due. Re-read every 2 seconds:
     the board redraws four times a second and the state file changes rarely."""
     global _schedule_cache
-    from aiuse import sampler
-
     if _schedule_cache is not None and time.monotonic() - _schedule_cache[0] < 2.0:
         return _schedule_cache[1]
     try:
@@ -538,6 +542,8 @@ def run_watch(
     color = False if no_color else None
     loaded: dict[str, Any] = {"at": None, "config": config, "error": None}
     collected_policy: dict[str, str | None] = {"fingerprint": None}
+    collected_overrides: dict[str, Any] = {"sig": None}
+    reexec_binary: dict[str, Any] = {"path": None}
 
     def live_config() -> dict[str, Any]:
         if config_loader is None:
@@ -703,6 +709,7 @@ def run_watch(
     def start_worker(fn: Callable[[], None]) -> None:
         fresh = frame_config()
         collected_policy["fingerprint"] = collection_policy_fingerprint(fresh)
+        collected_overrides["sig"] = overrides_signature()
         force = manual["forced"]
         manual["forced"] = False
         manual["u_in_flight"] = force
@@ -835,10 +842,18 @@ def run_watch(
                 # A config.toml edit has to take effect before the interval
                 # elapses. Otherwise the board keeps the old disable list and
                 # the next refresh can overwrite a newer snapshot with it.
-                if config_loader is not None and not runtime.collecting:
-                    fresh_fp = collection_policy_fingerprint(live_config())
-                    if collected_policy["fingerprint"] is not None and fresh_fp != collected_policy["fingerprint"]:
+                if not runtime.collecting:
+                    if config_loader is not None:
+                        fresh_fp = collection_policy_fingerprint(live_config())
+                        if collected_policy["fingerprint"] is not None and fresh_fp != collected_policy["fingerprint"]:
+                            runtime.next_due = runtime.now()
+                    fresh_sig = overrides_signature()
+                    if collected_overrides["sig"] is not None and fresh_sig != collected_overrides["sig"]:
                         runtime.next_due = runtime.now()
+                    upgrade_bin = reexec_target(__file__)
+                    if upgrade_bin is not None:
+                        reexec_binary["path"] = upgrade_bin
+                        break
                 # Block all overlap (operator, 2026-10-10): a regular collect
                 # never starts beside a sweep (running or queued), and a
                 # queued sweep fires only once the refresh is done.
@@ -864,4 +879,7 @@ def run_watch(
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
             except Exception:  # noqa: BLE001 — restore is best-effort
                 pass
+    if reexec_binary["path"] is not None:
+        target_str = os.fspath(reexec_binary["path"])
+        os.execv(target_str, [target_str, *sys.argv[1:]])
     return 0

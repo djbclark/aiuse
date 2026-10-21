@@ -87,3 +87,31 @@ def test_prefer_stays_when_already_the_formula(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(hf.sys, "argv", [str(binary), "--version"])
     monkeypatch.setattr(hf.os, "execv", lambda *_a: (_ for _ in ()).throw(AssertionError("exec")))
     hf.prefer_homebrew_formula()
+
+
+def test_reexec_target_when_module_file_deleted_or_cellar_upgraded(monkeypatch, tmp_path: Path):
+    cellar_old = tmp_path / "Cellar" / "aiuse" / "3.7.2"
+    cellar_new = tmp_path / "Cellar" / "aiuse" / "3.8.0"
+    old_mod = cellar_old / "libexec/lib/python3.14/site-packages/aiuse/watch.py"
+    old_mod.parent.mkdir(parents=True)
+    old_mod.write_text("# old\n", encoding="utf-8")
+    new_bin = _formula(cellar_new, with_caam=True)
+
+    opt_dir = tmp_path / "opt"
+    opt_dir.mkdir(parents=True)
+    prefix = opt_dir / "aiuse"
+    prefix.symlink_to(cellar_new)
+
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("AIUSE_SKIP_HOMEBREW_FORMULA", raising=False)
+
+    # Old Cellar still exists on disk, but opt/aiuse points to 3.8.0
+    assert hf.reexec_target(old_mod, argv0="aiuse", prefixes=(prefix,)) == prefix / "bin" / "aiuse"
+
+    # Old Cellar was unlinked by brew upgrade
+    old_mod.unlink()
+    assert hf.reexec_target(old_mod, argv0="aiuse", prefixes=(prefix,)) == prefix / "bin" / "aiuse"
+
+    # Running from the current 3.8.0 Cellar does not re-exec
+    new_mod = cellar_new / "libexec/lib/python3.14/site-packages/aiuse/collectors/caam.py"
+    assert hf.reexec_target(new_mod, argv0=str(new_bin), prefixes=(prefix,)) is None

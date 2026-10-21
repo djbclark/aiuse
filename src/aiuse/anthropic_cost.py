@@ -71,13 +71,28 @@ def _http_get(url: str, headers: Mapping[str, str], timeout: float) -> tuple[int
         raise CostReportError(f"request failed ({exc.__class__.__name__})") from None
 
 
-def fetch_spend_usd(api_key: str, starting_at: datetime, *, fetch: Fetch | None = None) -> float:
-    """Dollars spent from ``starting_at`` to now, summed over every page of the cost report."""
+def fetch_spend_usd(
+    api_key: str,
+    starting_at: datetime,
+    *,
+    fetch: Fetch | None = None,
+    after: datetime | None = None,
+) -> float | tuple[float, float, float]:
+    """Dollars spent from ``starting_at`` to now, summed over every page of the cost report.
+
+    With ``after`` set (the operator override's ``observed_at``), returns
+    ``(total_usd, pre_after_usd, post_after_usd)`` where ``pre_after_usd`` sums
+    buckets whose ``ending_at <= after`` (spend already reflected in the
+    operator's console reading, including any non-promotional / purchased-credit
+    spend during those days).
+    """
     fetch = fetch or _http_get
     buckets = 0
     headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "accept": "application/json"}
     start = starting_at.astimezone(co.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     cents = 0.0
+    pre_cents = 0.0
+    post_cents = 0.0
     page: str | None = None
     for _ in range(MAX_PAGES):
         params = {"starting_at": start, "bucket_width": "1d", "limit": "31"}
@@ -90,17 +105,25 @@ def fetch_spend_usd(api_key: str, starting_at: datetime, *, fetch: Fetch | None 
             doc = json.loads(body.decode("utf-8"))
             for bucket in doc["data"]:
                 buckets += 1
+                bucket_end = co.parse_dt(bucket.get("ending_at")) if after is not None else None
+                is_pre = after is not None and bucket_end is not None and bucket_end <= after
                 for result in bucket["results"]:
                     amount = float(result["amount"])
                     if not math.isfinite(amount) or amount < 0:
                         raise ValueError("bad amount")
                     cents += amount
+                    if is_pre:
+                        pre_cents += amount
+                    else:
+                        post_cents += amount
             page = doc.get("next_page") if doc.get("has_more") else None
         except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
             raise CostReportError("cost_report response was not the documented shape") from None
         if not page:
             if buckets == 0:
                 raise CostReportError("cost_report returned no buckets since the grant date")
+            if after is not None:
+                return cents / 100.0, pre_cents / 100.0, post_cents / 100.0
             return cents / 100.0
     raise CostReportError(f"cost_report has more than {MAX_PAGES} pages")
 
@@ -138,19 +161,48 @@ def refresh(
             2,
             f"the grant expired {expires_at.date().isoformat()}: no Admin API request made; record a new grant with `aiuse set-credits omp`",
         )
+    override_ref = co.load_file_entry(co.overrides_path(), co.OVERRIDE_SOURCE)
+    override_observed: datetime | None = None
+    override_remaining: float | None = None
+    if (
+        override_ref is not None
+        and abs(float(override_ref["total_usd"]) - total) <= 0.005
+        and co.parse_dt(override_ref.get("granted_at")) == granted_at
+    ):
+        override_observed = co.parse_dt(override_ref.get("observed_at"))
+        override_remaining = float(override_ref["remaining_usd"])
     try:
-        spent = fetch_spend_usd(key, granted_at, fetch=fetch)
+        result = fetch_spend_usd(key, granted_at, fetch=fetch, after=override_observed)
     except CostReportError as exc:
         return 1, f"aiuse: credits refresh failed, keeping the previous reading: {exc}"
     except Exception as exc:  # noqa: BLE001 - only the class name may reach output
         return 1, f"aiuse: credits refresh failed, keeping the previous reading ({exc.__class__.__name__})"
-    remaining = compute_remaining(total, spent)
+    if isinstance(result, tuple):
+        spent, pre_spent, post_spent = result
+    else:
+        spent, pre_spent, post_spent = result, 0.0, result
+    if pre_spent > 0.0 and override_remaining is not None:
+        # Daily buckets that ended before the operator's console reading are
+        # already accounted for in override_remaining (which excludes any
+        # pre-override spend that was billed to purchased credits rather than
+        # the promotional grant).
+        remaining = compute_remaining(override_remaining, post_spent)
+    else:
+        remaining = compute_remaining(total, spent)
     # Spend since the grant only grows, so for the same grant a reading can only fall: cap it at
     # the operator's figure and at the previous reading (an empty or short report must not refill it).
+    # However, if a previous reading was computed before pre-override purchased-credit calibration
+    # (so it sat below override_remaining despite zero post-override spend), do not let that uncalibrated
+    # reading pull the balance below the calibrated figure.
+    prev_reading = co.load_file_entry(readings_path(), "admin-api")
+    if prev_reading is not None and pre_spent > 0.0 and override_remaining is not None and post_spent == 0.0:
+        prev_remaining = float(prev_reading.get("remaining_usd") or 0.0)
+        if prev_remaining < override_remaining - 0.005:
+            prev_reading = None
     capped_by = None
     for label, ref in (
-        ("operator override", co.load_file_entry(co.overrides_path(), co.OVERRIDE_SOURCE)),
-        ("previous reading", co.load_file_entry(readings_path(), "admin-api")),
+        ("operator override", override_ref),
+        ("previous reading", prev_reading),
     ):
         if ref is None or abs(float(ref["total_usd"]) - total) > 0.005:
             continue

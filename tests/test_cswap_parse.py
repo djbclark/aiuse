@@ -364,3 +364,82 @@ def test_stale_cached_countdown_is_recomputed_from_resets_at():
     assert window.reset_description != frozen
     assert window.reset_description == _countdown_from_reset(resets, now=now)
     assert window.reset_description == "15h 10m"
+
+
+def test_cswap_sets_collected_at_from_usage_fetched_at_and_hydrated_last_good():
+    from datetime import datetime, timezone
+
+    live = _account_from_item(
+        {
+            "number": 2,
+            "email": "work@example.org",
+            "usageStatus": "ok",
+            "usageFetchedAt": "2026-10-21T12:00:00Z",
+            "usage": {"fiveHour": {"pct": 10}},
+        },
+        2,
+    )
+    assert live.collected_at == datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+
+    hydrated = _account_from_item(
+        {
+            "number": 2,
+            "email": "work@example.org",
+            "usageStatus": "relogin_required",
+            "usage": None,
+            "lastGoodUsage": {"sevenDay": {"pct": 100.0}},
+            "lastGoodFetchedAt": "2026-10-21T07:48:38Z",
+            "lastGoodAgeSeconds": 21600,
+        },
+        2,
+    )
+    assert hydrated.error is None
+    assert hydrated.collected_at == datetime(2026, 10, 21, 7, 48, 38, tzinfo=timezone.utc)
+
+
+def test_cswap_drops_hydrated_window_past_reset_and_rejects_old_unexhausted_last_good():
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 10, 21, 14, 0, tzinfo=timezone.utc)
+    # 5h reset at 11:00Z (already passed at 14:00Z); 7d resets Oct 23 and is 100% exhausted.
+    partial = _account_from_item(
+        {
+            "number": 2,
+            "email": "work@example.org",
+            "usageStatus": "relogin_required",
+            "usageError": "re-login required",
+            "usage": None,
+            "lastGoodUsage": {
+                "fiveHour": {"pct": 24.0, "resetsAt": "2026-10-21T11:00:00Z"},
+                "sevenDay": {"pct": 100.0, "resetsAt": "2026-10-23T10:00:00Z"},
+            },
+            "lastGoodFetchedAt": "2026-10-21T07:48:38Z",
+            "lastGoodAgeSeconds": 22282,
+        },
+        2,
+        now=now,
+    )
+    assert partial.error is None
+    assert [w.label for w in partial.windows] == ["Claude Code weekly"]
+    assert partial.windows[0].used_percent == 100.0
+
+    # Unexhausted reading >30m old when cswap is down must not be reported as live quota.
+    stale_unexhausted = _account_from_item(
+        {
+            "number": 2,
+            "email": "work@example.org",
+            "usageStatus": "relogin_required",
+            "usageError": "re-login required",
+            "usage": None,
+            "lastGoodUsage": {
+                "sevenDay": {"pct": 40.0, "resetsAt": "2026-10-23T10:00:00Z"},
+            },
+            "lastGoodFetchedAt": "2026-10-21T07:48:38Z",
+            "lastGoodAgeSeconds": 22282,
+        },
+        2,
+        now=now,
+    )
+    assert stale_unexhausted.windows == []
+    assert stale_unexhausted.error is not None
+    assert "Canonical Claude usage unavailable" in stale_unexhausted.error

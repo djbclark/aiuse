@@ -537,6 +537,7 @@ def _select_and_cross_check(
 
     for account in accounts:
         account.provider = _canonical_provider(account.provider)
+    _drop_reset_passed_windows(accounts)
     _normalize_account_names(accounts, account_aliases)
 
     providers = sorted({account.provider for account in accounts}, key=str.casefold)
@@ -604,6 +605,10 @@ def _select_and_cross_check(
             chosen = list(acp_rows)
         elif chosen and acp_rows and primary != ACP_SOURCE:
             _attach_acp_context(chosen, acp_rows)
+        if len(chosen) == 1 and not chosen[0].account:
+            named = [a.account.strip() for a in rows if a.source != ACP_SOURCE and a.account and a.account.strip()]
+            if named and len({name.casefold() for name in named}) == 1:
+                chosen[0].account = named[0]
         selected.extend(chosen)
 
         quota_by_source = {source: source_rows for source, source_rows in by_source.items() if source != ACP_SOURCE}
@@ -642,9 +647,18 @@ def _pick_primary_source(
 ) -> str | None:
     """Return the source id to surface for this provider, or None."""
     if provider == "claude" and cswap_authoritative and "cswap" in by_source:
-        cswap_live = [a for a in by_source["cswap"] if _has_live_data(a)]
+        cswap_rows = by_source["cswap"]
+        cswap_live = [a for a in cswap_rows if _has_live_data(a)]
         if cswap_live:
-            return "cswap"
+            if len(cswap_rows) > 1:
+                return "cswap"
+            # Single-slot cswap stays first in priority, but a known-stale
+            # hydrated/cached reading yields to a known-fresh authoritative peer.
+            live_sources = [
+                source for source in priority if any(_has_live_data(account) for account in by_source.get(source, []))
+            ]
+            authoritative = [source for source in live_sources if not _source_is_local_estimate(by_source[source])]
+            return _prefer_fresh_source(authoritative or live_sources, by_source, fresh_threshold_seconds)
         # Fall through to next live peer when cswap has no usable quota.
         for source in priority:
             if source == "cswap":
@@ -707,6 +721,47 @@ def _consolidate_accounts(
     """Compatibility wrapper for callers that only need selected rows."""
     selected, _ = _select_and_cross_check(accounts, cswap_authoritative=cswap_authoritative)
     return selected
+
+
+def _drop_reset_passed_windows(accounts: list[AccountUsage], *, now: datetime | None = None) -> None:
+    """Drop cached recurring windows whose reset timestamp has passed since collection.
+
+    When a collector serves a cached reading (e.g. CodexBar reading claude-swap's
+    cache while cswap needs re-login), any window measured before ``resets_at``
+    whose ``resets_at <= now`` has already reset; keeping its pre-reset
+    ``used_percent`` reports false usage and triggers spurious cross-check warnings.
+    """
+    now = now or utcnow()
+    for account in accounts:
+        if account.collected_at is None or not account.windows:
+            continue
+        kept: list[QuotaWindow] = []
+        dropped: list[str] = []
+        for w in account.windows:
+            if (
+                w.resets_at is not None
+                and w.refill_capacity_unit != "usd"
+                and account.collected_at < w.resets_at <= now
+            ):
+                dropped.append(w.label)
+            else:
+                kept.append(w)
+        if dropped:
+            account.windows = kept
+            account.notes.append(
+                f"Dropped pre-reset cached window(s) whose reset time has passed: {', '.join(dropped)}."
+            )
+            if (
+                not account.windows
+                and account.balance_usd is None
+                and account.credits_remaining is None
+                and account.usage_credits is None
+                and not account.error
+            ):
+                account.error = (
+                    f"Cached {provider_display_name(account.provider)} usage from "
+                    f"{_source_name(account.source)} expired at window reset."
+                )
 
 
 def _normalize_account_names(accounts: list[AccountUsage], aliases: dict[str, Any] | None) -> None:

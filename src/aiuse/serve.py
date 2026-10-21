@@ -521,8 +521,10 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 spent_usd=row.get("spent_usd"),
                 expires_at=parse_dt(row.get("expires_at")),
                 requires_operator_approval=bool(row.get("requires_operator_approval", False)),
+                credits_label=row.get("credits_label"),
                 error=row.get("error"),
                 notes=list(row.get("notes") or []),
+                collected_at=parse_dt(row.get("collected_at")),
             )
         )
     collected = parse_dt(snap.get("collected_at")) or utcnow()

@@ -342,3 +342,30 @@ def test_overrides_signature_changes_when_a_reading_is_written():
     fetch = Canned((200, _page(["1000"])))
     assert ac.refresh(env={ac.KEY_ENV: FAKE_KEY}, fetch=fetch, now=NOW)[0] == 0
     assert co.overrides_signature() != before and co.overrides_signature()[1] is not None
+
+
+def test_pre_override_spend_anchors_to_override_remaining_when_purchased_credits_Also_burned():
+    # Grant is $200 on Oct 13; operator calibrates $95.57 remaining at NOW-1d (Oct 19 12:00Z).
+    # Org cost_report has $110.44 in daily buckets ending before Oct 19 12:00Z ($104.43 grant +
+    # $6.01 purchased credits) and $0.00 in buckets after Oct 19 12:00Z.
+    _seed_grant(remaining=95.57)
+    doc = {
+        "data": [
+            {
+                "starting_at": "2026-10-18T00:00:00Z",
+                "ending_at": "2026-10-19T00:00:00Z",
+                "results": [{"amount": "11044", "currency": "USD"}],
+            },
+            {
+                "starting_at": "2026-10-19T00:00:00Z",
+                "ending_at": "2026-10-20T00:00:00Z",
+                "results": [],
+            },
+        ],
+        "has_more": False,
+    }
+    code, line = ac.refresh(env=ENV, fetch=Canned((200, doc)), now=NOW)
+    assert code == 0 and "$95.57 of $200.00" in line
+    entry = co.load_overrides(now=NOW)["omp"]
+    assert entry["source"] == "admin-api"
+    assert entry["remaining_usd"] == pytest.approx(95.57)

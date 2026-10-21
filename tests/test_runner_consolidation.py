@@ -642,3 +642,117 @@ def test_hidden_pools_drop_matching_windows_at_collection():
     hidden = _apply_hidden_pools(accounts, {"hidden_pools": {"cursor/auto": "hide auto"}})
     assert hidden == {"cursor/auto": "hide auto"}
     assert [w.label for w in accounts[0].windows] == ["total"]
+
+
+def test_single_slot_stale_cswap_yields_to_fresh_openusage_and_keeps_account_name():
+    from datetime import timedelta
+
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    stale_cswap = _account("cswap", "claude")
+    stale_cswap.account = "djbclark@gmail.com"
+    stale_cswap.collected_at = now - timedelta(hours=6)
+
+    stale_codexbar = _account("codexbar", "claude")
+    stale_codexbar.account = "djbclark@gmail.com"
+    stale_codexbar.collected_at = now - timedelta(hours=6)
+
+    fresh_openusage = _account("openusage_ai", "claude")
+    fresh_openusage.account = None
+    fresh_openusage.windows[0].used_percent = 100.0
+    fresh_openusage.collected_at = now - timedelta(seconds=30)
+
+    selected, _checks = _select_and_cross_check(
+        [stale_cswap, stale_codexbar, fresh_openusage],
+        cswap_authoritative=True,
+    )
+    assert [(a.source, a.account, a.windows[0].used_percent) for a in selected] == [
+        ("openusage_ai", "djbclark@gmail.com", 100.0)
+    ]
+
+
+def test_multi_slot_cswap_stays_authoritative_even_when_stale():
+    from datetime import timedelta
+
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    slot_one = _account("cswap", "claude")
+    slot_one.account = "one@example.com"
+    slot_one.collected_at = now - timedelta(hours=6)
+    slot_two = _account("cswap", "claude")
+    slot_two.account = "two@example.com"
+    slot_two.collected_at = now - timedelta(hours=6)
+    fresh_openusage = _account("openusage_ai", "claude")
+    fresh_openusage.collected_at = now - timedelta(seconds=30)
+
+    selected, _checks = _select_and_cross_check(
+        [slot_one, slot_two, fresh_openusage],
+        cswap_authoritative=True,
+    )
+    assert [a.source for a in selected] == ["cswap", "cswap"]
+
+
+def test_drop_reset_passed_windows_strips_cached_pre_reset_5h_window():
+    from datetime import timedelta
+
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    stale_codexbar = AccountUsage(
+        source="codexbar",
+        provider="claude",
+        account="djbclark@gmail.com",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        collected_at=now - timedelta(hours=6),
+        windows=[
+            QuotaWindow(
+                label="5h",
+                window_id="primary",
+                used_percent=24.0,
+                remaining_percent=76.0,
+                resets_at=now - timedelta(hours=3),
+            ),
+            QuotaWindow(
+                label="7d",
+                window_id="secondary",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                resets_at=now + timedelta(days=2),
+            ),
+        ],
+    )
+    fresh_openusage = AccountUsage(
+        source="openusage_ai",
+        provider="claude",
+        account=None,
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        collected_at=now - timedelta(seconds=10),
+        windows=[
+            QuotaWindow(
+                label="5h",
+                window_id="primary",
+                used_percent=0.0,
+                remaining_percent=100.0,
+                resets_at=None,
+            ),
+            QuotaWindow(
+                label="7d",
+                window_id="secondary",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                resets_at=now + timedelta(days=2),
+            ),
+        ],
+    )
+
+    selected, checks = _select_and_cross_check(
+        [stale_codexbar, fresh_openusage],
+        cswap_authoritative=True,
+    )
+    assert [a.source for a in selected] == ["openusage_ai"]
+    # Pre-reset 5h window on stale_codexbar was stripped before cross-check,
+    # so it does not fire a false 24pp discrepancy warning against openusage_ai's 0%.
+    assert [w.label for w in stale_codexbar.windows] == ["7d"]
+    assert not any(c.status == "warning" and "percentage points" in c.message for c in checks)

@@ -27,6 +27,7 @@ Which reading wins, per account:
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
@@ -38,7 +39,7 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
-from aiuse.models import parse_dt, provider_cli_binary, utcnow
+from aiuse.models import AccountUsage, Snapshot, parse_dt, provider_cli_binary, utcnow
 
 OVERRIDE_PROVIDER = "omp"
 OVERRIDE_SOURCE = "operator-override"
@@ -128,6 +129,12 @@ def _config_hides_omp(config: Mapping[str, Any] | None) -> bool:
             parse_pool_rule_key(str(key))[0] == OVERRIDE_PROVIDER for key in mapping
         ):
             return True
+    if isinstance(config, dict):
+        from aiuse.config import requested_providers
+
+        req = requested_providers(config)
+        if req is not None and OVERRIDE_PROVIDER not in req:
+            return True
     return False
 
 
@@ -146,6 +153,7 @@ def load_overrides(
         return {}
     now = now or utcnow()
     merged: dict[str, dict[str, Any]] = {}
+    has_admin: set[str] = set()
     # Validate every candidate with the time rules first, then take the freshest valid one, so an
     # invalid (future-dated, expired, too old) reading can never hide a valid override.
     for path, source in ((overrides_path(), OVERRIDE_SOURCE), (readings_file(), "admin-api")):
@@ -153,11 +161,16 @@ def load_overrides(
             valid, _why = _safe_clean(entry, now=now)
             if valid is None:
                 continue
+            if source == "admin-api":
+                has_admin.add(provider)
             current = merged.get(provider)
             if current is None or (parse_dt(valid["observed_at"]) or _EPOCH) > (
                 parse_dt(current["observed_at"]) or _EPOCH
             ):
                 merged[provider] = valid
+    for provider in has_admin:
+        if provider in merged:
+            merged[provider]["has_admin_reading"] = True
     return merged
 
 
@@ -327,7 +340,7 @@ def apply_credit_overrides(
     accounts = snap.get("accounts")
     if (
         override
-        and override.get("source") == "admin-api"
+        and (override.get("source") == "admin-api" or override.get("has_admin_reading"))
         and isinstance(accounts, list)
         and not any(isinstance(a, dict) and a.get("provider") == OVERRIDE_PROVIDER for a in accounts)
     ):
@@ -420,6 +433,59 @@ def apply_credit_overrides(
             if not account.get("reading_expired"):
                 _expire_reading(account, f"is for a grant that expired {expiry.date().isoformat()}")
         account["observed_at"] = reading_at.isoformat() if reading_at else None
+
+
+def apply_credit_overrides_to_snapshot(
+    snapshot: Snapshot,
+    config: Mapping[str, Any] | None = None,
+    *,
+    overrides: Mapping[str, Mapping[str, Any]] | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Apply ``apply_credit_overrides`` to ``snapshot.accounts`` in place.
+
+    Returns True when an ``omp`` account was added or updated so callers can
+    re-derive ``UseOrLoseAlert`` rows against the effective balance.
+    """
+    if _config_hides_omp(config):
+        return False
+    if _omp_hidden({"hidden_pools": snapshot.hidden_pools, "disabled_services": snapshot.disabled_services}):
+        return False
+    effective_overrides = load_overrides(config, now=now) if overrides is None else overrides
+    has_omp = any(a.provider == OVERRIDE_PROVIDER for a in snapshot.accounts)
+    if not has_omp and not (effective_overrides or {}).get(OVERRIDE_PROVIDER):
+        return False
+    before = [a.to_dict() for a in snapshot.accounts if a.provider == OVERRIDE_PROVIDER]
+    snap_dict: dict[str, Any] = {
+        "collected_at": snapshot.collected_at.isoformat(),
+        "accounts": [copy.deepcopy(d) for d in before],
+        "hidden_pools": dict(snapshot.hidden_pools),
+        "disabled_services": dict(snapshot.disabled_services),
+    }
+    apply_credit_overrides(snap_dict, effective_overrides, now=now)
+    after = snap_dict.get("accounts") or []
+    if after == before:
+        return False
+    from aiuse.serve import _snapshot_from_accounts_dict
+
+    rebuilt = _snapshot_from_accounts_dict(
+        {"collected_at": snapshot.collected_at.isoformat(), "accounts": after}
+    ).accounts
+    if not has_omp:
+        snapshot.accounts.extend(rebuilt)
+        return bool(rebuilt)
+    rebuilt_iter = iter(rebuilt)
+    new_accounts: list[AccountUsage] = []
+    for account in snapshot.accounts:
+        if account.provider == OVERRIDE_PROVIDER:
+            replacement = next(rebuilt_iter, None)
+            if replacement is not None:
+                new_accounts.append(replacement)
+        else:
+            new_accounts.append(account)
+    new_accounts.extend(rebuilt_iter)
+    snapshot.accounts = new_accounts
+    return True
 
 
 def overrides_signature() -> tuple[tuple[int, int] | None, ...]:

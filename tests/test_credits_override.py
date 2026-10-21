@@ -607,3 +607,63 @@ def test_hand_edited_admin_api_source_in_the_overrides_file_cannot_create_a_row(
     snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
     enrich_snapshot(snap, now=NOW, credit_overrides=loaded)
     assert not [a for a in snap["accounts"] if a["provider"] == "omp"]
+
+
+def test_apply_credit_overrides_to_snapshot_adds_admin_api_omp_and_respects_provider_filter():
+    from aiuse.credits_override import apply_credit_overrides_to_snapshot
+
+    admin_ov = {"omp": {**_override()["omp"], "source": "admin-api"}}
+    snap = Snapshot(collected_at=NOW, accounts=[])
+    assert apply_credit_overrides_to_snapshot(snap, {}, overrides=admin_ov, now=NOW) is True
+    assert len(snap.accounts) == 1
+    assert snap.accounts[0].provider == "omp"
+    assert snap.accounts[0].source == "admin-api"
+    assert snap.accounts[0].balance_usd == 95.57
+    assert snap.accounts[0].spent_usd == 104.43
+    assert snap.accounts[0].credits_label == "Claude API credits"
+
+    filtered = Snapshot(collected_at=NOW, accounts=[])
+    assert (
+        apply_credit_overrides_to_snapshot(
+            filtered,
+            {"collectors": {"codexbar": {"providers": ["claude"]}}},
+            overrides=admin_ov,
+            now=NOW,
+        )
+        is False
+    )
+    assert filtered.accounts == []
+
+
+def test_cli_partial_providers_writes_to_samples_not_latest(monkeypatch):
+    from aiuse.analysis import history
+
+    latest = history.snapshot_dir() / "latest.json"
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.write_text('{"marker": "full"}', encoding="utf-8")
+
+    monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
+    monkeypatch.setattr(
+        cli,
+        "run_collectors",
+        lambda _c: Snapshot(
+            collected_at=datetime.now(UTC),
+            accounts=[
+                AccountUsage(
+                    source="openusage_ai",
+                    provider="claude",
+                    billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                    windows=[QuotaWindow(label="Claude weekly", used_percent=100.0, remaining_percent=0.0)],
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        "aiuse.sampler.collect_with_ledger",
+        lambda cfg, fn: (fn(cfg), None, None),
+    )
+    rc = cli.main(["--providers", "claude", "--json", "-q"])
+    assert rc in (0, 2)
+    assert json.loads(latest.read_text(encoding="utf-8")) == {"marker": "full"}
+    samples = list(history.partial_sample_dir().glob("*.json"))
+    assert samples

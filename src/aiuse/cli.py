@@ -28,6 +28,7 @@ from aiuse.config import (
     generate_user_config,
     legacy_services_config_path,
     load_config,
+    requested_providers,
     timeout_for,
     validate_config,
 )
@@ -570,31 +571,37 @@ def _main_inner(argv: list[str] | None = None) -> int:
                     collected_at=snapshot.collected_at,
                     retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
                 )
+            partial = sorted(requested_providers(config) or []) if args.providers else None
             snapshot_path = save_snapshot(
                 snapshot,
                 alerts,
                 retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
+                partial_providers=partial,
             )
             _progress(f"Saved snapshot to {snapshot_path}")
         except OSError as exc:
             # Errors still surface even in quiet mode
             print(f"Warning: could not save snapshot: {exc}", file=sys.stderr)
 
-    suggestion_alert = pick_suggestion(alerts, config)
-    suggestion = suggestion_to_dict(suggestion_alert)
-    insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     from aiuse.agent_notes import load_active_notes
     from aiuse.analysis.selfdescribe import SCHEMA_VERSION, enrich_snapshot
     from aiuse.client_limits import load_client_limits
-    from aiuse.credits_override import load_overrides
+    from aiuse.credits_override import apply_credit_overrides_to_snapshot, load_overrides
 
+    credit_overrides = load_overrides(config)
     snap_dict = enrich_snapshot(
         snapshot.to_dict(),
         notes=load_active_notes(),
         client_limits=load_client_limits(config),
         check_frozen=True,
-        credit_overrides=load_overrides(config),
+        credit_overrides=credit_overrides,
     )
+    if apply_credit_overrides_to_snapshot(snapshot, config, overrides=credit_overrides):
+        alerts = analyze_use_or_lose(snapshot, config)
+        alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
+    suggestion_alert = pick_suggestion(alerts, config)
+    suggestion = suggestion_to_dict(suggestion_alert)
+    insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
@@ -1182,10 +1189,12 @@ def _run_available(args: argparse.Namespace) -> int:
         snapshot = run_collectors(config)
         if should_persist_snapshots(analysis_cfg):
             try:
+                partial = sorted(requested_providers(config) or []) if args.providers else None
                 save_snapshot(
                     snapshot,
                     [],
                     retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
+                    partial_providers=partial,
                 )
             except OSError:
                 pass
