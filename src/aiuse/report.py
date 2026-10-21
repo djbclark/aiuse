@@ -1557,8 +1557,9 @@ def _build_matrix_rows(
                 else:
                     note = extra_note if note is None else f"{note} · {extra_note}"
             if clocks and account.spent_usd is not None and account.balance_usd is not None:
-                # An expiring dollar grant (omp): spent / left.
-                tail_note = f"${account.spent_usd:.2f}/${account.balance_usd:.2f}"
+                # An expiring dollar grant (omp): dollars left, like the wallet
+                # balances; spent stays in JSON spent_usd.
+                tail_note = f"${account.balance_usd:.2f}"
             data_age = _account_data_age(account, now)
             stale = data_age is not None and data_age > fresh_threshold
             pace_windows = [window for window in pool if claude_model_scope(window.label) is None]

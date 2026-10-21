@@ -104,7 +104,7 @@ def test_matrix_centers_the_notice_across_5h_and_week():
     assert abs(left - right) <= 1
     # MONTH and OTHER stay as they are, under their headers.
     assert row.index(">0u/100l") + len(">0u/100l") == header.index("MONTH") + len("MONTH")
-    assert row.index("$0.73/$249.27") == header.index("OTHER")
+    assert row.index("$249.27") == header.index("OTHER")
 
 
 def test_matrix_columns_stay_aligned_in_color():

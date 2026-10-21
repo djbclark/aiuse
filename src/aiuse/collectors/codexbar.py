@@ -864,7 +864,7 @@ def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
         remaining = max(0.0, total - used)
     if remaining is None:
         return None
-    # Dollars spent so far, shown beside the balance (``$spent/$left``).
+    # Dollars spent so far.
     spent = used if used is not None else (max(0.0, total - remaining) if total is not None else None)
     spent = round(spent, 6) if spent is not None else None  # drop float noise from the subtraction
     expiry = re.search(r"\d{4}-\d{2}-\d{2}T[\d:.]+Z", str(credit_row.get("secondaryValue") or ""))

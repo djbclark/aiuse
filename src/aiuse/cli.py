@@ -86,7 +86,7 @@ config & setup:
 matrix: ## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER. u/l = percent used / percent
   left; signed pace = ahead (+) or behind (-) of even spend across the window.
   PACE = the row’s highest window pace. OTHER = per-row notes: dollars (omp
-  `$spent/$left` of its expiring Claude cloud-session grant; JSON spent_usd /
+  `$left` of its expiring Claude cloud-session grant; JSON spent_usd /
   balance_usd), Fable model cap, grok wallet. A row gated for AI (omp) shows
   `({OPERATOR_APPROVAL_NOTICE})` across 5H/WEEK; JSON
   requires_operator_approval / ai_notice.

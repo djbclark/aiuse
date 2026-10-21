@@ -103,7 +103,7 @@ stdout report.
   and the table last. Nothing is printed below the table, so its bottom rows (the
   ones most worth using) stay on screen.
 - Columns: `## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER`. `OTHER` appears
-  only when a row has a note for it: omp's `$spent/$left` grant, a wallet
+  only when a row has a note for it: omp's `$left` grant, a wallet
   (`$1.64`), `Fable-cap`. `STALE` follows it.
 - Claude's main WEEK cell is overall shared usage. Fable is its own scored
   row (`scope` `fable`) with the cap in the WEEK column and Fable-cap pace.

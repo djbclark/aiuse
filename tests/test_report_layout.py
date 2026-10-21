@@ -84,10 +84,10 @@ def _row_line(text, service, *, extra=None):
     )
 
 
-def test_omp_row_tail_note_is_spent_over_left():
+def test_omp_row_tail_note_is_dollars_left():
     rows = _build_matrix_rows([], _snapshot(_omp), None)
     (omp,) = [row for row in rows if row.service == "omp"]
-    assert omp.tail_note == "$0.73/$249.27"
+    assert omp.tail_note == "$249.27"
     assert omp.note is None
 
 
@@ -107,7 +107,7 @@ def test_other_column_header_width_and_alignment():
     grok = _row_line(text, "grok")
     fable = _row_line(text, "claude", extra="fable")
     # Left-aligned: every note starts under the O of OTHER.
-    assert omp[col:] == "$0.73/$249.27"
+    assert omp[col:] == "$249.27"
     assert grok[col:] == "$1.64"
     assert fable[col:] == "Fable-cap"
     assert "(counts down)" not in text
@@ -129,9 +129,9 @@ def test_stale_follows_other():
     snap.accounts[0].collected_at = utcnow() - timedelta(days=2)
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     omp = _row_line(text, "omp")
-    assert omp.endswith("$0.73/$249.27 STALE")
+    assert omp.endswith("$249.27 STALE")
     col = text.splitlines()[0].index("OTHER")
-    assert omp[col:].startswith("$0.73/$249.27")
+    assert omp[col:].startswith("$249.27")
 
 
 def test_ai_line_leads_the_stderr_meta():
