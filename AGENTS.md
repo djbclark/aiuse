@@ -52,7 +52,9 @@ scheduled sampling +
 5. **Parked:** Step **35** (ccusage ≠ plan %) —
    [`docs/claude-local-usage.md`](docs/claude-local-usage.md).
 6. **Historical:** [`docs/fix-implementation-plan.md`](docs/fix-implementation-plan.md),
-   [`docs/code-review-2026-07-23.html`](docs/code-review-2026-07-23.html).
+   [`docs/code-review-2026-07-23.html`](docs/code-review-2026-07-23.html),
+   [`docs/copilot-value-2026-10.md`](docs/copilot-value-2026-10.md)
+   (Copilot Pro+ value check: three-cycle burn, downgrade verdict).
 
 ## Persistence policy: durable project knowledge goes in this git repo
 
