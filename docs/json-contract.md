@@ -58,6 +58,26 @@ time) and `fresh` (age ≤ `analysis.fresh_threshold_seconds`, default 1500s)
 say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
 (`--live`) before trusting it for routing.
 
+## What's new in schema 1.4 (2026-10-21)
+
+Schema 1.4 adds the **omp rate gate** — omp credits are not spendable while the
+shared Claude account window is exhausted:
+
+- **`rate_gated_by`** on an `omp` account and on its `--available` pool entry:
+  `{provider: "claude", account, window_label, resets_at, evidence}`. omp spends
+  through the account's Claude API access, so an exhausted weekly/monthly shared
+  Claude window blocks it via HTTP 429 regardless of dollars left
+  (`retry-after` equals the window reset; observed 2026-10-21).
+- While gated: `usable_now` is `false`, `available_at` is the gate's reset, the
+  summary line reads `-> NOT usable now [rate-gated: shared Claude <window>
+exhausted, unlocks <time>; credits cannot be spent before it resets]`, and
+  `--available` omits omp.
+- The gate is positive-evidence only: every Claude account with observed
+  shared-window data must show an exhausted weekly/monthly window with a future
+  reset. Missing Claude data, 5h windows, and exhausted model sublimits
+  (e.g. Fable) never gate omp account-wide. The gate clears itself once the
+  reset passes.
+
 ## What's new in schema 1.3 (2026-10-14)
 
 Schema 1.3 adds ceiling/breakdown semantics, operator `[hidden_pools]`, and
@@ -223,7 +243,7 @@ Default `aiuse --json` stdout:
 
 ```json
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
 
@@ -288,7 +308,7 @@ operator script reads it). Enriched fields (`state`, `usable_now`,
 
 ```json
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
   "alerts": [ ... ],
@@ -390,7 +410,7 @@ sorted by headroom (most left first), each with `models_hint` and the local
 
 ```json
 {
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "generated_at": "2026-10-03T23:05:00+00:00",
   "source": "cache",
   "age_seconds": 412.0,
@@ -671,34 +691,29 @@ unused dollars are lost at expiry. Source: CodexBar's Claude row
 }
 ```
 
-| Field                        | Meaning                                                             |
-| ---------------------------- | ------------------------------------------------------------------- |
-| `balance_usd`                | dollars left                                                        |
-| `spent_usd`                  | dollars spent so far                                                |
-| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)               |
-| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                |
-| `windows[0].window_minutes`  | `null`: the grant date is unknown, so there is no pace              |
-| `windows[0].pool_family`     | `claude` (the board's SCOPE column; internal pool key `omp_claude`) |
-| `requires_operator_approval` | always `true` on `omp`: the operator gate (below)                   |
-| `ai_notice`                  | `AI: Do not use without asking operator`                            |
+| Field                        | Meaning                                                                                                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balance_usd`                | dollars left                                                                                                                                                                  |
+| `spent_usd`                  | dollars spent so far                                                                                                                                                          |
+| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)                                                                                                                         |
+| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                                                                                                                          |
+| `windows[0].window_minutes`  | `null`: the grant date is unknown, so there is no pace                                                                                                                        |
+| `windows[0].pool_family`     | `claude` (the board's SCOPE column; internal pool key `omp_claude`)                                                                                                           |
+| `rate_gated_by`              | present while every observed Claude account's shared weekly/monthly window is exhausted with a future reset: credits cannot be spent until `resets_at` (see schema 1.4 above) |
 
 Without a grant total the row falls back to `billing_kind: "prepaid_balance"`
 with no window, still carrying `balance_usd` (and `spent_usd` when CodexBar
 reports it). Summary line:
 `omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator`.
 
-**Operator gate (rule for agents).** `omp` carries
-`requires_operator_approval: true` and `ai_notice` on the account, on its
-`--available` routing entry, and on any alert raised for it (the alert's
-`message` and summary line end with `— AI: Do not use without asking
-operator`). Do not spend this grant, route work to omp, or recommend burning
-it without asking the operator first, even when it is usable and expiring.
-aiuse only reports the gate; the agent toolchain enforces it at dispatch
-(`acp-run` and `acp-dispatch` refuse an omp slice unless
-`ACP_OPERATOR_APPROVED=omp` is set for that call; see
-[`omp-cloud-credits.md`](omp-cloud-credits.md)). The board shows
-`(AI: Do not use without asking operator)` across the empty 5H and WEEK cells,
-and `--for-chat` adds a `↳ AI: Do not use without asking operator` line.
+**Operator gate (historical; lifted 2026-10-19).** Between 2026-10-15 and
+2026-10-19 `omp` carried `requires_operator_approval: true` and `ai_notice`
+on the account, its `--available` routing entry, and its alerts, and the
+agent toolchain refused an omp slice unless `ACP_OPERATOR_APPROVED=omp` was
+set for that call. The operator lifted the gate on 2026-10-19 (commit
+8a9dc43): the Claude Max plan's API credits are a normal tier, and no account
+carries the flag today. The dispatch-side approval mechanism still exists for
+providers the operator may gate in the future.
 
 ### `usage_credits` (optional)
 

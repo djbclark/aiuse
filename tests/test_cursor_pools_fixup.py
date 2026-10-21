@@ -328,7 +328,7 @@ def test_json_contract_cursor_families_and_window_ids():
     assert by_id["tertiary"]["pool_family"] == "third_party"
     assert by_id["secondary"]["effective_left_percent"] == pytest.approx(29.0)
     assert by_id["secondary"]["ceiling_binding"] is True
-    assert SCHEMA_VERSION == "1.3"
+    assert SCHEMA_VERSION == "1.4"
 
 
 def test_compute_pace_no_exhaustion_at_zero_used():

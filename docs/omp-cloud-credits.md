@@ -11,6 +11,19 @@ reports it as its own provider, `omp` (display name `omp`, CLI binary `omp`).
 
 ## Source
 
+Reading evolution (the intro's $250/Nov 5 figures were the first grant):
+
+1. **CodexBar claude row** (`claude-cloud-credits`, field `iguana_necktie`) —
+   the original 2026-10-15 source, still used live.
+2. **Anthropic Admin API `cost_report`** — since #40 (2026-10-20) an hourly
+   refresh job reconciles daily spend buckets against the operator's console
+   reading (`aiuse set-credits omp`), so the row reflects the **current**
+   promotional grant ($200 granted 2026-10-13, expires 2026-11-08, applies to
+   Agent SDK / API / Batch / Playground / Managed Agents) rather than a stale
+   grant snapshot. Buckets that ended before the operator's reading are
+   already reflected in it (including purchased-credit spend); only
+   post-reading spend decrements the balance.
+
 CodexBar already reads it: `codexbar usage --provider claude` carries it as
 `usage.details[].rows[]` with `id == "claude-cloud-credits"` (`usageValue` =
 remaining dollars, `progress.total` = grant, `secondaryValue` =
@@ -86,7 +99,40 @@ OpenCode Go row):
 
 4. **`aiuse usage-sources`** lists `omp` with its one quota source, `codexbar`.
 
-## Operator gate
+## Rate-window gate (schema 1.4, 2026-10-21)
+
+The grant is a **billing** pool, not a rate-limit exemption. omp spends Claude
+through the account's Claude API access, so the account's shared multi-day
+quota window rate-limits it independently of dollars left. Observed
+2026-10-21: with the Claude weekly 100% used, Anthropic answered every omp
+request (`claude-opus-5-5`, `claude-fable-5-1`, even the usage fetch) with
+`429 "This request would exceed your account's rate limit"` and
+`retry-after` equal to the weekly reset (~44h out), while most of the credit
+grant remained. omp itself blocks its credential until that timestamp
+(`tier:fable` and whole-credential scopes in `agent.db`).
+
+aiuse fails closed for that state (`enrich_snapshot`,
+[`json-contract.md`](json-contract.md#whats-new-in-schema-14-2026-10-21)):
+
+1. When every Claude account with observed shared-window data shows an
+   exhausted weekly/monthly window with a future reset, omp accounts get
+   `rate_gated_by` (`{provider, account, window_label, resets_at, evidence}`),
+   `usable_now: false`, `available_at` = the gate reset, and a note; the
+   summary line gains `-> NOT usable now [rate-gated: …]` and `--available`
+   omits omp. The gate clears itself once the reset passes.
+2. Positive evidence only: missing Claude data never gates (a cswap outage
+   must not corrupt omp's own reporting — operator rule, 2026-10-21), 5h
+   windows never gate (the observed 429 pins the block to the weekly reset),
+   and an exhausted model sublimit (Fable) gates only that model class, never
+   the account.
+
+## Operator gate (historical; lifted 2026-10-19)
+
+The operator **lifted this gate on 2026-10-19** (commit 8a9dc43): the Claude
+Max plan's API credits are a normal tier and no account carries
+`requires_operator_approval` today. The section below records how the gate
+behaved between 2026-10-15 and 2026-10-19, and the dispatch-side approval
+mechanism still exists for future gates.
 
 The operator (djbclark, 2026-10-15) gated this grant for AI agents: **an agent
 must not spend it, route work to omp, or recommend burning it without asking

@@ -22,9 +22,10 @@ before assuming the tree is what the handoff describes.
 **Status (2026-10-15):** Package/CLI **`aiuse`**, packaging **3.7.1**
 (PyPI/GitHub/Homebrew; 3.7.0 added the `omp` row, OTHER column, and
 PACE-after-SCOPE layout; 3.7.1 reworded the gate's JSON semantics). Fix-plan Steps **1–34** and product issues **#1–#9**
-done; JSON schema **1.3** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`; 1.3 adds ceiling/hidden-pool fields and per-pool learned
-burn rates; 1.2 added per-window pace and the matrix PACE column,
+done; JSON schema **1.4** (self-describing output, `aiuse --available`,
+`aiuse note-exhausted`; 1.4 adds the omp `rate_gated_by` shared-Claude-window
+gate; 1.3 added ceiling/hidden-pool fields and per-pool learned burn rates;
+1.2 added per-window pace and the matrix PACE column,
 early readings marked `~`); 19 registered collectors (including passive `acp`
 context logs and the opt-in `sipb` MIT status probe; `aiuse usage-sources`);
 scheduled sampling +
@@ -188,7 +189,11 @@ Full path-by-path map with "read when" hints:
   rate limits, cost, and opt-outs. Output is screen-only (no snapshot, ledger,
   or sampler writes; the cross-process query throttle still applies). Document
   this restriction in any doc or integration that exposes the flag.
-- **`omp` rows are gated for AI agents** (2026-10-15): the omp provider is
+- **`omp` operator gate: LIFTED 2026-10-19** (commit 8a9dc43) — the Claude
+  Max plan's API credits are a normal tier; no account carries
+  `requires_operator_approval` today, and spending omp no longer needs prior
+  approval (it is still subject to the shared Claude rate-window gate in
+  schema 1.4). Historical rule (2026-10-15): the omp provider is
   Claude cloud-session credits, a real-money grant. Its account, alerts and
   `--available` entries carry `requires_operator_approval: true` and an
   `ai_notice` ("AI: Do not use without asking operator"); the matrix shows the

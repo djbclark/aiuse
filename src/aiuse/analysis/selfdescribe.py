@@ -38,13 +38,14 @@ from aiuse.models import (
     OPERATOR_APPROVAL_NOTICE,
     QuotaWindow,
     canonical_provider,
+    classify_window_minutes,
     claude_model_scope,
     parse_dt,
     utcnow,
 )
 from aiuse.timefmt import format_clock
 
-SCHEMA_VERSION = "1.3"
+SCHEMA_VERSION = "1.4"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -65,7 +66,7 @@ SEMANTICS: dict[str, str] = {
     "state": "exhausted (<=1% left) | tight (<15% left) | ok | unknown (no data); never compute it yourself",
     "usable_now": "false if any applicable window is exhausted or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
-    "available_at": "earliest resets_at among exhausted windows; null when nothing is exhausted or no reset time is known",
+    "available_at": "earliest resets_at among exhausted windows; null when nothing is exhausted or no reset time is known; for omp, the shared Claude window's reset while rate_gated_by is set",
     "pool_family": "routing family, not necessarily independent quota: antigravity gemini vs claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
     "shared_pool_family": "parent routing family whose windows also constrain this model sublimit",
@@ -94,6 +95,7 @@ SEMANTICS: dict[str, str] = {
     "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
     "superseded_override": "present on an omp account when a fresher CodexBar reading won over an operator override or Admin API reading: {source, observed_at, remaining_usd} of the figure it passed over",
     "reading_expired": "true on an omp account whose CodexBar reading is older than 24h and no override supersedes it: balance and percentages are dropped, so the pool is state unknown and not in --available",
+    "rate_gated_by": "present on an omp account/pool when every Claude account with observed shared-window data shows a multi-day (weekly/monthly) shared window exhausted with a future reset: omp spends through the same Claude API account, so its credits cannot be used until that window resets regardless of dollars left. Carries {provider, account, window_label, resets_at, evidence}; sets usable_now false and available_at to the gate reset, and clears itself once the reset passes. Short (5h) windows never gate omp — the observed 429 pins the block to the weekly reset (2026-10-21)",
     "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more is left than a bar that is 50% at 10+ days out and slides toward 0 at expiry: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
     "requires_operator_approval": "true on an account, --available routing entry or alert the operator gated: an agent must not spend it, route work to it, or recommend burning it without first asking the operator. aiuse only reports it; the agent toolchain's dispatchers refuse such a slice unless the operator approved that run. No account is gated since 2026-10-19 (omp's grant, the Claude API credits, became a normal tier). Omitted when false",
     "credits_label": 'human label of a credits pool whose provider name is a tool name: omp carries "Claude API credits" (the Claude Max plan\'s monthly promotional API grant). Omitted when unset',
@@ -377,6 +379,84 @@ def _apply_ceiling_caps(provider: str, windows: list[dict[str, Any]]) -> None:
                 window["headroom_percent"] = effective
 
 
+_GATE_NOTE_PREFIX = "Rate-gated"
+
+
+def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) -> None:
+    """Mark omp accounts unspendable while the shared Claude rate window is exhausted.
+
+    omp runs Claude through the account's Claude API access, so the account's
+    multi-day shared quota window rate-limits it independently of the dollar
+    credits: with the weekly window 100% used, Anthropic answers 429 with
+    retry-after pointing at the weekly reset even with most of the grant left
+    (2026-10-21). Gates only on that positive evidence — every Claude account
+    with observed shared-window data must show an exhausted weekly/monthly
+    window with a future reset; missing Claude data never gates (it must not
+    corrupt omp's own reporting), and 5h windows never gate.
+    """
+    for account in accounts:
+        account.pop("rate_gated_by", None)
+        notes = account.get("notes")
+        if isinstance(notes, list):
+            account["notes"] = [n for n in notes if not str(n).startswith(_GATE_NOTE_PREFIX)]
+    omp_accounts = [a for a in accounts if str(a.get("provider") or "") == "omp"]
+    if not omp_accounts:
+        return
+    gate_reset: datetime | None = None
+    gate_label = ""
+    gate_account = ""
+    for account in accounts:
+        if str(account.get("provider") or "") != "claude":
+            continue
+        known = [
+            w
+            for w in account.get("windows") or []
+            if isinstance(w, dict)
+            and w.get("quota_scope") != "model_sublimit"
+            and str(w.get("state") or "unknown") != "unknown"
+        ]
+        if not known:
+            continue
+        worst: tuple[Mapping[str, Any], datetime] | None = None
+        for window in known:
+            if str(window.get("state")) != "exhausted":
+                continue
+            duration = classify_window_minutes(window.get("window_minutes"))
+            reset = parse_dt(window.get("resets_at"))
+            if (
+                duration in ("weekly", "monthly")
+                and reset is not None
+                and reset > now
+                and (worst is None or reset > worst[1])
+            ):
+                worst = (window, reset)
+        if worst is None:
+            return  # a Claude account with observed shared headroom: omp may be usable
+        if gate_reset is None or worst[1] < gate_reset:
+            gate_reset = worst[1]
+            gate_label = str(worst[0].get("label") or "weekly window")
+            gate_account = str(account.get("account") or "")
+    if gate_reset is None:
+        return
+    reset_iso = gate_reset.isoformat()
+    until = format_clock(gate_reset, date=gate_reset - now > timedelta(hours=24))
+    for account in omp_accounts:
+        account["rate_gated_by"] = {
+            "provider": "claude",
+            "account": gate_account or None,
+            "window_label": gate_label,
+            "resets_at": reset_iso,
+            "evidence": "every observed Claude account's shared multi-day window is exhausted; Anthropic 429 retry-after matched this reset (2026-10-21)",
+        }
+        account["usable_now"] = False
+        account["available_at"] = reset_iso
+        account.setdefault("notes", []).insert(
+            0,
+            f"{_GATE_NOTE_PREFIX}: the shared Claude account window ({gate_label}) is exhausted until {until} — "
+            "omp spends through the same Claude API account, so credits cannot be used before it resets.",
+        )
+
+
 def enrich_snapshot(
     snap: dict[str, Any],
     *,
@@ -427,6 +507,7 @@ def enrich_snapshot(
                 account["client_limits"] = [dict(entry) for entry in limits]
             else:
                 account.pop("client_limits", None)
+    _apply_shared_rate_gate(accounts, now=now)
     pace_now = parse_dt(collected) or now
     for account in accounts:
         quota_windows = []
@@ -570,7 +651,8 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             states = [str(w.get("state") or "unknown") for w in windows]
             numbered = [w for w in windows if w.get("headroom_percent") is not None]
             frozen = any(w.get("measurement_frozen") for w in windows) or bool(account.get("measurement_frozen"))
-            if any(s == "exhausted" for s in states) or frozen:
+            gate = account.get("rate_gated_by")
+            if any(s == "exhausted" for s in states) or frozen or gate:
                 usable: bool | None = False
             elif family_has_data and any(str(w.get("state") or "unknown") != "unknown" for w in shared):
                 usable = True
@@ -580,6 +662,13 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
             ]
             resets = [t for t in resets if t is not None]
+            gate_reset = parse_dt(gate.get("resets_at")) if gate else None
+            if gate_reset is not None and (not resets or gate_reset <= min(resets)):
+                pool_available: datetime | None = gate_reset
+            elif resets:
+                pool_available = min(resets)
+            else:
+                pool_available = None
 
             def effective_headroom(window: Mapping[str, Any]) -> float:
                 headroom = window.get("effective_left_percent")
@@ -613,7 +702,8 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                         if model_sublimit
                         else {}
                     ),
-                    "available_at": min(resets).isoformat() if resets else None,
+                    "available_at": pool_available.isoformat() if pool_available is not None else None,
+                    **({"rate_gated_by": dict(gate)} if gate else {}),
                     "models_hint": hints.get(family),
                     **(
                         {"spent_usd": account["spent_usd"], "balance_usd": account.get("balance_usd")}
@@ -756,6 +846,14 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         line += " -> NOT usable now"
     elif all(str(w.get("state")) == "unknown" for w in pool.get("windows") or []):
         line += " -> unknown"
+    gate = pool.get("rate_gated_by")
+    if isinstance(gate, Mapping):
+        gate_dt = parse_dt(gate.get("resets_at"))
+        until = _reset_fragment(gate.get("resets_at"), "unlocks") if gate_dt is not None else ""
+        line += (
+            f" [rate-gated: {gate.get('window_label') or 'shared Claude window'} exhausted{until or ''};"
+            " credits cannot be spent before it resets]"
+        )
     if pool.get("stale"):
         line += f" [STALE {_format_age(pool.get('age_seconds'))}]"
     if pool.get("requires_operator_approval"):
