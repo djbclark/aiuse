@@ -12,7 +12,8 @@ def _stub(path: Path, body: str = "exit 0") -> None:
     path.chmod(0o755)
 
 
-def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
+def test_install_deps_check_accepts_supported_set_without_deprecated_tools(tmp_path):
+    """Default --check is cswap, CodexBar, and tokscale, and it must not install anything."""
     root = _root()
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
@@ -20,7 +21,7 @@ def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
     bin_dir.mkdir()
     (formula / "bin").mkdir(parents=True)
     _stub(formula / "bin" / "openusage")
-    for command in ("cswap", "codexbar", "caut", "caam", "openusage", "tokscale", "curl"):
+    for command in ("cswap", "codexbar", "tokscale", "curl"):
         _stub(bin_dir / command)
     _stub(bin_dir / "brew", 'if [ "$1" = "--prefix" ]; then printf "%s\\n" "$FAKE_FORMULA"; fi')
 
@@ -38,17 +39,18 @@ def test_install_deps_check_does_not_create_openusage_sh_wrapper(tmp_path):
         check=False,
     )
 
-    assert result.returncode == 1
-    assert "openusage-sh wrapper" in result.stdout
+    assert result.returncode == 0
+    assert "All data-source tools present." in result.stdout
+    assert "openusage" not in result.stdout
     assert not (home / ".local" / "bin" / "openusage-sh").exists()
 
 
-def test_install_deps_check_recognizes_openusage_sh_wrapper(tmp_path):
+def test_install_deps_check_reports_a_missing_supported_tool(tmp_path):
     root = _root()
     home = tmp_path / "home"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for command in ("cswap", "codexbar", "caut", "caam", "openusage", "openusage-sh", "tokscale", "curl"):
+    for command in ("codexbar", "tokscale", "curl"):
         _stub(bin_dir / command)
 
     env = os.environ | {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin"}
@@ -61,8 +63,9 @@ def test_install_deps_check_recognizes_openusage_sh_wrapper(tmp_path):
         check=False,
     )
 
-    assert result.returncode == 0
-    assert "ok       openusage-sh" in result.stdout
+    assert result.returncode == 1
+    assert "MISSING" in result.stdout
+    assert "cswap" in result.stdout
 
 
 def test_launchd_template_includes_local_wrapper_path_placeholder():
