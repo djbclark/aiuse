@@ -192,7 +192,7 @@ While `openusage-sh` provides a standalone terminal dashboard, running `openusag
 enabled = false
 ```
 
-Rely instead on `CodexBar` (which reads the instant `<2ms` widget snapshot cache) and `OpenUsage.ai` (the menu bar app's lightweight loopback HTTP endpoint).
+Rely instead on `CodexBar` (which reads the instant `<2ms` widget snapshot cache) and `tokscale`.
 
 ## Selection priority (generalized)
 
@@ -309,14 +309,14 @@ claude auth status          # compare with caut doctor Claude section
 
 ### What “good enough” looks like for aiuse
 
-| Source           | Need for correct ladder?                                      | Posture / Recommendation                         |
-| ---------------- | ------------------------------------------------------------- | ------------------------------------------------ |
-| **cswap**        | **Yes** (authoritative Claude multi-account selection)        | **Highly recommended**                           |
-| **CodexBar**     | **Yes** (primary multi-provider selection via widget cache)   | **Highly recommended** (<2ms via snapshot cache) |
-| **tokscale**     | **Yes** (primary Copilot & Cursor selection)                  | **Recommended**                                  |
-| **OpenUsage.ai** | Strong secondary cross-check; loopback HTTP is fast and clean | **Recommended** (keep app running)               |
-| **caut**         | Best-effort; Claude credential detection flaky                | **Avoid / Disable** (adhoc keychain prompts)     |
-| **OpenUsage.sh** | Unnecessary; heavy ~40s CPU export, minimal rate limits       | **Avoid / Disable** (`enabled = false`)          |
+| Source           | Need for correct ladder?                                    | Posture / Recommendation                         |
+| ---------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| **cswap**        | **Yes** (authoritative Claude multi-account selection)      | **Highly recommended**                           |
+| **CodexBar**     | **Yes** (primary multi-provider selection via widget cache) | **Highly recommended** (<2ms via snapshot cache) |
+| **tokscale**     | **Yes** (primary Copilot & Cursor selection)                | **Recommended**                                  |
+| **OpenUsage.ai** | Overlaps cswap, CodexBar, tokscale, and native OpenCode Go  | **Deprecated** (2026-10-22; app removed)         |
+| **caut**         | Best-effort; Claude credential detection flaky              | **Avoid / Disable** (adhoc keychain prompts)     |
+| **OpenUsage.sh** | Unnecessary; heavy ~40s CPU export, minimal rate limits     | **Avoid / Disable** (`enabled = false`)          |
 
 ---
 

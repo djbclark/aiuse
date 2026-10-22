@@ -316,7 +316,7 @@ antigravity = 900 # 0 disables
 aiuse --generate-config
 aiuse doctor                 # PATH tools + config presence + timeouts
 # Once per machine: install the data-source tools you intend to use
-# (normally cswap, CodexBar, tokscale, and either or both distinct OpenUsage tools)
+# (normally cswap, CodexBar, and tokscale; caut, caam, and both OpenUsage tools are deprecated)
 ./packaging/install-deps.sh
 # or: just -f ~/ops/site-djbclark/justfile install-aiuse-deps
 # macOS: follow the trust guide from the documentation index when needed

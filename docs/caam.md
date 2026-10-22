@@ -4,11 +4,11 @@ Related reading: [`AGENTS.md`](../AGENTS.md) · [`README.md`](../README.md) ·
 [`collectors-caut-openusage.md`](collectors-caut-openusage.md) ·
 [`json-contract.md`](json-contract.md)
 
-**Deprecated (2026-10-22).** caam overlaps cswap, CodexBar, OpenUsage.ai, and
+**Deprecated (2026-10-22).** caam overlaps cswap, CodexBar, and
 tokscale: it echoes vault profiles for claude, codex, grok, and cursor from
 behind every direct source. The collector stays in the tree. The maintainer is
-happy to re-add first-class support if anyone wants it. caut and OpenUsage.sh
-are deprecated for the same overlap reason
+happy to re-add first-class support if anyone wants it. caut, OpenUsage.ai, and
+OpenUsage.sh are deprecated for the same overlap reason
 ([`collectors-caut-openusage.md`](collectors-caut-openusage.md)).
 
 `caam` ([Dicklesworthstone/coding_agent_account_manager](https://github.com/Dicklesworthstone/coding_agent_account_manager))
