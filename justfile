@@ -4,7 +4,7 @@ set shell := ["bash", "-uc"]
 # Recipes that forward extra arguments use "$@", so a quoted value keeps its spaces.
 set positional-arguments
 
-# Install external data-source tools (cswap, codexbar, caut, OpenUsage, tokscale).
+# Install external data-source tools (cswap, codexbar, tokscale).
 install-deps:
     ./packaging/install-deps.sh
 
