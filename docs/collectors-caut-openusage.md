@@ -47,8 +47,8 @@ others → CodexBar first). **All live sources are pair-wise cross-checked.**
 
 ## Machine install
 
-**All seven aiuse data sources** (cswap, CodexBar, caut, caam, OpenUsage.ai,
-OpenUsage.sh, tokscale):
+**Default install** (cswap, CodexBar, OpenUsage.ai, tokscale). caut, caam, and
+OpenUsage.sh are deprecated and are no longer in that default:
 
 ```bash
 # From an aiuse checkout:

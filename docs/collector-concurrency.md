@@ -20,8 +20,10 @@ Happy to re-add support if anyone wants them
 | **OpenUsage.sh** | `openusage-sh export --output - --format json`           | Independent local telemetry / quota backup  |
 | **tokscale**     | `tokscale usage --json`                                  | Independent peer; preferred for Copilot     |
 
-Install all of them: [`packaging/install-deps.sh`](../packaging/install-deps.sh)
-or site `just install-aiuse-deps`.
+The default
+[`packaging/install-deps.sh`](../packaging/install-deps.sh) (and site
+`just install-aiuse-deps`) installs cswap, CodexBar, OpenUsage.ai, and
+tokscale. caut, caam, and OpenUsage.sh stay in the script and are not called.
 
 ## Architecture (wall-clock)
 
