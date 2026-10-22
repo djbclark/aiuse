@@ -135,6 +135,11 @@ aiuse fails closed for that state (`enrich_snapshot`,
    windows never gate (the observed 429 pins the block to the weekly reset),
    and an exhausted model sublimit (Fable) gates only that model class, never
    the account.
+4. From **3.9.3**, `save_snapshot` folds the admin-api credit reading into
+   `latest.json`. CodexBar can omit the omp row without a collector error, and
+   that cache file is what the sampler writes. `--available` already
+   re-applied the reading at display time. A partial sample that did not ask
+   for omp does not gain the row.
 
 ## Operator gate (historical; lifted 2026-10-19)
 
