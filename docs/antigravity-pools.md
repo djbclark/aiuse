@@ -26,7 +26,8 @@ or cswap multi-account logic.
 
 ## Cause
 
-CodexBar (and OpenUsage) expose four windows for Antigravity:
+CodexBar (and OpenUsage, when its payload includes them) expose these
+Antigravity windows:
 
 | Window            | Family                                                       |
 | ----------------- | ------------------------------------------------------------ |
@@ -34,6 +35,19 @@ CodexBar (and OpenUsage) expose four windows for Antigravity:
 | Gemini weekly     | Gemini (Google)                                              |
 | Claude/GPT 5-hour | Google non-Gemini (Claude/GPT via Google AI — **not** cswap) |
 | Claude/GPT weekly | Google non-Gemini                                            |
+
+CodexBar also sends a second window titled "Gemini weekly", id
+`antigravity-quota-summary-gemini-argon-wtu-weekly`. That is the individual
+quota the agy client enforces ("Individual quota reached… refreshes in 4 days,
+14 hours"). It shares the Gemini pool with the other Gemini weekly. When it is
+exhausted it governs the pool, so the row shows that window's reset rather than
+the looser Gemini weekly beside it. On 2026-10-22 it was 100% used with reset
+2026-10-27T02:35:35Z, and OpenUsage's `GET /v1/limits` omitted every Gemini
+resource (`geminiSession`, `geminiWeekly`, and this individual window). A fresh
+OpenUsage row must not replace CodexBar while that omission stands: freshness
+only demotes a source that covers the same independent pools. The same gap is
+[OpenUsage issue 1422](https://github.com/robinebers/openusage/issues/1422);
+the proposed fix in pull request 1423 was closed without merging.
 
 Within each family, 5h ⊂ weekly (shared allotment). **Across** families the
 budgets do not draw from each other — burning Gemini does not free Claude/GPT

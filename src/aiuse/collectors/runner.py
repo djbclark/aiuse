@@ -10,6 +10,7 @@ from functools import partial
 from typing import Any
 
 from aiuse.analysis.history import find_carried_resets
+from aiuse.analysis.pace import independent_pool_key
 from aiuse.analysis.selfdescribe import FRESH_THRESHOLD_SECONDS_DEFAULT
 from aiuse.config import (
     SINGLE_PROVIDER_COLLECTORS,
@@ -716,6 +717,19 @@ def _pick_primary_source(
     return next(iter(by_source), None)
 
 
+def _independent_pools(rows: list[AccountUsage]) -> set[str]:
+    """Independent allotments a source actually reported (Gemini vs Claude/GPT)."""
+    pools: set[str] = set()
+    for account in rows:
+        if not _has_live_data(account):
+            continue
+        for window in account.windows:
+            key = independent_pool_key(window.label, window_id=window.window_id, provider=account.provider)
+            if key:
+                pools.add(key)
+    return pools
+
+
 def _prefer_fresh_source(
     candidates: list[str],
     by_source: dict[str, list[AccountUsage]],
@@ -727,6 +741,11 @@ def _prefer_fresh_source(
     row would keep winning over OpenUsage's fresh row purely on priority order).
     Only demote when a source is provably stale AND a provably fresh peer exists;
     unknown-age sources keep their priority position.
+
+    A fresh source that omits an independent pool does not count. OpenUsage's
+    Antigravity payload is only the Claude/GPT windows (2026-10-22); CodexBar
+    also reports the Gemini weekly that the client enforces. Letting the fresh
+    omission win hid that weekly at 100% used.
     """
     now = utcnow()
     ages = {source: _source_age(by_source[source], now) for source in candidates}
@@ -741,7 +760,14 @@ def _prefer_fresh_source(
         else:
             any_stale = True
     if known_fresh and any_stale:
-        return known_fresh[0]
+        fresh = known_fresh[0]
+        fresh_pools = _independent_pools(by_source[fresh])
+        for source in candidates:
+            if source == fresh:
+                return fresh
+            if _independent_pools(by_source[source]) - fresh_pools:
+                return source
+        return fresh
     return candidates[0]
 
 
@@ -1284,11 +1310,17 @@ def _matching_window(
     if exact_label is not None:
         return exact_label
 
-    # Fuzzy: same duration bucket keywords
+    # Fuzzy: same duration bucket, and the same independent pool. Duration
+    # alone pairs Antigravity's Gemini weekly with its Claude/GPT weekly
+    # (both 10080 minutes) and then reports a fake percent gap.
     target_kind = _window_kind_hint(target)
     if target_kind:
         kind_match = next(
-            (c for c in unmatched if _window_kind_hint(c) == target_kind),
+            (
+                candidate
+                for candidate in unmatched
+                if _window_kind_hint(candidate) == target_kind and _same_independent_pool(target, candidate)
+            ),
             None,
         )
         if kind_match is not None:
@@ -1300,10 +1332,25 @@ def _matching_window(
         (
             candidate
             for candidate in unmatched
-            if candidate.resets_at is not None and abs((candidate.resets_at - target.resets_at).total_seconds()) <= 900
+            if candidate.resets_at is not None
+            and abs((candidate.resets_at - target.resets_at).total_seconds()) <= 900
+            and _same_independent_pool(target, candidate)
         ),
         None,
     )
+
+
+def _same_independent_pool(left: QuotaWindow, right: QuotaWindow) -> bool:
+    """True when two windows are not in different hard-separated allotments.
+
+    A window with no pool marker (ordinary Claude 5h/weekly) may match another
+    unmarked window. Gemini must not match Claude/GPT.
+    """
+    left_pool = independent_pool_key(left.label, window_id=left.window_id)
+    right_pool = independent_pool_key(right.label, window_id=right.window_id)
+    if left_pool is None or right_pool is None:
+        return left_pool is None and right_pool is None
+    return left_pool == right_pool
 
 
 def _window_kind_hint(window: QuotaWindow) -> str | None:

@@ -1,6 +1,12 @@
 import time
+from datetime import timedelta
 
-from aiuse.collectors.runner import _consolidate_accounts, _select_and_cross_check, run_collectors
+from aiuse.collectors.runner import (
+    _consolidate_accounts,
+    _matching_window,
+    _select_and_cross_check,
+    run_collectors,
+)
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow
 
 
@@ -59,6 +65,93 @@ def test_copilot_prefers_tokscale_over_codexbar_when_both_live():
         cswap_authoritative=True,
     )
     assert [account.source for account in accounts] == ["tokscale"]
+
+
+def test_gemini_weekly_does_not_match_claude_gpt_weekly():
+    gemini = QuotaWindow(
+        label="Gemini weekly",
+        used_percent=13.5,
+        remaining_percent=86.5,
+        window_minutes=10080,
+    )
+    claude = QuotaWindow(
+        label="Claude/GPT weekly",
+        used_percent=99.0,
+        remaining_percent=1.0,
+        window_minutes=10080,
+    )
+    same = QuotaWindow(
+        label="Claude/GPT weekly",
+        used_percent=99.0,
+        remaining_percent=1.0,
+        window_minutes=10080,
+    )
+    assert _matching_window(gemini, [claude], set()) is None
+    assert _matching_window(claude, [gemini, same], set()) is same
+
+
+def test_fresh_openusage_does_not_hide_codexbar_gemini_exhaustion():
+    """OpenUsage omits Gemini. A fresh Claude/GPT-only row must not outrank CodexBar."""
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    codexbar = AccountUsage(
+        source="codexbar",
+        provider="antigravity",
+        collected_at=now - timedelta(hours=3),
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Gemini weekly",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                window_minutes=10080,
+                window_id="antigravity-quota-summary-gemini-argon-wtu-weekly",
+            ),
+            QuotaWindow(
+                label="Gemini weekly",
+                used_percent=13.5,
+                remaining_percent=86.5,
+                window_minutes=10080,
+                window_id="antigravity-quota-summary-gemini-weekly",
+            ),
+            QuotaWindow(
+                label="Claude/GPT weekly",
+                used_percent=99.0,
+                remaining_percent=1.0,
+                window_minutes=10080,
+            ),
+        ],
+    )
+    openusage = AccountUsage(
+        source="openusage_ai",
+        provider="antigravity",
+        collected_at=now,
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Claude/GPT 5-hour",
+                used_percent=0.0,
+                remaining_percent=100.0,
+                window_minutes=300,
+            ),
+            QuotaWindow(
+                label="Claude/GPT weekly",
+                used_percent=99.0,
+                remaining_percent=1.0,
+                window_minutes=10080,
+            ),
+        ],
+    )
+    selected, checks = _select_and_cross_check(
+        [openusage, codexbar],
+        cswap_authoritative=False,
+        fresh_threshold_seconds=1500,
+    )
+    assert [account.source for account in selected] == ["codexbar"]
+    assert any(window.remaining_percent == 0.0 for window in selected[0].windows)
+    text = " ".join(check.message for check in checks)
+    assert "Gemini weekly differs" not in text
 
 
 def test_cross_check_reports_consistent_duplicate_measurements():
