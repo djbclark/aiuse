@@ -19,7 +19,7 @@ project's guides by the job they help you do; most people only need one or two.
 
 - [`packaging.md`](packaging.md) — installation channels and maintainer release flow.
 - [`../packaging/install-deps.sh`](../packaging/install-deps.sh) — install/check optional source tools.
-- [`collectors-caut-openusage.md`](collectors-caut-openusage.md) — caut and OpenUsage setup.
+- [`collectors-caut-openusage.md`](collectors-caut-openusage.md) — OpenUsage.ai setup. caut, caam, and OpenUsage.sh are deprecated (overlap); happy to re-add them.
 - [`macos-keychain-trust.md`](macos-keychain-trust.md) — `aiuse trust` and macOS Keychain prompts.
 - [`../config/config.example.toml`](../config/config.example.toml) — annotated configuration example.
 - [`../completions/`](../completions/) — bash and zsh completions.

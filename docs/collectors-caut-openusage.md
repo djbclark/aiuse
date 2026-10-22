@@ -1,30 +1,46 @@
 # caut + OpenUsage.ai / OpenUsage.sh collectors
 
-**Date:** 2026-07-25 (updated 2026-10-13)  
+**Date:** 2026-07-25 (updated 2026-10-22)
+
+## Deprecated: caut, caam, OpenUsage.sh
+
+Support for **caut**, **caam**, and **OpenUsage.sh** (`openusage_sh`) is
+deprecated. Each one overlaps a collector that stays in the supported set:
+cswap, CodexBar, OpenUsage.ai, tokscale, and paseo. The collector code remains
+in the tree and still runs when the binary is on `PATH` and the config leaves
+it enabled. The maintainer is happy to re-add first-class support if anyone
+wants one of them back.
+
+| Collector        | Overlaps                                                            |
+| ---------------- | ------------------------------------------------------------------- |
+| **caut**         | cswap, CodexBar, OpenUsage.ai, and tokscale (Claude and Codex)      |
+| **caam**         | the same direct sources, as a vault-profile echo behind all of them |
+| **OpenUsage.sh** | OpenUsage.ai                                                        |
+
 **Status:** Multi-source cross-checks prioritize correctness, but **not all sources are suitable for ambient polling**. Recommended collector posture:
 
 - **CodexBar**: **Highly recommended** as primary multi-provider source (<2ms read via group container `widget-snapshot.json` cache).
 - **OpenUsage.ai**: **Recommended** as secondary cross-check (fast loopback HTTP via `GET /v1/limits`).
 - **cswap**: **Highly recommended** as authoritative source for multi-account Claude Code.
 - **tokscale**: **Recommended** for lightweight Copilot and Cursor token tracking.
-- **OpenUsage.sh**: **Recommend AGAINST / Keep disabled** (`enabled = false`). Heavy (~40s CPU) export latency, yields mostly all-time session logs rather than quota rate limits, and poses terminal raw-mode corruption risks.
-- **caut**: **Recommend AGAINST / Keep disabled** (`enabled = false`). Ad-hoc cargo binary triggers recurring macOS Keychain dialogs; Claude credential detection is flaky.
-- **caam**: Guarded build required (to prevent unexpected browser consent/login popups).
+- **OpenUsage.sh**: **Deprecated** (overlap with OpenUsage.ai). Heavy (~40s CPU) export latency, yields mostly all-time session logs rather than quota rate limits, and poses terminal raw-mode corruption risks.
+- **caut**: **Deprecated** (overlap with cswap, CodexBar, OpenUsage.ai, and tokscale). Ad-hoc cargo binary triggers recurring macOS Keychain dialogs; Claude credential detection is flaky.
+- **caam**: **Deprecated** (overlap; vault echo behind every direct source). Guarded build required (to prevent unexpected browser consent/login popups).
 
 ## Why
 
 `aiuse` prefers ranking quality over a single data path. In addition to
 **cswap**, **CodexBar**, and **tokscale**, it can also collect:
 
-| Source                                                                        | Role                                                                       | Recommendation                        |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------- |
-| **[CodexBar](https://github.com/steipete/CodexBar)**                          | Primary multi-provider usage probe (instant widget snapshot cache)         | **Recommended**                       |
-| **[cswap](https://github.com/realiti4/claude-swap)**                          | Authoritative multi-account Claude Code rate limits                        | **Recommended**                       |
-| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          | **Recommended** (secondary)           |
-| **[tokscale](https://github.com/Dicklesworthstone/tokscale)**                 | Copilot & Cursor token quotas                                              | **Recommended**                       |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            | **Avoid / Opt-in** (keychain prompts) |
-| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) | **Guarded only** (PR #124)            |
-| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           | **Avoid / Disable** (~40s CPU)        |
+| Source                                                                        | Role                                                                       | Recommendation                             |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
+| **[CodexBar](https://github.com/steipete/CodexBar)**                          | Primary multi-provider usage probe (instant widget snapshot cache)         | **Recommended**                            |
+| **[cswap](https://github.com/realiti4/claude-swap)**                          | Authoritative multi-account Claude Code rate limits                        | **Recommended**                            |
+| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          | **Recommended** (secondary)                |
+| **[tokscale](https://github.com/Dicklesworthstone/tokscale)**                 | Copilot & Cursor token quotas                                              | **Recommended**                            |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            | **Deprecated** (overlap; keychain prompts) |
+| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) | **Deprecated** (overlap)                   |
+| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           | **Deprecated** (overlap with OpenUsage.ai) |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**

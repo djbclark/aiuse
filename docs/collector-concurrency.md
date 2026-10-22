@@ -3,6 +3,11 @@
 Audit of how `aiuse` shells out to external data sources (post 45s default timeout
 policy). No code change required from this write-up unless noted.
 
+**caut**, **caam**, and **OpenUsage.sh** are deprecated (2026-10-22) because they
+overlap cswap, CodexBar, OpenUsage.ai, tokscale, and paseo. The code stays.
+Happy to re-add support if anyone wants them
+([`collectors-caut-openusage.md`](collectors-caut-openusage.md)).
+
 ## Data sources (all seven)
 
 | Collector        | Interface                                                | Role                                        |
