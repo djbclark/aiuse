@@ -368,7 +368,11 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
 
 
 def _apply_hidden_pools(accounts: list[AccountUsage], config: dict[str, Any]) -> dict[str, str]:
-    """Drop windows matching [hidden_pools]; remove empty accounts."""
+    """Drop windows matching [hidden_pools]; drop accounts left with no windows.
+
+    A row that never had windows (SIPB up/down, a collector error) stays.
+    Hiding Cursor's grok-bot pool must not delete that status row.
+    """
     from aiuse.analysis.pool_keys import hidden_pool_rules, window_matches_rule
     from aiuse.analysis.selfdescribe import pool_family_id
 
@@ -378,6 +382,7 @@ def _apply_hidden_pools(accounts: list[AccountUsage], config: dict[str, Any]) ->
     hidden: dict[str, str] = {}
     kept: list[AccountUsage] = []
     for account in accounts:
+        had_windows = bool(account.windows)
         kept_windows: list = []
         for window in account.windows:
             family = pool_family_id(account.provider, window.label, window.window_id)
@@ -392,7 +397,7 @@ def _apply_hidden_pools(accounts: list[AccountUsage], config: dict[str, Any]) ->
                 kept_windows.append(window)
         has_balance = account.balance_usd is not None or account.credits_remaining is not None
         has_usage = account.usage_credits is not None and account.usage_credits.used is not None
-        if kept_windows or has_balance or has_usage:
+        if kept_windows or has_balance or has_usage or not had_windows:
             account.windows = kept_windows
             kept.append(account)
     accounts[:] = kept

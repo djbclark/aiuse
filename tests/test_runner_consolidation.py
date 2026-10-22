@@ -647,6 +647,47 @@ def test_hidden_pools_drop_matching_windows_at_collection():
     assert [w.label for w in accounts[0].windows] == ["total"]
 
 
+def test_hidden_pools_keep_windowless_status_and_drop_fully_hidden_accounts():
+    from aiuse.collectors.runner import _apply_hidden_pools
+
+    sipb = AccountUsage(
+        source="sipb",
+        provider="sipb",
+        billing_kind=BillingKind.UNKNOWN,
+        error="SIPB server unreachable",
+        notes=["SIPB LLMs (MIT): Unlimited quota."],
+    )
+    only_auto = AccountUsage(
+        source="codexbar",
+        provider="cursor",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="auto", window_id="secondary", used_percent=10)],
+    )
+    accounts = [sipb, only_auto]
+    hidden = _apply_hidden_pools(accounts, {"hidden_pools": {"cursor/auto": "hide auto"}})
+    assert hidden == {"cursor/auto": "hide auto"}
+    assert [account.provider for account in accounts] == ["sipb"]
+    assert accounts[0].error == "SIPB server unreachable"
+
+
+def test_hidden_pools_dict_keeps_windowless_status_row():
+    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict
+
+    snap = {
+        "accounts": [
+            {"provider": "sipb", "source": "sipb", "windows": [], "error": "SIPB server unreachable"},
+            {
+                "provider": "cursor",
+                "source": "codexbar",
+                "windows": [{"label": "auto", "window_id": "secondary", "used_percent": 10}],
+            },
+        ]
+    }
+    hidden = apply_hidden_pools_dict(snap, {"hidden_pools": {"cursor/auto": "hide auto"}})
+    assert hidden == {"cursor/auto": "hide auto"}
+    assert [account["provider"] for account in snap["accounts"]] == ["sipb"]
+
+
 def test_single_slot_stale_cswap_yields_to_fresh_openusage_and_keeps_account_name():
     from datetime import timedelta
 

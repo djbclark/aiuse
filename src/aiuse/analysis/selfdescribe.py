@@ -1032,7 +1032,9 @@ def apply_hidden_pools_dict(snap: dict[str, Any], config: dict[str, Any]) -> dic
                 hidden[key] = reason
             else:
                 kept_windows.append(window)
-        if not kept_windows and not account.get("balance_usd") and not account.get("credits_remaining"):
+        # A row that arrived with no windows is a status or error line
+        # (SIPB). Drop only accounts whose windows were all hidden.
+        if windows and not kept_windows and not account.get("balance_usd") and not account.get("credits_remaining"):
             uc = account.get("usage_credits")
             if not (isinstance(uc, dict) and uc.get("used") is not None):
                 continue
