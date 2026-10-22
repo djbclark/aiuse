@@ -140,13 +140,22 @@ def save_snapshot(
     # Self-describing at rest: windows carry state/pool_family and accounts
     # carry usable_now/binding_window/available_at, so even a naive reader of
     # the cache file cannot misread a consumed share as free headroom.
+    # Fold in the admin-api omp reading. CodexBar can omit that row without a
+    # collector error, and this file is what a cache reader sees (2026-10-22).
+    # A partial sample that did not ask for omp stays without that row.
     from aiuse.client_limits import load_client_limits
+    from aiuse.credits_override import load_overrides
+
+    credit_overrides = None
+    if not partial or "omp" in (partial_providers or []):
+        credit_overrides = load_overrides()
 
     snap_dict = enrich_snapshot(
         snapshot.to_dict(),
         notes=load_active_notes(),
         client_limits=load_client_limits(),
         check_frozen=True,
+        credit_overrides=credit_overrides,
     )
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -157,7 +166,7 @@ def save_snapshot(
         "collected_at": snapshot.collected_at.isoformat(),
         "collector_success_count": len({a.source for a in snapshot.accounts}),
         "collector_failure_count": len(snapshot.collector_errors),
-        "account_count": len(snapshot.accounts),
+        "account_count": len(snap_dict["accounts"]),
         "accounts": snap_dict["accounts"],
         "alerts": [a.to_dict() for a in alerts],
         "collector_errors": snapshot.collector_errors,

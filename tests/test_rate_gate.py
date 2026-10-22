@@ -232,6 +232,101 @@ def test_snapshot_gate_sets_field_note_and_clears():
     assert not any(str(n).startswith("Rate-gated") for n in omp.notes)
 
 
+def _claude_only_snapshot():
+    from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
+
+    now = utcnow()
+    claude = AccountUsage(
+        provider="claude",
+        account="person@example.com",
+        source="cswap",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Claude Code weekly",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                resets_at=now + timedelta(hours=20),
+                window_minutes=10080,
+            )
+        ],
+    )
+    return Snapshot(collected_at=now, accounts=[claude])
+
+
+def _write_admin_reading() -> None:
+    import json
+
+    from aiuse.credits_override import readings_file
+    from aiuse.models import utcnow
+
+    now = utcnow()
+    path = readings_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "omp": {
+                    "remaining_usd": 40.0,
+                    "total_usd": 100.0,
+                    "expires_at": (now + timedelta(days=20)).isoformat(),
+                    "granted_at": (now - timedelta(days=10)).isoformat(),
+                    "observed_at": now.isoformat(),
+                    "note": "cache-file gate test",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_cache_file_carries_a_rate_gated_admin_api_omp_row():
+    """A reader of latest.json must see the gate even when CodexBar omitted omp."""
+    import json
+
+    from aiuse.analysis.history import save_snapshot, snapshot_dir
+    from aiuse.analysis.selfdescribe import available_pools
+
+    _write_admin_reading()
+    save_snapshot(_claude_only_snapshot(), [])
+    saved = json.loads((snapshot_dir() / "latest.json").read_text(encoding="utf-8"))
+    omp = next(account for account in saved["accounts"] if account["provider"] == "omp")
+    assert saved["account_count"] == len(saved["accounts"]) == 2
+    assert omp["source"] == "admin-api"
+    assert omp["usable_now"] is False
+    assert omp["rate_gated_by"]["provider"] == "claude"
+    assert omp["rate_gated_by"]["window_label"] == "Claude Code weekly"
+    assert not any(pool["provider"] == "omp" for pool in available_pools(saved))
+    line = next(line for line in saved["summary_lines"] if line.startswith("omp"))
+    assert "NOT usable now" in line
+    assert "rate-gated" in line
+
+
+def test_partial_snapshot_does_not_invent_an_omp_row():
+    import json
+
+    from aiuse.analysis.history import partial_sample_dir, save_snapshot, snapshot_dir
+
+    _write_admin_reading()
+    save_snapshot(_claude_only_snapshot(), [], partial_providers=["claude"])
+    assert not (snapshot_dir() / "latest.json").exists()
+    saved = json.loads(next(partial_sample_dir().glob("*.json")).read_text(encoding="utf-8"))
+    assert all(account["provider"] != "omp" for account in saved["accounts"])
+
+
+def test_cache_file_does_not_resurrect_a_disabled_omp():
+    import json
+
+    from aiuse.analysis.history import save_snapshot, snapshot_dir
+
+    _write_admin_reading()
+    snap = _claude_only_snapshot()
+    snap.disabled_services = {"omp": "operator"}
+    save_snapshot(snap, [])
+    saved = json.loads((snapshot_dir() / "latest.json").read_text(encoding="utf-8"))
+    assert all(account["provider"] != "omp" for account in saved["accounts"])
+
+
 def test_chat_report_renders_the_gate_line():
     from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
     from aiuse.chat_format import render_chat_report
