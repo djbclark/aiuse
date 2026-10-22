@@ -879,6 +879,11 @@ def summary_line(pool: Mapping[str, Any]) -> str:
     binary = pool.get("cli_binary")
     if binary and str(binary) != provider:
         lead += f" [{binary}]"
+    # A rate-gated grant is not spendable. Leaving the credits window as "ok"
+    # made the line read as available before the "NOT usable now" suffix
+    # (2026-10-22). The JSON window state stays "ok": the dollars are not
+    # exhausted. Only this human line changes.
+    rate_gated = isinstance(pool.get("rate_gated_by"), Mapping)
     segments: list[str] = []
     for window in pool.get("windows") or []:
         label = str(window.get("label") or "?")
@@ -893,6 +898,8 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         if left is None and used is not None:
             left = max(0.0, 100.0 - float(used))
         word = {"exhausted": "EXHAUSTED", "tight": "TIGHT", "ok": "ok", "unknown": "UNKNOWN"}.get(state, state)
+        if rate_gated and word == "ok":
+            word = "GATED"
         pace = window.get("pace_percent")
         pace_early = bool(window.get("pace_early"))
         pace_text = f", pace {format_pace(pace, pace_early)}" if pace is not None else ""

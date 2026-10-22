@@ -69,9 +69,11 @@ shared Claude account window is exhausted:
   Claude window blocks it via HTTP 429 regardless of dollars left
   (`retry-after` equals the window reset; observed 2026-10-21).
 - While gated: `usable_now` is `false`, `available_at` is the gate's reset, the
-  summary line reads `-> NOT usable now [rate-gated: shared Claude <window>
-exhausted, unlocks <time>; credits cannot be spent before it resets]`, and
-  `--available` omits omp.
+  summary line says `credits: GATED` instead of `credits: ok`, then
+  `-> NOT usable now [rate-gated: shared Claude <window> exhausted, unlocks
+<time>; credits cannot be spent before it resets]`, and `--available` omits
+  omp. The window's JSON `state` stays `ok` because the dollars are not
+  exhausted.
 - The gate is positive-evidence only: every Claude account with observed
   shared-window data must show an exhausted weekly/monthly window with a future
   reset. Missing Claude data, 5h windows, and exhausted model sublimits

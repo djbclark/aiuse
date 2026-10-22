@@ -118,8 +118,10 @@ aiuse fails closed for that state (`enrich_snapshot`,
    exhausted weekly/monthly window with a future reset, omp accounts get
    `rate_gated_by` (`{provider, account, window_label, resets_at, evidence}`),
    `usable_now: false`, `available_at` = the gate reset, and a note; the
-   summary line gains `-> NOT usable now [rate-gated: …]` and `--available`
-   omits omp. The gate clears itself once the reset passes. The clock matrix
+   summary line says `credits: GATED` instead of `credits: ok`, then
+   `-> NOT usable now [rate-gated: …]`, and `--available` omits omp. The
+   window's JSON `state` stays `ok`. The gate clears itself once the reset
+   passes. The clock matrix
    (plain `aiuse`, watch, and the inline TUI) draws the same row as `empty`
    with no spendable percent: `rate-gated until <reset> · $<left> left`.
    Dollars stay in the note so the grant is still visible.

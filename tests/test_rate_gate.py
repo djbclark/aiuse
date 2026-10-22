@@ -96,6 +96,10 @@ def test_exhausted_claude_weekly_gates_omp():
     from aiuse.analysis.selfdescribe import available_pools
 
     assert not any(p["provider"] == "omp" for p in available_pools(snap))
+    line = next(line for line in snap["summary_lines"] if line.startswith("omp"))
+    assert "credits: ok" not in line
+    assert "credits: GATED" in line
+    assert "NOT usable now" in line
 
 
 def _omp_reset(snap: dict) -> str:
@@ -298,6 +302,8 @@ def test_cache_file_carries_a_rate_gated_admin_api_omp_row():
     assert omp["rate_gated_by"]["window_label"] == "Claude Code weekly"
     assert not any(pool["provider"] == "omp" for pool in available_pools(saved))
     line = next(line for line in saved["summary_lines"] if line.startswith("omp"))
+    assert "credits: ok" not in line
+    assert "credits: GATED" in line
     assert "NOT usable now" in line
     assert "rate-gated" in line
 
