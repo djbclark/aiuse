@@ -114,6 +114,12 @@ Paseo agent daemon's cached usage report), then tells the user
 what to burn before it resets unused. See `README.md` for the full description,
 install steps, CLI flags, and config. Install helpers:
 `packaging/install-deps.sh` and site `just install-aiuse-deps`.
+caut, caam, and OpenUsage.sh are deprecated (2026-10-22) for overlap with
+cswap, CodexBar, OpenUsage.ai, tokscale, and paseo: the code and install
+functions stay and still run when the binary is present and the collector is
+enabled, the default install no longer installs them, and the maintainer is
+happy to restore first-class support on request
+([`docs/collectors-caut-openusage.md`](docs/collectors-caut-openusage.md)).
 
 ## Where things live
 
