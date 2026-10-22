@@ -3,9 +3,9 @@
 Audit of how `aiuse` shells out to external data sources (post 45s default timeout
 policy). No code change required from this write-up unless noted.
 
-**caut**, **caam**, and **OpenUsage.sh** are deprecated (2026-10-22) because they
-overlap cswap, CodexBar, OpenUsage.ai, tokscale, and paseo. The code stays.
-Happy to re-add support if anyone wants them
+**caut**, **caam**, **OpenUsage.ai**, and **OpenUsage.sh** are deprecated
+(2026-10-22) because they overlap cswap, CodexBar, tokscale, and paseo. The
+code stays. Happy to re-add support if anyone wants them
 ([`collectors-caut-openusage.md`](collectors-caut-openusage.md)).
 
 ## Data sources (all seven)
@@ -16,14 +16,14 @@ Happy to re-add support if anyone wants them
 | **CodexBar**     | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)    |
 | **caut**         | `caut usage --json`                                      | Independent multi-provider peer / fill-in   |
 | **caam**         | `caam limits --format json` (vault profiles)             | Last-resort peer behind every direct source |
-| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Independent peer / fill-in                  |
+| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Deprecated (overlap); still runs if enabled |
 | **OpenUsage.sh** | `openusage-sh export --output - --format json`           | Independent local telemetry / quota backup  |
 | **tokscale**     | `tokscale usage --json`                                  | Independent peer; preferred for Copilot     |
 
 The default
 [`packaging/install-deps.sh`](../packaging/install-deps.sh) (and site
-`just install-aiuse-deps`) installs cswap, CodexBar, OpenUsage.ai, and
-tokscale. caut, caam, and OpenUsage.sh stay in the script and are not called.
+`just install-aiuse-deps`) installs cswap, CodexBar, and tokscale. caut, caam,
+OpenUsage.ai, and OpenUsage.sh stay in the script and are not called.
 
 ## Architecture (wall-clock)
 

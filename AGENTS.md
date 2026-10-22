@@ -40,7 +40,7 @@ scheduled sampling +
 2. **What next / gap map:** [`docs/next-options.md`](docs/next-options.md)
    (announce → densify history; optional #11–#15 only if pain).
 3. **Operator-only:** announce 3.0.0 via [#10](https://github.com/djbclark/aiuse/issues/10)
-   when ready; leave the sampling agent collecting; optional OpenUsage CLI install.
+   when ready; leave the sampling agent collecting.
 4. **Optional expansion / polish (not default):** [#16](https://github.com/djbclark/aiuse/issues/16)
    DeepSeek second source, [#17](https://github.com/djbclark/aiuse/issues/17)
    OpenRouter second source, [#18](https://github.com/djbclark/aiuse/issues/18)
@@ -108,14 +108,13 @@ project knowledge in **their own** repo.
 
 `aiuse` is a CLI that aggregates live AI-subscription quota data (Claude, Codex,
 Copilot, Grok, Gemini/Antigravity, OpenCode Go, prepaid balances, …) from
-**seven external data sources** (`cswap`, `CodexBar`, `caut`, `caam`, `OpenUsage`,
-`tokscale`, `paseo` — PATH tools and/or OpenUsage loopback HTTP; `paseo` is the
-Paseo agent daemon's cached usage report), then tells the user
-what to burn before it resets unused. See `README.md` for the full description,
-install steps, CLI flags, and config. Install helpers:
-`packaging/install-deps.sh` and site `just install-aiuse-deps`.
-caut, caam, and OpenUsage.sh are deprecated (2026-10-22) for overlap with
-cswap, CodexBar, OpenUsage.ai, tokscale, and paseo: the code and install
+**external data sources** (`cswap`, `CodexBar`, `tokscale`, `paseo`, and the
+native provider collectors — PATH tools; `paseo` is the Paseo agent daemon's
+cached usage report), then tells the user what to burn before it resets unused.
+See `README.md` for the full description, install steps, CLI flags, and config.
+Install helpers: `packaging/install-deps.sh` and site `just install-aiuse-deps`.
+caut, caam, OpenUsage.ai, and OpenUsage.sh are deprecated (2026-10-22) for
+overlap with cswap, CodexBar, tokscale, and paseo: the code and install
 functions stay and still run when the binary is present and the collector is
 enabled, the default install no longer installs them, and the maintainer is
 happy to restore first-class support on request
@@ -187,8 +186,7 @@ Full path-by-path map with "read when" hints:
   another session can fail your push. Read the test summary line, never a
   wrapper's or a background task's exit code.
 - This repo shells out to external tools that must already be
-  installed/authenticated (`cswap`, `codexbar`, `caut`, `openusage` and/or
-  OpenUsage.app, `tokscale`) — do not attempt to install, configure, or
+  installed/authenticated (`cswap`, `codexbar`, `tokscale`) — do not attempt to install, configure, or
   authenticate them as part of a normal feature change. Operators install via
   `packaging/install-deps.sh` or site `just install-aiuse-deps`.
 - **`aiuse watch --all-providers` (and watch's `a` key) is operator-only**

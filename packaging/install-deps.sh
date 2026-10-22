@@ -5,15 +5,15 @@
 #
 #   cswap      — multi-account Claude (uv tool: claude-swap)
 #   codexbar   — multi-provider quotas (Homebrew cask CodexBar)
-#   openusage  — OpenUsage.ai menu bar + loopback :6736 (Homebrew cask)
 #   tokscale   — independent quota JSON (npx tokscale wrapper on PATH)
 #
 # Deprecated 2026-10-22 (overlap with the set above). The functions remain.
-# Call install_caut, install_caam, or install_openusage_sh from main() to
-# put one back; the maintainer is happy to restore them on request.
+# Call install_caut, install_caam, install_openusage, or install_openusage_sh
+# from main() to put one back; the maintainer is happy to restore them on request.
 #
 #   caut         — multi-provider CLI peer (cargo install from GitHub)
 #   caam         — Coding Agent Account Manager vault-profile limits
+#   openusage    — OpenUsage.ai menu bar + loopback :6736 (Homebrew cask)
 #   openusage-sh — OpenUsage.sh terminal dashboard (separate Homebrew formula)
 #
 # Preferred on this operator's Macs:
@@ -278,10 +278,9 @@ main() {
   local failed=0
   install_cswap || failed=1
   install_codexbar || failed=1
-  install_openusage || failed=1
   install_tokscale || failed=1
-  # caut, caam, and OpenUsage.sh overlap the four above. Not installed by
-  # default. Call the functions here to re-add one.
+  # caut, caam, OpenUsage.ai, and OpenUsage.sh overlap the three above.
+  # Not installed by default. Call the functions here to re-add one.
   echo
   if (( failed )); then
     if (( CHECK_ONLY )); then
@@ -291,7 +290,7 @@ main() {
     fi
     exit 1
   fi
-  echo "All data-source tools present (or OpenUsage.ai app ready)."
+  echo "All data-source tools present."
   echo "Verify: aiuse doctor"
 }
 

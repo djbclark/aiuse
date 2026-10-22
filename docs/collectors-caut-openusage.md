@@ -2,29 +2,48 @@
 
 **Date:** 2026-07-25 (updated 2026-10-22)
 
-## Deprecated: caut, caam, OpenUsage.sh
+## Deprecated: caut, caam, OpenUsage.ai, OpenUsage.sh
 
-Support for **caut**, **caam**, and **OpenUsage.sh** (`openusage_sh`) is
-deprecated. Each one overlaps a collector that stays in the supported set:
-cswap, CodexBar, OpenUsage.ai, tokscale, and paseo. The collector code remains
-in the tree and still runs when the binary is on `PATH` and the config leaves
-it enabled. The maintainer is happy to re-add first-class support if anyone
-wants one of them back.
+Support for **caut**, **caam**, **OpenUsage.ai** (`openusage_ai`), and
+**OpenUsage.sh** (`openusage_sh`) is deprecated. Each one overlaps a collector
+that stays in the supported set: cswap, CodexBar, tokscale, and paseo, plus the
+native OpenCode Go collector. The collector code remains in the tree and still
+runs when the binary is on `PATH` and the config leaves it enabled. The
+maintainer is happy to re-add first-class support if anyone wants one of them
+back.
 
-| Collector        | Overlaps                                                            |
-| ---------------- | ------------------------------------------------------------------- |
-| **caut**         | cswap, CodexBar, OpenUsage.ai, and tokscale (Claude and Codex)      |
-| **caam**         | the same direct sources, as a vault-profile echo behind all of them |
-| **OpenUsage.sh** | OpenUsage.ai                                                        |
+OpenUsage.ai was checked on 2026-10-22 before it was removed. Its live
+`/v1/limits` cards were a subset of another source, or empty:
+
+- Antigravity returned only the Claude/GPT windows and omitted the Gemini
+  weekly the agy client enforces. CodexBar reports that window.
+- Claude matched cswap. Codex, Cursor, Copilot, and Grok matched CodexBar or
+  tokscale (same percents and the same resets).
+- The OpenCode card was empty. The native OpenCode Go collector has those
+  windows.
+- z.ai and OpenRouter came back as missing-key errors. CodexBar already
+  reports z.ai.
+
+Two OpenUsage fields never reached the board: a Copilot extra-usage count with
+no limit (the mapper drops it) and a Codex "rate limit resets" balance (a note
+on a row that loses to CodexBar, which already shows the weekly percent and
+zero credits).
+
+| Collector        | Overlaps                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| **caut**         | cswap, CodexBar, and tokscale (Claude and Codex)                                    |
+| **caam**         | the same direct sources, as a vault-profile echo behind all of them                 |
+| **OpenUsage.ai** | cswap, CodexBar, tokscale, and the native OpenCode Go collector                     |
+| **OpenUsage.sh** | the same set (it was first deprecated for overlap with OpenUsage.ai, now also gone) |
 
 **Status:** Multi-source cross-checks prioritize correctness, but **not all sources are suitable for ambient polling**. Recommended collector posture:
 
 - **CodexBar**: **Highly recommended** as primary multi-provider source (<2ms read via group container `widget-snapshot.json` cache).
-- **OpenUsage.ai**: **Recommended** as secondary cross-check (fast loopback HTTP via `GET /v1/limits`).
 - **cswap**: **Highly recommended** as authoritative source for multi-account Claude Code.
 - **tokscale**: **Recommended** for lightweight Copilot and Cursor token tracking.
-- **OpenUsage.sh**: **Deprecated** (overlap with OpenUsage.ai). Heavy (~40s CPU) export latency, yields mostly all-time session logs rather than quota rate limits, and poses terminal raw-mode corruption risks.
-- **caut**: **Deprecated** (overlap with cswap, CodexBar, OpenUsage.ai, and tokscale). Ad-hoc cargo binary triggers recurring macOS Keychain dialogs; Claude credential detection is flaky.
+- **OpenUsage.ai**: **Deprecated** (2026-10-22). Overlaps cswap, CodexBar, tokscale, and the native OpenCode Go collector. Its Antigravity card omits Gemini. The app was removed from this machine.
+- **OpenUsage.sh**: **Deprecated** (overlap). Heavy (~40s CPU) export latency, yields mostly all-time session logs rather than quota rate limits, and poses terminal raw-mode corruption risks.
+- **caut**: **Deprecated** (overlap with cswap, CodexBar, and tokscale). Ad-hoc cargo binary triggers recurring macOS Keychain dialogs; Claude credential detection is flaky.
 - **caam**: **Deprecated** (overlap; vault echo behind every direct source). Guarded build required (to prevent unexpected browser consent/login popups).
 
 ## Why
@@ -36,18 +55,18 @@ wants one of them back.
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
 | **[CodexBar](https://github.com/steipete/CodexBar)**                          | Primary multi-provider usage probe (instant widget snapshot cache)         | **Recommended**                            |
 | **[cswap](https://github.com/realiti4/claude-swap)**                          | Authoritative multi-account Claude Code rate limits                        | **Recommended**                            |
-| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          | **Recommended** (secondary)                |
+| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          | **Deprecated** (overlap)                   |
 | **[tokscale](https://github.com/Dicklesworthstone/tokscale)**                 | Copilot & Cursor token quotas                                              | **Recommended**                            |
 | **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            | **Deprecated** (overlap; keychain prompts) |
 | **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) | **Deprecated** (overlap)                   |
-| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           | **Deprecated** (overlap with OpenUsage.ai) |
+| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           | **Deprecated** (overlap)                   |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**
 
 ## Machine install
 
-**Default install** (cswap, CodexBar, OpenUsage.ai, tokscale). caut, caam, and
+**Default install** (cswap, CodexBar, tokscale). caut, caam, OpenUsage.ai, and
 OpenUsage.sh are deprecated and are no longer in that default:
 
 ```bash

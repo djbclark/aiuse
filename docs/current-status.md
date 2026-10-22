@@ -27,8 +27,8 @@ quota; `aiuse
 usage-sources` lists what is active per vendor and `[usage_sources]` can pin
 one source. Native collectors are default-on and quiet when their
 prerequisites are absent).
-**Deprecated 2026-10-22 for overlap with cswap, CodexBar, OpenUsage.ai,
-tokscale, and paseo:** caut, caam, and OpenUsage.sh. The code stays; the
+**Deprecated 2026-10-22 for overlap with cswap, CodexBar, tokscale, and
+paseo:** caut, caam, OpenUsage.ai, and OpenUsage.sh. The code stays; the
 maintainer is happy to re-add support on request
 ([`collectors-caut-openusage.md`](collectors-caut-openusage.md)).
 Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
