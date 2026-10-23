@@ -685,6 +685,31 @@ def test_all_providers_config_enables_everything_and_keeps_the_original():
     assert original["collectors"]["codexbar"]["providers"] == "codex"
 
 
+def test_all_providers_config_leaves_deprecated_collectors_at_config_state():
+    """2026-10-22: an uninstalled deprecated collector must not turn the
+    operator-only sweep into four "not found on PATH" error lines."""
+    original = {
+        "collectors": {
+            # Deprecated and disabled (this machine's live state): stays off.
+            "caut": {"enabled": False},
+            "caam": False,
+            "openusage_ai": {"enabled": False},
+            # Deprecated but deliberately enabled (binary installed): also
+            # stays exactly as configured — the sweep never disables, it just
+            # stops force-collecting deprecated tools.
+            "openusage_sh": {"enabled": True},
+            # A non-deprecated disabled collector is still force-enabled.
+            "grok_billing": {"enabled": False},
+        }
+    }
+    sweep = all_providers_config(original)
+    assert sweep["collectors"]["caut"]["enabled"] is False
+    assert sweep["collectors"]["caam"] is False
+    assert sweep["collectors"]["openusage_ai"]["enabled"] is False
+    assert sweep["collectors"]["openusage_sh"]["enabled"] is True
+    assert sweep["collectors"]["grok_billing"]["enabled"] is True
+
+
 def test_collect_watch_frame_persist_false_is_screen_only(monkeypatch):
     monkeypatch.setattr("aiuse.watch._frame_from_disk", lambda *a, **k: pytest.fail("must not read the disk cache"))
     monkeypatch.setattr("aiuse.watch.save_snapshot", lambda *a, **k: pytest.fail("must not write a snapshot"))

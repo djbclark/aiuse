@@ -35,6 +35,14 @@ CAAM_TIMEOUT = 90.0
 # 429s on every model, so its quota is read at most once per 15 minutes.
 DEFAULT_QUERY_MIN_INTERVAL: dict[str, float] = {"antigravity": 900.0}
 
+# Collectors deprecated 2026-10-22 for overlap with cswap/CodexBar/tokscale/
+# paseo (docs/collectors-caut-openusage.md). They still run when the binary is
+# present and the collector is enabled, but nothing force-collects them: the
+# watch "a" sweep leaves them at their configured state instead of re-enabling
+# (an uninstalled deprecated tool must not turn the operator-only sweep into
+# four "not found on PATH" error lines).
+DEPRECATED_COLLECTORS = frozenset({"caut", "caam", "openusage_ai", "openusage_sh"})
+
 DEFAULT_CONFIG: dict[str, Any] = {
     # Subprocess timeouts (seconds). ``default`` applies to any tool that does
     # not set its own key. Known keys: cswap, codexbar, codexbar_discovery,

@@ -29,7 +29,7 @@ from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
-from aiuse.config import collection_policy_fingerprint, snapshot_matches_policy
+from aiuse.config import DEPRECATED_COLLECTORS, collection_policy_fingerprint, snapshot_matches_policy
 from aiuse.credits_override import apply_credit_overrides_to_snapshot, overrides_signature
 from aiuse.homebrew_formula import reexec_target
 from aiuse.ledger import load_json_range, save_ledger
@@ -137,6 +137,12 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     is displayed and discarded; see ``collect_watch_frame(persist=False)``.
     Cross-process query throttling still applies — a sweep must not hammer a
     vendor the gate is protecting, even for one run.
+
+    Deprecated collectors (``config.DEPRECATED_COLLECTORS``, 2026-10-22) keep
+    their configured state instead of being forced on: an uninstalled
+    deprecated tool must not turn the sweep into "not found on PATH" error
+    lines. An installed one the operator enabled in config still runs — in
+    the sweep too, since the sweep never disables anything.
     """
     sweep = copy.deepcopy(config)
     sweep.pop("disabled_services", None)
@@ -150,6 +156,8 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     collectors = sweep.get("collectors")
     if isinstance(collectors, dict):
         for name, entry in collectors.items():
+            if name in DEPRECATED_COLLECTORS:
+                continue
             if entry is False:
                 collectors[name] = True
             elif isinstance(entry, dict):
