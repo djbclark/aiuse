@@ -96,7 +96,7 @@ SEMANTICS: dict[str, str] = {
     "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
     "superseded_override": "present on an omp account when a fresher CodexBar reading won over an operator override or Admin API reading: {source, observed_at, remaining_usd} of the figure it passed over",
     "reading_expired": "true on an omp account whose CodexBar reading is older than 24h and no override supersedes it: balance and percentages are dropped, so the pool is state unknown and not in --available",
-    "rate_gated_by": "present on an omp account/pool when every Claude account with observed shared-window data shows a multi-day (weekly/monthly) shared window exhausted with a future reset: omp spends through the same Claude API account, so its credits cannot be used until that window resets regardless of dollars left. Carries {provider, account, window_label, resets_at, evidence}; sets usable_now false and available_at to the gate reset, and clears itself once the reset passes. Short (5h) windows never gate omp — the observed 429 pins the block to the weekly reset (2026-10-21)",
+    "rate_gated_by": "present on an omp account/pool when every Claude account with observed shared-window data shows a multi-day (weekly/monthly) shared window exhausted with a future reset: omp spends through the same Claude API account, so its credits cannot be used until that window resets regardless of dollars left. Carries {provider, account, window_label, resets_at, evidence}; sets usable_now false and available_at to the gate reset. Durable since 2026-10-22: observed evidence (exhausted shared window, or an Anthropic 429 retry-after parsed from omp's logs) is latched in ~/.local/state/aiuse/rate-gates.json and keeps gating until its own reset passes — missing/stale Claude data and headroom blinks no longer ungate omp; window_label is 'shared Claude window (latched)' while a latch holds. See `aiuse gate status`. Short (5h) windows never gate omp — the observed 429 pins the block to the weekly reset (2026-10-21)",
     "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more is left than a bar that is 50% at 10+ days out and slides toward 0 at expiry: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
     "requires_operator_approval": "true on an account, --available routing entry or alert the operator gated: an agent must not spend it, route work to it, or recommend burning it without first asking the operator. aiuse only reports it; the agent toolchain's dispatchers refuse such a slice unless the operator approved that run. No account is gated since 2026-10-19 (omp's grant, the Claude API credits, became a normal tier). Omitted when false",
     "credits_label": 'human label of a credits pool whose provider name is a tool name: omp carries "Claude API credits" (the Claude Max plan\'s monthly promotional API grant). Omitted when unset',
@@ -390,11 +390,17 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
     multi-day shared quota window rate-limits it independently of the dollar
     credits: with the weekly window 100% used, Anthropic answers 429 with
     retry-after pointing at the weekly reset even with most of the grant left
-    (2026-10-21). Gates only on that positive evidence — every Claude account
-    with observed shared-window data must show an exhausted weekly/monthly
-    window with a future reset; missing Claude data never gates (it must not
-    corrupt omp's own reporting), and 5h windows never gate.
+    (2026-10-21). Derivation still gates only on positive evidence — every
+    Claude account with observed shared-window data must show an exhausted
+    weekly/monthly window with a future reset — but a derived gate is now
+    recorded as durable evidence (``aiuse.rate_gates``), and recorded evidence
+    keeps gating until its own reset passes: missing Claude data, a stale
+    reading, or a headroom blink can no longer silently ungate omp while
+    Anthropic is still refusing (2026-10-22, after five display-layer fixes
+    regressed one input at a time). 5h windows never gate.
     """
+    from aiuse.rate_gates import active_gate, record_evidence
+
     for account in accounts:
         account.pop("rate_gated_by", None)
         notes = account.get("notes")
@@ -406,6 +412,8 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
     gate_reset: datetime | None = None
     gate_label = ""
     gate_account = ""
+    gate_observed: datetime | None = None
+    headroom_seen = False
     for account in accounts:
         if str(account.get("provider") or "") != "claude":
             continue
@@ -432,11 +440,42 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
             ):
                 worst = (window, reset)
         if worst is None:
-            return  # a Claude account with observed shared headroom: omp may be usable
+            # A Claude account with observed shared headroom blocks further
+            # *derivation*; recorded evidence below still applies.
+            headroom_seen = True
+            break
         if gate_reset is None or worst[1] < gate_reset:
             gate_reset = worst[1]
             gate_label = str(worst[0].get("label") or "weekly window")
             gate_account = str(account.get("account") or "")
+            gate_observed = parse_dt(account.get("collected_at")) or now
+    evidence_text = (
+        "every observed Claude account's shared multi-day window is exhausted; "
+        "Anthropic 429 retry-after matched this reset (2026-10-21)"
+    )
+    if headroom_seen:
+        gate_reset = None  # derivation is void: an observed account has headroom
+    if gate_reset is not None:
+        record_evidence(
+            "omp",
+            resets_at=gate_reset,
+            observed_at=gate_observed or now,
+            source="claude-shared-window",
+            event_id=f"claude-shared-window:{gate_label}:{gate_reset.isoformat()}",
+            note=gate_label,
+            now=now,
+        )
+    latch = active_gate("omp", now=now)
+    if latch is not None:
+        latch_reset = parse_dt(latch.get("resets_at"))
+        if latch_reset is not None and (gate_reset is None or latch_reset > gate_reset):
+            gate_reset = latch_reset
+            gate_label = "shared Claude window (latched)"
+            gate_account = ""
+            evidence_text = (
+                f"durable latch ({latch.get('source')}, observed {latch.get('observed_at')}) — "
+                "survives missing/stale Claude readings; see `aiuse gate status`"
+            )
     if gate_reset is None:
         return
     reset_iso = gate_reset.isoformat()
@@ -447,8 +486,15 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
             "account": gate_account or None,
             "window_label": gate_label,
             "resets_at": reset_iso,
-            "evidence": "every observed Claude account's shared multi-day window is exhausted; Anthropic 429 retry-after matched this reset (2026-10-21)",
+            "evidence": evidence_text,
         }
+        account["usable_now"] = False
+        account["available_at"] = reset_iso
+        account.setdefault("notes", []).insert(
+            0,
+            f"{_GATE_NOTE_PREFIX}: the shared Claude account window ({gate_label}) is exhausted until {until} — "
+            "omp spends through the same Claude API account, so credits cannot be used before it resets.",
+        )
         account["usable_now"] = False
         account["available_at"] = reset_iso
         account.setdefault("notes", []).insert(
@@ -463,9 +509,11 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
 
     Sets ``AccountUsage.rate_gated_by`` and a note on omp accounts so model
     consumers (``--for-chat``, board note surfaces) see the gate without going
-    through ``enrich_snapshot``. Same positive-evidence rule as
-    ``_apply_shared_rate_gate``; returns True when a gate was applied.
+    through ``enrich_snapshot``. Same positive-evidence rule and durable latch
+    as ``_apply_shared_rate_gate``; returns True when a gate was applied.
     """
+    from aiuse.rate_gates import active_gate, record_evidence
+
     now = now or utcnow()
     omp_rows = [a for a in snapshot.accounts if a.provider == "omp"]
     for account in snapshot.accounts:
@@ -478,6 +526,8 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
     gate_reset: datetime | None = None
     gate_label = ""
     gate_account = ""
+    gate_observed: datetime | None = None
+    headroom_seen = False
     for account in snapshot.accounts:
         if account.provider != "claude":
             continue
@@ -505,11 +555,42 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
             ):
                 worst = (window, reset)
         if worst is None:
-            return False
+            # Observed shared headroom blocks further derivation; a recorded
+            # latch (below) still applies until its own reset passes.
+            headroom_seen = True
+            break
         if gate_reset is None or worst[1] < gate_reset:
             gate_reset = worst[1]
             gate_label = worst[0].label or "weekly window"
             gate_account = account.account or ""
+            gate_observed = account.collected_at or now
+    evidence_text = (
+        "every observed Claude account's shared multi-day window is exhausted; "
+        "Anthropic 429 retry-after matched this reset (2026-10-21)"
+    )
+    if headroom_seen:
+        gate_reset = None  # derivation is void: an observed account has headroom
+    if gate_reset is not None:
+        record_evidence(
+            "omp",
+            resets_at=gate_reset,
+            observed_at=gate_observed or now,
+            source="claude-shared-window",
+            event_id=f"claude-shared-window:{gate_label}:{gate_reset.isoformat()}",
+            note=gate_label,
+            now=now,
+        )
+    latch = active_gate("omp", now=now)
+    if latch is not None:
+        latch_reset = parse_dt(latch.get("resets_at"))
+        if latch_reset is not None and (gate_reset is None or latch_reset > gate_reset):
+            gate_reset = latch_reset
+            gate_label = "shared Claude window (latched)"
+            gate_account = ""
+            evidence_text = (
+                f"durable latch ({latch.get('source')}, observed {latch.get('observed_at')}) — "
+                "survives missing/stale Claude readings; see `aiuse gate status`"
+            )
     if gate_reset is None:
         return False
     reset_iso = gate_reset.isoformat()
@@ -520,7 +601,7 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
             "account": gate_account or None,
             "window_label": gate_label,
             "resets_at": reset_iso,
-            "evidence": "every observed Claude account's shared multi-day window is exhausted; Anthropic 429 retry-after matched this reset (2026-10-21)",
+            "evidence": evidence_text,
         }
         account.notes.insert(
             0,

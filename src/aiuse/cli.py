@@ -475,6 +475,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
         from aiuse.agent_notes import run_note_exhausted
 
         return run_note_exhausted(raw[1:])
+    if raw and raw[0] == "gate":
+        from aiuse.rate_gates import run_gate_command
+
+        return run_gate_command(raw[1:])
 
     args = build_parser().parse_args(_normalize_argv(argv))
     if getattr(args, "schema", False):

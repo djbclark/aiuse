@@ -21,7 +21,12 @@ before assuming the tree is what the handoff describes.
 
 **Status (2026-10-22):** Package/CLI **`aiuse`**, packaging **3.9.3**
 (PyPI/GitHub/Homebrew; 3.7.0 added the `omp` row, OTHER column, and
-PACE-after-SCOPE layout; 3.7.1 reworded the gate's JSON semantics). Fix-plan Steps **1–34** and product issues **#1–#9**
+PACE-after-SCOPE layout; 3.7.1 reworded the gate's JSON semantics). On main,
+**unreleased**: the omp gate is now a durable fail-closed latch — evidence
+persisted in `~/.local/state/aiuse/rate-gates.json`, Anthropic 429
+retry-after ingested from omp's own logs, `aiuse gate status|clear`
+([`docs/omp-cloud-credits.md`](docs/omp-cloud-credits.md); codex-astra
+reviewed 2026-10-22). Fix-plan Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.4** (self-describing output, `aiuse --available`,
 `aiuse note-exhausted`; 1.4 adds the omp `rate_gated_by` shared-Claude-window
 gate; 1.3 added ceiling/hidden-pool fields and per-pool learned burn rates;

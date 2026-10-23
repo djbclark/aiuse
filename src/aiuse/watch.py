@@ -203,7 +203,11 @@ def collect_watch_frame(
             sampler.save_state(sampler.advance_state(sampler.load_state(), snapshot, settings, partial=False))
         except OSError:
             pass
-    if apply_credit_overrides_to_snapshot(snapshot, config) or apply_shared_rate_gate_to_snapshot(snapshot):
+    # Both must run: `or` here short-circuited the gate whenever a credit
+    # override applied, so the watch frame could show omp ungated (2026-10-22).
+    overrides_applied = apply_credit_overrides_to_snapshot(snapshot, config)
+    gate_applied = apply_shared_rate_gate_to_snapshot(snapshot)
+    if overrides_applied or gate_applied:
         alerts = analyze_use_or_lose(snapshot, config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
     return snapshot, alerts

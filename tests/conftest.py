@@ -29,6 +29,19 @@ def isolate_snapshot_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(client_limits, "agy_cli_log_dir", lambda: tmp_path / "agy-cli-log")
 
 
+@pytest.fixture(autouse=True)
+def isolate_rate_gate_state(tmp_path, monkeypatch):
+    """Keep the durable omp rate-gate latch hermetic.
+
+    Gate application reads and records evidence in a real state file, and
+    collection ingests the operator's real ~/.omp/logs 429s. Either leaking
+    into a test would make "not gated" assertions depend on the developer's
+    live Anthropic refusals — the exact flakiness the latch exists to remove.
+    """
+    monkeypatch.setenv("AIUSE_RATE_GATE_STORE", str(tmp_path / "rate-gates.json"))
+    monkeypatch.setenv("AIUSE_OMP_LOG_DIR", str(tmp_path / "omp-logs"))
+
+
 # The width the suite renders at unless a test says otherwise. Wide enough that
 # the table's TABLE_MAX_WIDTH cap is the binding constraint rather than the
 # terminal, which is the configuration most assertions were written against.

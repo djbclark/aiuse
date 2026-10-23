@@ -180,6 +180,72 @@ def test_fable_model_sublimit_is_not_the_gate_evidence():
     assert "rate_gated_by" not in _omp_of(snap)
 
 
+# --- durable latch: the historical incidents stay fixed (2026-10-22) ----------
+
+
+def test_latched_gate_survives_missing_claude_row():
+    """2026-10-22 incident 1: the Claude row blinked out; omp went ungated."""
+    gated = enrich_snapshot(_snap(_claude_account(100.0), _omp_account()))
+    assert gated["accounts"][0]["provider"] == "claude"
+    later = enrich_snapshot(_snap(_omp_account()))
+    omp = _omp_of(later)
+    assert omp["rate_gated_by"] is not None
+    assert omp["rate_gated_by"]["window_label"] == "shared Claude window (latched)"
+    assert omp["usable_now"] is False
+
+
+def test_latched_gate_survives_a_headroom_blink():
+    """A cswap headroom blip mid-window must not ungate omp (fail closed)."""
+    enrich_snapshot(_snap(_claude_account(100.0), _omp_account()))
+    blinked = enrich_snapshot(_snap(_claude_account(60.0), _omp_account()))
+    omp = _omp_of(blinked)
+    assert omp["rate_gated_by"] is not None
+    assert omp["usable_now"] is False
+
+
+def test_latch_expires_once_the_reset_really_passes():
+    enrich_snapshot(_snap(_claude_account(100.0), _omp_account()))
+    later = utcnow() + timedelta(days=3)
+    refreshed = enrich_snapshot(_snap(_claude_account(60.0), _omp_account()), now=later)
+    assert "rate_gated_by" not in _omp_of(refreshed)
+
+
+def test_omp_429_evidence_alone_gates_without_claude_data():
+    """Anthropic's own refusal is enough; no Claude dashboard row required."""
+    from aiuse.rate_gates import record_evidence
+
+    now = utcnow()
+    assert record_evidence(
+        "omp",
+        resets_at=now + timedelta(hours=10),
+        observed_at=now,
+        source="omp-429-anthropic",
+        event_id="test-429",
+        now=now,
+    )
+    snap = enrich_snapshot(_snap(_omp_account()))
+    omp = _omp_of(snap)
+    assert omp["rate_gated_by"] is not None
+    assert omp["rate_gated_by"]["resets_at"] == (now + timedelta(hours=10)).isoformat()
+    assert omp["usable_now"] is False
+    from aiuse.analysis.selfdescribe import available_pools
+
+    assert not any(p["provider"] == "omp" for p in available_pools(snap))
+
+
+def test_watch_credit_override_does_not_skip_the_gate(monkeypatch):
+    """2026-10-22 watch regression: `overrides or gate` short-circuited the gate."""
+    from aiuse import watch
+
+    _write_admin_reading()  # overrides path synthesizes the omp row and returns True
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: _claude_only_snapshot())
+    monkeypatch.setattr("aiuse.watch.analyze_use_or_lose", lambda *_a, **_k: [])
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+    snapshot, _alerts = watch.collect_watch_frame({}, persist=False)
+    omp = next(a for a in snapshot.accounts if a.provider == "omp")
+    assert omp.rate_gated_by is not None
+
+
 def _model_snapshot(weekly_used: float):
     from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 
@@ -220,6 +286,7 @@ def _model_snapshot(weekly_used: float):
 
 def test_snapshot_gate_sets_field_note_and_clears():
     from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
+    from aiuse.rate_gates import clear_gate
 
     snap = _model_snapshot(100.0)
     assert apply_shared_rate_gate_to_snapshot(snap) is True
@@ -227,9 +294,17 @@ def test_snapshot_gate_sets_field_note_and_clears():
     assert omp.rate_gated_by is not None
     assert omp.rate_gated_by["window_label"] == "Claude weekly"
     assert any(n.startswith("Rate-gated") for n in omp.notes)
-    # Headroom on the shared window clears the gate and removes the note.
+    # Headroom on the shared window no longer clears the gate: the first apply
+    # recorded durable evidence, and a single later reading must not ungate
+    # omp while Anthropic may still be refusing (2026-10-22).
     weekly = next(w for a in snap.accounts if a.provider == "claude" for w in a.windows)
     weekly.used_percent, weekly.remaining_percent = 40.0, 60.0
+    assert apply_shared_rate_gate_to_snapshot(snap) is True
+    omp = next(a for a in snap.accounts if a.provider == "omp")
+    assert omp.rate_gated_by is not None
+    assert omp.rate_gated_by["window_label"] == "shared Claude window (latched)"
+    # The operator escape hatch clears it (tombstones the evidence).
+    assert clear_gate("omp") is True
     assert apply_shared_rate_gate_to_snapshot(snap) is False
     omp = next(a for a in snap.accounts if a.provider == "omp")
     assert omp.rate_gated_by is None

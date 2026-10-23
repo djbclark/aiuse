@@ -141,6 +141,49 @@ aiuse fails closed for that state (`enrich_snapshot`,
    re-applied the reading at display time. A partial sample that did not ask
    for omp does not gain the row.
 
+## Durable latch (2026-10-22, after the fifth regression)
+
+The five fixes above (8373bd5, db4a6e9, c65e51a, 180a79f, 018bcfc) were all
+display-layer: each re-derived the gate from whatever Claude quota data
+happened to be present, so every input blink — the omp row vanishing, cswap
+going stale, one headroom reading, the watch's `overrides or gate`
+short-circuit — silently ungated omp again while Anthropic was still
+refusing. The latch ends the class:
+
+1. **Evidence is recorded when observed** to
+   `~/.local/state/aiuse/rate-gates.json` (env `AIUSE_RATE_GATE_STORE`):
+   either the exhausted shared window above (`claude-shared-window`), or an
+   actual Anthropic 429 with its `retry-after` header parsed from omp's own
+   logs (`omp-429-anthropic` — Anthropic's own statement of when the account
+   can spend again; every 2026-10-21..22 retry-after landed exactly on the
+   weekly reset). `save_snapshot` and `aiuse gate status` ingest the logs;
+   ingestion is idempotent by request id.
+2. **Fail closed until expiry.** Recorded evidence keeps omp gated until its
+   own `resets_at` (+120s grace), whatever later readings say. Missing Claude
+   rows, stale cswap data, and headroom blinks can no longer ungate a
+   recorded gate. Deadlines come from event time (`response timestamp +
+retry-after`), spans over 32 days are rejected (never clamped), and
+   replaying an old log after a clear stays cleared (tombstone
+   `cleared_through`). Only expiry or `aiuse gate clear omp` lifts a latch.
+3. **Surfaces.** While a latch (not live derivation) holds the gate,
+   `window_label` is `shared Claude window (latched)` and `evidence` names
+   the latch source. `aiuse gate status [--json]` (exit 1 while gated, 0
+   when nothing is latched) is the one-call machine surface for spend-path
+   tools — the π/omp TUI itself never consults aiuse, so until omp learns to
+   check (upstream PR is the long-term fix), a human or wrapper deciding to
+   spend omp should check it first. `aiuse gate clear omp` is the operator
+   escape hatch.
+
+Design reviewed by codex gpt-6-astra on 2026-10-22 (its full recommendation:
+persist scoped evidence records rather than one irreversible deadline, prefer
+`$XDG_STATE_HOME` over cache, tombstone clears, reject-and-quarantine
+implausible deadlines instead of clamping, keep the credits window `state`
+as dollars, exit-code semantics 0/1/2 for a future `gate-status` probe, and
+the end-state `prepare_snapshot` boundary unifying all surfaces — recorded
+here for the follow-ups). Known follow-up: serve's cached payloads and
+suggestions predate gate evaluation and can briefly disagree
+([`docs/next-options.md`](next-options.md)).
+
 ## Operator gate (historical; lifted 2026-10-19)
 
 The operator **lifted this gate on 2026-10-19** (commit 8a9dc43): the Claude

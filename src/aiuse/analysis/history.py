@@ -145,6 +145,12 @@ def save_snapshot(
     # A partial sample that did not ask for omp stays without that row.
     from aiuse.client_limits import load_client_limits
     from aiuse.credits_override import load_overrides
+    from aiuse.rate_gates import ingest_omp_log_evidence
+
+    # Anthropic 429s omp already hit (retry-after in omp's own logs) are the
+    # strongest rate-gate evidence; refresh the durable latch every collection
+    # so no snapshot input can go stale between samples (2026-10-22).
+    ingest_omp_log_evidence()
 
     credit_overrides = None
     if not partial or "omp" in (partial_providers or []):

@@ -79,6 +79,20 @@ shared Claude account window is exhausted:
   reset. Missing Claude data, 5h windows, and exhausted model sublimits
   (e.g. Fable) never gate omp account-wide. The gate clears itself once the
   reset passes.
+- Since 2026-10-22 the gate is also **durable** (fail closed): observed
+  evidence is recorded in `~/.local/state/aiuse/rate-gates.json` — either the
+  exhausted shared window above, or an actual Anthropic 429 with
+  `retry-after` parsed from omp's own logs (`~/.omp/logs`, the strongest
+  signal: Anthropic's own statement of when the account can spend again).
+  Recorded evidence keeps gating until its own `resets_at` passes (+120s
+  grace): a missing Claude row, a stale reading, or a headroom blink can no
+  longer silently ungate omp while requests are still being refused. While a
+  latch (not live derivation) holds the gate, `window_label` reads
+  `shared Claude window (latched)` and `evidence` names the latch source.
+  `aiuse gate status [--json]` (exit 1 while gated) is the one-call machine
+  surface for spend-path tools; `aiuse gate clear omp` tombstones the
+  evidence and is the operator's escape hatch. Design reviewed with codex
+  gpt-6-astra 2026-10-22.
 
 ## What's new in schema 1.3 (2026-10-14)
 
