@@ -170,8 +170,9 @@ retry-after`), spans over 32 days are rejected (never clamped), and
    the latch source. `aiuse gate status [--json]` (exit 1 while gated, 0
    when nothing is latched) is the one-call machine surface for spend-path
    tools — the π/omp TUI itself never consults aiuse, so until omp learns to
-   check (upstream PR is the long-term fix), a human or wrapper deciding to
-   spend omp should check it first. `aiuse gate clear omp` is the operator
+   check (upstream thread, commented 2026-10-22 with the day's 429 evidence:
+   [oh-my-pi #10733](https://github.com/can1357/oh-my-pi/issues/10733)),
+   a human or wrapper deciding to spend omp should check it first. `aiuse gate clear omp` is the operator
    escape hatch.
 
 Design reviewed by codex gpt-6-astra on 2026-10-22 (its full recommendation:

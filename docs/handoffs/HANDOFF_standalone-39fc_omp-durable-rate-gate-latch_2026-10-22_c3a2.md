@@ -121,7 +121,7 @@ unifying all surfaces (future work, not attempted tonight).
 3. Follow-ups (also in [`docs/next-options.md`](../next-options.md)):
    serve's cached payloads/suggestions are selected before gate evaluation
    and can briefly disagree (astra risk #4); `prepare_snapshot` unification;
-   omp upstream PR for gate consultation; multi-account Claude scoping
+   omp upstream consultation — posted 2026-10-22 on [oh-my-pi #10733](https://github.com/can1357/oh-my-pi/issues/10733#issuecomment-6355216981) (corroboration + deadline-surfacing and credential-latch asks); multi-account Claude scoping
    (astra: no "any account clears all" rule — current latch is single-account
    by construction).
 4. The Claude weekly window resets 2026-10-23T10:00:00Z; the latch will
