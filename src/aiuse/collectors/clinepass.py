@@ -130,6 +130,9 @@ def _collect_account(spec: ClinePassAccount, env: Mapping[str, str], timeout: fl
         windows = _fetch_windows(api_key, timeout)
     except CollectorError as exc:
         return error_row(str(exc))
+    except (ValueError, TypeError, AttributeError) as exc:
+        # A malformed limit (e.g. percentUsed "N/A") must not abort the other accounts.
+        return error_row(f"ClinePass API returned unparsable limits ({exc.__class__.__name__})")
     if not windows:
         return error_row("ClinePass API returned no valid limits")
     return AccountUsage(

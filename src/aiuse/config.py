@@ -495,7 +495,18 @@ def collector_serves_requested(collector_name: str, requested: frozenset[str]) -
 # Collector entry keys that change which rows a collect emits. URLs and other
 # endpoint settings are left out; they are not the disable-list bug, and the
 # fingerprint is stored on the snapshot.
-_POLICY_COLLECTOR_KEYS = ("enabled", "providers", "force_refresh", "try_launch_app", "log_dir", "max_age_hours")
+# ``all_accounts`` / ``accounts`` change which account rows a collector emits,
+# so a running watch/serve must not reuse a snapshot taken without them.
+_POLICY_COLLECTOR_KEYS = (
+    "enabled",
+    "providers",
+    "force_refresh",
+    "try_launch_app",
+    "log_dir",
+    "max_age_hours",
+    "all_accounts",
+    "accounts",
+)
 
 
 def canonical_disabled_services(config: dict[str, Any] | None) -> dict[str, str]:

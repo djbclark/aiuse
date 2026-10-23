@@ -278,6 +278,25 @@ def test_one_failing_account_is_an_error_row_not_an_abort(monkeypatch: pytest.Mo
     assert not any(value in _all_text(rows) for value in _SECRET_VALUES)
 
 
+def test_malformed_limits_for_one_account_do_not_abort_the_others(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get(_url: str, *, headers: dict[str, str], timeout: float) -> _Response:
+        return _Response(used="N/A" if headers["Authorization"].endswith("sk-plain-dc") else 20.0)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(clinepass.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(clinepass.requests, "get", fake_get)
+
+    rows = clinepass.collect_clinepass(
+        environ={"CLINEPASS_API_KEY_TECHNOEUPHORA": "sk-env-te", "CLINEPASS_DC_API_KEY": "sk-plain-dc"},
+        accounts=_ACCOUNTS,
+    )
+
+    good, bad = rows
+    assert good.account == "technoeuphora" and good.windows and good.error is None
+    assert bad.account == "dc" and not bad.windows
+    assert bad.error is not None and "unparsable" in bad.error
+    assert not any(value in _all_text(rows) for value in _SECRET_VALUES)
+
+
 def test_missing_key_for_one_account_keeps_the_other(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(clinepass.shutil, "which", lambda _name: None)
     monkeypatch.setattr(clinepass.requests, "get", lambda *_a, **_k: _Response())
@@ -366,6 +385,30 @@ def test_account_only_native_reports_is_kept_without_false_disagreement() -> Non
     assert dc_checks and all(check.status == "unavailable" for check in dc_checks)
 
 
+def test_partial_overlap_marks_each_missing_account_unavailable() -> None:
+    # Native {technoeuphora, dc} vs CodexBar {technoeuphora, other}: dc and
+    # other are accounts the peer lacks, not an alias mapping problem.
+    rows = [
+        _row("clinepass", "technoeuphora", 10),
+        _row("clinepass", "dc", 80),
+        _row("codexbar", "technoeuphora", 10),
+        _row("codexbar", "other", 30),
+    ]
+
+    selected, checks = _select_and_cross_check(rows, cswap_authoritative=True)
+
+    assert {(a.account, a.source) for a in selected} == {
+        ("technoeuphora", "codexbar"),
+        ("dc", "clinepass"),
+        ("other", "codexbar"),
+    }
+    assert not _disagreements(checks)
+    assert not any("Cannot safely map" in check.message for check in checks)
+    for account in ("dc", "other"):
+        mine = [check for check in checks if check.account == account]
+        assert mine and all(check.status == "unavailable" for check in mine)
+
+
 def test_errored_native_account_is_not_renamed_onto_the_other() -> None:
     # Native dc live, native technoeuphora errored, CodexBar technoeuphora only:
     # automatic one-to-one naming must not relabel dc as technoeuphora.
@@ -427,3 +470,16 @@ def test_generated_config_parses_and_documents_multi_account(monkeypatch: pytest
     issues = "\n".join(validate_config(bad))
     assert "collectors.codexbar.all_accounts" in issues
     assert "collectors.clinepass.accounts[0] needs a non-empty label" in issues
+
+
+def test_multi_account_settings_change_the_policy_fingerprint() -> None:
+    from aiuse.config import collection_policy_fingerprint
+
+    base = {"collectors": {"codexbar": {"enabled": True}, "clinepass": {"enabled": True}}}
+    every = {
+        "collectors": {"codexbar": {"enabled": True, "all_accounts": ["clinepass"]}, "clinepass": {"enabled": True}}
+    }
+    labelled = {"collectors": {"codexbar": {"enabled": True}, "clinepass": {"enabled": True, "accounts": _ACCOUNTS}}}
+
+    prints = {collection_policy_fingerprint(cfg) for cfg in (base, every, labelled)}
+    assert len(prints) == 3

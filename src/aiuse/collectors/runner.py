@@ -1198,6 +1198,7 @@ def _cross_check_source_pair(
     matched_right: set[int] = set()
 
     unmatched_left: list[AccountUsage] = []
+    label_matched = False
     for left in left_rows:
         peer = _match_peer_account(left, right_rows, left_live_count=len(left_rows))
         if peer is None:
@@ -1208,11 +1209,17 @@ def _cross_check_source_pair(
                 unmatched_left.append(left)
                 continue
         matched_right.add(id(peer))
+        if left.account and peer.account and not _labels_differ(left, peer):
+            label_matched = True
         checks.append(_compare_live_rows(left, peer))
 
-    if all(id(right) in matched_right for right in right_rows):
-        # The peer simply lacks these accounts (it reports fewer): say so
-        # rather than comparing them against another account's numbers.
+    # Both sources name accounts the same way once any label matched, so an
+    # unmatched labelled row on either side is an account the other source
+    # lacks (``{A, B}`` vs ``{A, C}``), not an alias problem.
+    every_right_matched = all(id(right) in matched_right for right in right_rows)
+    if label_matched or every_right_matched:
+        # The peer simply lacks these accounts: say so rather than comparing
+        # them against another account's numbers.
         for left in unmatched_left:
             if left.account:
                 checks.append(_single_source_account_check(provider, left, left_src, right_src))
@@ -1236,6 +1243,8 @@ def _cross_check_source_pair(
                     ),
                 )
             )
+        elif label_matched and right.account:
+            checks.append(_single_source_account_check(provider, right, right_src, left_src))
         elif len(left_rows) == 1 and len(right_rows) == 1:
             if _labels_differ(left_rows[0], right):
                 # Two named accounts: not the same quota, so not a disagreement.
