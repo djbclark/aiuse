@@ -5,8 +5,15 @@ not `AGENTS.md`, when the status line changes; keep the one-paragraph summary in
 `AGENTS.md` in step.
 
 **Status (2026-10-22):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.9.3**
+done. Product issues **#1–#9** done. Packaging **3.9.4**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
+**3.9.4:** the omp rate gate is a durable fail-closed latch — evidence
+persisted in `~/.local/state/aiuse/rate-gates.json` (exhausted shared
+window, or Anthropic 429 retry-after parsed from omp's own logs), gating
+until its own reset regardless of missing/stale Claude readings;
+`aiuse gate status|clear`; the watch `a` sweep leaves deprecated collectors
+(caut, caam, OpenUsage) at their configured state
+([`omp-cloud-credits.md`](docs/omp-cloud-credits.md)).
 **Schema 1.1 (2026-10-03):** self-describing output — per-window
 `state`/`pool_family`, per-account `usable_now`/`binding_window`/`available_at`/
 `age_seconds`, top-level `summary_lines`/`semantics`, `aiuse --available

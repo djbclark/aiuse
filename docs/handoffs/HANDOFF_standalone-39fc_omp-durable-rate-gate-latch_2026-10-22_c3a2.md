@@ -7,12 +7,12 @@ chain: [standalone-39fc]
 repo: aiuse
 workspace: main
 branch: main
-head_sha: d4f1b81
+head_sha: 8b26f2a
 created_at: 2026-10-22T20:40:00-0400
 writer: zcode
 ---
 
-# Handoff — omp rate gate is now a durable fail-closed latch (unreleased)
+# Handoff — omp rate gate is now a durable fail-closed latch (released 3.9.4)
 
 ## The Goal
 
@@ -23,11 +23,16 @@ with advice from codex astra, and land a permanent fix.
 
 ## Where We Are
 
-`main` is at `d4f1b81` (pushed): the omp rate gate is a durable fail-closed
-latch. **Unreleased** — installed/packaging stays 3.9.3 until the operator
-asks for `just release 3.9.4`; the running watch (pid 88521) and the launchd
-sampler therefore still run 3.9.3 code. Full suite 1380 passed. Working-tree
-proof (this is the request from the operator's paste):
+**Released as 3.9.4** (operator chose "release now" in the /loose walk): tag
+`v3.9.4`, PyPI, GitHub release, Homebrew formula `8b26f2a`, installed Cellar
+3.9.4, `brew test` passed. `main` at `8b26f2a`, pushed. The launchd sampler
+runs 3.9.4 from its next invocation. A second fix rode the same release
+(operator report, same evening): the watch `a` sweep no longer force-enables
+deprecated collectors (`DEPRECATED_COLLECTORS` in config.py; e17ae08), so
+caut/caam/openusage no longer print "not found on PATH" errors on every
+sweep. The long-running watch pane (pid 88521, started 11:57am on 3.9.3
+code) still needs an operator restart to pick either fix up. Full suite 1381
+passed. Working-tree proof (this is the request from the operator's paste):
 
 ```text
 $ AIUSE_SKIP_HOMEBREW_FORMULA=1 .venv/bin/aiuse gate status
