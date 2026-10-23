@@ -114,8 +114,7 @@ unifying all surfaces (future work, not attempted tonight).
 
 ## Where We're Going
 
-1. Operator: `just release 3.9.4` when ready — until then the latch exists
-   only in the working tree (`.venv/bin/aiuse`, `AIUSE_SKIP_HOMEBREW_FORMULA=1`).
+1. Released 3.9.4 during this session; nothing further owed here.
 2. After release, the first sampler run seeds the store from that machine's
    omp logs automatically (or run `aiuse gate status` once now, working
    tree, as done here).
