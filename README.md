@@ -298,6 +298,31 @@ guess:
 `aiuse --full` prints this exact table when a multi-account source cannot be
 matched safely. Explicit mappings take precedence over automatic normalization.
 
+When one source reports several accounts for a provider (Claude excepted, which
+cswap owns), aiuse picks the best source per account, so an account only one
+tool sees still gets its row, and cross-checks pair rows only by matching
+label. Several ClinePass accounts, for example, need CodexBar's
+`--all-accounts` and labelled native keys:
+
+```toml
+# One row per CodexBar token account.
+[collectors.codexbar]
+all_accounts = ["clinepass"]
+
+# Label = the CodexBar token-account name. Key: env first, then
+# secretspec, then sudo-secretspec.
+[[collectors.clinepass.accounts]]
+label = "work"
+env = "CLINEPASS_API_KEY_WORK"
+secret = "CLINE_API_KEY"
+
+[[collectors.clinepass.accounts]]
+label = "personal"
+secret = "CLINE_API_KEY_PERSONAL"
+```
+
+See [ClinePass quota](docs/clinepass-quota.md#several-accounts).
+
 Some vendors rate-limit quota probes. aiuse reads agy's (Antigravity's) quota
 at most once every 15 minutes across every aiuse process (CLI, LaunchAgent,
 `watch`, `serve`), reusing the last reading in between. Tune or disable it per

@@ -28,6 +28,16 @@ _TRANSPORT_429 = (
 )
 
 
+def _fresh_transport_429() -> str:
+    """The real 429 line re-stamped to now, so its retry-after is still live.
+
+    The verbatim line is dated 2026-10-22 with a ~10h retry-after; tests that
+    need an *active* gate would otherwise start failing once that expired.
+    """
+    stamp = utcnow().isoformat(timespec="milliseconds")
+    return _TRANSPORT_429.replace("2026-10-22T19:49:07.928-04:00", stamp)
+
+
 def _record(
     resets_in_h: float, *, event_id: str = "ev-1", source: str = "omp-429-anthropic", observed_ago_min: float = 0.0
 ):
@@ -191,7 +201,7 @@ def test_parser_missing_directory_is_empty(tmp_path):
 
 
 def test_ingest_records_log_events_as_evidence(tmp_path):
-    _write_log(tmp_path, "omp.2026-10-22.16756.log", _TRANSPORT_429)
+    _write_log(tmp_path, "omp.2026-10-22.16756.log", _fresh_transport_429())
     assert rate_gates.ingest_omp_log_evidence(log_dir=tmp_path / "omp-logs") == 1
     assert rate_gates.ingest_omp_log_evidence(log_dir=tmp_path / "omp-logs") == 0  # idempotent
     active = rate_gates.active_gate("omp")
@@ -219,7 +229,7 @@ def test_gate_status_exit_codes_and_clear(capsys, tmp_path, monkeypatch):
 
 def test_gate_status_ingests_omp_logs_first(capsys, tmp_path, monkeypatch):
     monkeypatch.setenv("AIUSE_OMP_LOG_DIR", str(tmp_path / "omp-logs"))
-    _write_log(tmp_path, "omp.2026-10-22.16756.log", _TRANSPORT_429)
+    _write_log(tmp_path, "omp.2026-10-22.16756.log", _fresh_transport_429())
     assert rate_gates.run_gate_command(["status", "--json"]) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["gates"]["omp"]["source"] == "omp-429-anthropic"

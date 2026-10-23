@@ -39,6 +39,10 @@
 # A provider whose query hits its timeout is skipped for this many seconds,
 # doubling per further consecutive timeout (cap 12x). 0 disables.
 # timeout_backoff = 1800
+# Query these providers with `--all-accounts`: one row per CodexBar token
+# account. They skip the widget-snapshot cache (it holds one account). A
+# provider with no token accounts falls back to the plain query.
+# all_accounts = ["clinepass"]
 
 [collectors.openusage_ai]
 # OpenUsage.ai — the macOS menu-bar app's CLI / loopback API.
@@ -52,6 +56,22 @@
 # Native DeepSeek prepaid balance (GET /user/balance, read-only, no tokens).
 # Quiet until AIUSE_DEEPSEEK_API_KEY or SecretSpec DEEPSEEK_API_KEY is set.
 # enabled = true
+
+[collectors.clinepass]
+# Native ClinePass 5h/weekly/monthly limits. One unlabelled key by default:
+# AIUSE_CLINE_API_KEY, else `sudo-secretspec get CLINE_API_KEY`. For several
+# accounts, list them; each gets its own labelled row. Per account: `env`
+# first, then `secretspec get <secret>` (aiuse manifest), then
+# `sudo-secretspec get <secret>`. Labels should match CodexBar's token-account
+# names so the two sources cross-check per account. See docs/clinepass-quota.md.
+# enabled = true
+# [[collectors.clinepass.accounts]]
+# label = "work"
+# env = "CLINEPASS_API_KEY_WORK"
+# secret = "CLINE_API_KEY"
+# [[collectors.clinepass.accounts]]
+# label = "personal"
+# secret = "CLINE_API_KEY_PERSONAL"
 
 [collectors.opencode_zen]
 # Optional direct OpenCode Zen billing source. Enable it by exporting

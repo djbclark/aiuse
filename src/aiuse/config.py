@@ -427,6 +427,8 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "max_cache_age_seconds",
         "max_cache_age",
         "cache_path",
+        "all_accounts",
+        "accounts",
     }
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
@@ -493,7 +495,18 @@ def collector_serves_requested(collector_name: str, requested: frozenset[str]) -
 # Collector entry keys that change which rows a collect emits. URLs and other
 # endpoint settings are left out; they are not the disable-list bug, and the
 # fingerprint is stored on the snapshot.
-_POLICY_COLLECTOR_KEYS = ("enabled", "providers", "force_refresh", "try_launch_app", "log_dir", "max_age_hours")
+# ``all_accounts`` / ``accounts`` change which account rows a collector emits,
+# so a running watch/serve must not reuse a snapshot taken without them.
+_POLICY_COLLECTOR_KEYS = (
+    "enabled",
+    "providers",
+    "force_refresh",
+    "try_launch_app",
+    "log_dir",
+    "max_age_hours",
+    "all_accounts",
+    "accounts",
+)
 
 
 def canonical_disabled_services(config: dict[str, Any] | None) -> dict[str, str]:
@@ -769,6 +782,23 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 issues.append(
                     f"error: collectors.{name}.cache_path must be a string path (got {entry['cache_path']!r})"
                 )
+            all_accounts = entry.get("all_accounts")
+            if all_accounts is not None and not (
+                isinstance(all_accounts, str)
+                or (isinstance(all_accounts, list) and all(isinstance(item, str) for item in all_accounts))
+            ):
+                issues.append(
+                    f"error: collectors.{name}.all_accounts must be a list of provider ids or a "
+                    f"comma-separated string (got {all_accounts!r})"
+                )
+            accounts = entry.get("accounts")
+            if accounts is not None:
+                if not isinstance(accounts, list):
+                    issues.append(f"error: collectors.{name}.accounts must be an array of tables")
+                else:
+                    for index, account in enumerate(accounts):
+                        if not isinstance(account, dict) or not str(account.get("label") or "").strip():
+                            issues.append(f"error: collectors.{name}.accounts[{index}] needs a non-empty label")
 
     query_min_interval = cfg.get("query_min_interval")
     if query_min_interval is not None and not isinstance(query_min_interval, dict):
@@ -1161,7 +1191,30 @@ def _toml_collector_section(name: str, entry: dict[str, Any]) -> str:
             lines.append(f"health_path = {_toml_string(value)}")
         elif key == "max_age_hours" and isinstance(value, (int, float)):
             lines.append(f"max_age_hours = {int(value)}")
+    lines.extend(_COLLECTOR_SECTION_EXAMPLES.get(name, ()))
     return "\n".join(lines)
+
+
+# Commented examples appended to a generated collector section.
+_COLLECTOR_SECTION_EXAMPLES: dict[str, tuple[str, ...]] = {
+    "codexbar": (
+        "# Query these providers with `--all-accounts`: one row per CodexBar token",
+        "# account (they skip the widget-snapshot cache, which holds one account).",
+        '# all_accounts = ["clinepass"]',
+    ),
+    "clinepass": (
+        "# Several ClinePass accounts, one labelled row each. Per account: `env`",
+        "# first, then `secretspec get <secret>`, then `sudo-secretspec get <secret>`.",
+        "# Without accounts: AIUSE_CLINE_API_KEY, else sudo-secretspec CLINE_API_KEY.",
+        "# [[collectors.clinepass.accounts]]",
+        '# label = "work"',
+        '# env = "CLINEPASS_API_KEY_WORK"',
+        '# secret = "CLINE_API_KEY"',
+        "# [[collectors.clinepass.accounts]]",
+        '# label = "personal"',
+        '# secret = "CLINE_API_KEY_PERSONAL"',
+    ),
+}
 
 
 def _generated_collector_defaults() -> dict[str, dict[str, Any]]:

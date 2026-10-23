@@ -153,6 +153,17 @@ def _disabled_services(config: dict[str, Any]) -> dict[str, str]:
     return canonical_disabled_services(config)
 
 
+def _provider_names(raw: Any) -> frozenset[str]:
+    """Provider ids from a TOML list or a comma-separated string."""
+    if isinstance(raw, str):
+        items: list[Any] = raw.split(",")
+    elif isinstance(raw, (list, tuple)):
+        items = list(raw)
+    else:
+        return frozenset()
+    return frozenset(canonical_provider(str(item).strip()) for item in items if str(item).strip())
+
+
 def _codexbar_timeout_settings(config: dict[str, Any], codexbar_cfg: dict[str, Any]) -> tuple[dict[str, float], float]:
     """Per-provider CodexBar timeouts and the hang backoff from ``[collectors.codexbar]``.
 
@@ -234,6 +245,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         except (TypeError, ValueError):
             max_cache_age = 300.0
         cache_path = (codexbar_cfg or {}).get("cache_path")
+        all_accounts = _provider_names((codexbar_cfg or {}).get("all_accounts"))
         jobs.append(
             (
                 "codexbar",
@@ -249,6 +261,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     use_cache=use_cache,
                     max_cache_age=max_cache_age,
                     cache_path=cache_path,
+                    all_accounts_providers=all_accounts,
                 ),
             )
         )
@@ -303,7 +316,17 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     if _enabled(collectors_cfg, "paseo"):
         jobs.append(("paseo", partial(collect_paseo, timeout=timeout_for(config, "paseo"))))
     if _enabled(collectors_cfg, "clinepass"):
-        jobs.append(("clinepass", partial(collect_clinepass, timeout=timeout_for(config, "clinepass"))))
+        clinepass_cfg = collectors_cfg.get("clinepass") if isinstance(collectors_cfg.get("clinepass"), dict) else {}
+        jobs.append(
+            (
+                "clinepass",
+                partial(
+                    collect_clinepass,
+                    timeout=timeout_for(config, "clinepass"),
+                    accounts=(clinepass_cfg or {}).get("accounts"),
+                ),
+            )
+        )
     if _enabled(collectors_cfg, "hermes"):
         jobs.append(("hermes", partial(collect_hermes, timeout=timeout_for(config, "hermes"))))
     if _enabled(collectors_cfg, "muse"):
@@ -604,35 +627,30 @@ def _select_and_cross_check(
                 acp_rows = []
 
         priority = _source_priority(provider, cswap_authoritative=cswap_authoritative)
-        primary = _pick_primary_source(
-            provider,
-            by_source,
-            priority,
-            cswap_authoritative=cswap_authoritative,
-            fresh_threshold_seconds=fresh_threshold_seconds,
-        )
-
+        account_groups = _account_groups(provider, by_source)
         chosen: list[AccountUsage] = []
-        if primary is not None:
-            primary_rows = by_source.get(primary, [])
-            if primary == "cswap":
-                # Keep every cswap slot (live + errored) for multi-account identity.
-                chosen = primary_rows
-            else:
-                live = [a for a in primary_rows if _has_live_data(a)]
-                # A Max-plan OpenUsage.ai row with zero windows is an identity
-                # label, not a Claude reading. Keeping it is what showed Claude
-                # with no usage when CodexBar and cswap returned nothing.
-                blank_openusage_claude = (
-                    provider == "claude" and primary == "openusage_ai" and not any(row.error for row in primary_rows)
+        if account_groups:
+            # Multi-account provider: the best source per account, so an account
+            # only one tool reports is kept instead of dropped with its source.
+            primary = None
+            for group in account_groups:
+                group_primary = _pick_primary_source(
+                    provider,
+                    group,
+                    priority,
+                    cswap_authoritative=cswap_authoritative,
+                    fresh_threshold_seconds=fresh_threshold_seconds,
                 )
-                if live:
-                    chosen = live
-                elif not blank_openusage_claude:
-                    chosen = primary_rows
+                chosen.extend(_rows_from_primary(provider, group_primary, group, rows))
         else:
-            # No priority source present — keep whatever we have.
-            chosen = rows
+            primary = _pick_primary_source(
+                provider,
+                by_source,
+                priority,
+                cswap_authoritative=cswap_authoritative,
+                fresh_threshold_seconds=fresh_threshold_seconds,
+            )
+            chosen = _rows_from_primary(provider, primary, by_source, rows)
 
         if not chosen and acp_rows:
             chosen = list(acp_rows)
@@ -655,6 +673,72 @@ def _select_and_cross_check(
         )
 
     return selected, checks
+
+
+def _rows_from_primary(
+    provider: str,
+    primary: str | None,
+    by_source: dict[str, list[AccountUsage]],
+    rows: list[AccountUsage],
+) -> list[AccountUsage]:
+    """The rows to surface once ``primary`` is picked (``rows`` when none was)."""
+    if primary is None:
+        # No priority source present — keep whatever we have.
+        return rows
+    primary_rows = by_source.get(primary, [])
+    if primary == "cswap":
+        # Keep every cswap slot (live + errored) for multi-account identity.
+        return primary_rows
+    live = [a for a in primary_rows if _has_live_data(a)]
+    if live:
+        return live
+    # A Max-plan OpenUsage.ai row with zero windows is an identity
+    # label, not a Claude reading. Keeping it is what showed Claude
+    # with no usage when CodexBar and cswap returned nothing.
+    if provider == "claude" and primary == "openusage_ai" and not any(row.error for row in primary_rows):
+        return []
+    return primary_rows
+
+
+def _multi_account_labels(provider: str, by_source: dict[str, list[AccountUsage]]) -> list[str]:
+    """Casefolded labels of a provider some single source reports several accounts for.
+
+    Empty unless one non-ACP source names at least two distinct accounts (live
+    or errored rows alike). Two tools naming one account differently (email
+    versus a CLI label) is not multi-account evidence, so single-account users
+    keep per-provider selection. Claude stays on its cswap authority path.
+    """
+    if provider == "claude":
+        return []
+    labels: list[str] = []
+    for source, source_rows in by_source.items():
+        if source == ACP_SOURCE:
+            continue
+        names = list(
+            dict.fromkeys(a.account.strip().casefold() for a in source_rows if a.account and a.account.strip())
+        )
+        if len(names) > 1:
+            labels.extend(name for name in names if name not in labels)
+    return labels
+
+
+def _account_groups(provider: str, by_source: dict[str, list[AccountUsage]]) -> list[dict[str, list[AccountUsage]]]:
+    """Per-account ``by_source`` maps for a multi-account provider, else [].
+
+    Rows labelled with another (or no) name cannot be tied to one of the
+    accounts, so they stay out of selection (an ``[account_aliases]`` entry
+    maps them); the cross-checks still see them.
+    """
+    labels = _multi_account_labels(provider, by_source)
+    groups: dict[str, dict[str, list[AccountUsage]]] = {label: defaultdict(list) for label in labels}
+    for source, source_rows in by_source.items():
+        if source == ACP_SOURCE:
+            continue
+        for account in source_rows:
+            key = (account.account or "").strip().casefold()
+            if key in groups:
+                groups[key][source].append(account)
+    return [groups[label] for label in labels]
 
 
 def _attach_acp_context(accounts: list[AccountUsage], acp_rows: list[AccountUsage]) -> None:
@@ -849,6 +933,14 @@ def _normalize_account_names(accounts: list[AccountUsage], aliases: dict[str, An
         # authorize nor block a one-to-one mapping.  A source with multiple
         # *named* accounts does block it: that must be configured explicitly.
         if len(by_source) < 2 or any(len(names) != 1 for names in by_source.values()):
+            continue
+        # A source naming several accounts (an errored one included) is
+        # multi-account: one live row each does not make them one account.
+        provider_rows: dict[str, list[AccountUsage]] = defaultdict(list)
+        for account in accounts:
+            if account.provider == provider:
+                provider_rows[account.source].append(account)
+        if _multi_account_labels(provider, provider_rows):
             continue
         # Prefer the selected source's display identity.  It is already the
         # source that drives the ladder, and every source has exactly one row.
@@ -1105,6 +1197,8 @@ def _cross_check_source_pair(
     checks: list[CrossCheck] = []
     matched_right: set[int] = set()
 
+    unmatched_left: list[AccountUsage] = []
+    label_matched = False
     for left in left_rows:
         peer = _match_peer_account(left, right_rows, left_live_count=len(left_rows))
         if peer is None:
@@ -1112,9 +1206,23 @@ def _cross_check_source_pair(
             if len(right_rows) == 1 and not right_rows[0].account and len(left_rows) == 1:
                 peer = right_rows[0]
             else:
+                unmatched_left.append(left)
                 continue
         matched_right.add(id(peer))
+        if left.account and peer.account and not _labels_differ(left, peer):
+            label_matched = True
         checks.append(_compare_live_rows(left, peer))
+
+    # Both sources name accounts the same way once any label matched, so an
+    # unmatched labelled row on either side is an account the other source
+    # lacks (``{A, B}`` vs ``{A, C}``), not an alias problem.
+    every_right_matched = all(id(right) in matched_right for right in right_rows)
+    if label_matched or every_right_matched:
+        # The peer simply lacks these accounts: say so rather than comparing
+        # them against another account's numbers.
+        for left in unmatched_left:
+            if left.account:
+                checks.append(_single_source_account_check(provider, left, left_src, right_src))
 
     for right in right_rows:
         if id(right) in matched_right:
@@ -1135,9 +1243,16 @@ def _cross_check_source_pair(
                     ),
                 )
             )
+        elif label_matched and right.account:
+            checks.append(_single_source_account_check(provider, right, right_src, left_src))
         elif len(left_rows) == 1 and len(right_rows) == 1:
-            # Already compared above if match worked; if not, force compare
-            checks.append(_compare_live_rows(left_rows[0], right))
+            if _labels_differ(left_rows[0], right):
+                # Two named accounts: not the same quota, so not a disagreement.
+                checks.append(_single_source_account_check(provider, left_rows[0], left_src, right_src))
+                checks.append(_single_source_account_check(provider, right, right_src, left_src))
+            else:
+                # Already compared above if match worked; if not, force compare
+                checks.append(_compare_live_rows(left_rows[0], right))
         elif right.account and left_rows:
             checks.append(
                 CrossCheck(
@@ -1170,10 +1285,29 @@ def _match_peer_account(
         )
         if email_match is not None:
             return email_match
-    if left_live_count == 1 and len(peers) == 1:
+    if left_live_count == 1 and len(peers) == 1 and not _labels_differ(anchor, peers[0]):
         # Allow anonymous single-peer binding (CodexBar often omits email).
         return peers[0]
     return None
+
+
+def _labels_differ(left: AccountUsage, right: AccountUsage) -> bool:
+    """Both rows are named, and not the same name (case-insensitive)."""
+    return bool(left.account and right.account and left.account.strip().casefold() != right.account.strip().casefold())
+
+
+def _single_source_account_check(provider: str, row: AccountUsage, source: str, peer: str) -> CrossCheck:
+    return CrossCheck(
+        provider=provider,
+        account=row.account,
+        status="unavailable",
+        sources=[_source_name(source), _source_name(peer)],
+        message=(
+            f"Only {_source_name(source)} reported {provider_display_name(provider)} account "
+            f"{row.account} this run; {_source_name(peer)} has no matching account to cross-check. "
+            f"If both name one account, add [account_aliases.{provider}.{peer}]."
+        ),
+    )
 
 
 def _compare_live_rows(left: AccountUsage, right: AccountUsage) -> CrossCheck:
