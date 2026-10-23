@@ -293,25 +293,57 @@ def collect_codexbar(
     use_cache: bool = False,
     max_cache_age: float = 300.0,
     cache_path: Path | str | None = None,
+    all_accounts_providers: frozenset[str] = frozenset(),
 ) -> list[AccountUsage]:
+    """Collect CodexBar usage rows.
+
+    ``all_accounts_providers`` (``[collectors.codexbar] all_accounts``) names
+    providers queried with ``--all-accounts`` so every CodexBar token account
+    becomes its own row. The widget snapshot holds only the active account, so
+    with ``use_cache`` those providers skip the snapshot and are queried live.
+    """
     provider_list = _normalize_providers(providers)
     # CodexBar has no `omp` provider: its credits ride on the Claude row.
     provider_list = list(dict.fromkeys("claude" if p == "omp" else p for p in provider_list))
+    all_accounts = frozenset(canonical_provider(p) for p in all_accounts_providers if p) - (
+        skip_providers or frozenset()
+    )
     if use_cache:
-        cached = _read_widget_snapshot(
-            cache_path=cache_path,
-            max_age=max_cache_age,
-            provider_list=provider_list,
-            skip_providers=skip_providers,
+        cache_list = [p for p in provider_list if p is None or canonical_provider(p) not in all_accounts]
+        cached = (
+            _read_widget_snapshot(
+                cache_path=cache_path,
+                max_age=max_cache_age,
+                provider_list=cache_list,
+                skip_providers=(skip_providers or frozenset()) | all_accounts,
+            )
+            if cache_list
+            else None
         )
         if cached is not None:
-            return cached + _live_omp_supplement(
+            backoff = TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None
+            omp = _live_omp_supplement(
                 cached,
                 skip_providers=skip_providers,
                 timeout=provider_timeouts.get("claude", timeout) if provider_timeouts else timeout,
                 min_intervals=min_intervals,
-                backoff=TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None,
+                backoff=backoff,
             )
+            if provider_list == [None]:
+                live_list: list[str | None] = sorted(all_accounts)
+            else:
+                live_list = [p for p in provider_list if p is not None and canonical_provider(p) in all_accounts]
+            if not live_list:
+                return cached + omp
+            live, errors = _collect_live(
+                live_list,
+                timeout=timeout,
+                min_intervals=min_intervals,
+                provider_timeouts=provider_timeouts,
+                backoff=backoff,
+                all_accounts_providers=all_accounts,
+            )
+            return cached + omp + live + _query_error_rows(errors)
 
     if not which("codexbar"):
         raise CollectorError("codexbar not found on PATH")
@@ -333,11 +365,46 @@ def collect_codexbar(
             return []
         provider_list = kept
 
+    accounts, errors = _collect_live(
+        provider_list,
+        timeout=timeout,
+        min_intervals=min_intervals,
+        provider_timeouts=provider_timeouts,
+        backoff=TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None,
+        all_accounts_providers=all_accounts,
+    )
+    if not accounts and errors:
+        raise CollectorError("; ".join(errors))
+    return accounts + _query_error_rows(errors)
+
+
+def _query_error_rows(errors: list[str]) -> list[AccountUsage]:
+    if not errors:
+        return []
+    return [
+        AccountUsage(
+            source="codexbar",
+            provider="codexbar-query-errors",
+            error="; ".join(errors),
+            billing_kind=BillingKind.UNKNOWN,
+        )
+    ]
+
+
+def _collect_live(
+    provider_list: list[str | None],
+    *,
+    timeout: float,
+    min_intervals: dict[str, float] | None,
+    provider_timeouts: dict[str, float] | None,
+    backoff: TimeoutBackoff | None,
+    all_accounts_providers: frozenset[str] = frozenset(),
+) -> tuple[list[AccountUsage], list[str]]:
+    """Query ``provider_list`` live; return (account rows, per-provider errors)."""
     accounts: list[AccountUsage] = []
     errors: list[str] = []
     reuse_notes: dict[str, str] = {}
 
-    backoff = TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None
     for provider_arg, outcome in _query_providers(
         provider_list,
         timeout=timeout,
@@ -345,6 +412,7 @@ def collect_codexbar(
         reuse_notes=reuse_notes,
         provider_timeouts=provider_timeouts,
         backoff=backoff,
+        all_accounts_providers=all_accounts_providers,
     ):
         if isinstance(outcome, CollectorError):
             name = provider_arg or "enabled providers"
@@ -364,19 +432,7 @@ def collect_codexbar(
                 for sibling in (_opencode_zen_from_row(row), _omp_credits_from_row(row)):
                     if sibling is not None:
                         accounts.append(sibling)
-
-    if not accounts and errors:
-        raise CollectorError("; ".join(errors))
-    if errors:
-        accounts.append(
-            AccountUsage(
-                source="codexbar",
-                provider="codexbar-query-errors",
-                error="; ".join(errors),
-                billing_kind=BillingKind.UNKNOWN,
-            )
-        )
-    return accounts
+    return accounts, errors
 
 
 def _live_omp_supplement(
@@ -460,6 +516,7 @@ def _query_providers(
     reuse_notes: dict[str, str] | None = None,
     provider_timeouts: dict[str, float] | None = None,
     backoff: TimeoutBackoff | None = None,
+    all_accounts_providers: frozenset[str] = frozenset(),
 ) -> list[tuple[str | None, Any]]:
     """Run one `codexbar usage` call per entry in provider_list, concurrently.
 
@@ -476,6 +533,9 @@ def _query_providers(
     ``provider_timeouts`` overrides ``timeout`` per provider. With a
     ``backoff``, a provider whose last query hung is skipped (its error says
     until when) and a fresh hang is recorded for the next run.
+
+    Providers in ``all_accounts_providers`` are asked for every token account
+    (``--all-accounts``); see :func:`_query_provider`.
     """
     deduped: list[str | None] = list(dict.fromkeys(provider_list))
     intervals = min_intervals or {}
@@ -491,10 +551,14 @@ def _query_providers(
             reason = backoff.blocked(provider)
             if reason is not None:
                 return CollectorError(reason)
+        # Only passed when set, so stand-ins with the plain signature still work.
+        extra: dict[str, bool] = {"all_accounts": True} if provider in all_accounts_providers else {}
         if intervals.get(provider, 0) > 0:
-            outcome = _query_provider_gated(provider_arg, intervals[provider], timeout=provider_timeout, notes=notes)
+            outcome = _query_provider_gated(
+                provider_arg, intervals[provider], timeout=provider_timeout, notes=notes, **extra
+            )
         else:
-            outcome = _query_provider(provider_arg, timeout=provider_timeout)
+            outcome = _query_provider(provider_arg, timeout=provider_timeout, **extra)
         if backoff is not None:
             if isinstance(outcome, CollectorTimeout):
                 backoff.record_timeout(provider, provider_timeout)
@@ -520,11 +584,13 @@ def _query_provider_gated(
     *,
     timeout: float,
     notes: dict[str, str],
+    all_accounts: bool = False,
 ) -> Any:
     provider = provider_arg.lower()
     with QueryGate(provider, min_interval=min_interval, wait=timeout + 15.0) as gate:
         if gate.allowed:
-            outcome = _query_provider(provider_arg, timeout=timeout)
+            extra: dict[str, bool] = {"all_accounts": True} if all_accounts else {}
+            outcome = _query_provider(provider_arg, timeout=timeout, **extra)
             gate.record("codexbar", outcome, usable=_usable_usage_payload(outcome))
             return outcome
         reused_at = gate.reused_from("codexbar")
@@ -535,7 +601,7 @@ def _query_provider_gated(
         return gate.reuse("codexbar")
 
 
-def _query_provider(provider_arg: str | None, *, timeout: float = 45.0) -> Any:
+def _query_provider(provider_arg: str | None, *, timeout: float = 45.0, all_accounts: bool = False) -> Any:
     # Omitting --provider asks CodexBar for its enabled-provider list and data
     # (only reached as a fallback if _discover_enabled_providers() fails).
     argv = [_codexbar_bin(), "usage", "--format", "json"]
@@ -544,6 +610,15 @@ def _query_provider(provider_arg: str | None, *, timeout: float = 45.0) -> Any:
 
     provider = provider_arg.lower() if provider_arg is not None else None
     preferred = _PREFERRED_SOURCES.get(provider) if provider is not None else None
+    if all_accounts and provider_arg is not None:
+        # One row per CodexBar token account. A provider with no token
+        # accounts answers "No token accounts configured" (or nothing usable):
+        # fall through to the plain query of the active account. A timeout
+        # stays a timeout so hang backoff records it without a second wait.
+        source_args = ["--source", preferred] if preferred is not None else []
+        every_account = _run_codexbar_usage([*argv, *source_args, "--all-accounts"], timeout=timeout)
+        if _usable_usage_payload(every_account) or isinstance(every_account, CollectorTimeout):
+            return every_account
     if preferred is not None:
         preferred_outcome = _run_codexbar_usage([*argv, "--source", preferred], timeout=timeout)
         if _usable_usage_payload(preferred_outcome):
@@ -609,6 +684,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         return AccountUsage(
             source="codexbar",
             provider=provider,
+            account=_display_account(row.get("account")),
             error=err,
             billing_kind=_billing_kind(provider, None),
             raw=row,
