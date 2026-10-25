@@ -15,12 +15,12 @@ from aiuse.models import (
     parse_dt,
 )
 
-from .base import CollectorError, run_json, which
+from .base import CollectorNotInstalled, run_json, which
 
 
 def collect_tokscale(*, timeout: float = 45.0) -> list[AccountUsage]:
     if not which("tokscale"):
-        raise CollectorError("tokscale not found on PATH")
+        raise CollectorNotInstalled("tokscale not found on PATH")
 
     payload = run_json(["tokscale", "usage", "--json"], timeout=timeout)
     rows = payload if isinstance(payload, list) else [payload]

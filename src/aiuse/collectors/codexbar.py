@@ -24,7 +24,7 @@ from aiuse.models import coerce_float as _f
 from aiuse.models import coerce_int as _int_or_none
 from aiuse.timefmt import format_clock
 
-from .base import CollectorError, CollectorTimeout, run_json, which
+from .base import CollectorError, CollectorNotInstalled, CollectorTimeout, run_json, which
 from .throttle import QueryGate, TimeoutBackoff
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
@@ -346,7 +346,7 @@ def collect_codexbar(
             return cached + omp + live + _query_error_rows(errors)
 
     if not which("codexbar"):
-        raise CollectorError("codexbar not found on PATH")
+        raise CollectorNotInstalled("codexbar not found on PATH")
     if provider_list == [None]:
         # Discover the actual enabled-provider list ourselves so each can be
         # queried as its own concurrent subprocess, instead of asking CodexBar

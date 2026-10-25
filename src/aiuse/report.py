@@ -2429,6 +2429,9 @@ def render_stderr_meta(
         lines.append(s.red("Collector errors:"))
         for err in snapshot.collector_errors:
             lines.append(s.red(f"  - {err}"))
+    if snapshot.uninstalled_tools:
+        # Optional tools the operator never installed: expected, so dim, not red.
+        lines.append(s.dim(f"Optional, not installed (expected): {', '.join(snapshot.uninstalled_tools)}"))
     lines.append(s.dim("Detail: ai --full"))
     return "\n".join(lines)
 

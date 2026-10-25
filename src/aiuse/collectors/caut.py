@@ -18,7 +18,7 @@ from aiuse.models import (
     coerce_float as _f,
 )
 
-from .base import CollectorError, run_json, which
+from .base import CollectorError, CollectorNotInstalled, run_json, which
 from .codexbar import PREPAID_HINTS, _billing_kind, _slot_label, _window
 
 # Providers caut can actually fetch rate-limit windows for on a typical Mac
@@ -41,7 +41,7 @@ def collect_caut(
     doctor still says "Auth missing"). We retry once when no live windows.
     """
     if not which("caut"):
-        raise CollectorError(
+        raise CollectorNotInstalled(
             "caut not found on PATH (install: cargo install --locked "
             "--git https://github.com/Dicklesworthstone/coding_agent_usage_tracker "
             "and ensure ~/.cargo/bin is on PATH, or symlink into ~/.local/bin)"

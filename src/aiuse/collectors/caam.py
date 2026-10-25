@@ -25,7 +25,7 @@ from aiuse.models import (
 )
 from aiuse.timefmt import format_clock
 
-from .base import CollectorError, run_json, which
+from .base import CollectorError, CollectorNotInstalled, run_json, which
 
 # caam tool ids -> aiuse canonical provider ids (docs/provider-identity.md;
 # do not invent ids). "gemini" and "opencode" also canonicalize through
@@ -67,7 +67,7 @@ def collect_caam(*, timeout: float = 90.0) -> list[AccountUsage]:
     whose login is live but whose vault has no quota row.
     """
     if not which("caam"):
-        raise CollectorError(
+        raise CollectorNotInstalled(
             "caam not found on PATH (install: upstream install script or "
             "release tarball from https://github.com/Dicklesworthstone/"
             "coding_agent_account_manager, and ensure ~/.local/bin is on PATH)"

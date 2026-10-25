@@ -35,12 +35,12 @@ from aiuse.models import coerce_float as _number
 from aiuse.models import coerce_int as _int_or_none
 from aiuse.timefmt import format_clock
 
-from .base import CollectorError, run_json, which
+from .base import CollectorError, CollectorNotInstalled, run_json, which
 
 
 def collect_cswap(*, timeout: float = 90.0) -> list[AccountUsage]:
     if not which("cswap"):
-        raise CollectorError("cswap not found on PATH")
+        raise CollectorNotInstalled("cswap not found on PATH")
 
     data = run_json(["cswap", "list", "--json"], timeout=timeout)
     if not isinstance(data, dict):

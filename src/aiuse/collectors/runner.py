@@ -35,7 +35,7 @@ from aiuse.usage_sources import ACP_SOURCE, pinned_usage_source
 
 from .acp_usage import collect_acp, default_acp_log_dir
 from .bailian import collect_bailian
-from .base import which
+from .base import CollectorNotInstalled, which
 from .caam import collect_caam
 from .caut import collect_caut
 from .clinepass import collect_clinepass
@@ -357,6 +357,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         for name, _ in jobs:
             try:
                 snapshot.accounts.extend(futures[name].result())
+            except CollectorNotInstalled:
+                snapshot.uninstalled_tools.append(name)
             except Exception as exc:  # noqa: BLE001
                 snapshot.collector_errors.append(f"{name}: {exc}")
 

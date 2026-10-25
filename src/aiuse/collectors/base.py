@@ -18,6 +18,15 @@ class CollectorTimeout(CollectorError):
     """A collector subprocess was killed at its timeout (it hung, not failed)."""
 
 
+class CollectorNotInstalled(CollectorError):
+    """An optional tool is not on PATH: an expected state, not a failure.
+
+    The runner keeps these out of ``Snapshot.collector_errors`` so watch and
+    report surfaces do not alarm on every hit for a tool the operator never
+    installed.
+    """
+
+
 # Keep in sync with ai.config.DEFAULT_SUBPROCESS_TIMEOUT (import avoided to
 # keep this module free of config load side effects for unit tests).
 DEFAULT_RUN_TIMEOUT = 45.0
