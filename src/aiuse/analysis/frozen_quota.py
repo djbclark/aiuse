@@ -292,17 +292,22 @@ def apply_frozen_measurements(
     if not candidate_fps:
         return snap
 
-    if activity is None:
-        # One scan covering the union of candidate spans.
-        since = min(spans[fp][0] for fp in candidate_fps)
-        until = max(spans[fp][1] for fp in candidate_fps)
-        activity = scan_acp_pool_activity(since=since, until=until, log_dir=log_dir)
-
     frozen_fps: set[tuple[Any, ...]] = set()
     for fp in candidate_fps:
         provider = str(fp[0])
         family = fp[1] if isinstance(fp[1], str) or fp[1] is None else None
-        if _usage_covers(activity, provider=provider, family=family):
+        if activity is None:
+            # Scan each candidate's own flat span, not the union of every
+            # candidate's span. A single union window let a turn in a
+            # *different* candidate's span leak onto this one: a codex turn
+            # during an earlier 20%→21% span marked codex's later flat 25%
+            # window "spent" even though no codex activity fell inside it.
+            oldest, newest = spans[fp]
+            fp_activity = scan_acp_pool_activity(since=oldest, until=newest, log_dir=log_dir)
+            covered = _usage_covers(fp_activity, provider=provider, family=family)
+        else:
+            covered = _usage_covers(activity, provider=provider, family=family)
+        if covered:
             frozen_fps.add(fp)
     if not frozen_fps:
         return snap

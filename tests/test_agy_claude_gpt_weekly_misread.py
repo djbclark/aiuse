@@ -177,6 +177,77 @@ def test_apply_frozen_measurements_requires_span(tmp_path):
     assert snap["accounts"][0].get("measurement_frozen") is not True
 
 
+def test_activity_in_other_candidate_span_does_not_leak(tmp_path):
+    """A turn in a *different* candidate's span must not freeze this one.
+
+    Regression for the union-window leak: codex's weekly window sat flat at
+    25% from 16:14→17:02 with no codex activity inside that span, but an
+    earlier antigravity candidate pulled the single scan window down to 11:26,
+    and a codex turn at 14:18 (outside codex's own span) leaked onto the codex
+    candidate and wrongly marked it frozen.
+    """
+    codex_reset = "2026-10-25T00:00:00+00:00"
+    t_agy_0 = datetime(2026, 10, 18, 11, 26, 0, tzinfo=timezone.utc)
+    t_agy_1 = datetime(2026, 10, 18, 12, 30, 0, tzinfo=timezone.utc)
+    t_codex_0 = datetime(2026, 10, 18, 16, 14, 0, tzinfo=timezone.utc)
+    t_codex_1 = datetime(2026, 10, 18, 17, 2, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 10, 18, 17, 5, 0, tzinfo=timezone.utc)
+
+    def codex_account(collected: datetime, *, used: float = 25.0) -> dict:
+        return {
+            "source": "codexbar",
+            "provider": "codex",
+            "account": None,
+            "plan": None,
+            "billing_kind": "subscription_window",
+            "windows": [
+                {
+                    "label": "Codex weekly quota",
+                    "used_percent": used,
+                    "remaining_percent": 100.0 - used,
+                    "resets_at": codex_reset,
+                    "window_minutes": 10080,
+                }
+            ],
+            "collected_at": collected.isoformat(),
+        }
+
+    def agy_account(collected: datetime, *, used: float = 59.0) -> dict:
+        account = _agy_claude_gpt_account(used=used, remaining=100.0 - used)
+        account["collected_at"] = collected.isoformat()
+        return account
+
+    history = [
+        {"collected_at": t_agy_0.isoformat(), "accounts": [agy_account(t_agy_0)]},
+        {"collected_at": t_agy_1.isoformat(), "accounts": [agy_account(t_agy_1)]},
+        {"collected_at": t_codex_0.isoformat(), "accounts": [codex_account(t_codex_0)]},
+        {"collected_at": t_codex_1.isoformat(), "accounts": [codex_account(t_codex_1)]},
+    ]
+    current = {
+        "collected_at": t_codex_1.isoformat(),
+        "accounts": [agy_account(t_codex_1), codex_account(t_codex_1)],
+    }
+
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    # A codex turn at 14:18: inside the union [11:26, 17:02] but outside codex's
+    # own flat span [16:14, 17:02].
+    turn_when = datetime(2026, 10, 18, 14, 18, 0, tzinfo=timezone.utc)
+    local = turn_when.astimezone()
+    turn_path = log_dir / f"{local.strftime('%Y%m%d-%H%M%S')}-codex-1.jsonl"
+    events = [
+        {"t": turn_when.timestamp(), "kind": "initialize", "data": {}},
+        {"t": turn_when.timestamp() + 0.1, "kind": "set_config", "data": {"id": "model", "value": "gpt-6.1-sol"}},
+    ]
+    turn_path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+
+    apply_frozen_measurements(current, now=now, history=history, min_frozen_seconds=2700, log_dir=log_dir)
+
+    codex = next(account for account in current["accounts"] if account["provider"] == "codex")
+    assert codex.get("measurement_frozen") is not True
+    assert codex.get("usable_now") is not False
+
+
 def test_acp_quota_refusal_overrides_cached_41_percent(tmp_path, monkeypatch):
     """A fresh Individual-quota 429 with the weekly reset flips the pool."""
     from aiuse import agent_notes
