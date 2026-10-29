@@ -146,11 +146,16 @@ def test_other_column_absent_without_tail_notes():
 
 
 def test_stale_follows_other():
+    from aiuse.timefmt import format_as_of
+
     snap = _snapshot(_omp, _grok)
     snap.accounts[0].collected_at = utcnow() - timedelta(days=2)
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     omp = _row_line(text, "omp")
-    assert omp.endswith("↓$249.27/$250.00 plan STALE")
+    measured = snap.accounts[0].collected_at
+    assert measured is not None
+    assert omp.endswith("↓$249.27/$250.00 plan " + format_as_of(measured))
+    assert "STALE" not in text
     col = text.splitlines()[0].index("OTHER")
     assert omp[col:].startswith("↓$249.27/$250.00 plan")
 

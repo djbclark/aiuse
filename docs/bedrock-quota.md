@@ -35,19 +35,21 @@ does not waive the $0.01 cap.
 ## What the number means
 
 The figure counts **up**. It is pay-as-you-go, not a prepaid wallet and not
-part of a monthly plan grant. With no budget the row is `↑ $16.89 PAYG`.
-With a budget it is `↑ $16.89 of $50.00 PAYG`. `@9:02pm` is when Cost
-Explorer measured it. A held row stays fresh on the board (the hold is the
-decision) and keeps that clock so the number stays honest.
+part of a monthly plan grant. With no budget the row is
+`↑ $16.89 PAYG (as of 10/29 9:02pm)`. With a budget it is
+`↑ $16.89 of $50.00 PAYG (as of 10/29 9:02pm)`. The stamp is when Cost
+Explorer measured the figure. The board keeps that cached number, because
+the total lags, and does not put the row on the error band.
 
-A total of `$0.00` is not a measurement. Cost Explorer sometimes answers
-with an empty total, and CodexBar reports that as `Spend: $0.00`. aiuse
-shows `UNKNOWN` and does not store the zero as spend, so the next eligible
-collect tries again. The row stays `payg_api`. It is never a prepaid balance.
+A measured `$0.00` is cached the same way and shown as
+`↑ $0.00 PAYG (as of 10/29 9:02pm)`. A later `$0.00` does not replace a
+cached positive spend. The row stays `payg_api`. It is never a prepaid
+balance.
 
-JSON: `billing_kind` `payg_api`, `usage_credits.used` is the spend,
-`usage_credits.limit` is the budget or null, `balance_usd` is null. `spent_usd`
-is not this meter. That field is the expiring plan grant (`omp`). When the
-reading is unknown, `error` is `UNKNOWN` and `usage_credits` is omitted.
+JSON: `billing_kind` `payg_api`, `usage_credits.used` is the spend (0 when
+the total was `$0.00`), `usage_credits.limit` is the budget or null,
+`balance_usd` is null. `spent_usd` is not this meter. That field is the
+expiring plan grant (`omp`). When the row names no total at all, `error` is
+`UNKNOWN` and `usage_credits` is omitted.
 
 There is no percent clock. A 0–100 bar would look like a plan window.

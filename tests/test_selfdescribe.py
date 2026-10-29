@@ -486,6 +486,8 @@ def test_freshness_threshold():
 
 def test_stale_account_is_flagged_and_marked_in_summary():
     from aiuse.analysis.selfdescribe import enrich_snapshot, pool_entries
+    from aiuse.models import parse_dt
+    from aiuse.timefmt import format_as_of
 
     now = utcnow()
     fix = _antigravity_fixture()
@@ -505,7 +507,10 @@ def test_stale_account_is_flagged_and_marked_in_summary():
     assert pools["claude_gpt"]["stale"] is True
 
     gemini_line = next(line for line in snap["summary_lines"] if "gemini" in line)
-    assert "[STALE 40m]" in gemini_line
+    measured = parse_dt(account["collected_at"])
+    assert measured is not None
+    assert format_as_of(measured) in gemini_line
+    assert "STALE" not in gemini_line
 
 
 def test_fresh_account_has_no_stale_marker():
@@ -515,7 +520,7 @@ def test_fresh_account_has_no_stale_marker():
     account = snap["accounts"][0]
     assert account["fresh"] is True
     assert account["stale"] is False
-    assert not any("[STALE" in line for line in snap["summary_lines"])
+    assert not any("as of" in line for line in snap["summary_lines"])
 
 
 # ── human output never prints a bare percentage ─────────────────────────────

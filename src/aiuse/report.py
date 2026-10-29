@@ -71,7 +71,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
-from aiuse.timefmt import format_clock, lead_phrase
+from aiuse.timefmt import format_as_of, format_clock, lead_phrase
 
 URGENCY_ICON = {
     Urgency.CRITICAL: "!!!",
@@ -215,6 +215,7 @@ class _MatrixRow:
     note: str | None = None
     tail_note: str | None = None
     stale: bool = False
+    measured_at: datetime | None = None
     sublimit_notes: list[str] = field(default_factory=list)
     # A routing limit (Claude Fable), not a pool to burn. Blank tag and score.
     unranked: bool = False
@@ -578,18 +579,25 @@ def _positive_usd(amount: float | None) -> float | None:
     return float(amount)
 
 
-def _bedrock_display_spend(account: AccountUsage) -> float | None:
-    """Bedrock's month-to-date PAYG spend. ``None`` means the reading is UNKNOWN.
+def _bedrock_meter_usd(account: AccountUsage) -> float | None:
+    """Bedrock's month-to-date PAYG spend, including a measured ``$0.00``.
 
-    A positive ``balance_usd`` on this provider is the old misread of
-    ``Spend: $…`` and still counts up. Zero is not a prepaid wallet.
+    ``None`` means the row names no total. A ``balance_usd`` on this provider
+    is the old misread of ``Spend: $…`` and still counts up.
     """
     if canonical_provider(account.provider) != "bedrock":
         return None
     uc = account.usage_credits
     if uc is not None and uc.used is not None:
-        return _positive_usd(float(uc.used))
-    return _positive_usd(account.balance_usd)
+        return float(uc.used)
+    if account.balance_usd is not None:
+        return float(account.balance_usd)
+    return None
+
+
+def _bedrock_display_spend(account: AccountUsage) -> float | None:
+    """Positive Bedrock spend. A measured zero stays on :func:`_bedrock_meter_usd`."""
+    return _positive_usd(_bedrock_meter_usd(account))
 
 
 def _account_is_spend_up_payg(account: AccountUsage) -> bool:
@@ -660,15 +668,19 @@ def _usd_refill_total(account: AccountUsage) -> float | None:
     return None
 
 
-def _bedrock_clock(account: AccountUsage) -> str:
-    """`` @9:02pm`` when this row carries a Cost Explorer measurement time."""
+def _bedrock_as_of(account: AccountUsage) -> str:
+    """`` (as of 10/29 9:02pm)`` from the Cost Explorer measurement, else the row time."""
+    if canonical_provider(account.provider) != "bedrock":
+        return ""
     raw = account.raw if isinstance(account.raw, dict) else {}
     usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
     stamp = usage.get("bedrockReadAt") if isinstance(usage, dict) else None
     when = parse_dt(stamp) if isinstance(stamp, str) else None
     if when is None:
+        when = account.collected_at
+    if when is None:
         return ""
-    return " @" + format_clock(when)
+    return " " + format_as_of(when)
 
 
 def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
@@ -698,18 +710,18 @@ def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
 def _api_inventory_note(account: AccountUsage) -> str:
     """Ladder/matrix note for a prepaid countdown or a pay-as-you-go meter."""
     if canonical_provider(account.provider) == "bedrock":
-        # Pay-as-you-go only. Never a prepaid countdown, and never $0.
-        spent = _bedrock_display_spend(account)
+        # Pay-as-you-go only. A measured $0 is that total, with the reading time.
+        spent = _bedrock_meter_usd(account)
         if spent is None:
             return "UNKNOWN"
         uc = account.usage_credits
-        limit = float(uc.limit) if uc is not None and uc.limit is not None else None
-        return dollar_meter("up", "PAYG", spent, limit) + _bedrock_clock(account)
+        limit = float(uc.limit) if uc is not None and uc.limit is not None and uc.limit > 0 else None
+        return dollar_meter("up", "PAYG", spent, limit) + _bedrock_as_of(account)
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits
         assert uc is not None and uc.used is not None
         limit = float(uc.limit) if uc.limit is not None else None
-        return dollar_meter("up", "PAYG", float(uc.used), limit) + _bedrock_clock(account)
+        return dollar_meter("up", "PAYG", float(uc.used), limit)
     if account.balance_usd is not None:
         if account.spent_usd is not None:
             left = dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account))
@@ -1181,6 +1193,13 @@ def _clock_span(cell: _ClockCell, *, compact: bool) -> tuple[_ResetSpan | None, 
     return None, False
 
 
+def _row_as_of(row: _MatrixRow) -> str:
+    """``(as of 10/29 9:02pm)`` when this row's reading is past the freshness threshold."""
+    if not row.stale or row.measured_at is None:
+        return ""
+    return format_as_of(row.measured_at)
+
+
 def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
     identities = [
         _row_identity(
@@ -1207,11 +1226,13 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
     w_other = _other_column_width(rows)
     if w_other:
         total += 1 + w_other
-    # Reserve a fixed amount for STALE, or for the start of a free-text note
-    # (never the whole note), so those stay readable before numeric cells are
-    # squeezed.
-    if any(row.stale for row in rows) or (not w_other and any(row.note for row in rows)):
-        total += 1 + len("STALE")
+    # Reserve the as-of stamp, or the start of a free-text note (never the
+    # whole note), so those stay readable before numeric cells are squeezed.
+    as_of = max((len(_row_as_of(row)) for row in rows), default=0)
+    note_reserve = 5 if (not w_other and any(row.note for row in rows)) else 0
+    extra = max(as_of, note_reserve)
+    if extra:
+        total += 1 + extra
     return total
 
 
@@ -1384,28 +1405,6 @@ def render_priority_ladder(
             )
             covered.add(cov)
             continue
-        if canonical_provider(account.provider) == "bedrock" and _bedrock_display_spend(account) is None:
-            cov = _ladder_coverage_key(account.provider, account.account, "")
-            if cov in covered:
-                continue
-            shown = account
-            if not shown.error:
-                shown = AccountUsage(
-                    source=account.source,
-                    provider=account.provider,
-                    account=account.account,
-                    plan="PAYG",
-                    billing_kind=BillingKind.PAYG_API,
-                    error="UNKNOWN",
-                )
-            entries.append(
-                (
-                    _ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
-                    _priority_error_line(shown, s),
-                )
-            )
-            covered.add(cov)
-            continue
         if account.error or not _account_has_usage(account):
             cov = _ladder_coverage_key(account.provider, account.account, "")
             if cov in covered:
@@ -1495,7 +1494,7 @@ def _account_data_age(account: AccountUsage, now: datetime) -> float | None:
 
     ``collected_at`` is the data freshness, not the snapshot time: a row reused
     across a throttle window still carries its original reading's timestamp, so
-    this is the number the STALE marker must key on.
+    this is the number the as-of stamp must key on.
     """
     if account.collected_at is None:
         return None
@@ -1706,6 +1705,7 @@ def _build_matrix_rows(
                     note=note,
                     tail_note=tail_note,
                     stale=stale,
+                    measured_at=account.collected_at,
                     sublimit_notes=sublimit_notes,
                     operator_gate=account.requires_operator_approval,
                 )
@@ -1755,19 +1755,6 @@ def _build_matrix_rows(
                     account=short,
                     account_full=account.account,
                     note=_context_fragment(account),
-                )
-            )
-            continue
-        if canonical_provider(account.provider) == "bedrock" and _bedrock_display_spend(account) is None:
-            rows.append(
-                _MatrixRow(
-                    sort_key=_ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
-                    band=_BAND_ERROR,
-                    queue_score=None,
-                    service=service,
-                    account=short,
-                    account_full=account.account,
-                    note=account.error or "UNKNOWN",
                 )
             )
             continue
@@ -2283,11 +2270,12 @@ def render_clock_matrix_parts(
             if layout.show_account:
                 cells.append(account)
             prefix = " ".join(cells)
-            stale_suffix = " STALE" if row.stale else ""
+            as_of = _row_as_of(row)
+            stale_suffix = f" {as_of}" if as_of else ""
             room = avail - (len(_strip_ansi(prefix)) + 1 + len(stale_suffix))
             pieces = [prefix, s.dim(_situation_body(row.note, gated=_row_shows_gate(row), width=room))]
-            if row.stale:
-                pieces.append(s.yellow("STALE"))
+            if as_of:
+                pieces.append(s.yellow(as_of))
             line = _clamp_display_width(" ".join(pieces).rstrip(), avail)
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             for note in row.sublimit_notes:
@@ -2343,8 +2331,9 @@ def render_clock_matrix_parts(
             other = row.tail_note or ""
             # Pad outside the dim codes so a trailing blank still rstrips.
             tail.append((s.dim(other) if other else "") + " " * (w_other - len(other)))
-        if row.stale:
-            tail.append(s.yellow("STALE"))
+        as_of = _row_as_of(row)
+        if as_of:
+            tail.append(s.yellow(as_of))
 
         line = _line(tag, score, service, account, scope, f"{value_text:>{w_value}}", tail)
         lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
@@ -2362,8 +2351,6 @@ def render_clock_matrix_parts(
         legend_bits.append(_FOLD_LEGEND)
     if any_arrow:
         legend_bits.append("-> / <- points at this row's clock")
-    if any(row.stale for row in rows):
-        legend_bits.append("STALE = older than the freshness threshold")
     if layout.show_value or layout.show_pace:
         pace = "+ ahead / - behind"
         if layout.show_value:

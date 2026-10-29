@@ -696,10 +696,12 @@ def test_watch_frame_overlays_newer_burst_samples_on_the_full_snapshot(monkeypat
 def test_format_clock_is_twelve_hour_without_leading_zeros():
     from datetime import datetime
 
-    from aiuse.timefmt import format_clock
+    from aiuse.timefmt import format_as_of, format_clock
 
     evening = datetime(2026, 10, 3, 21, 2, 7).astimezone()
     assert format_clock(evening) == "9:02pm"
+    assert format_as_of(evening) == "(as of 10/03 9:02pm)"
+    assert format_as_of(datetime(2026, 10, 3, 0, 5).astimezone()) == "(as of 10/03 12:05am)"
     assert format_clock(evening, seconds=True) == "9:02:07pm"
     assert format_clock(evening, date=True) == "Sat Oct 3 9:02pm"
     assert format_clock(datetime(2026, 10, 3, 0, 5).astimezone()) == "12:05am"

@@ -44,7 +44,7 @@ from aiuse.models import (
     parse_dt,
     utcnow,
 )
-from aiuse.timefmt import format_clock
+from aiuse.timefmt import format_as_of, format_clock
 
 SCHEMA_VERSION = "1.4"
 
@@ -876,6 +876,7 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     "age_seconds": account.get("age_seconds"),
                     "fresh": False if frozen else account.get("fresh"),
                     "stale": True if frozen else account.get("stale"),
+                    **({"collected_at": account["collected_at"]} if account.get("collected_at") else {}),
                     **({"measurement_frozen": True} if frozen else {}),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
                     "windows": windows,
@@ -919,23 +920,6 @@ def _grant_fragment(pool: Mapping[str, Any], window: Mapping[str, Any]) -> str:
         else:
             text += " plan"
     return text
-
-
-def _format_age(seconds: float | None) -> str:
-    """Compact reading age for a STALE marker: ``2h28m`` / ``40m`` / ``30s``."""
-    if seconds is None:
-        return "age?"
-    seconds = max(0, int(round(seconds)))
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes = seconds // 60
-    if minutes < 60:
-        return f"{minutes}m"
-    hours, rem = divmod(minutes, 60)
-    if hours < 24:
-        return f"{hours}h{rem:02d}m" if rem else f"{hours}h"
-    days, hours = divmod(hours, 24)
-    return f"{days}d{hours:02d}h" if hours else f"{days}d"
 
 
 def _sublimit_cap_fragment(window: Mapping[str, Any]) -> str:
@@ -1018,7 +1002,9 @@ def summary_line(pool: Mapping[str, Any]) -> str:
             " credits cannot be spent before it resets]"
         )
     if pool.get("stale"):
-        line += f" [STALE {_format_age(pool.get('age_seconds'))}]"
+        when = parse_dt(pool.get("collected_at") if isinstance(pool.get("collected_at"), str) else None)
+        if when is not None:
+            line += " " + format_as_of(when)
     if pool.get("requires_operator_approval"):
         line += f" — {OPERATOR_APPROVAL_NOTICE}"
     return line

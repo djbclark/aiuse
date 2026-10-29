@@ -1167,7 +1167,8 @@ def _run_available(args: argparse.Namespace) -> int:
         freshness,
         summary_line,
     )
-    from aiuse.models import utcnow
+    from aiuse.models import parse_dt, utcnow
+    from aiuse.timefmt import format_as_of
 
     config = load_config(args.config)
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
@@ -1279,7 +1280,13 @@ def _run_available(args: argparse.Namespace) -> int:
         )
     age_note = "age unknown"
     if fresh["age_seconds"] is not None:
-        age_note = f"age {fresh['age_seconds']:.0f}s, {'fresh' if fresh['fresh'] else 'STALE'}"
+        taken = parse_dt(snap_dict.get("collected_at") if isinstance(snap_dict.get("collected_at"), str) else None)
+        if fresh["fresh"]:
+            age_note = f"age {fresh['age_seconds']:.0f}s, fresh"
+        elif taken is not None:
+            age_note = format_as_of(taken)
+        else:
+            age_note = f"age {fresh['age_seconds']:.0f}s"
     print(f"(source: {source} · {age_note} · --live forces a collect)", file=sys.stderr)
     return EXIT_OK if pools else EXIT_NO_POOLS
 

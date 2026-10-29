@@ -85,35 +85,58 @@ def _float(value: object) -> float | None:
 
 
 def _positive_usd(value: float | None) -> float | None:
-    """A Cost Explorer total of $0.00 is not a measurement."""
+    """A total below one cent. Used so a real ``Spend: $…`` line can win."""
     if value is None or value <= 0 or round(value, 2) <= 0:
         return None
     return value
 
 
-def positive_bedrock_spend(row: dict[str, Any]) -> float | None:
-    """Month-to-date PAYG spend from ``providerCost.used`` or ``Spend: $…``.
-
-    Bedrock is pay-as-you-go. The figure counts up. Zero, from either field,
-    is the Cost Explorer empty-total failure and is not a balance.
-    """
+def _cost_and_spoken(row: dict[str, Any]) -> tuple[float | None, float | None]:
+    """``(providerCost.used, Spend: $ amount)``, each parsed or None."""
     usage_value = row.get("usage")
     usage = usage_value if isinstance(usage_value, dict) else {}
     cost_value = usage.get("providerCost")
     cost = cost_value if isinstance(cost_value, dict) else {}
-    used = _positive_usd(_float(cost.get("used")))
-    if used is not None:
-        return used
+    used = _float(cost.get("used"))
     plan = usage.get("loginMethod")
     if not isinstance(plan, str):
         identity = usage.get("identity")
         identity = identity if isinstance(identity, dict) else {}
         plan = identity.get("loginMethod")
+    spoken: float | None = None
     if isinstance(plan, str):
         match = _SPEND_RE.search(plan)
         if match:
-            return _positive_usd(_float(match.group(1)))
-    return None
+            spoken = _float(match.group(1))
+    return used, spoken
+
+
+def positive_bedrock_spend(row: dict[str, Any]) -> float | None:
+    """Positive month-to-date PAYG spend. A zero total is not returned.
+
+    ``providerCost.used`` wins when it is at least one cent. Otherwise a
+    ``Spend: $…`` line. :func:`measured_bedrock_spend` keeps a measured zero.
+    """
+    used, spoken = _cost_and_spoken(row)
+    positive = _positive_usd(used)
+    if positive is None:
+        positive = _positive_usd(spoken)
+    return positive
+
+
+def measured_bedrock_spend(row: dict[str, Any]) -> float | None:
+    """PAYG dollars, including a measured ``$0.00``. None when no total is named.
+
+    A positive ``Spend: $…`` wins over a zero ``providerCost.used``. The figure
+    counts up. It is never a prepaid balance.
+    """
+    used, spoken = _cost_and_spoken(row)
+    positive = positive_bedrock_spend(row)
+    if positive is not None:
+        return positive
+    if used is not None:
+        return used
+    return spoken
 
 
 def activity_fingerprint(payload: Any) -> str:
@@ -168,8 +191,8 @@ def refresh_due(store: dict[str, Any], fingerprint: str, now: datetime) -> bool:
 
     No stored read yet: take one. Younger than six hours: hold. A stored
     read that failed (no ``spent_usd``): try again once the six hours have
-    passed. A stored success: try again only when some other meter differs
-    from the fingerprint saved with that success.
+    passed. A stored success, including a measured ``$0.00``: try again only
+    when some other meter differs from the fingerprint saved with that success.
     """
     fetched = parse_dt(store.get("fetched_at") if isinstance(store.get("fetched_at"), str) else None)
     if fetched is None:
@@ -205,7 +228,7 @@ def _spend_from_payload(outcome: Any) -> tuple[float, float | None] | None:
     for row in rows:
         if not isinstance(row, dict) or row.get("error"):
             continue
-        spent = positive_bedrock_spend(row)
+        spent = measured_bedrock_spend(row)
         if spent is None:
             continue
         usage_value = row.get("usage")
@@ -263,6 +286,20 @@ def _remember_failure(store: dict[str, Any], *, now: datetime, message: str, pat
     _write_store(store, path)
 
 
+def _keep_positive_cache(
+    store: dict[str, Any], *, now: datetime, path: str | Path | None
+) -> list[dict[str, Any]] | None:
+    """A later ``$0.00`` must not wipe a cached positive month-to-date total."""
+    prior = _positive_usd(_float(store.get("spent_usd")))
+    if prior is None:
+        return None
+    store["schema_version"] = _SCHEMA
+    store["fetched_at"] = now.isoformat()
+    store.pop("error", None)
+    _write_store(store, path)
+    return cached_payload(now, path)
+
+
 def gated_bedrock_payload(
     live: Callable[[], Any],
     *,
@@ -281,8 +318,16 @@ def gated_bedrock_payload(
         if held is not None:
             return held
         if saved.get("error") == "UNKNOWN":
-            # A $0 Cost Explorer total is not a prepaid balance and not $0 spent.
-            return [_row(0.0, None, read_at=moment, updated_at=moment)]
+            # An older build stored a $0 total as UNKNOWN and did not keep the
+            # dollars. Show that zero from the attempt time; do not call again.
+            fetched = parse_dt(saved.get("fetched_at") if isinstance(saved.get("fetched_at"), str) else None)
+            read_at = fetched or moment
+            saved["schema_version"] = _SCHEMA
+            saved["spent_usd"] = 0.0
+            saved["read_at"] = read_at.isoformat()
+            saved.pop("error", None)
+            _write_store(saved, store)
+            return [_row(0.0, None, read_at=read_at, updated_at=moment)]
         if saved.get("error"):
             return CollectorError(str(saved["error"]))
         return CollectorError("Bedrock spend unavailable")
@@ -294,6 +339,9 @@ def gated_bedrock_payload(
     spend = None if isinstance(outcome, CollectorError) else _spend_from_payload(outcome)
     if spend is None:
         if not isinstance(outcome, CollectorError):
+            held = _keep_positive_cache(saved, now=moment, path=store)
+            if held is not None:
+                return held
             _remember_failure(saved, now=moment, message="UNKNOWN", path=store)
             rows = outcome if isinstance(outcome, list) else [outcome]
             if any(isinstance(row, dict) for row in rows):
@@ -307,6 +355,10 @@ def gated_bedrock_payload(
         return outcome
 
     spent, limit = spend
+    if _positive_usd(spent) is None:
+        held = _keep_positive_cache(saved, now=moment, path=store)
+        if held is not None:
+            return held
     read_at = moment
     rows = outcome if isinstance(outcome, list) else [outcome]
     for row in rows:

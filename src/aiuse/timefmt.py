@@ -25,6 +25,18 @@ def format_clock(
     return f"{local:%a} {clock}" if weekday else clock
 
 
+def format_as_of(when: datetime) -> str:
+    """When a reading was taken: ``(as of 10/29 9:02pm)``.
+
+    Month and day are zero-padded. The clock matches :func:`format_clock`
+    (12-hour, no leading zero on the hour).
+    """
+    local = when.astimezone()
+    clock = f"{local.hour % 12 or 12}:{local:%M}"
+    clock += "am" if local.hour < 12 else "pm"
+    return f"(as of {local:%m}/{local:%d} {clock})"
+
+
 def format_lead(seconds: float) -> str:
     """How far ahead of a reset something happens, scaled to hours, days or weeks.
 

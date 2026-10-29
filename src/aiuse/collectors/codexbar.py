@@ -28,11 +28,11 @@ from aiuse.models import (
 )
 from aiuse.models import coerce_float as _f
 from aiuse.models import coerce_int as _int_or_none
-from aiuse.timefmt import format_clock
+from aiuse.timefmt import format_as_of, format_clock
 
 from .base import CollectorError, CollectorNotInstalled, CollectorTimeout, run_json, which
 from .bedrock_gate import cached_payload as cached_bedrock_payload
-from .bedrock_gate import gated_bedrock_payload, positive_bedrock_spend
+from .bedrock_gate import gated_bedrock_payload, measured_bedrock_spend
 from .throttle import QueryGate, TimeoutBackoff
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
@@ -798,7 +798,8 @@ def _query_providers(
         extra: dict[str, bool] = {"all_accounts": True} if provider in all_accounts_providers else {}
         if provider == "bedrock":
             # The $0.01 gate lives inside _query_provider. QueryGate's reused
-            # payload would freeze updatedAt and paint the held row STALE.
+            # payload would freeze updatedAt. The gate restamps that clock and
+            # keeps the measurement time for the as-of stamp.
             if backoff is not None:
                 reason = backoff.blocked(provider)
                 if reason is not None:
@@ -1144,10 +1145,9 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     usage_credits: UsageCredits | None = None
     provider_cost = usage.get("providerCost")
     if provider == "bedrock":
-        # Pay-as-you-go month-to-date spend. It counts up. A $0 total is not
-        # a prepaid wallet and not a measured spend; the row says UNKNOWN.
-        # limit 0 means "no budget", not an empty balance.
-        cost_used = positive_bedrock_spend(row)
+        # Pay-as-you-go month-to-date spend. It counts up. A measured $0 is
+        # that total, not a prepaid wallet. limit 0 means "no budget".
+        cost_used = measured_bedrock_spend(row)
         cost_value = provider_cost if isinstance(provider_cost, dict) else {}
         cost_limit = _f(cost_value.get("limit")) if isinstance(cost_value, dict) else None
         limit = cost_limit if cost_limit is not None and cost_limit > 0 else None
@@ -1164,7 +1164,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             updated = parse_dt(usage.get("updatedAt"))
             if read_at is not None and updated is not None and (updated - read_at).total_seconds() > 90:
                 notes.append(
-                    f"Cost Explorer ${cost_used:.2f} read at {format_clock(read_at)}; "
+                    f"Cost Explorer ${cost_used:.2f} {format_as_of(read_at)}; "
                     "held until other usage moves and 6h have passed."
                 )
             else:
@@ -1253,7 +1253,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     account_error = None
     if provider == "bedrock":
         # Nothing above may turn this meter into a prepaid balance. The only
-        # dollars are month-to-date PAYG spend. $0 is UNKNOWN, not $0 left.
+        # dollars are month-to-date PAYG spend, including a measured $0.
         billing = BillingKind.PAYG_API
         balance_usd = None
         credits_remaining = None

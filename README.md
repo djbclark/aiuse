@@ -576,7 +576,7 @@ and the time it was taken. The freshest of the Admin API reading and the operato
 override rules above (expiry, hidden pools) apply to it, except that an Admin API reading lasts 24 h (like a CodexBar reading), not 7 days; after that the pool is `unknown` until a refresh succeeds.
 For the same grant a reading can only fall: it is capped at the operator's figure and at the previous reading, a rise is noted, and a report with no buckets since the grant date counts as a failure. So once the hourly job is loaded it replaces a newer `set-credits` within the hour, and can only lower the figure. A key with characters outside `[A-Za-z0-9_-]` (after trimming) is refused with exit 2 and a message that never shows it; redirects are refused so the key is never forwarded. If the API call fails (20 s timeout,
 any non-200, an unexpected body) one stderr line is printed and the previous reading is kept, so it ages and
-shows STALE. An Admin API reading may create the omp row when the collectors made none; an operator override
+shows `(as of MM/DD H:MMam/pm)`. An Admin API reading may create the omp row when the collectors made none; an operator override
 may not.
 
 Hourly refresh with launchd (not loaded for you). The wrapper is copied out of the checkout so a branch switch cannot change what launchd runs:
