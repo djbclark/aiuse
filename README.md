@@ -688,6 +688,7 @@ Ceiling rows: `analysis.show_total_rows` (default **false**) hides total/ceiling
 - [`docs/attribution.md`](docs/attribution.md) — what spent the quota: token ledgers, adaptive sampling (`aiuse sample`), `aiuse attribute`.
 - [`packaging/install-deps.sh`](packaging/install-deps.sh) — install the optional data-source tools.
 - [`docs/json-contract.md`](docs/json-contract.md) — stable JSON fields and exit codes.
+- [`docs/codexbar-plugin-feasibility.md`](docs/codexbar-plugin-feasibility.md) — why the non-CodexBar half of aiuse does not fit a CodexBar plugin.
 - [`docs/provider-identity.md`](docs/provider-identity.md) — canonical provider id vs config key, and window identity across collectors.
 - [`docs/shared-quota-semantics/`](docs/shared-quota-semantics/) — reusable language-neutral schemas, rules, and fixtures.
 - [Documentation index](docs/index.md) — categorized guides, collector notes, automation, and maintainer material.

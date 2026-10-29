@@ -53,6 +53,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`watch-mode.md`](watch-mode.md) — design for opt-in `aiuse watch` (Issue #14).
 - [`competitive-landscape.md`](competitive-landscape.md) — product positioning and comparable tools.
 - [`next-options.md`](next-options.md) — optional future work and issue map.
+- [`codexbar-plugin-feasibility.md`](codexbar-plugin-feasibility.md) — 2026-10-29 check: aiuse's remaining behavior does not fit a CodexBar plugin.
 - [`consumption-flexibility-plan.md`](consumption-flexibility-plan.md) — original scoring-design background.
 
 ## Maintainers and contributors

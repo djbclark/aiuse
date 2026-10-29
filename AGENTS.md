@@ -141,6 +141,8 @@ Full path-by-path map with "read when" hints:
    before and after any change); `config/config.example.toml` stays in sync
    with `config.py`'s `DEFAULT_CONFIG`.
 7. `docs/<provider>-quota.md` — one note per provider's quota quirks.
+8. `docs/codexbar-plugin-feasibility.md` — why aiuse does not become a
+   CodexBar plugin (checked against CodexBar 0.82.0, 2026-10-29).
 
 ## If you were asked to fix a bug or implement a feature here
 

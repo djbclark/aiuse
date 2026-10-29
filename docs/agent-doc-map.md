@@ -35,6 +35,7 @@ grouping see [`index.md`](index.md).
 - `aiuse-test.sh` (repo root) — Runs `aiuse` from this source tree (unreleased code, any directory, args pass through). **Read when:** Trying a change before `just release`.
 - `docs/competitive-landscape.md` — Peers (CodexBar, quotabot, onWatch, …); ranking vs monitor; post-#2–#9 positioning. **Read when:** Positioning / “what pool next?” / remaining gaps.
 - `docs/next-options.md` — Recommended next actions + effort map for remaining gaps; open issue index. **Read when:** Open-ended “what next?” / whether to chase a competitive gap.
+- `docs/codexbar-plugin-feasibility.md` — Why aiuse stays an aggregator instead of a CodexBar plugin (CodexBar 0.82.0). **Read when:** Asked to fold aiuse into CodexBar or to add a CodexBar plugin for an existing collector.
 - `docs/shared-quota-semantics.md` — Design for language-neutral ranking semantics. **Read when:** Background for the package.
 - `docs/shared-quota-semantics/` — **v0.1 package**: schemas, enums, formulas, golden fixtures (+ pytest dogfood). **Read when:** Contract tests / peer interop.
 - Issues [#2](https://github.com/djbclark/aiuse/issues/2)–[#8](https://github.com/djbclark/aiuse/issues/8) — **Done** (2.1.9): suggest, forecast, status/prompt, serve, History, local note, health_path. **Read when:** Historical competitive-strategy pull; see [`competitive-landscape.md`](competitive-landscape.md).
