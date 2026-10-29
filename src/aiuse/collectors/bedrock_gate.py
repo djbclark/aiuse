@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,7 @@ from .base import CollectorError
 MIN_INTERVAL_SECONDS = 6 * 60 * 60
 _DEFAULT_STORE = "~/.local/state/aiuse/bedrock-spend.json"
 _SCHEMA = 1
+_SPEND_RE = re.compile(r"Spend:\s*\$([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
 
 
 def store_path() -> Path:
@@ -74,9 +76,44 @@ def _write_store(store: dict[str, Any], path: str | Path | None) -> None:
 
 
 def _float(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
-    return float(value)
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _positive_usd(value: float | None) -> float | None:
+    """A Cost Explorer total of $0.00 is not a measurement."""
+    if value is None or value <= 0 or round(value, 2) <= 0:
+        return None
+    return value
+
+
+def positive_bedrock_spend(row: dict[str, Any]) -> float | None:
+    """Month-to-date PAYG spend from ``providerCost.used`` or ``Spend: $…``.
+
+    Bedrock is pay-as-you-go. The figure counts up. Zero, from either field,
+    is the Cost Explorer empty-total failure and is not a balance.
+    """
+    usage_value = row.get("usage")
+    usage = usage_value if isinstance(usage_value, dict) else {}
+    cost_value = usage.get("providerCost")
+    cost = cost_value if isinstance(cost_value, dict) else {}
+    used = _positive_usd(_float(cost.get("used")))
+    if used is not None:
+        return used
+    plan = usage.get("loginMethod")
+    if not isinstance(plan, str):
+        identity = usage.get("identity")
+        identity = identity if isinstance(identity, dict) else {}
+        plan = identity.get("loginMethod")
+    if isinstance(plan, str):
+        match = _SPEND_RE.search(plan)
+        if match:
+            return _positive_usd(_float(match.group(1)))
+    return None
 
 
 def activity_fingerprint(payload: Any) -> str:
@@ -168,15 +205,15 @@ def _spend_from_payload(outcome: Any) -> tuple[float, float | None] | None:
     for row in rows:
         if not isinstance(row, dict) or row.get("error"):
             continue
+        spent = positive_bedrock_spend(row)
+        if spent is None:
+            continue
         usage_value = row.get("usage")
         usage = usage_value if isinstance(usage_value, dict) else {}
         cost_value = usage.get("providerCost")
         cost = cost_value if isinstance(cost_value, dict) else {}
-        used = _float(cost.get("used"))
-        if used is None:
-            continue
         limit = _float(cost.get("limit"))
-        return used, limit if limit is not None and limit > 0 else None
+        return spent, limit if limit is not None and limit > 0 else None
     return None
 
 
@@ -243,6 +280,9 @@ def gated_bedrock_payload(
         held = cached_payload(moment, store)
         if held is not None:
             return held
+        if saved.get("error") == "UNKNOWN":
+            # A $0 Cost Explorer total is not a prepaid balance and not $0 spent.
+            return [_row(0.0, None, read_at=moment, updated_at=moment)]
         if saved.get("error"):
             return CollectorError(str(saved["error"]))
         return CollectorError("Bedrock spend unavailable")
@@ -253,12 +293,18 @@ def gated_bedrock_payload(
         outcome = exc
     spend = None if isinstance(outcome, CollectorError) else _spend_from_payload(outcome)
     if spend is None:
-        message = str(outcome) if isinstance(outcome, CollectorError) else "CodexBar returned no Bedrock spend"
+        if not isinstance(outcome, CollectorError):
+            _remember_failure(saved, now=moment, message="UNKNOWN", path=store)
+            rows = outcome if isinstance(outcome, list) else [outcome]
+            if any(isinstance(row, dict) for row in rows):
+                return _stamp_rows(outcome, read_at=moment, updated_at=moment)
+            return [_row(0.0, None, read_at=moment, updated_at=moment)]
+        message = str(outcome)
         _remember_failure(saved, now=moment, message=message, path=store)
         held = cached_payload(moment, store)
         if held is not None:
             return held
-        return outcome if isinstance(outcome, CollectorError) else CollectorError(message)
+        return outcome
 
     spent, limit = spend
     read_at = moment

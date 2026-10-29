@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from aiuse.chat_format import _render_prepaid_row
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.bedrock_gate import (
     activity_fingerprint,
@@ -20,8 +21,8 @@ from aiuse.collectors.bedrock_gate import (
     refresh_due,
     snapshot_path,
 )
-from aiuse.models import BillingKind
-from aiuse.report import _api_inventory_note
+from aiuse.models import AccountUsage, BillingKind, Snapshot
+from aiuse.report import _api_inventory_note, render_clock_matrix, render_priority_ladder
 from aiuse.timefmt import format_clock
 
 NOW = datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
@@ -262,3 +263,111 @@ def test_explicit_provider_list_does_not_touch_bedrock(monkeypatch):
     accounts = collect_codexbar(providers=["codex"])
     assert [account.provider for account in accounts] == ["codex"]
     assert not any("config" in call or "bedrock" in call for call in calls)
+
+
+def _bedrock_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if "bedrock" in line.lower()]
+
+
+def test_zero_spend_is_unknown_payg_not_a_prepaid_balance():
+    from aiuse.collectors.codexbar import _from_row
+
+    account = _from_row(_live_row(used=0.0))
+    assert account.billing_kind == BillingKind.PAYG_API
+    assert account.plan == "PAYG"
+    assert account.balance_usd is None
+    assert account.usage_credits is None
+    assert account.error == "UNKNOWN"
+    assert _api_inventory_note(account) == "UNKNOWN"
+    assert all("$0" not in note and "prepaid" not in note.lower() for note in account.notes)
+
+    spoken = _live_row(used=0.0)
+    spoken["usage"]["loginMethod"] = "Spend: $16.89 - Claude 14d: 0 tokens - Requests: 0"
+    spoken["usage"]["providerCost"]["used"] = 0
+    recovered = _from_row(spoken)
+    assert recovered.error is None
+    assert recovered.balance_usd is None
+    assert recovered.billing_kind == BillingKind.PAYG_API
+    assert recovered.usage_credits is not None and recovered.usage_credits.used == 16.89
+    assert _api_inventory_note(recovered).startswith("↑ $16.89 PAYG")
+    assert "prepaid" not in _api_inventory_note(recovered).lower()
+
+
+def test_zero_reading_is_not_stored_and_is_not_retried_within_six_hours():
+    calls: list[str] = []
+
+    def live():
+        calls.append("live")
+        return [_live_row(used=0.0)]
+
+    from aiuse.collectors.codexbar import _from_row
+
+    first = gated_bedrock_payload(live, now=NOW)
+    assert calls == ["live"]
+    assert isinstance(first, list)
+    assert load_store().get("spent_usd") is None
+    assert load_store().get("error") == "UNKNOWN"
+    assert _from_row(first[0]).error == "UNKNOWN"
+    assert _from_row(first[0]).billing_kind == BillingKind.PAYG_API
+
+    second = gated_bedrock_payload(live, now=NOW + timedelta(hours=1))
+    assert calls == ["live"]
+    assert isinstance(second, list)
+    assert _from_row(second[0]).error == "UNKNOWN"
+
+
+def test_board_shows_payg_spend_or_unknown_never_prepaid():
+    from aiuse.collectors.codexbar import _from_row
+
+    zero = _from_row(_live_row(used=0.0))
+    spent = _from_row(_live_row())
+    # The shape the previous parser stored: Spend: $0.00 turned into a prepaid balance.
+    legacy_zero = AccountUsage(
+        source="codexbar",
+        provider="bedrock",
+        plan="Spend: $0.00 - Claude 14d: 0 tokens - Requests: 0",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=0.0,
+    )
+    legacy_spent = AccountUsage(
+        source="codexbar",
+        provider="bedrock",
+        plan="Spend: $16.89",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=16.89,
+    )
+    when = datetime(2026, 10, 29, 17, 0, tzinfo=UTC)
+
+    def board(account: AccountUsage) -> str:
+        snapshot = Snapshot(collected_at=when, accounts=[account])
+        return render_clock_matrix([], snapshot=snapshot, color=False, width=160, ai_note=False)
+
+    zero_lines = _bedrock_lines(board(zero))
+    assert zero_lines
+    assert any("UNKNOWN" in line for line in zero_lines)
+    assert all("prepaid" not in line.lower() and "$0" not in line for line in zero_lines)
+
+    spent_lines = _bedrock_lines(board(spent))
+    assert any("↑ $16.89 PAYG" in line for line in spent_lines)
+    assert all("prepaid" not in line.lower() for line in spent_lines)
+
+    legacy_lines = _bedrock_lines(board(legacy_zero))
+    assert any("UNKNOWN" in line for line in legacy_lines)
+    assert all("prepaid" not in line.lower() and "$0" not in line for line in legacy_lines)
+
+    legacy_spent_lines = _bedrock_lines(board(legacy_spent))
+    assert any("↑ $16.89 PAYG" in line for line in legacy_spent_lines)
+    assert all("prepaid" not in line.lower() for line in legacy_spent_lines)
+
+    ladder = render_priority_ladder([], snapshot=Snapshot(collected_at=when, accounts=[legacy_zero]), color=False)
+    ladder_lines = _bedrock_lines(ladder)
+    assert any("UNKNOWN" in line for line in ladder_lines)
+    assert all("prepaid" not in line.lower() and "$0" not in line for line in ladder_lines)
+
+    chat = "\n".join(_render_prepaid_row(legacy_zero, include_account=False))
+    assert "UNKNOWN" in chat
+    assert "prepaid" not in chat.lower()
+    assert "$0" not in chat
+    chat_spent = "\n".join(_render_prepaid_row(spent, include_account=False))
+    assert "↑ $16.89 PAYG" in chat_spent
+    assert "prepaid" not in chat_spent.lower()

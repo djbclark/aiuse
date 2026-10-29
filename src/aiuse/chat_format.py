@@ -33,6 +33,7 @@ from aiuse.models import (
     RoutingContext,
     Snapshot,
     UseOrLoseAlert,
+    canonical_provider,
     classify_window_minutes,
     claude_model_scope,
     parse_dt,
@@ -764,6 +765,11 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
     acct_part = f" · {account.account}" if include_account and account.account else ""
 
     from aiuse.report import _api_inventory_note, dollar_meter
+
+    if canonical_provider(account.provider) == "bedrock":
+        # Pay-as-you-go spend, or UNKNOWN when Cost Explorer reported $0.
+        lines.append(f"{EMOJI_INFO} **{name}{acct_part}**: `{_api_inventory_note(account)}`")
+        return lines
 
     uc = account.usage_credits
     spend_up = (

@@ -61,6 +61,7 @@ from aiuse.models import (
     Snapshot,
     Urgency,
     UseOrLoseAlert,
+    canonical_provider,
     classify_window_minutes,
     claude_model_scope,
     effective_window_minutes,
@@ -571,8 +572,30 @@ def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
     return account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
 
 
+def _positive_usd(amount: float | None) -> float | None:
+    if amount is None or amount <= 0 or round(amount, 2) <= 0:
+        return None
+    return float(amount)
+
+
+def _bedrock_display_spend(account: AccountUsage) -> float | None:
+    """Bedrock's month-to-date PAYG spend. ``None`` means the reading is UNKNOWN.
+
+    A positive ``balance_usd`` on this provider is the old misread of
+    ``Spend: $…`` and still counts up. Zero is not a prepaid wallet.
+    """
+    if canonical_provider(account.provider) != "bedrock":
+        return None
+    uc = account.usage_credits
+    if uc is not None and uc.used is not None:
+        return _positive_usd(float(uc.used))
+    return _positive_usd(account.balance_usd)
+
+
 def _account_is_spend_up_payg(account: AccountUsage) -> bool:
-    """PAYG meter that counts *up* from $0 (Muse), not prepaid remaining."""
+    """PAYG meter that counts *up* from $0 (Muse, Bedrock), not prepaid remaining."""
+    if _bedrock_display_spend(account) is not None:
+        return True
     uc = account.usage_credits
     return (
         account.billing_kind == BillingKind.PAYG_API
@@ -674,6 +697,14 @@ def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
 
 def _api_inventory_note(account: AccountUsage) -> str:
     """Ladder/matrix note for a prepaid countdown or a pay-as-you-go meter."""
+    if canonical_provider(account.provider) == "bedrock":
+        # Pay-as-you-go only. Never a prepaid countdown, and never $0.
+        spent = _bedrock_display_spend(account)
+        if spent is None:
+            return "UNKNOWN"
+        uc = account.usage_credits
+        limit = float(uc.limit) if uc is not None and uc.limit is not None else None
+        return dollar_meter("up", "PAYG", spent, limit) + _bedrock_clock(account)
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits
         assert uc is not None and uc.used is not None
@@ -691,7 +722,7 @@ def _api_inventory_note(account: AccountUsage) -> str:
 
 def _account_prepaid_is_depleted(account: AccountUsage) -> bool:
     """Empty band only for prepaid wallets at/under $0 — not for spend-up PAYG."""
-    if _account_is_spend_up_payg(account):
+    if canonical_provider(account.provider) == "bedrock" or _account_is_spend_up_payg(account):
         return False
     return account.balance_usd is not None and account.balance_usd <= 0.0
 
@@ -1353,6 +1384,28 @@ def render_priority_ladder(
             )
             covered.add(cov)
             continue
+        if canonical_provider(account.provider) == "bedrock" and _bedrock_display_spend(account) is None:
+            cov = _ladder_coverage_key(account.provider, account.account, "")
+            if cov in covered:
+                continue
+            shown = account
+            if not shown.error:
+                shown = AccountUsage(
+                    source=account.source,
+                    provider=account.provider,
+                    account=account.account,
+                    plan="PAYG",
+                    billing_kind=BillingKind.PAYG_API,
+                    error="UNKNOWN",
+                )
+            entries.append(
+                (
+                    _ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
+                    _priority_error_line(shown, s),
+                )
+            )
+            covered.add(cov)
+            continue
         if account.error or not _account_has_usage(account):
             cov = _ladder_coverage_key(account.provider, account.account, "")
             if cov in covered:
@@ -1702,6 +1755,19 @@ def _build_matrix_rows(
                     account=short,
                     account_full=account.account,
                     note=_context_fragment(account),
+                )
+            )
+            continue
+        if canonical_provider(account.provider) == "bedrock" and _bedrock_display_spend(account) is None:
+            rows.append(
+                _MatrixRow(
+                    sort_key=_ladder_sort_key(_BAND_ERROR, (0.0, 0.0, 0.0), account.provider, account.account),
+                    band=_BAND_ERROR,
+                    queue_score=None,
+                    service=service,
+                    account=short,
+                    account_full=account.account,
+                    note=account.error or "UNKNOWN",
                 )
             )
             continue

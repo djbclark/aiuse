@@ -32,7 +32,7 @@ from aiuse.timefmt import format_clock
 
 from .base import CollectorError, CollectorNotInstalled, CollectorTimeout, run_json, which
 from .bedrock_gate import cached_payload as cached_bedrock_payload
-from .bedrock_gate import gated_bedrock_payload
+from .bedrock_gate import gated_bedrock_payload, positive_bedrock_spend
 from .throttle import QueryGate, TimeoutBackoff
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
@@ -1041,7 +1041,9 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             provider=provider,
             account=_display_account(row.get("account")),
             error=err,
-            billing_kind=_billing_kind(provider, None),
+            # Bedrock is pay-as-you-go even when the row is an error (UNKNOWN
+            # stands in for a $0 Cost Explorer total).
+            billing_kind=BillingKind.PAYG_API if provider == "bedrock" else _billing_kind(provider, None),
             raw=row,
         )
 
@@ -1141,36 +1143,39 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     # real limit (period e.g. "Monthly").
     usage_credits: UsageCredits | None = None
     provider_cost = usage.get("providerCost")
-    if isinstance(provider_cost, dict):
+    if provider == "bedrock":
+        # Pay-as-you-go month-to-date spend. It counts up. A $0 total is not
+        # a prepaid wallet and not a measured spend; the row says UNKNOWN.
+        # limit 0 means "no budget", not an empty balance.
+        cost_used = positive_bedrock_spend(row)
+        cost_value = provider_cost if isinstance(provider_cost, dict) else {}
+        cost_limit = _f(cost_value.get("limit")) if isinstance(cost_value, dict) else None
+        limit = cost_limit if cost_limit is not None and cost_limit > 0 else None
+        if cost_used is not None:
+            usage_credits = UsageCredits(
+                used=cost_used,
+                limit=limit,
+                remaining=max(0.0, limit - cost_used) if limit is not None else None,
+                currency=str(cost_value.get("currencyCode") or "USD") if isinstance(cost_value, dict) else "USD",
+                used_percent=(cost_used / limit) * 100.0 if limit else None,
+                resets_at=parse_dt(cost_value.get("resetsAt")) if isinstance(cost_value, dict) and limit else None,
+            )
+            read_at = parse_dt(usage.get("bedrockReadAt"))
+            updated = parse_dt(usage.get("updatedAt"))
+            if read_at is not None and updated is not None and (updated - read_at).total_seconds() > 90:
+                notes.append(
+                    f"Cost Explorer ${cost_used:.2f} read at {format_clock(read_at)}; "
+                    "held until other usage moves and 6h have passed."
+                )
+            else:
+                notes.append(f"Bedrock month-to-date spend: ${cost_used:.2f} PAYG.")
+        else:
+            notes.append("Bedrock month-to-date spend: UNKNOWN.")
+    elif isinstance(provider_cost, dict):
         period = str(provider_cost.get("period") or "")
         zen = _f(provider_cost.get("used"))
         if zen is not None and "zen" in period.lower():
             pass
-        elif provider == "bedrock":
-            # Month-to-date Cost Explorer spend. limit 0 means "no budget",
-            # not an empty wallet: the dollars count up, and there is no plan
-            # window to draw a percent clock from.
-            cost_used = _f(provider_cost.get("used"))
-            cost_limit = _f(provider_cost.get("limit"))
-            limit = cost_limit if cost_limit is not None and cost_limit > 0 else None
-            if cost_used is not None:
-                usage_credits = UsageCredits(
-                    used=cost_used,
-                    limit=limit,
-                    remaining=max(0.0, limit - cost_used) if limit is not None else None,
-                    currency=str(provider_cost.get("currencyCode") or "USD"),
-                    used_percent=(cost_used / limit) * 100.0 if limit else None,
-                    resets_at=parse_dt(provider_cost.get("resetsAt")) if limit else None,
-                )
-                read_at = parse_dt(usage.get("bedrockReadAt"))
-                updated = parse_dt(usage.get("updatedAt"))
-                if read_at is not None and updated is not None and (updated - read_at).total_seconds() > 90:
-                    notes.append(
-                        f"Cost Explorer ${cost_used:.2f} read at {format_clock(read_at)}; "
-                        "held until other usage moves and 6h have passed."
-                    )
-                else:
-                    notes.append(f"Bedrock month-to-date spend: ${cost_used:.2f} PAYG.")
         else:
             cost_used = _f(provider_cost.get("used"))
             cost_limit = _f(provider_cost.get("limit"))
@@ -1245,6 +1250,18 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             if billing == BillingKind.UNKNOWN and not any(window.resets_at is not None for window in windows):
                 billing = BillingKind.PREPAID_BALANCE
 
+    account_error = None
+    if provider == "bedrock":
+        # Nothing above may turn this meter into a prepaid balance. The only
+        # dollars are month-to-date PAYG spend. $0 is UNKNOWN, not $0 left.
+        billing = BillingKind.PAYG_API
+        balance_usd = None
+        credits_remaining = None
+        if isinstance(plan, str) and plan.lower().startswith("spend:"):
+            plan = "PAYG"
+        if usage_credits is None:
+            account_error = "UNKNOWN"
+
     return AccountUsage(
         source="codexbar",
         provider=provider,
@@ -1255,6 +1272,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         balance_usd=balance_usd,
         credits_remaining=credits_remaining,
         usage_credits=usage_credits,
+        error=account_error,
         notes=notes,
         raw=row,
         # CodexBar's own measurement time for this provider row — the honest
