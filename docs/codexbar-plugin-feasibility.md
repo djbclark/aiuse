@@ -118,10 +118,92 @@ Leave the split where it is. CodexBar owns per-provider fetch, menu bar, and
 schema. When a future provider is a plain HTTPS quota API, add it as a
 CodexBar plugin or an upstream provider PR, then let the existing `codexbar`
 collector pick it up. Do not start a plugin whose job is "the rest of
-aiuse."
+aiuse." The same-day follow-ups below do not change this.
 
 Stale notes to fix only if someone is already editing them:
 [`docs/grok-quota.md`](grok-quota.md) (Extra Usage Credits are in CodexBar
 0.82) and the OpenCode Zen paragraph in
 [`docs/source-coverage.md`](source-coverage.md) (the provider reads the
 balance; the optional 250 ms join grace is the remaining race).
+
+## Menu-bar score and provider order
+
+The operator asked for the watch band (`empty` / `slow` / `mid` / `use`) and
+the 0–99 action number on CodexBar's menu-bar icons, with providers reordered
+by that number.
+
+That number is one cross-provider ranking, computed while the watch matrix is
+drawn. `src/aiuse/report.py` owns the band tag and the 0–99 mapping
+(`_BAND_TAG`, `_queue_score`). `src/aiuse/analysis/ranking.py` owns the
+formula. The score is not a field on `aiuse --json`. `suggestion` is only the
+single best burn row, and `alerts[].score` is the older analyzer score
+(`docs/json-contract.md`).
+
+CodexBar's icon text and switcher order are host UI. Merged-icon
+`highestUsage` orders by quota used (`AutomaticQuotaSelection.precedes`:
+exhausted window, then sooner pace ETA, then higher `usedPercent`). Switcher
+order is the saved `providerOrder` (`SettingsStore.setProviderOrder`). Neither
+knows the burn bands. Putting the 0–99 into `usedPercent` would make
+highest-usage mode treat a burn-now row as nearly exhausted.
+
+A plugin cannot compute the rank, because it cannot see other providers, and
+it cannot restyle built-in icons. Adding band and score fields to the plugin
+schema would still be a CodexBar core change, and the sandbox still could not
+fill those fields for built-ins.
+
+If this is built later, keep it a display bridge. aiuse emits each row's band
+and 0–99 on the existing JSON (`aiuse --json` and `aiuse serve`). CodexBar
+gains a sort mode and an icon number that read that document and do not
+replace the quota percent. CodexBar must not shell out to `aiuse` on each
+refresh: aiuse already reads CodexBar, so that is a loop. About a week of
+careful work across both repos, including status-item and dashboard tests.
+Rebuilding the ranker in Swift is the rejected alternative. Pace, plan prices,
+pool collapse, Cursor families, prepaid versus subscription, and the Fable
+weekly exception in `report.py` would drift.
+
+CodexBar JSON already exists and is the parse target: `codexbar usage --format json`,
+`codexbar dashboard` (one JSON document, no server), `GET /usage`, `GET /cost`,
+and `GET /dashboard/v1/snapshot`. `GET /` is HTML that polls the snapshot and
+holds no account data. None of those carry the band or the 0–99.
+`providers[].display.sortKey` is configured order, not a burn rank. Another
+web page is not useful once aiuse's JSON includes the fields.
+
+## Hooks
+
+CodexBar external hooks (`docs/configuration.md`, and the plugin section of
+`docs/plugins.md`) can run one local program, never a shell, on
+`usage_updated`, `quota_low`, `quota_reached`, `quota_reset`,
+`provider_unavailable`, `provider_recovered`, and `refresh_failed`. The
+payload is one provider's windows, at most 4 KiB. A repeat for the same
+provider, account, and window is dropped for 600 seconds, with no queued
+latest. Failures never block refresh. Hooks are not iCloud-synced.
+
+A hook sits outside the plugin sandbox, so it can start `aiuse` or read
+`~/.cache/aiuse`. It has no display API. It cannot paint the 0–99 score or
+change menu-bar order. Rewriting the `providers` array from a hook was
+rejected: the app reloads `config.json` on file watch (`reloadConfig` reason
+`file-watch`), which would clobber drag-reorder, race the app's writer, leave
+the icons showing quota percent, and lag by the 600 second drop.
+
+A loopback plugin (`https-or-loopback-http`, typed origin approval) that
+fetches `aiuse serve` can add one extra summary card. It does not label
+built-in providers, and a score of 99 looks like 99 percent consumed under
+highest-usage mode. Hooks do not shrink the display-bridge work. The only
+optional use is a "CodexBar just refreshed" signal for the aiuse sampler.
+
+## After this note
+
+`origin/main` moved while this branch sat at `fa82092`. `3b09fb6` and
+`e8fd216` (2026-10-29) teach the `codexbar` collector to read CodexBar's
+loopback server when `collectors.codexbar.http_url` is set and `/health` is
+ok, with fallback to the widget snapshot and the CLI. This branch does not
+contain that code. It does not change the plugin verdict. It is another
+reason not to have CodexBar call aiuse on refresh.
+
+At handoff, `~/src/CodexBar` was still `cf7541af9` on
+`fix/antigravity-widget-row-window`, and `git status -sb` reported it 23
+commits behind `djbclark/fix/antigravity-widget-row-window`. The "184 commits
+behind `origin/main`" figure above is the study-time count and was not
+remeasured. `~/src/CodexBar-main` was still detached at `5f93dc306`. Untracked
+`opencode.json` (local graft MCP client config, identical in the primary
+checkout) stays untracked.
