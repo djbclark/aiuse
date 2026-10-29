@@ -68,6 +68,19 @@ finishes), the scheduled tick waits for a sweep, `u`/`a` share a ratified
 2-minute minimum, and a `u` within 90s of an `a` is rolled into that run.
 The sweep is **operator-only**; AI agents must not
 run it without explicit permission (flagged in `--help`, README, AGENTS.md).
+**Watch first frame (2026-10-29):** a forced source-tree frame measured
+before `2d6f501` took 17.5s. Collectors finished together at about 4.9s
+(tokscale about 4.8s; CodexBar HTTP about 2.4s). The tokscale ledger
+overlapped them and finished at about 6.8s; that ledger stays. About 9s of
+that frame was `count_snapshots` JSON-parsing the snapshot directory, twice
+per `analyze_use_or_lose`, and the frame analyzes twice when a credit
+override or the shared rate gate applies. `2d6f501` counts timestamped names
+and stops the auto learning check after two of them. A frame after that
+commit was not re-timed. The inferred floor is the ledger, about 7s. SQLite
+would not move that start: learning still loads about 30 snapshots (0.032s
+in the same profile) and the frozen check loads 24.
+`late_cycle_remaining_summary` and the `--full` history section still parse
+up to 10,000 files.
 **omp (2026-10-15, released in 3.7.0):** Claude cloud-session credits
 (an expiring dollar grant, spent by the omp TUI through the Claude API) are a
 separate provider `omp`, derived from CodexBar's Claude row. The matrix has a
