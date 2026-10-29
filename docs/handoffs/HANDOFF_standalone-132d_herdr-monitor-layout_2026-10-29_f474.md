@@ -7,7 +7,7 @@ chain: [standalone-132d]
 repo: aiuse
 workspace: aiuse
 branch: main
-head_sha: e8fd216b000da8cfbb4b8eec2704990f93620564
+head_sha: 39cb31ae532a7c8c1bc65d8a3682e41ae24c064b
 created_at: 2026-10-29T09:16:00-0400
 writer: grok
 ---
@@ -45,7 +45,7 @@ Dirty files this session did not touch, left unstaged:
 2. `~/ops/site-djbclark`: `bin/fleet-watch`.
 3. `~/src/aiuse`: untracked `opencode.json`.
 
-aiuse `HEAD` is `e8fd216b000da8cfbb4b8eec2704990f93620564` on `main`. This handoff is the only aiuse change from this session.
+aiuse `main` was `2d6f5010020cb094b67a64967bc56a2dbe39e24c` when this file was rebased. The handoff commit is `39cb31ae532a7c8c1bc65d8a3682e41ae24c064b`. This file is the only aiuse change from this session.
 
 Tests: none run for the markdown skill edit. The earlier agents-fallback test on `3e43fb45` was 14 passed (`uv run --extra dev pytest tests/test_autorename_tab_label.py` in the worktree that has since been removed).
 
