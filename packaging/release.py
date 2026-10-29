@@ -519,6 +519,7 @@ def _upgrade_and_test_homebrew(version: str, *, dry_run: bool) -> None:
         installed = (prefix.stdout or "").strip()
         if not installed:
             raise ReleaseError(f"brew did not report an install prefix for {formula}")
+        _run([str(Path(installed) / "bin" / "aiuse"), "watch", "--once", "--no-color", "-q"])
         output = _run([str(Path(installed) / "bin" / "aiuse"), "--version"], capture=True)
         if f"aiuse {version}" not in (output.stdout or ""):
             raise ReleaseError(f"Homebrew install is not aiuse {version}: {(output.stdout or '').strip()}")

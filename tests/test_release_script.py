@@ -178,6 +178,7 @@ def test_upgrade_and_test_homebrew_uses_published_formula(monkeypatch, release, 
         ["git", "merge", "--ff-only", "origin/main"],
         ["brew", "upgrade", "djbclark/aiuse/aiuse"],
         ["brew", "--prefix", "djbclark/aiuse/aiuse"],
+        ["/opt/homebrew/opt/aiuse/bin/aiuse", "watch", "--once", "--no-color", "-q"],
         ["/opt/homebrew/opt/aiuse/bin/aiuse", "--version"],
         ["brew", "test", "djbclark/aiuse/aiuse"],
     ]
