@@ -428,6 +428,7 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "max_cache_age",
         "cache_path",
         "all_accounts",
+        "include_disabled",
         "accounts",
         "ignore_expired_certificates",
         "verify_ssl",
@@ -507,6 +508,7 @@ _POLICY_COLLECTOR_KEYS = (
     "log_dir",
     "max_age_hours",
     "all_accounts",
+    "include_disabled",
     "accounts",
 )
 

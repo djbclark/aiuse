@@ -162,8 +162,12 @@ def test_matrix_data_in_5h_or_week_wins_over_the_notice():
 
 def test_matrix_gate_row_without_clocks_still_shows_the_notice():
     lines = _matrix([_omp(window=False), _codex()])
+    header, row = lines[0], _omp_line(lines)
+    first = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
 
-    assert GATE_TEXT in _omp_line(lines)
+    assert row[first:].startswith("* [")
+    assert GATE_TEXT in row[first:]
+    assert row[first:].rstrip().endswith("]")
 
 
 def test_matrix_gate_text_is_dim_in_color():

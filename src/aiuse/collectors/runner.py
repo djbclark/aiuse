@@ -246,6 +246,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
             max_cache_age = 300.0
         cache_path = (codexbar_cfg or {}).get("cache_path")
         all_accounts = _provider_names((codexbar_cfg or {}).get("all_accounts"))
+        include_disabled = bool((codexbar_cfg or {}).get("include_disabled", False))
         jobs.append(
             (
                 "codexbar",
@@ -262,6 +263,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     max_cache_age=max_cache_age,
                     cache_path=cache_path,
                     all_accounts_providers=all_accounts,
+                    include_disabled=include_disabled,
                 ),
             )
         )

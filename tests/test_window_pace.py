@@ -77,7 +77,21 @@ def test_matrix_pace_fixed_columns_and_footer():
     assert "-50%" not in second
     assert "EXHAUSTED" not in second
     assert "% <-" not in first and "% <-" not in second
-    assert prepaid.index("$5.00") > first.rfind("+50%")
+    # A prepaid row has no clocks: its note starts at the first data column.
+    header = lines[0]
+    first_data = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
+    assert prepaid[first_data:].startswith("* [$5.00 (counts down)]")
+    clocks_only = Snapshot(
+        collected_at=NOW,
+        accounts=[account for account in snap.accounts if account.provider != "jev"],
+    )
+    solo = next(
+        line
+        for line in render_clock_matrix([], snapshot=clocks_only, color=False, width=200).splitlines()
+        if "codex" in line
+    )
+    assert first.index("+50%") == solo.index("+50%")
+    assert first.index("-50%") == solo.index("-50%")
     assert "$" not in first + second
     assert "PACE = the row" in text and "+N%/-N%" in text
     assert "Pace:" not in render_stderr_meta(snap, [], color=False)
@@ -89,11 +103,20 @@ def test_long_nonquota_notes_do_not_shift_fixed_columns():
     snap = snapshot()
     snap.accounts.append(AccountUsage(provider="sipb", source="test", raw={"status": {"up": True, "latency_s": 0.4}}))
     baseline = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    header = baseline.splitlines()[0]
     codex = next(line for line in baseline.splitlines() if "codex" in line)
     sipb = next(line for line in baseline.splitlines() if "mit-sipb" in line)
-    assert sipb.index("unlimited") > codex.rfind("+50%")
-    assert "PACE" in baseline.splitlines()[0]
+    first_data = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
+    assert sipb[first_data:].startswith("* [unlimited")
+    assert "PACE" in header
     assert "last resort" in sipb
+    # The note's length does not move the quota row's clock columns.
+    short_snap = snapshot()
+    short_snap.accounts.append(AccountUsage(provider="sipb", source="test"))
+    short = render_clock_matrix([], snapshot=short_snap, color=False, width=200)
+    short_codex = next(line for line in short.splitlines() if "codex" in line)
+    assert codex.index("+50%") == short_codex.index("+50%")
+    assert codex.index("-50%") == short_codex.index("-50%")
 
 
 def test_missing_reset_has_no_cell_pace():

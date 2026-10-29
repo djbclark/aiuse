@@ -218,7 +218,8 @@ class _MatrixRow:
     # A routing limit (Claude Fable), not a pool to burn. Blank tag and score.
     unranked: bool = False
     # The account requires operator approval before an agent spends it (omp):
-    # the empty 5H and WEEK cells carry _OPERATOR_GATE_TEXT instead.
+    # empty 5H and WEEK cells carry the notice. A row with no clocks folds it
+    # into the situation text instead.
     operator_gate: bool = False
 
 
@@ -2155,13 +2156,18 @@ def render_clock_matrix_parts(
 
         gate = _gate_cell(s, _gate_span_width(w_clocks)) if _row_shows_gate(row) else None
         if row.note is not None:
-            blanks = [" " * size for size in w_clocks]
-            if gate is not None:
-                blanks[_GATE_FIRST : _GATE_FIRST + 2] = [gate]
-            note_tail = blanks + [s.dim(row.note)]
+            # No clock cells: the explanation starts at the first data column
+            # (left-justified ``* [text]``) instead of after a run of blanks.
+            cells = [tag, score, service]
+            if layout.show_account:
+                cells.append(account)
+            prefix = " ".join(cells)
+            stale_suffix = " STALE" if row.stale else ""
+            room = avail - (len(_strip_ansi(prefix)) + 1 + len(stale_suffix))
+            pieces = [prefix, s.dim(_situation_body(row.note, gated=_row_shows_gate(row), width=room))]
             if row.stale:
-                note_tail.append(s.yellow("STALE"))
-            line = _line(tag, score, service, account, scope, f"{'—':>{w_value}}", note_tail)
+                pieces.append(s.yellow("STALE"))
+            line = _clamp_display_width(" ".join(pieces).rstrip(), avail)
             lines.append(s.zebra_bg(line, zebra_width) if row_idx % 2 else line)
             for note in row.sublimit_notes:
                 lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
@@ -2700,6 +2706,41 @@ def _brief_alert_line(alert: UseOrLoseAlert, s: _Style, *, kind: str) -> str:
         f"{s.bold(provider_display_name(alert.provider))} · {who} · "
         f"{alert.window_label}: {alert.remaining_percent:.0f}% left · {verb} {when}"
     )
+
+
+def _situation_body(note: str, *, gated: bool, width: int) -> str:
+    """``* [note]``, with the operator notice inside the brackets when ``gated``.
+
+    A clock row still centers the notice across 5H and WEEK. This path is only
+    for a row that has no clock cells. The short wording is used when the full
+    notice would be cut off.
+    """
+    if not gated:
+        return _situation_text(note, width)
+    full = _situation_text(f"{note} {_OPERATOR_GATE_TEXT}", width)
+    if width <= 0 or _OPERATOR_GATE_TEXT in full:
+        return full
+    short = _situation_text(f"{note} {_OPERATOR_GATE_SHORT}", width)
+    if _OPERATOR_GATE_SHORT in short:
+        return short
+    return full
+
+
+def _situation_text(note: str, width: int) -> str:
+    """Left-justified explanation for a row with no clock cells: ``* [text]``.
+
+    A row that does not fit keeps the closing bracket and puts the ellipsis
+    inside it. ``width <= 0`` means the caller has no budget yet; return the
+    full text and let the line clamp decide.
+    """
+    body = " ".join(note.split())
+    text = f"* [{body}]"
+    if width <= 0 or len(text) <= width:
+        return text
+    overhead = len("* [") + len("…]")
+    if width <= overhead:
+        return "* […]"
+    return f"* [{body[: width - overhead]}…]"
 
 
 def _clamp_display_width(text: str, width: int) -> str:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.models import (
+    PROVIDER_DISPLAY_NAMES,
     AccountUsage,
     BillingKind,
     QuotaWindow,
@@ -294,6 +295,7 @@ def collect_codexbar(
     max_cache_age: float = 300.0,
     cache_path: Path | str | None = None,
     all_accounts_providers: frozenset[str] = frozenset(),
+    include_disabled: bool = False,
 ) -> list[AccountUsage]:
     """Collect CodexBar usage rows.
 
@@ -301,6 +303,12 @@ def collect_codexbar(
     providers queried with ``--all-accounts`` so every CodexBar token account
     becomes its own row. The widget snapshot holds only the active account, so
     with ``use_cache`` those providers skip the snapshot and are queried live.
+
+    ``include_disabled`` (the watch all-providers sweep) also live-queries
+    CodexBar providers that are turned off in CodexBar itself, when aiuse
+    knows that provider and this run did not already collect it. The widget
+    cache only holds CodexBar's enabled set, so a provider disabled in both
+    places (OpenCode Go on this machine) would otherwise never appear.
     """
     provider_list = _normalize_providers(providers)
     # CodexBar has no `omp` provider: its credits ride on the Claude row.
@@ -308,6 +316,21 @@ def collect_codexbar(
     all_accounts = frozenset(canonical_provider(p) for p in all_accounts_providers if p) - (
         skip_providers or frozenset()
     )
+
+    def _with_disabled(found: list[AccountUsage]) -> list[AccountUsage]:
+        if not include_disabled:
+            return found
+        extra, extra_errors = _query_disabled_known_providers(
+            already={canonical_provider(account.provider) for account in found},
+            skip_providers=skip_providers or frozenset(),
+            timeout=timeout,
+            discovery_timeout=discovery_timeout if discovery_timeout is not None else timeout,
+            min_intervals=min_intervals,
+            provider_timeouts=provider_timeouts,
+            timeout_backoff=timeout_backoff,
+        )
+        return found + extra + _query_error_rows(extra_errors)
+
     if use_cache:
         cache_list = [p for p in provider_list if p is None or canonical_provider(p) not in all_accounts]
         cached = (
@@ -334,7 +357,7 @@ def collect_codexbar(
             else:
                 live_list = [p for p in provider_list if p is not None and canonical_provider(p) in all_accounts]
             if not live_list:
-                return cached + omp
+                return _with_disabled(cached + omp)
             live, errors = _collect_live(
                 live_list,
                 timeout=timeout,
@@ -343,7 +366,7 @@ def collect_codexbar(
                 backoff=backoff,
                 all_accounts_providers=all_accounts,
             )
-            return cached + omp + live + _query_error_rows(errors)
+            return _with_disabled(cached + omp + live + _query_error_rows(errors))
 
     if not which("codexbar"):
         raise CollectorNotInstalled("codexbar not found on PATH")
@@ -373,9 +396,9 @@ def collect_codexbar(
         backoff=TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None,
         all_accounts_providers=all_accounts,
     )
-    if not accounts and errors:
+    if not accounts and errors and not include_disabled:
         raise CollectorError("; ".join(errors))
-    return accounts + _query_error_rows(errors)
+    return _with_disabled(accounts + _query_error_rows(errors))
 
 
 def _query_error_rows(errors: list[str]) -> list[AccountUsage]:
@@ -506,6 +529,67 @@ def _parse_enabled_providers(payload: Any) -> list[str | None] | None:
         if isinstance(row, dict) and row.get("enabled") and row.get("provider")
     ]
     return enabled or None
+
+
+def _disabled_known_query_ids(payload: Any, *, already: set[str], skip: frozenset[str]) -> list[str]:
+    """CodexBar CLI ids to live-query: disabled there, known to aiuse, not already collected.
+
+    One id per canonical provider. Prefer the canonical spelling, then the
+    same id with hyphens removed (``opencode-go`` → ``opencodego``). A looser
+    alias (``opencode``, ``gemini``, ``alibabatokenplan``) is not a second query.
+    """
+    if not isinstance(payload, list):
+        return []
+    grouped: dict[str, list[str]] = {}
+    for row in payload:
+        if not isinstance(row, dict) or row.get("enabled") or not row.get("provider"):
+            continue
+        provider_id = str(row["provider"]).strip().lower()
+        canonical = canonical_provider(provider_id)
+        if canonical not in PROVIDER_DISPLAY_NAMES or canonical in already or canonical in skip:
+            continue
+        grouped.setdefault(canonical, []).append(provider_id)
+    chosen: list[str] = []
+    for canonical in sorted(grouped):
+        ids = grouped[canonical]
+        dehyphen = canonical.replace("-", "")
+        if canonical in ids:
+            chosen.append(canonical)
+        elif dehyphen in ids:
+            chosen.append(dehyphen)
+    return chosen
+
+
+def _query_disabled_known_providers(
+    *,
+    already: set[str],
+    skip_providers: frozenset[str],
+    timeout: float,
+    discovery_timeout: float,
+    min_intervals: dict[str, float] | None,
+    provider_timeouts: dict[str, float] | None,
+    timeout_backoff: float | None,
+) -> tuple[list[AccountUsage], list[str]]:
+    """Live-query CodexBar-disabled providers the enabled/cache pass did not return."""
+    try:
+        payload = run_json(
+            [_codexbar_bin(), "config", "providers", "--format", "json"],
+            timeout=discovery_timeout,
+        )
+    except Exception:  # noqa: BLE001 — discovery is best-effort; the enabled rows still stand
+        return [], []
+    provider_ids = _disabled_known_query_ids(payload, already=already, skip=skip_providers)
+    if not provider_ids:
+        return [], []
+    query_ids: list[str | None] = list(provider_ids)
+    return _collect_live(
+        query_ids,
+        timeout=timeout,
+        min_intervals=min_intervals,
+        provider_timeouts=provider_timeouts,
+        backoff=TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None,
+        all_accounts_providers=frozenset(),
+    )
 
 
 def _query_providers(

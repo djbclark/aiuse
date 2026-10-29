@@ -678,6 +678,7 @@ def test_all_providers_config_enables_everything_and_keeps_the_original():
     assert sweep["collectors"]["grok_billing"]["enabled"] is True
     assert sweep["collectors"]["cswap"] is True
     assert sweep["collectors"]["codexbar"]["providers"] == "all"
+    assert sweep["collectors"]["codexbar"]["include_disabled"] is True
     assert sweep["collectors"]["codexbar"]["timeout"] == 30
     # the live config object is never mutated
     assert original["disabled_services"] == {"grok": "burst limit"}

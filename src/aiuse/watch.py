@@ -168,6 +168,11 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
             collectors["codexbar"] = codexbar
         codexbar["enabled"] = True
         codexbar["providers"] = "all"
+        # The widget cache and ``providers = "all"`` only cover CodexBar's
+        # enabled set. Also live-query providers CodexBar itself has disabled
+        # when aiuse knows them, so a service hidden by default (oc-go) still
+        # appears on this screen-only sweep.
+        codexbar["include_disabled"] = True
     return sweep
 
 

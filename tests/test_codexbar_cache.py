@@ -240,6 +240,57 @@ def test_collect_codexbar_with_cache(tmp_path: Path):
     assert accounts[0].provider == "codex"
 
 
+def test_include_disabled_live_queries_opencodego_missing_from_the_cache(tmp_path: Path, monkeypatch):
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    snap = {
+        "generatedAt": now_iso,
+        "entries": [
+            {
+                "provider": "codex",
+                "updatedAt": now_iso,
+                "primary": {
+                    "usedPercent": 10.0,
+                    "windowMinutes": 300,
+                    "resetsAt": "2099-01-01T00:00:00Z",
+                },
+            }
+        ],
+    }
+    file_path = tmp_path / "widget-snapshot.json"
+    file_path.write_text(json.dumps(snap), encoding="utf-8")
+    queried: list[str] = []
+
+    def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
+        if "config" in argv:
+            return [
+                {"provider": "codex", "enabled": True},
+                {"provider": "opencode", "enabled": False},
+                {"provider": "opencodego", "enabled": False},
+                {"provider": "gemini", "enabled": False},
+            ]
+        provider = argv[argv.index("--provider") + 1]
+        queried.append(provider)
+        assert "--source" in argv and argv[argv.index("--source") + 1] == "web"
+        return [
+            {
+                "provider": "opencodego",
+                "usage": {"primary": {"usedPercent": 12, "windowMinutes": 300, "resetsAt": "2099-01-01T00:00:00Z"}},
+            }
+        ]
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
+    accounts = collect_codexbar(
+        cache_path=file_path,
+        use_cache=True,
+        max_cache_age=300.0,
+        providers="all",
+        include_disabled=True,
+        timeout_backoff=None,
+    )
+    assert queried == ["opencodego"]
+    assert {account.provider for account in accounts} == {"codex", "opencodego"}
+
+
 def test_cli_codexbar_live_flag():
     parser = build_parser()
     args = parser.parse_args(["--codexbar-live"])

@@ -7,6 +7,7 @@ from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, Usage
 from aiuse.report import (
     AI_JSON_NOTE,
     _build_matrix_rows,
+    _situation_text,
     render_clock_matrix,
     render_report,
     render_stderr_meta,
@@ -202,14 +203,18 @@ def test_watch_board_quiet_keeps_the_ai_line_and_drops_the_footer():
     assert not any("Collected at" in line for line in board)
 
 
-def test_note_rows_line_up_pace_then_blank_clocks_then_the_note():
+def test_situation_text_keeps_the_closing_bracket_when_it_truncates():
+    assert _situation_text("unlimited · slow — use sparingly / last resort", 28) == "* [unlimited · slow — use …]"
+    assert _situation_text("session expired", 80) == "* [session expired]"
+
+
+def test_situation_note_starts_at_the_first_column():
     now = utcnow()
     broken = AccountUsage(source="tokscale", provider="opencode", error="session expired")
     snap = Snapshot(collected_at=now, accounts=[_omp(now), broken])
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     header = text.splitlines()[0]
     error = next(line for line in text.splitlines() if line.startswith("error"))
-    pace_end = header.index("PACE") + len("PACE")
-    assert error[pace_end - 1] == "—"
-    assert error[pace_end : header.index("OTHER")].strip() == ""
-    assert error[header.index("OTHER") :].startswith("session expired")
+    # No clock cells: the explanation replaces SCOPE onward, left-justified.
+    assert error[header.index("SCOPE") :].startswith("* [session expired]")
+    assert "—" not in error.split("*", 1)[0]

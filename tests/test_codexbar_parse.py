@@ -332,6 +332,49 @@ def test_parse_enabled_providers_returns_none_for_unexpected_shapes():
     assert _parse_enabled_providers([{"provider": "codex", "enabled": False}]) is None
 
 
+def test_disabled_known_query_ids_pick_one_spelling_per_aiuse_provider():
+    from aiuse.collectors.codexbar import _disabled_known_query_ids
+
+    payload = [
+        {"provider": "codex", "enabled": True},
+        {"provider": "opencode", "enabled": False},
+        {"provider": "opencodego", "enabled": False},
+        {"provider": "gemini", "enabled": False},
+        {"provider": "openai", "enabled": False},
+        {"provider": "deepseek", "enabled": False},
+        {"provider": "alibaba", "enabled": False},
+        {"provider": "alibabatokenplan", "enabled": False},
+    ]
+    assert _disabled_known_query_ids(payload, already=set(), skip=frozenset()) == [
+        "alibaba",
+        "deepseek",
+        "opencodego",
+    ]
+    assert _disabled_known_query_ids(payload, already={"opencode-go"}, skip=frozenset({"deepseek"})) == ["alibaba"]
+
+
+def test_providers_all_does_not_query_codexbar_disabled_providers(monkeypatch):
+    usage_providers: list[str] = []
+
+    def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
+        if "config" in argv:
+            return [
+                {"provider": "codex", "enabled": True},
+                {"provider": "opencodego", "enabled": False},
+            ]
+        provider = argv[argv.index("--provider") + 1]
+        usage_providers.append(provider)
+        return [{"provider": provider, "usage": {"primary": {"usedPercent": 1, "windowMinutes": 300}}}]
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.which", lambda _cmd: "/usr/bin/codexbar")
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
+    from aiuse.collectors.codexbar import collect_codexbar
+
+    accounts = collect_codexbar(providers="all", timeout_backoff=None)
+    assert usage_providers == ["codex"]
+    assert {account.provider for account in accounts} == {"codex"}
+
+
 def test_query_providers_merges_results_in_deterministic_order(monkeypatch):
     def fake_run_json(argv, *, timeout=90.0, allow_empty=False):
         provider = argv[argv.index("--provider") + 1]

@@ -211,7 +211,11 @@ The board stays read-only except for three one-shot keys (header shows
    refresh is already collecting (its result is about to land anyway).
 2. **`a` — one-time all-providers sweep.** Collects **every** provider once —
    `[disabled_services]` cleared, every collector re-enabled, CodexBar pointed
-   at `all` of its providers (`all_providers_config()`) — in a second worker
+   at `all` of its providers (`all_providers_config()`). CodexBar's own
+   disabled list is not the enabled widget cache: the sweep also live-queries
+   a CodexBar provider aiuse knows when CodexBar has it turned off, so a
+   service hidden by default (oc-go) still appears here and stays hidden on
+   the normal board. The sweep runs in a second worker
    process beside the regular cycle. The result replaces the board with a
    header marker `ALL PROVIDERS · screen only` until the next regular frame
    lands. **Nothing is recorded**: no snapshot, token ledger, sampler state,
