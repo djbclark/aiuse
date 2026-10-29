@@ -734,13 +734,8 @@ def _api_inventory_note(account: AccountUsage) -> str:
             return "UNKNOWN"
         uc = account.usage_credits
         limit = float(uc.limit) if uc is not None and uc.limit is not None and uc.limit > 0 else None
-        note = dollar_meter("up", "PAYG", spent, limit) + _bedrock_as_of(account)
-        if account.bedrock_billing is not None:
-            credits = float(account.bedrock_billing.get("credits_usd") or 0)
-            net = float(account.bedrock_billing.get("net_usd") or 0)
-            if credits:
-                note += f" · ${abs(credits):.2f} credits, ${net:.2f} net"
-        return note
+        label = "AWS MTD" if (account.bedrock_billing or {}).get("scope") == "aws_account" else "PAYG"
+        return dollar_meter("up", label, spent, limit) + _bedrock_as_of(account)
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits
         assert uc is not None and uc.used is not None

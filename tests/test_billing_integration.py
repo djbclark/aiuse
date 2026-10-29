@@ -10,14 +10,15 @@ def test_native_bedrock_credit_offset_survives_snapshot_roundtrip():
     row = {
         "provider": "bedrock",
         "usage": {
-            "providerCost": {"used": 3.44721901, "currencyCode": "USD"},
+            "providerCost": {"used": 16.88721901, "currencyCode": "USD"},
             "updatedAt": "2026-10-29T20:00:00Z",
             "bedrockReadAt": "2026-10-29T18:00:00Z",
             "bedrockBilling": {
                 "account_id": "123456789012",
                 "billing_month": "2026-10",
-                "gross_usd": 3.44721901,
-                "credits_usd": -3.44721901,
+                "scope": "aws_account",
+                "gross_usd": 16.88721901,
+                "credits_usd": -16.88721901,
                 "net_usd": 0.0,
                 "estimated": True,
             },
@@ -29,9 +30,11 @@ def test_native_bedrock_credit_offset_survives_snapshot_roundtrip():
     assert restored.bedrock_billing == account.bedrock_billing
     assert restored.bedrock_billing["read_at"] == "2026-10-29T18:00:00Z"
     note = _api_inventory_note(restored)
-    assert "$3.45 PAYG" in note
+    assert "$16.89 AWS MTD" in note
     assert _api_inventory_note(account) == note
-    assert "$3.45 credits, $0.00 net" in note
+    assert "credits" not in note
+    assert "net" not in note
+    assert "$3.45" not in note
     assert restored.balance_usd is None
     assert restored.source == "codexbar"  # existing source pins still select this collector
 

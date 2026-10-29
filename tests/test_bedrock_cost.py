@@ -48,17 +48,19 @@ def test_credit_offset_keeps_gross_and_net_distinct(monkeypatch):
                 ("Amazon Bedrock", "Usage", 3.44721901),
                 ("Amazon Bedrock", "Credit", -3.44721901),
                 ("AWS Cost Explorer", "Usage", 13.44),
+                ("AWS Cost Explorer", "Credit", -13.44),
             )
         ],
     )
     row = c.fetch(now=NOW)[0]
     metadata = row["usage"]["bedrockBilling"]
-    assert row["usage"]["providerCost"]["used"] == 3.44721901
+    assert row["usage"]["providerCost"]["used"] == pytest.approx(16.88721901)
     assert metadata == {
+        "scope": "aws_account",
         "account_id": ACCOUNT,
         "billing_month": "2026-10",
-        "gross_usd": 3.44721901,
-        "credits_usd": -3.44721901,
+        "gross_usd": pytest.approx(16.88721901),
+        "credits_usd": pytest.approx(-16.88721901),
         "net_usd": 0,
         "estimated": True,
     }
@@ -264,3 +266,42 @@ def test_timeout_never_switches_to_broker(monkeypatch):
     with pytest.raises(CollectorError, match="TimeoutExpired"):
         c.account_id()
     assert len(calls) == 1
+
+
+def test_bedrock_only_cache_is_not_relabelled_as_account_total(tmp_path):
+    store = tmp_path / "scope.json"
+    gated_bedrock_payload(lambda: _native(3.45), now=NOW, store=store, account_id=ACCOUNT, billing_month="2026-10")
+    held = gated_bedrock_payload(
+        lambda: pytest.fail("scope migration must retain query cap"),
+        now=NOW + timedelta(minutes=1),
+        store=store,
+        account_id=ACCOUNT,
+        billing_month="2026-10",
+        meter_scope="aws_account",
+    )
+    assert isinstance(held, CollectorError)
+
+    def total():
+        rows = _native(16.89)
+        rows[0]["usage"]["bedrockBilling"]["scope"] = "aws_account"
+        return rows
+
+    fresh = gated_bedrock_payload(
+        total,
+        now=NOW + timedelta(hours=6),
+        store=store,
+        account_id=ACCOUNT,
+        billing_month="2026-10",
+        meter_scope="aws_account",
+    )
+    assert fresh[0]["usage"]["providerCost"]["used"] == 16.89
+    cached = gated_bedrock_payload(
+        lambda: pytest.fail("reuse account total"),
+        now=NOW + timedelta(hours=6, minutes=1),
+        store=store,
+        account_id=ACCOUNT,
+        billing_month="2026-10",
+        meter_scope="aws_account",
+    )
+    assert cached[0]["usage"]["bedrockBilling"]["scope"] == "aws_account"
+    assert cached[0]["usage"]["providerCost"]["used"] == 16.89

@@ -554,7 +554,7 @@ def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
     from aiuse.analysis.pool_keys import hidden_pool_rules
 
     payload = {
-        "bedrock_meter_version": 2,
+        "bedrock_meter_version": 3,
         "disabled_services": canonical_disabled_services(cfg),
         "hidden_pools": {f"{p}/{f}" if f else p: r for p, f, r in hidden_pool_rules(cfg)},
         "collectors": collectors,

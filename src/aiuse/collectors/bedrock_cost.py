@@ -1,4 +1,4 @@
-"""Bedrock billed usage before credit adjustments, from AWS Cost Explorer.
+"""AWS account billed usage before credit adjustments, from AWS Cost Explorer.
 
 Cost Explorer's service-only total is net of promotional credits. Grouping
 by record type preserves the spend even when credits cover the entire bill.
@@ -159,8 +159,6 @@ class BedrockCostClient:
                     keys = group.get("Keys") if isinstance(group, dict) else None
                     if not isinstance(keys, list) or len(keys) != 2:
                         raise CollectorError("Bedrock billing group malformed")
-                    if "bedrock" not in str(keys[0]).casefold():
-                        continue
                     try:
                         metric = group["Metrics"]["UnblendedCost"]
                         amount = float(metric["Amount"])
@@ -185,6 +183,7 @@ class BedrockCostClient:
                 token,
             ]
         metadata = {
+            "scope": "aws_account",
             "account_id": account,
             "billing_month": start[:7],
             "gross_usd": gross,
@@ -224,6 +223,7 @@ def native_bedrock_payload(
             snapshot=snapshot,
             account_id=account,
             billing_month=moment.astimezone(UTC).strftime("%Y-%m"),
+            meter_scope="aws_account",
         )
     except CollectorError as exc:
         return exc

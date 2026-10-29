@@ -318,6 +318,7 @@ def _gated_bedrock_payload(
     snapshot: str | Path | None = None,
     account_id: str | None = None,
     billing_month: str | None = None,
+    meter_scope: str | None = None,
 ) -> Any:
     """Return Bedrock rows, calling ``live`` only when :func:`refresh_due` says so."""
     moment = now or datetime.now(timezone.utc)
@@ -326,11 +327,12 @@ def _gated_bedrock_payload(
     saved = load_store(store)
     if account_id is not None:
         same_scope = saved.get("account_id") == account_id and saved.get("billing_month") == billing_month
-        if not same_scope:
+        same_meter = meter_scope is None or (saved.get("billing") or {}).get("scope") == meter_scope
+        if not same_scope or not same_meter:
             # Legacy stores never identified which account/month was measured.
             # Retain their attempt throttle, but never relabel their dollars.
             legacy = "account_id" not in saved
-            fetched = saved.get("fetched_at") if legacy else None
+            fetched = saved.get("fetched_at") if legacy or same_scope else None
             saved = {"schema_version": _SCHEMA, "account_id": account_id, "billing_month": billing_month}
             if fetched:
                 saved["fetched_at"] = fetched
@@ -480,9 +482,16 @@ def gated_bedrock_payload(
     snapshot: str | Path | None = None,
     account_id: str | None = None,
     billing_month: str | None = None,
+    meter_scope: str | None = None,
 ) -> Any:
     """Serialize a shared store's decision and billed read across processes."""
     with _store_lock(store):
         return _gated_bedrock_payload(
-            live, now=now, store=store, snapshot=snapshot, account_id=account_id, billing_month=billing_month
+            live,
+            now=now,
+            store=store,
+            snapshot=snapshot,
+            account_id=account_id,
+            billing_month=billing_month,
+            meter_scope=meter_scope,
         )
