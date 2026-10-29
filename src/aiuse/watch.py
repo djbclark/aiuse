@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import fcntl
 import multiprocessing
 import os
 import re
@@ -315,27 +316,116 @@ def render_watch_board(
     return "\n".join(lines)
 
 
+# A bare Escape still quits. A trackpad swipe arrives as a longer sequence
+# that starts with the same byte (``ESC [ B`` for scroll-down), so the reader
+# has to see the whole sequence before deciding.
+_ESCAPE_WAIT_S = 0.05
+
+
 class StdinKeyReader:
     """Non-blocking stdin key poller. Injectable in tests via ``read``."""
 
     def __init__(self, stream: TextIO | None = None) -> None:
         self.stream = stream if stream is not None else sys.stdin
+        self._pending = b""
+        self._flags: int | None = None
+
+    def _fileno(self) -> int | None:
+        try:
+            return self.stream.fileno()
+        except (AttributeError, OSError, ValueError):
+            return None
+
+    def arm(self) -> None:
+        """Read the tty one byte at a time. ``disarm`` restores the old flags."""
+        fd = self._fileno()
+        if fd is None or self._flags is not None:
+            return
+        self._flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, self._flags | os.O_NONBLOCK)
+
+    def disarm(self) -> None:
+        fd = self._fileno()
+        if fd is None or self._flags is None:
+            return
+        try:
+            fcntl.fcntl(fd, fcntl.F_SETFL, self._flags)
+        except OSError:
+            pass
+        self._flags = None
 
     def read(self) -> str | None:
-        fd = getattr(self.stream, "fileno", lambda: None)()
+        self._pull(0)
+        while True:
+            key, rest = _pop_input_key(self._pending)
+            if key is None:
+                if not self._pending:
+                    return None
+                if not self._pull(_ESCAPE_WAIT_S):
+                    if self._pending == b"\x1b":
+                        self._pending = b""
+                        return "\x1b"
+                    # An unfinished sequence is not a key the operator typed.
+                    self._pending = b""
+                    return None
+                continue
+            self._pending = rest
+            if _is_navigation_sequence(key):
+                continue
+            return key
+
+    def _pull(self, timeout: float) -> bool:
+        fd = self._fileno()
         if fd is None:
-            return None
+            return False
         try:
-            ready, _, _ = select.select([self.stream], [], [], 0)
+            ready, _, _ = select.select([fd], [], [], timeout)
         except (OSError, ValueError):
-            return None
+            return False
         if not ready:
-            return None
+            return False
         try:
-            chunk = self.stream.read(1)
-        except OSError:
-            return None
-        return chunk or None
+            chunk = os.read(fd, 256)
+        except (BlockingIOError, OSError):
+            return False
+        if not chunk:
+            return False
+        self._pending += chunk
+        return True
+
+
+def _pop_input_key(buf: bytes) -> tuple[str | None, bytes]:
+    """Pop one key. ``None`` means ``buf`` is empty or an unfinished Escape sequence."""
+    if not buf:
+        return None, buf
+    if buf[0] != 0x1B:
+        return chr(buf[0]), buf[1:]
+    if len(buf) == 1:
+        return None, buf
+    second = buf[1]
+    if second == ord("O"):
+        if len(buf) < 3:
+            return None, buf
+        return buf[:3].decode("latin-1"), buf[3:]
+    if second != ord("["):
+        return buf[:2].decode("latin-1"), buf[2:]
+    # X10 mouse reporting: ESC [ M plus three payload bytes. ``M`` would
+    # otherwise look like the end of a CSI sequence.
+    if len(buf) >= 3 and buf[2] == ord("M"):
+        if len(buf) < 6:
+            return None, buf
+        return buf[:6].decode("latin-1"), buf[6:]
+    for index in range(2, min(len(buf), 64)):
+        if 0x40 <= buf[index] <= 0x7E:
+            return buf[: index + 1].decode("latin-1"), buf[index + 1 :]
+    if len(buf) >= 64:
+        return buf[:64].decode("latin-1"), buf[64:]
+    return None, buf
+
+
+def _is_navigation_sequence(key: str) -> bool:
+    """Arrow keys, mouse wheels, and other Escape sequences are not commands."""
+    return len(key) > 1 and key.startswith("\x1b")
 
 
 def is_quit_key(key: str | None) -> bool:
@@ -764,6 +854,13 @@ def run_watch(
     except Exception:  # noqa: BLE001 — no cbreak available (tests, pipes, Windows)
         old_attrs = None
 
+    arm = getattr(reader, "arm", None)
+    if callable(arm):
+        try:
+            arm()
+        except OSError:
+            pass
+
     try:
         from rich.live import Live
         from rich.text import Text
@@ -891,6 +988,9 @@ def run_watch(
             process_worker.stop()
         if sweep_worker is not None:
             sweep_worker.stop()
+        disarm = getattr(reader, "disarm", None)
+        if callable(disarm):
+            disarm()
         if fd is not None and old_attrs is not None:
             try:
                 import termios

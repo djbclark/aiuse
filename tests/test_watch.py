@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 from io import StringIO
 
@@ -6,8 +7,10 @@ import pytest
 from aiuse import cli
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, utcnow
 from aiuse.watch import (
+    StdinKeyReader,
     WatchError,
     WatchRuntime,
+    _pop_input_key,
     _watch_color_enabled,
     all_providers_config,
     collect_watch_frame,
@@ -117,6 +120,37 @@ def test_quit_keys():
     assert is_quit_key("\x03")
     assert not is_quit_key("x")
     assert not is_quit_key(None)
+    assert not is_quit_key("\x1b[B")
+    assert not is_quit_key("\x1b[<65;20;4M")
+
+
+def test_pop_input_key_keeps_scroll_sequences_intact():
+    down, rest = _pop_input_key(b"\x1b[B")
+    assert down == "\x1b[B"
+    assert rest == b""
+    wheel, rest = _pop_input_key(b"\x1b[<65;20;4Mq")
+    assert wheel == "\x1b[<65;20;4M"
+    assert rest == b"q"
+    assert _pop_input_key(b"\x1b") == (None, b"\x1b")
+    assert _pop_input_key(b"q") == ("q", b"")
+
+
+def test_trackpad_scroll_is_not_a_quit_key():
+    """A two-finger swipe delivers an Escape sequence, not a bare Escape."""
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(read_fd, False)
+    stream = os.fdopen(read_fd, "rb", buffering=0)
+    reader = StdinKeyReader(stream)
+    try:
+        os.write(write_fd, b"\x1b[B\x1b[<65;20;4M")
+        assert reader.read() is None
+        os.write(write_fd, b"\x1b[Bq")
+        assert reader.read() == "q"
+        os.write(write_fd, b"\x1b")
+        assert reader.read() == "\x1b"
+    finally:
+        os.close(write_fd)
+        stream.close()
 
 
 @pytest.mark.parametrize(
