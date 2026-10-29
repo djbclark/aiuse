@@ -203,6 +203,7 @@ def test_collect_uses_explicit_workspace_override(monkeypatch):
 
 
 def test_secretspec_cookie_is_used_when_no_override(monkeypatch):
+    monkeypatch.setattr("aiuse.collectors.opencode_go.resolve_opencode_api_keys", lambda *_args, **_kwargs: None)
     seen: list[list[str]] = []
 
     def fake_run(command, **_kwargs):

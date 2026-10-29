@@ -65,10 +65,12 @@ aiuse -q --json
 Optionally set `AIUSE_OPENCODE_ZEN_WORKSPACE_ID` to select a workspace;
 otherwise the collector uses the first workspace in the authenticated response.
 The cookie value is never stored in TOML, snapshots, output, or error messages.
-The `OPENCODE_ZEN_API_KEY` available to the OpenCode client is intentionally
-not used: OpenCode documents it for model requests, not a wallet-balance API.
-(An OpenCode API key does authenticate against `/console/api`, but is not an
-org actor: those routes answer `403 Forbidden` for it.)
+Each OpenCode Go API key in sudo-secretspec is a bearer token for
+`GET /console/api/billing/status`. That route returns the key's own workspace
+balance (`balanceMicroCents`, same micro-cent scale as the cookie path), so
+`oc-go-key use` does not have to be followed by a console sign-in. The
+collector emits one `opencode-zen` row per key. The console cookie remains
+the fallback when no API key is configured.
 
 ### Console API migration (2026-09-27)
 

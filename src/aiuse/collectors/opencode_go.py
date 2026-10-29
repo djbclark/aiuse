@@ -1,13 +1,14 @@
-"""Collect OpenCode Go subscription status from the official console API.
+"""Collect OpenCode Go subscription status.
 
-CodexBar's local path sums SQLite costs against hardcoded $12/$30/$60 caps and
-cannot see that a Go plan has lapsed. This collector reuses the same OpenCode
-console session cookie as the Zen collector and reads
-``/console/api/go/status`` for the workspace.
+The primary source is ``GET https://opencode.ai/zen/go/v1/usage`` with each
+OpenCode Go API key as a bearer token, one row per key. ``oc-go-key use``
+switches which of those keys the local servers spend; the console session
+cookie does not follow that switch.
 
-A lapsed plan has no ``access`` object (or the route 404s); an active plan
-returns ``access.meters`` with ``fiveHour`` / ``week`` / ``month`` limits and
-usage in micro-cents — treat those meters as the live allotment.
+When no API key is configured, the collector falls back to the console
+session cookie and ``/console/api/go/status``. A lapsed plan has no
+``access`` object (or the route 404s). Cookie meters are micro-cents; the
+usage API reports percent used directly.
 """
 
 from __future__ import annotations
@@ -17,9 +18,12 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+import requests
+
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow
 
 from .base import CollectorError
+from .opencode_keys import resolve_opencode_api_keys
 from .opencode_zen import (
     _fetch_console,
     _resolve_cookie,
@@ -27,6 +31,10 @@ from .opencode_zen import (
     list_workspaces,
     micro_cents_to_usd,
 )
+
+_USAGE_URL = "https://opencode.ai/zen/go/v1/usage"
+_USAGE_USER_AGENT = "aiuse OpenCode Go collector"
+_USAGE_NOTE = "Live data fetched from the OpenCode Go usage API."
 
 _WORKSPACE_ENV = "AIUSE_OPENCODE_ZEN_WORKSPACE_ID"
 _GO_STATUS_PATH = "/go/status"
@@ -39,6 +47,12 @@ _METER_SPECS: tuple[tuple[str, str, int], ...] = (
     ("week", "OpenCode Go weekly", 10080),
     ("month", "OpenCode Go monthly", 43200),
 )
+# /zen/go/v1/usage names the same three windows differently from /go/status.
+_USAGE_SPECS: tuple[tuple[str, str, int], ...] = (
+    ("rolling", "OpenCode Go 5-hour", 300),
+    ("weekly", "OpenCode Go weekly", 10080),
+    ("monthly", "OpenCode Go monthly", 43200),
+)
 
 
 def collect_opencode_go(
@@ -46,8 +60,11 @@ def collect_opencode_go(
     timeout: float = 45.0,
     environ: Mapping[str, str] | None = None,
 ) -> list[AccountUsage]:
-    """Return native Go status, or nothing until a session cookie is supplied."""
+    """Return one Go row per API key, or the console cookie when no key is set."""
     env = os.environ if environ is None else environ
+    keyed = resolve_opencode_api_keys(env, timeout, allow_vault=environ is None)
+    if keyed is not None:
+        return [_account_for_api_key(label, api_key, timeout) for label, api_key in keyed]
     cookie = _resolve_cookie(env, timeout, allow_secretspec=environ is None)
     if not cookie:
         return []
@@ -79,6 +96,117 @@ def collect_opencode_go(
     if expired:
         return [_expired_account()]
     return []
+
+
+def _account_for_api_key(label: str, api_key: str, timeout: float) -> AccountUsage:
+    """One account from the usage API. The key is not copied onto the row."""
+    try:
+        payload = _fetch_usage(api_key, timeout)
+    except CollectorError as exc:
+        return _keyed_error(label, str(exc))
+    if payload is None:
+        account = _expired_account()
+        account.account = label
+        account.notes = [*account.notes, _USAGE_NOTE]
+        return account
+    account = _account_from_usage(payload, account=label)
+    if account is None:
+        return _keyed_error(label, "OpenCode Go usage response had no windows")
+    return account
+
+
+def _keyed_error(label: str, message: str) -> AccountUsage:
+    return AccountUsage(
+        source="opencode_go",
+        provider="opencode-go",
+        account=label,
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        error=message,
+        notes=[_USAGE_NOTE],
+    )
+
+
+def _fetch_usage(api_key: str, timeout: float) -> Any | None:
+    """Return the usage JSON, or ``None`` when the key has no Go subscription.
+
+    Redirects are not followed: the bearer token must not be sent to another host.
+    """
+    try:
+        response = requests.get(
+            _USAGE_URL,
+            timeout=timeout,
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": _USAGE_USER_AGENT,
+            },
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise CollectorError(f"OpenCode Go usage request failed: {exc.__class__.__name__}") from exc
+    if response.status_code == 401:
+        raise CollectorError("OpenCode Go API key was rejected")
+    if response.status_code == 403:
+        return None
+    if response.status_code >= 300:
+        raise CollectorError(f"OpenCode Go usage returned HTTP {response.status_code}")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise CollectorError("OpenCode Go usage response was not JSON") from exc
+
+
+def _account_from_usage(payload: Any, *, account: str) -> AccountUsage | None:
+    """Build one account from ``/zen/go/v1/usage``. ``None`` when no meter parses."""
+    if not isinstance(payload, dict):
+        return None
+    usage = payload.get("usage")
+    if not isinstance(usage, Mapping):
+        return None
+    windows: list[QuotaWindow] = []
+    notes = [_USAGE_NOTE]
+    if account.startswith("*"):
+        notes.append("Active OpenCode credential (oc-go-key).")
+    for key, label, minutes in _USAGE_SPECS:
+        meter = usage.get(key)
+        if not isinstance(meter, Mapping):
+            continue
+        percent = _usage_percent(meter.get("percent"))
+        if percent is None:
+            continue
+        status = meter.get("status")
+        if isinstance(status, str) and status.strip() and status.strip() != "ok":
+            text = status.strip()
+            if len(text) <= 40 and "oc_" not in text:
+                notes.append(f"{label} is {text}.")
+        windows.append(
+            QuotaWindow(
+                label=label,
+                used_percent=percent,
+                remaining_percent=max(0.0, 100.0 - percent),
+                resets_at=_parse_timestamp(meter.get("resetsAt")),
+                window_minutes=minutes,
+                raw={"meter": key},
+            )
+        )
+    if not windows:
+        return None
+    return AccountUsage(
+        source="opencode_go",
+        provider="opencode-go",
+        account=account,
+        plan="go",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=windows,
+        notes=notes,
+        raw={"subscription_active": True},
+    )
+
+
+def _usage_percent(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return min(100.0, max(0.0, float(value)))
 
 
 def _fetch_go_status(workspace: str, cookie: str, timeout: float) -> Any:

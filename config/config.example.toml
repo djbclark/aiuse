@@ -81,14 +81,18 @@
 # secret = "CLINE_API_KEY_PERSONAL"
 
 [collectors.opencode_zen]
-# Optional direct OpenCode Zen billing source. Enable it by exporting
-# AIUSE_OPENCODE_ZEN_COOKIE with an existing OpenCode console Cookie header.
-# The cookie is never stored in this file.
+# One prepaid row per OpenCode Go API key in sudo-secretspec
+# (OPENCODE_GO_API_KEY_DJBCLARK, OPENCODE_GO_API_KEY_DCLARKUS,
+# OPENCODE_GO_API_KEY_TECHNOEUPHORA, or OPENCODE_GO_API_KEY).
+# With no key, falls back to AIUSE_OPENCODE_ZEN_COOKIE / OPENCODE_ZEN_COOKIE.
+# The key and the cookie are never stored in this file.
 # enabled = true
 
 [collectors.opencode_go]
-# Same console cookie as Zen. Reads the official /go page so a lapsed plan
-# shows empty / subscription expired instead of CodexBar's local leftover %.
+# Same API keys as Zen: GET /zen/go/v1/usage, one row per key. The active
+# oc-go-key credential is marked with a leading *. With no key, falls back
+# to the console cookie and /console/api/go/status so a lapsed plan shows
+# empty / subscription expired instead of CodexBar's local leftover %.
 # enabled = true
 
 [collectors.muse]

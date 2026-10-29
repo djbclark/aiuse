@@ -80,6 +80,7 @@ def test_collect_opencode_zen_reports_a_signed_out_session_with_a_hint(monkeypat
 
 
 def test_collect_opencode_zen_uses_secretspec_cookie_when_no_override(monkeypatch):
+    monkeypatch.setattr("aiuse.collectors.opencode_zen.resolve_opencode_api_keys", lambda *_args, **_kwargs: None)
     seen: list[list[str]] = []
 
     def fake_run(command, **_kwargs):
@@ -115,6 +116,7 @@ def test_collect_opencode_zen_uses_secretspec_cookie_when_no_override(monkeypatc
 
 
 def test_collect_opencode_zen_prefers_user_manifest_when_not_overridden(monkeypatch, tmp_path):
+    monkeypatch.setattr("aiuse.collectors.opencode_zen.resolve_opencode_api_keys", lambda *_args, **_kwargs: None)
     manifest = tmp_path / "secretspec.toml"
     manifest.write_text("[project]\nname = 'aiuse'\n")
     seen: list[list[str]] = []

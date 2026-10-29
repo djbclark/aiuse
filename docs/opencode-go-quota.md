@@ -48,9 +48,14 @@ A lapsed Go plan is a different failure from “monthly spent”:
 `aiuse` treats a Go status **without an `access` object** as **empty**,
 labeled `subscription expired`. After a renew the access period and its meters
 return; that is a live plan, not an expiry. The native `opencode_go` collector
-uses the same OpenCode console session cookie as Zen (`OPENCODE_ZEN_COOKIE` /
-`AIUSE_OPENCODE_ZEN_COOKIE`) and is preferred over CodexBar/OpenUsage local
-estimates for `opencode-go`.
+prefers each OpenCode Go API key in sudo-secretspec (`OPENCODE_GO_API_KEY` and
+`OPENCODE_GO_API_KEY_*`, the same names `oc-go-key use` loads) and reads
+`GET https://opencode.ai/zen/go/v1/usage` with that key as a bearer token.
+One row per key; the active `oc-go-key` credential has a leading `*` on its
+account label. A 403 is a key with no Go subscription (expired / empty). The
+console session cookie (`OPENCODE_ZEN_COOKIE` / `AIUSE_OPENCODE_ZEN_COOKIE`)
+is only the fallback when no API key is configured. Either way the native
+reading is preferred over CodexBar/OpenUsage local estimates for `opencode-go`.
 
 ### Console API migration (2026-09-27)
 
@@ -60,17 +65,20 @@ OpenCode replaced its server-rendered console with a single-page app. The old
 OpenCode collectors (they reported `workspace id missing from authenticated
 response` on every run). The collectors now call the console JSON API:
 
-| Call                              | Purpose                                                 |
-| --------------------------------- | ------------------------------------------------------- |
-| `GET /console/api/orgs`           | Workspace (org) ids for the session                     |
-| `GET /console/api/go/status`      | Go access period + `fiveHour` / `week` / `month` meters |
-| `GET /console/api/billing/status` | Zen `balanceMicroCents` (see `opencode-zen-balance.md`) |
+| Call                              | Purpose                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /zen/go/v1/usage`            | Go `rolling` / `weekly` / `monthly` percent used, one bearer API key             |
+| `GET /console/api/billing/status` | Zen `balanceMicroCents` for that same bearer key (see `opencode-zen-balance.md`) |
+| `GET /console/api/orgs`           | Workspace (org) ids for the cookie fallback                                      |
+| `GET /console/api/go/status`      | Cookie-fallback Go period + `fiveHour` / `week` / `month` meters                 |
 
-The workspace is selected with an `x-org-id` request header, and money is
-reported in **micro-cents** (`100_000_000` micro-cents = `$1`), so a Go plan's
-`$12 / $30 / $60` caps arrive as `1200000000 / 3000000000 / 6000000000`.
-Percent used is derived as `usedMicroCents / limitMicroCents`. Authentication
-is the console session cookie `__Host-console_session`; the older site-wide
+The usage and billing routes take `Authorization: Bearer <api key>` and do not
+need a workspace header. The cookie fallback selects the workspace with an
+`x-org-id` request header. Cookie-path money is **micro-cents**
+(`100_000_000` micro-cents = `$1`), so a Go plan's `$12 / $30 / $60` caps
+arrive as `1200000000 / 3000000000 / 6000000000`. Percent used on that path is
+`usedMicroCents / limitMicroCents`. The usage API already returns percent
+used. Cookie authentication is `__Host-console_session`; the older site-wide
 `auth` cookie alone is rejected with `401 Unauthorized`.
 
 ## Ground truth (official OpenCode usage page)
@@ -115,9 +123,13 @@ same fixed dollar caps CodexBar local uses (`$12` / `$30` / `$60`).
 
 ## What `aiuse` does
 
-1. Native `opencode_go` collector reads `/console/api/go/status` for each
-   workspace with the OpenCode console session cookie. A missing `access`
-   object (or a 404) is empty / expired; `access.meters` is the live allotment.
+1. Native `opencode_go` collector reads `GET /zen/go/v1/usage` once per
+   OpenCode Go API key (bearer token). `rolling` / `weekly` / `monthly`
+   `percent` values are percent used; `resetsAt` is that window's reset.
+   With no key configured it falls back to `/console/api/go/status` for each
+   workspace on the console session cookie. A missing `access` object (or a
+   404, or a 403 from the usage API) is empty / expired; `access.meters` is
+   the live allotment on the cookie path.
 2. For CodexBar provider `opencodego`, query with `--source web` only, with a
    60s subprocess budget (CodexBar's own `--web-timeout` default). A 45s kill
    cut that fetch off, and the old auto fallback is not a cache read.

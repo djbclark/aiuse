@@ -1,18 +1,20 @@
 """Collect the OpenCode Zen prepaid balance directly from OpenCode billing.
 
 This is intentionally separate from CodexBar: it provides a second client
-implementation of the same server-authoritative billing source.  OpenCode does
-not expose this balance through its API key, so the collector first asks the
-project's SecretSpec manifest for ``OPENCODE_ZEN_COOKIE``. An explicit
+implementation of the same server-authoritative billing source. Each OpenCode
+Go API key (the same keys ``oc-go-key`` switches) is sent as a bearer token to
+``GET /console/api/billing/status``. When no key is configured, the collector
+asks the project's SecretSpec manifest for ``OPENCODE_ZEN_COOKIE``. An explicit
 ``AIUSE_OPENCODE_ZEN_COOKIE`` environment variable overrides that lookup. The
 value is never written to config, snapshots, logs, or error messages.
 
 OpenCode replaced its server-rendered console with a single-page app in
 September 2026: the old ``/_server?id=<build-hash>`` server functions now
-redirect to ``/console/login``. Both OpenCode collectors therefore speak the
-console's JSON API under ``/console/api``, selecting a workspace with the
-``x-org-id`` header. Authentication is the browser session cookie
-(``__Host-console_session``).
+redirect to ``/console/login``. The cookie fallback speaks the console's JSON
+API under ``/console/api``, selecting a workspace with the ``x-org-id``
+header and the browser session cookie (``__Host-console_session``). A bearer
+API key reads ``/console/api/billing/status`` for its own workspace and does
+not need that header.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from aiuse.models import AccountUsage, BillingKind
 from aiuse.secretspec import resolve_manifest_path
 
 from .base import CollectorError
+from .opencode_keys import resolve_opencode_api_keys
 
 _BASE_URL = "https://opencode.ai"
 _CONSOLE_URL = f"{_BASE_URL}/console"
@@ -57,8 +60,11 @@ def collect_opencode_zen(
     timeout: float = 45.0,
     environ: Mapping[str, str] | None = None,
 ) -> list[AccountUsage]:
-    """Return the native Zen source, or nothing until a session cookie is supplied."""
+    """Return one Zen balance per API key, or the console cookie when no key is set."""
     env = os.environ if environ is None else environ
+    keyed = resolve_opencode_api_keys(env, timeout, allow_vault=environ is None)
+    if keyed is not None:
+        return [_zen_account_for_api_key(label, api_key, timeout) for label, api_key in keyed]
     cookie = _resolve_cookie(env, timeout, allow_secretspec=environ is None)
     if not cookie:
         return []
@@ -96,6 +102,70 @@ def collect_opencode_zen(
     if errors:
         raise CollectorError(errors[0])
     raise CollectorError("OpenCode Zen billing: authenticated response did not include a balance")
+
+
+def _zen_account_for_api_key(label: str, api_key: str, timeout: float) -> AccountUsage:
+    """One prepaid row. The key is not copied onto the account."""
+    try:
+        status = _fetch_billing_with_key(api_key, timeout)
+    except CollectorError as exc:
+        return AccountUsage(
+            source="opencode_zen",
+            provider="opencode-zen",
+            account=label,
+            billing_kind=BillingKind.PREPAID_BALANCE,
+            error=str(exc),
+            notes=["Live data fetched directly from OpenCode Zen billing."],
+        )
+    balance = _balance_usd(status)
+    if balance is None:
+        return AccountUsage(
+            source="opencode_zen",
+            provider="opencode-zen",
+            account=label,
+            billing_kind=BillingKind.PREPAID_BALANCE,
+            error="OpenCode Zen billing response did not include a balance",
+            notes=["Live data fetched directly from OpenCode Zen billing."],
+        )
+    notes = ["Live data fetched directly from OpenCode Zen billing."]
+    if label.startswith("*"):
+        notes.append("Active OpenCode credential (oc-go-key).")
+    return AccountUsage(
+        source="opencode_zen",
+        provider="opencode-zen",
+        account=label,
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        balance_usd=balance,
+        notes=notes,
+        raw=_billing_raw(status),
+    )
+
+
+def _fetch_billing_with_key(api_key: str, timeout: float) -> Any:
+    """GET billing status with a bearer key. Redirects are not followed."""
+    try:
+        response = requests.get(
+            f"{_CONSOLE_API}{_BILLING_STATUS_PATH}",
+            timeout=timeout,
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "Origin": _BASE_URL,
+                "Referer": f"{_CONSOLE_URL}/",
+                "User-Agent": _USER_AGENT,
+            },
+            allow_redirects=False,
+        )
+    except requests.RequestException as exc:
+        raise CollectorError(f"OpenCode Zen billing request failed: {exc.__class__.__name__}") from exc
+    if response.status_code in (401, 403):
+        raise CollectorError("OpenCode Zen billing rejected this API key")
+    if response.status_code >= 300:
+        raise CollectorError(f"OpenCode Zen billing returned HTTP {response.status_code}")
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise CollectorError("OpenCode Zen billing response was not JSON") from exc
 
 
 def _resolve_cookie(env: Mapping[str, str], timeout: float, *, allow_secretspec: bool = True) -> str | None:
