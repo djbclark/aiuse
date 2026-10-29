@@ -1,58 +1,74 @@
 # AWS Bedrock month-to-date spend
 
 Related: [`provider-identity.md`](provider-identity.md) ·
-[`json-contract.md`](json-contract.md) · CodexBar `docs/bedrock.md`
+[`json-contract.md`](json-contract.md) · [`omp-cloud-credits.md`](omp-cloud-credits.md)
 
-Bedrock is not its own aiuse collector. CodexBar already reads AWS Cost
-Explorer (`ce:GetCostAndUsage`, $0.01 per call) and, when a budget is set,
-CloudWatch. aiuse asks CodexBar for that row and does not sign AWS requests
-itself.
+Bedrock is pay-as-you-go. Its displayed spend counts **up** and measures AWS
+usage charges before promotional credits. It is not a prepaid balance.
 
-## When a new reading is worth $0.01
+## Billing source and authentication
 
-The operator does not use Bedrock alone, so other quota moving is the signal
-that a fresh Bedrock number might have moved too.
+The Bedrock path uses the installed AWS CLI and Cost Explorer, grouping
+`UnblendedCost` by `SERVICE` and `RECORD_TYPE`. Service-only totals can hide
+usage: $3.44721901 of Amazon Bedrock usage and -$3.44721901 of credit net to
+zero. Earlier releases misclassified that zero as unavailable. The repaired
+row shows `↑ $3.45 PAYG`, its measurement time, and the credit/net breakdown.
+AWS may mark current-month totals estimated.
 
-1. The first collect with no stored reading always asks once, so the
-   month-to-date figure appears.
-2. A reading younger than six hours is held, even if other usage moved.
-3. After six hours, a new call happens only when some other provider's
-   balance, grant, or window percent differs from the fingerprint saved with
-   the last success. Bedrock's own row is not part of that fingerprint.
-4. A failed call is stamped too. The next try waits out the six hours. If an
-   older spend is on disk, the board keeps showing it.
+Existing AWS environment credentials or `AWS_PROFILE` are supported. On a
+managed machine, `sudo-secretspec run` can inject the existing
+`CODEXBAR_AWS_ACCESS_KEY_ID` and `CODEXBAR_AWS_SECRET_ACCESS_KEY` into the AWS
+child process. Secret values are never command arguments or output. aiuse
+does not install the CLI, authenticate a profile, or access a keychain.
+The source reports `aws-cost-explorer`; CodexBar remains the discovery path.
 
-The hold is `~/.local/state/aiuse/bedrock-spend.json` (override
-`AIUSE_BEDROCK_STORE`). It stores the dollars and the two timestamps, not the
-CodexBar payload. The activity fingerprint is the previous
-`~/.cache/aiuse/snapshots/latest.json` (override `AIUSE_BEDROCK_SNAPSHOT`).
+## Query limits and cached readings
 
-CodexBar listing Bedrock as disabled does not skip it: the normal collect and
-the watch `a` sweep both go through this gate. `[disabled_services]`
-`bedrock` does skip it, and then the held number is not shown. The `a` sweep
-does not waive the $0.01 cap.
+Cost Explorer charges per request. The first reading is fetched; subsequent
+reads wait at least six hours and require another provider's usage to move.
+Pagination can require more than one billed page. Failed attempts are held
+too. A process lock prevents concurrent collectors from issuing duplicate reads.
+`[disabled_services] bedrock` skips collection. Neither watch nor its
+operator-only all-provider sweep waives the gate.
 
-## What the number means
+The store is `~/.local/state/aiuse/bedrock-spend.json`, overridable with
+`AIUSE_BEDROCK_STORE`. `AIUSE_BEDROCK_SNAPSHOT` overrides the activity snapshot.
+The store is scoped to the STS-verified AWS account and UTC billing month;
+previous-month or different-account dollars cannot be presented as current.
+Legacy unscoped readings are not proof of a current total. An old attempt's
+six-hour hold is retained during migration.
 
-The figure counts **up**. It is pay-as-you-go, not a prepaid wallet and not
-part of a monthly plan grant. With no budget the row is
-`↑ $16.89 PAYG (as of 10/29 9:02pm)`. With a budget it is
-`↑ $16.89 of $50.00 PAYG (as of 10/29 9:02pm)`. The stamp is when Cost
-Explorer measured the figure. The board keeps that cached number, because
-the total lags, and does not put the row on the error band.
+## Output contract
 
-A zero or missing total is not shown as `$0.00`. Cost Explorer returns 0 when
-the figure is unavailable, so that reading is `UNKNOWN` on the n/a band, not
-the error band and not a pay-as-you-go amount. The attempt is still cached,
-and a later zero does not replace a cached positive spend. The row stays
-`payg_api`. It is never a prepaid balance.
+`billing_kind` remains `payg_api`; `usage_credits.used` is gross usage,
+`balance_usd` remains null. `spent_usd` remains the expiring grant field, not
+this meter. Additive `bedrock_billing` metadata carries `account_id`,
+`billing_month`, `gross_usd`, signed `credits_usd`, `net_usd`, `estimated`,
+and `read_at` (the original measurement time, retained on cached snapshots).
+The metadata survives snapshot serialization and watch reuse.
 
-JSON: `billing_kind` `payg_api`, `usage_credits.used` is a positive spend,
-`usage_credits.limit` is the budget or null, `balance_usd` is null. When the
-total is missing or zero, `usage_credits` is omitted and `error` is
-`UNKNOWN`. `spent_usd` is not this meter. That field is the expiring plan
-grant (`omp`). Watch reuses a snapshot younger than its interval, including
-on a first run, and shows that same `UNKNOWN` note. A different error string
-stays on the error band.
+A successful native billing response can establish genuine zero usage.
+Unavailable data is not converted into zero. Legacy CodexBar zeros without
+billing provenance remain `UNKNOWN`. No percent clock or burn score applies.
 
-There is no percent clock. A 0–100 bar would look like a plan window.
+## Review of the preceding 48 hours (2026-10-29)
+
+The bounded static review covered substantive changes through `c39c082`,
+including billing/display, watch input, HTTP transport, OpenCode keys,
+history counting and SIPB configuration. It did not independently validate
+every release artifact or every documentation claim.
+
+The omp duration fix only covered CodexBar's parser, while overrides replaced
+that window and omitted its duration. The Bedrock releases alternated zero
+and UNKNOWN presentation without inspecting credit offsets. A live STS check
+confirmed the billing credentials and console refer to the same AWS account;
+the earlier wrong-account explanation was unsupported.
+
+Concurrent CodexBar HTTP workers also lost their ContextVar client; explicit
+per-worker context copying corrects that transport regression. Separately,
+SIPB's `ignore_expired_certificates` option sets `verify=False`, disabling
+issuer and hostname verification too, including on bearer-authenticated
+requests. That security finding is tracked separately as bead `aiuse-hap`.
+
+The upstream billing defect is reported in
+[CodexBar issue 4846](https://github.com/steipete/CodexBar/issues/4846).

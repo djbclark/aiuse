@@ -609,7 +609,10 @@ def _bedrock_stored_unknown(account: AccountUsage) -> bool:
 
 def _bedrock_display_spend(account: AccountUsage) -> float | None:
     """Positive Bedrock spend. Zero and a missing total are not a known figure."""
-    return _positive_usd(_bedrock_meter_usd(account))
+    measured = _bedrock_meter_usd(account)
+    if account.bedrock_billing is not None and measured is not None and measured >= 0:
+        return measured
+    return _positive_usd(measured)
 
 
 def _account_is_spend_up_payg(account: AccountUsage) -> bool:
@@ -686,7 +689,9 @@ def _bedrock_as_of(account: AccountUsage) -> str:
         return ""
     raw = account.raw if isinstance(account.raw, dict) else {}
     usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
-    stamp = usage.get("bedrockReadAt") if isinstance(usage, dict) else None
+    stamp = (account.bedrock_billing or {}).get("read_at")
+    if stamp is None:
+        stamp = usage.get("bedrockReadAt") if isinstance(usage, dict) else None
     when = parse_dt(stamp) if isinstance(stamp, str) else None
     if when is None:
         when = account.collected_at
@@ -729,7 +734,13 @@ def _api_inventory_note(account: AccountUsage) -> str:
             return "UNKNOWN"
         uc = account.usage_credits
         limit = float(uc.limit) if uc is not None and uc.limit is not None and uc.limit > 0 else None
-        return dollar_meter("up", "PAYG", spent, limit) + _bedrock_as_of(account)
+        note = dollar_meter("up", "PAYG", spent, limit) + _bedrock_as_of(account)
+        if account.bedrock_billing is not None:
+            credits = float(account.bedrock_billing.get("credits_usd") or 0)
+            net = float(account.bedrock_billing.get("net_usd") or 0)
+            if credits:
+                note += f" · ${abs(credits):.2f} credits, ${net:.2f} net"
+        return note
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits
         assert uc is not None and uc.used is not None

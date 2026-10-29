@@ -17,10 +17,12 @@ import hashlib
 import json
 import os
 import re
+import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from aiuse.analysis.history import snapshot_dir
 from aiuse.models import canonical_provider, parse_dt
@@ -276,7 +278,15 @@ def cached_payload(now: datetime | None = None, path: str | Path | None = None) 
         return None
     limit = _float(store.get("limit_usd"))
     moment = now or datetime.now(timezone.utc)
-    return [_row(spent, limit if limit is not None and limit > 0 else None, read_at=read_at, updated_at=moment)]
+    if store.get("account_id") is not None and store.get("billing_month") != moment.astimezone(timezone.utc).strftime(
+        "%Y-%m"
+    ):
+        return None
+    row = _row(spent, limit if limit is not None and limit > 0 else None, read_at=read_at, updated_at=moment)
+    if isinstance(store.get("billing"), dict):
+        row["usage"]["bedrockBilling"] = store["billing"]
+        row["source"] = "aws-cost-explorer"
+    return [row]
 
 
 def _remember_failure(store: dict[str, Any], *, now: datetime, message: str, path: str | Path | None) -> None:
@@ -300,24 +310,37 @@ def _keep_positive_cache(
     return cached_payload(now, path)
 
 
-def gated_bedrock_payload(
+def _gated_bedrock_payload(
     live: Callable[[], Any],
     *,
     now: datetime | None = None,
     store: str | Path | None = None,
     snapshot: str | Path | None = None,
+    account_id: str | None = None,
+    billing_month: str | None = None,
 ) -> Any:
     """Return Bedrock rows, calling ``live`` only when :func:`refresh_due` says so."""
     moment = now or datetime.now(timezone.utc)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     saved = load_store(store)
+    if account_id is not None:
+        same_scope = saved.get("account_id") == account_id and saved.get("billing_month") == billing_month
+        if not same_scope:
+            # Legacy stores never identified which account/month was measured.
+            # Retain their attempt throttle, but never relabel their dollars.
+            legacy = "account_id" not in saved
+            fetched = saved.get("fetched_at") if legacy else None
+            saved = {"schema_version": _SCHEMA, "account_id": account_id, "billing_month": billing_month}
+            if fetched:
+                saved["fetched_at"] = fetched
+            _write_store(saved, store)
     fingerprint = load_activity_fingerprint(snapshot)
     if not refresh_due(saved, fingerprint, moment):
         held = cached_payload(moment, store)
         if held is not None:
             return held
-        if saved.get("error") == "UNKNOWN":
+        if account_id is None and saved.get("error") == "UNKNOWN":
             # An older build stored a $0 total as UNKNOWN and did not keep the
             # dollars. Show that zero from the attempt time; do not call again.
             fetched = parse_dt(saved.get("fetched_at") if isinstance(saved.get("fetched_at"), str) else None)
@@ -355,7 +378,13 @@ def gated_bedrock_payload(
         return outcome
 
     spent, limit = spend
-    if _positive_usd(spent) is None:
+    native = any(
+        isinstance(row, dict)
+        and isinstance(row.get("usage"), dict)
+        and isinstance(row["usage"].get("bedrockBilling"), dict)
+        for row in (outcome if isinstance(outcome, list) else [outcome])
+    )
+    if _positive_usd(spent) is None and not native:
         held = _keep_positive_cache(saved, now=moment, path=store)
         if held is not None:
             return held
@@ -379,7 +408,81 @@ def gated_bedrock_payload(
             "fingerprint": fingerprint,
             "spent_usd": spent,
             "limit_usd": limit,
+            **({"account_id": account_id, "billing_month": billing_month} if account_id else {}),
+            **(
+                {
+                    "billing": next(
+                        row["usage"]["bedrockBilling"]
+                        for row in rows
+                        if isinstance(row, dict)
+                        and isinstance(row.get("usage"), dict)
+                        and isinstance(row["usage"].get("bedrockBilling"), dict)
+                    )
+                }
+                if native
+                else {}
+            ),
         },
         store,
     )
     return _stamp_rows(outcome, read_at=read_at, updated_at=moment)
+
+
+@contextmanager
+def _store_lock(path: str | Path | None) -> Iterator[None]:
+    target = Path(path) if path is not None else store_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.with_suffix(target.suffix + ".lock").open("a+") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            windows_lock: Any = msvcrt
+
+            lock.write("0")
+            lock.flush()
+
+            def acquire() -> None:
+                lock.seek(0)
+                windows_lock.locking(lock.fileno(), windows_lock.LK_NBLCK, 1)
+
+            def release() -> None:
+                lock.seek(0)
+                windows_lock.locking(lock.fileno(), windows_lock.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            def acquire() -> None:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            def release() -> None:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+        deadline = time.monotonic() + 45
+        while True:
+            try:
+                acquire()
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise CollectorError("Bedrock billing cache is busy") from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            release()
+
+
+def gated_bedrock_payload(
+    live: Callable[[], Any],
+    *,
+    now: datetime | None = None,
+    store: str | Path | None = None,
+    snapshot: str | Path | None = None,
+    account_id: str | None = None,
+    billing_month: str | None = None,
+) -> Any:
+    """Serialize a shared store's decision and billed read across processes."""
+    with _store_lock(store):
+        return _gated_bedrock_payload(
+            live, now=now, store=store, snapshot=snapshot, account_id=account_id, billing_month=billing_month
+        )

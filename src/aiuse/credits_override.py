@@ -14,6 +14,8 @@ Which reading wins, per account:
    ``superseded_reading``;
    (When the snapshot has no omp row at all, the override alone makes the row.)
 3. a newer CodexBar reading that shows the same or less wins (credits were spent since);
+   An active Admin API grant with a known start and expiry also wins against a differently
+   sized or dated CodexBar promotion; observing that promotion does not establish a new grant.
    An override is ignored once its ``expires_at`` has passed (a lapsed grant) and once it is
    older than 7 days (``OVERRIDE_MAX_AGE``; refresh it with ``aiuse set-credits``). An Admin
    API reading (``source: admin-api``) gets the 24 h limit CodexBar readings get; the
@@ -39,7 +41,7 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
-from aiuse.models import AccountUsage, Snapshot, parse_dt, provider_cli_binary, utcnow
+from aiuse.models import WINDOW_NOMINAL_MINUTES, AccountUsage, Snapshot, parse_dt, provider_cli_binary, utcnow
 
 OVERRIDE_PROVIDER = "omp"
 OVERRIDE_SOURCE = "operator-override"
@@ -285,6 +287,33 @@ def _credits_window(total: float, remaining: float, expires: str | None) -> dict
     }
 
 
+def _normalize_credits_clock(account: dict[str, Any], override: Mapping[str, Any]) -> None:
+    """Restore the grant clock even when watch reuses an already-overridden row.
+
+    Only borrow a grant start from a reading with the same capacity and expiry.
+    A new grant must never inherit the previous grant's elapsed time.
+    """
+    for window in account.get("windows") or []:
+        if not isinstance(window, dict) or window.get("window_id") != "claude-cloud-credits":
+            continue
+        expiry = _timestamp(window.get("resets_at") or account.get("expires_at"))
+        capacity = _number(window.get("refill_capacity"))
+        override_total = _number(override.get("total_usd"))
+        granted = None
+        if (
+            capacity is not None
+            and override_total is not None
+            and abs(capacity - override_total) <= _EPSILON
+            and expiry is not None
+            and expiry == _timestamp(override.get("expires_at"))
+        ):
+            granted = _timestamp(override.get("granted_at"))
+        if granted is not None and expiry is not None and granted < expiry:
+            window["window_minutes"] = max(1, round((expiry - granted).total_seconds() / 60))
+        elif not window.get("window_minutes"):
+            window["window_minutes"] = WINDOW_NOMINAL_MINUTES["monthly"]
+
+
 def _omp_hidden(snap: Mapping[str, Any]) -> bool:
     """omp is hidden or disabled by the operator: the override must not bring it back."""
     for section in ("hidden_pools", "disabled_services"):
@@ -361,6 +390,7 @@ def apply_credit_overrides(
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != OVERRIDE_PROVIDER:
             continue
+        _normalize_credits_clock(account, override)
         if account.get("source") in (OVERRIDE_SOURCE, "admin-api"):
             continue
         if ignored:
@@ -381,6 +411,18 @@ def apply_credit_overrides(
         # "A grant never grows" only proves a fresher CodexBar reading wrong when both measure
         # the same grant: the override's total must match CodexBar's. Otherwise fresher wins.
         same_grant = isinstance(capacity, (int, float)) and abs(float(capacity) - float(ov_total or 0)) <= _EPSILON
+        granted = _timestamp(override.get("granted_at"))
+        override_expiry = _timestamp(override.get("expires_at"))
+        # An active grant anchored by Admin API metadata is not replaced by a
+        # differently sized or differently dated CodexBar promotion. A new
+        # CodexBar observation alone does not establish that this grant changed.
+        incompatible_active_admin_grant = (
+            override.get("source") == "admin-api"
+            and granted is not None
+            and override_expiry is not None
+            and granted <= now < override_expiry
+            and (not same_grant or _grant_expiry(account) != override_expiry)
+        )
         if (
             ov_at is not None
             and isinstance(ov_remaining, (int, float))
@@ -389,6 +431,7 @@ def apply_credit_overrides(
                 reading_at is None
                 or ov_at >= reading_at
                 or balance is None
+                or incompatible_active_admin_grant
                 or (same_grant and float(balance) > float(ov_remaining) + _EPSILON)
             )
         ):
@@ -410,6 +453,7 @@ def apply_credit_overrides(
                 error=None,
             )
             account["billing_kind"] = "subscription_window"
+            _normalize_credits_clock(account, override)
             note = f"{'Admin API reading' if override.get('source') == 'admin-api' else 'Operator override (aiuse set-credits)'} at {ov_at.isoformat()}"
             if override.get("note"):
                 note += f": {override['note']}"

@@ -75,7 +75,7 @@ def test_summary_line_and_semantics_describe_the_grant():
 
     (line,) = [line for line in snap["summary_lines"] if line.startswith("omp")]
     assert line.startswith(
-        "omp claude: credits: ok (<1% used / 100% left, ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan"
+        "omp claude: credits: ok (<1% used / 100% left, pace -99%, ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan"
     )
     assert ", expires " in line
     (window,) = snap["accounts"][0]["windows"]

@@ -229,6 +229,13 @@ def test_discovery_asks_bedrock_once_even_when_codexbar_lists_it_disabled(monkey
     monkeypatch.setattr("aiuse.collectors.codexbar.which", lambda _cmd: "/usr/bin/codexbar")
     monkeypatch.setattr("aiuse.collectors.codexbar.run_json", fake_run_json)
 
+    def native(*, timeout):
+        return gated_bedrock_payload(
+            lambda: fake_run_json(["codexbar", "usage", "--provider", "bedrock"], timeout=timeout)
+        )
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.native_bedrock_payload", native)
+
     from aiuse.collectors.codexbar import collect_codexbar
 
     def bedrock_calls() -> list[list[str]]:

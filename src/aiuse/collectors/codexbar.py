@@ -6,7 +6,7 @@ import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -31,8 +31,8 @@ from aiuse.models import coerce_int as _int_or_none
 from aiuse.timefmt import format_as_of, format_clock
 
 from .base import CollectorError, CollectorNotInstalled, CollectorTimeout, run_json, which
-from .bedrock_gate import cached_payload as cached_bedrock_payload
-from .bedrock_gate import gated_bedrock_payload, measured_bedrock_spend
+from .bedrock_cost import native_bedrock_payload
+from .bedrock_gate import measured_bedrock_spend
 from .throttle import QueryGate, TimeoutBackoff
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
@@ -440,6 +440,8 @@ def _collect_codexbar_impl(
             else None
         )
         if cached is not None:
+            cached_bedrock = any(a.provider == "bedrock" for a in cached)
+            cached = [a for a in cached if a.provider != "bedrock"]
             backoff = TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None
             omp = _live_omp_supplement(
                 cached,
@@ -452,6 +454,9 @@ def _collect_codexbar_impl(
                 live_list: list[str | None] = sorted(all_accounts)
             else:
                 live_list = [p for p in provider_list if p is not None and canonical_provider(p) in all_accounts]
+            if (cached_bedrock or "bedrock" in provider_list) and "bedrock" not in (skip_providers or ()):
+                live_list.append("bedrock")
+            live_list = list(dict.fromkeys(live_list))
             if not live_list:
                 return finish(cached + omp, queried=False)
             live, errors = _collect_live(
@@ -803,9 +808,6 @@ def _query_providers(
             if backoff is not None:
                 reason = backoff.blocked(provider)
                 if reason is not None:
-                    held = cached_bedrock_payload()
-                    if held is not None:
-                        return held
                     return CollectorError(reason)
             outcome = _query_provider(provider_arg, timeout=provider_timeout, **extra)
             if backoff is not None:
@@ -836,7 +838,7 @@ def _query_providers(
 
     workers = min(len(deduped), _MAX_CONCURRENT_PROVIDER_QUERIES)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(run, provider_arg): provider_arg for provider_arg in deduped}
+        futures = {pool.submit(copy_context().run, run, provider_arg): provider_arg for provider_arg in deduped}
         outcomes: dict[str | None, Any] = {}
         for future in as_completed(futures):
             outcomes[futures[future]] = future.result()
@@ -871,13 +873,10 @@ def _query_provider(
     *,
     timeout: float = 45.0,
     all_accounts: bool = False,
-    bedrock_live: bool = False,
 ) -> Any:
     provider = provider_arg.lower() if provider_arg is not None else None
-    if provider == "bedrock" and not bedrock_live:
-        return gated_bedrock_payload(
-            lambda: _query_provider(provider_arg, timeout=timeout, all_accounts=all_accounts, bedrock_live=True)
-        )
+    if provider == "bedrock":
+        return native_bedrock_payload(timeout=timeout)
     # Omitting --provider asks CodexBar for its enabled-provider list and data
     # (only reached as a fallback if _discover_enabled_providers() fails).
     argv = [_codexbar_bin(), "usage", "--format", "json"]
@@ -1145,14 +1144,13 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     usage_credits: UsageCredits | None = None
     provider_cost = usage.get("providerCost")
     if provider == "bedrock":
-        # Pay-as-you-go month-to-date spend. It counts up. Zero is not a known
-        # total: Cost Explorer returns 0 when the figure is missing. limit 0
-        # means "no budget".
+        # Native billing separates usage from credits and proves a measured
+        # zero. Legacy CodexBar zeros lack that provenance. limit 0 is no budget.
         cost_used = measured_bedrock_spend(row)
         cost_value = provider_cost if isinstance(provider_cost, dict) else {}
         cost_limit = _f(cost_value.get("limit")) if isinstance(cost_value, dict) else None
         limit = cost_limit if cost_limit is not None and cost_limit > 0 else None
-        if cost_used is not None and cost_used > 0:
+        if cost_used is not None and (cost_used > 0 or isinstance(usage.get("bedrockBilling"), dict)):
             usage_credits = UsageCredits(
                 used=cost_used,
                 limit=limit,
@@ -1251,10 +1249,14 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             if billing == BillingKind.UNKNOWN and not any(window.resets_at is not None for window in windows):
                 billing = BillingKind.PREPAID_BALANCE
 
+    bedrock_billing = None
+    if provider == "bedrock" and isinstance(usage.get("bedrockBilling"), dict):
+        bedrock_billing = dict(usage["bedrockBilling"])
+        bedrock_billing["read_at"] = usage.get("bedrockReadAt") or usage.get("updatedAt")
     account_error = None
     if provider == "bedrock":
         # Nothing above may turn this meter into a prepaid balance. The only
-        # dollars are a positive month-to-date PAYG spend. Zero stays UNKNOWN.
+        # dollars are month-to-date PAYG spend. Native billing can prove zero.
         billing = BillingKind.PAYG_API
         balance_usd = None
         credits_remaining = None
@@ -1264,7 +1266,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             account_error = "UNKNOWN"
 
     return AccountUsage(
-        source="codexbar",
+        source="aws-cost-explorer" if provider == "bedrock" and usage.get("bedrockBilling") else "codexbar",
         provider=provider,
         account=str(account) if account else None,
         plan=str(plan) if plan else None,
@@ -1273,6 +1275,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         balance_usd=balance_usd,
         credits_remaining=credits_remaining,
         usage_credits=usage_credits,
+        bedrock_billing=bedrock_billing,
         error=account_error,
         notes=notes,
         raw=row,

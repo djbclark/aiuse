@@ -242,3 +242,12 @@ Upstream request to carry the row in the snapshot:
 
 `[disabled_services] omp = "<reason>"` drops the row everywhere and skips the
 live CodexBar query above.
+
+## Override pace correction (2026-10-29)
+
+The effective Admin API/operator reading must carry the grant clock too.
+Pace uses a matching `granted_at` through expiry when available, otherwise a
+nominal month. Cached override rows are normalized before their early-return
+path; fixing only CodexBar's parser leaves watch pace absent. For $80 left
+of $200, granted October 13 and expiring November 4 at noon UTC, the
+October 29 20:08 UTC reading is approximately -20% pace.
