@@ -5,7 +5,7 @@ not `AGENTS.md`, when the status line changes; keep the one-paragraph summary in
 `AGENTS.md` in step.
 
 **Status (2026-10-29):** Package/CLI **`aiuse`**. Fix-plan Steps **1–34**
-done. Product issues **#1–#9** done. Packaging **3.10.4**
+done. Product issues **#1–#9** done. Packaging **3.10.5**
 (PyPI/GitHub/Homebrew); **3.0.0** was the first advertised release.
 **3.9.4:** the omp rate gate is a durable fail-closed latch — evidence
 persisted in `~/.local/state/aiuse/rate-gates.json` (exhausted shared

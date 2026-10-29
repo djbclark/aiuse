@@ -580,10 +580,12 @@ def _positive_usd(amount: float | None) -> float | None:
 
 
 def _bedrock_meter_usd(account: AccountUsage) -> float | None:
-    """Bedrock's month-to-date PAYG spend, including a measured ``$0.00``.
+    """Bedrock's month-to-date PAYG figure, or ``None`` when the row names none.
 
-    ``None`` means the row names no total. A ``balance_usd`` on this provider
-    is the old misread of ``Spend: $…`` and still counts up.
+    A ``balance_usd`` on this provider is the old misread of ``Spend: $…``.
+    Zero is not a known total: Cost Explorer reports ``0`` when the data is
+    missing, so callers that display the figure must use
+    :func:`_bedrock_display_spend`.
     """
     if canonical_provider(account.provider) != "bedrock":
         return None
@@ -596,18 +598,17 @@ def _bedrock_meter_usd(account: AccountUsage) -> float | None:
 
 
 def _bedrock_stored_unknown(account: AccountUsage) -> bool:
-    """An older snapshot stored this Bedrock total as ``error="UNKNOWN"``.
+    """This Bedrock row has no known total, including the old ``error="UNKNOWN"``.
 
-    A measured ``$0.00`` used that string and omitted ``usage_credits``. Watch
-    reuses the snapshot and does not recollect, so the board reads the sentinel
-    as ``↑ $0.00 PAYG`` instead of the error band. Any other error string stays
-    an error.
+    Watch reuses that snapshot and does not recollect. The board keeps the
+    sentinel on the n/a band as ``UNKNOWN``. A different error string stays an
+    error. A positive total is shown as pay-as-you-go instead.
     """
     return canonical_provider(account.provider) == "bedrock" and (account.error or "").strip() == "UNKNOWN"
 
 
 def _bedrock_display_spend(account: AccountUsage) -> float | None:
-    """Positive Bedrock spend. A measured zero stays on :func:`_bedrock_meter_usd`."""
+    """Positive Bedrock spend. Zero and a missing total are not a known figure."""
     return _positive_usd(_bedrock_meter_usd(account))
 
 
@@ -721,11 +722,9 @@ def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
 def _api_inventory_note(account: AccountUsage) -> str:
     """Ladder/matrix note for a prepaid countdown or a pay-as-you-go meter."""
     if canonical_provider(account.provider) == "bedrock":
-        # Pay-as-you-go only. A measured $0 is that total, with the reading time.
-        # The UNKNOWN error string is that same $0 on a snapshot watch reused.
-        spent = _bedrock_meter_usd(account)
-        if spent is None and _bedrock_stored_unknown(account):
-            spent = 0.0
+        # Pay-as-you-go only. Zero is not shown: a missing Cost Explorer total
+        # comes back as 0, which would claim an empty month.
+        spent = _bedrock_display_spend(account)
         if spent is None:
             return "UNKNOWN"
         uc = account.usage_credits

@@ -276,14 +276,14 @@ def test_zero_spend_is_payg_not_a_prepaid_balance():
     assert account.billing_kind == BillingKind.PAYG_API
     assert account.plan == "PAYG"
     assert account.balance_usd is None
-    assert account.error is None
-    assert account.usage_credits is not None and account.usage_credits.used == 0.0
+    assert account.error == "UNKNOWN"
+    assert account.usage_credits is None
     note = _api_inventory_note(account)
-    assert account.collected_at is not None
-    assert note == "↑ $0.00 PAYG " + format_as_of(account.collected_at)
-    assert "UNKNOWN" not in note
+    assert note == "UNKNOWN"
+    assert "$0.00" not in note
     assert "prepaid" not in note.lower()
-    assert all("prepaid" not in item.lower() and "UNKNOWN" not in item for item in account.notes)
+    assert any("UNKNOWN" in item for item in account.notes)
+    assert all("prepaid" not in item.lower() and "$0.00" not in item for item in account.notes)
 
     spoken = _live_row(used=0.0)
     spoken["usage"]["loginMethod"] = "Spend: $16.89 - Claude 14d: 0 tokens - Requests: 0"
@@ -312,16 +312,18 @@ def test_zero_reading_is_cached_and_not_retried_within_six_hours():
     assert load_store().get("spent_usd") == 0.0
     assert "error" not in load_store()
     parsed = _from_row(first[0])
-    assert parsed.error is None
+    assert parsed.error == "UNKNOWN"
     assert parsed.billing_kind == BillingKind.PAYG_API
-    assert parsed.usage_credits is not None and parsed.usage_credits.used == 0.0
+    assert parsed.usage_credits is None
+    assert _api_inventory_note(parsed) == "UNKNOWN"
 
     second = gated_bedrock_payload(live, now=NOW + timedelta(hours=1))
     assert calls == ["live"]
     assert isinstance(second, list)
     again = _from_row(second[0])
-    assert again.error is None
-    assert again.usage_credits is not None and again.usage_credits.used == 0.0
+    assert again.error == "UNKNOWN"
+    assert again.usage_credits is None
+    assert _api_inventory_note(again) == "UNKNOWN"
 
 
 def test_later_zero_keeps_the_cached_positive_spend():
@@ -399,19 +401,18 @@ def test_board_shows_payg_spend_never_an_error_or_prepaid():
         snapshot = Snapshot(collected_at=when, accounts=[account])
         return render_clock_matrix([], snapshot=snapshot, color=False, width=160, ai_note=False)
 
-    assert zero.collected_at is not None
     zero_lines = _bedrock_lines(board(zero))
     assert zero_lines
-    assert any("↑ $0.00 PAYG " + format_as_of(zero.collected_at) in line for line in zero_lines)
-    assert all("??" not in line and "UNKNOWN" not in line and "prepaid" not in line.lower() for line in zero_lines)
+    assert any("[UNKNOWN]" in line for line in zero_lines)
+    assert all("??" not in line and "$0.00" not in line and "prepaid" not in line.lower() for line in zero_lines)
 
     spent_lines = _bedrock_lines(board(spent))
     assert any("↑ $16.89 PAYG" in line for line in spent_lines)
     assert all("prepaid" not in line.lower() and "??" not in line for line in spent_lines)
 
     legacy_lines = _bedrock_lines(board(legacy_zero))
-    assert any("↑ $0.00 PAYG" in line for line in legacy_lines)
-    assert all("??" not in line and "UNKNOWN" not in line and "prepaid" not in line.lower() for line in legacy_lines)
+    assert any("[UNKNOWN]" in line for line in legacy_lines)
+    assert all("??" not in line and "$0.00" not in line and "prepaid" not in line.lower() for line in legacy_lines)
 
     legacy_spent_lines = _bedrock_lines(board(legacy_spent))
     assert any("↑ $16.89 PAYG" in line for line in legacy_spent_lines)
@@ -419,12 +420,12 @@ def test_board_shows_payg_spend_never_an_error_or_prepaid():
 
     ladder = render_priority_ladder([], snapshot=Snapshot(collected_at=when, accounts=[legacy_zero]), color=False)
     ladder_lines = _bedrock_lines(ladder)
-    assert any("↑ $0.00 PAYG" in line for line in ladder_lines)
-    assert all("UNKNOWN" not in line and "prepaid" not in line.lower() for line in ladder_lines)
+    assert any("UNKNOWN" in line for line in ladder_lines)
+    assert all("??" not in line and "$0.00" not in line and "prepaid" not in line.lower() for line in ladder_lines)
 
     chat = "\n".join(_render_prepaid_row(legacy_zero, include_account=False))
-    assert "↑ $0.00 PAYG" in chat
-    assert "UNKNOWN" not in chat
+    assert "UNKNOWN" in chat
+    assert "$0.00" not in chat
     assert "prepaid" not in chat.lower()
     chat_spent = "\n".join(_render_prepaid_row(spent, include_account=False))
     assert "↑ $16.89 PAYG" in chat_spent

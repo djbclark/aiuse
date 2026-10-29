@@ -41,18 +41,18 @@ part of a monthly plan grant. With no budget the row is
 Explorer measured the figure. The board keeps that cached number, because
 the total lags, and does not put the row on the error band.
 
-A measured `$0.00` is cached the same way and shown as
-`↑ $0.00 PAYG (as of 10/29 9:02pm)`. A later `$0.00` does not replace a
-cached positive spend. The row stays `payg_api`. It is never a prepaid
-balance.
+A zero or missing total is not shown as `$0.00`. Cost Explorer returns 0 when
+the figure is unavailable, so that reading is `UNKNOWN` on the n/a band, not
+the error band and not a pay-as-you-go amount. The attempt is still cached,
+and a later zero does not replace a cached positive spend. The row stays
+`payg_api`. It is never a prepaid balance.
 
-JSON: `billing_kind` `payg_api`, `usage_credits.used` is the spend (0 when
-the total was `$0.00`), `usage_credits.limit` is the budget or null,
-`balance_usd` is null. `spent_usd` is not this meter. That field is the
-expiring plan grant (`omp`). An older snapshot stored a measured `$0.00` as
-`error` `UNKNOWN` and omitted `usage_credits`. Watch reuses that file when
-it is younger than the interval and does not recollect, so the board reads
-the sentinel as `↑ $0.00 PAYG (as of …)` on the n/a band. A different error
-string stays on the error band.
+JSON: `billing_kind` `payg_api`, `usage_credits.used` is a positive spend,
+`usage_credits.limit` is the budget or null, `balance_usd` is null. When the
+total is missing or zero, `usage_credits` is omitted and `error` is
+`UNKNOWN`. `spent_usd` is not this meter. That field is the expiring plan
+grant (`omp`). Watch reuses a snapshot younger than its interval, including
+on a first run, and shows that same `UNKNOWN` note. A different error string
+stays on the error band.
 
 There is no percent clock. A 0–100 bar would look like a plan window.

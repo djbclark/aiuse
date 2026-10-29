@@ -585,10 +585,9 @@ def test_watch_frame_reuses_a_fresh_snapshot_instead_of_collecting(monkeypatch):
     assert alerts == []
 
 
-def test_watch_reuses_unknown_bedrock_snapshot_as_payg_zero(monkeypatch):
-    """A first watch paints a reused UNKNOWN Bedrock row as $0 PAYG and does not collect."""
+def test_watch_reuses_unknown_bedrock_snapshot_as_unknown(monkeypatch):
+    """A first watch paints a reused unknown Bedrock row as UNKNOWN and does not collect."""
     from aiuse.analysis.history import save_snapshot
-    from aiuse.timefmt import format_as_of
 
     when = utcnow()
     snap = Snapshot(
@@ -614,8 +613,8 @@ def test_watch_reuses_unknown_bedrock_snapshot_as_payg_zero(monkeypatch):
     board = render_watch_board(snapshot, alerts, color=False, quiet=True, now=when)
     bedrock = [line for line in board.splitlines() if "bedrock" in line]
     codex = [line for line in board.splitlines() if "codex" in line]
-    assert bedrock and all("??" not in line and "[UNKNOWN]" not in line for line in bedrock)
-    assert any("↑ $0.00 PAYG " + format_as_of(when) in line for line in bedrock)
+    assert bedrock and all("??" not in line and "$0.00" not in line for line in bedrock)
+    assert any("[UNKNOWN]" in line for line in bedrock)
     assert any("??" in line and "signed out" in line for line in codex)
 
 

@@ -1145,13 +1145,14 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     usage_credits: UsageCredits | None = None
     provider_cost = usage.get("providerCost")
     if provider == "bedrock":
-        # Pay-as-you-go month-to-date spend. It counts up. A measured $0 is
-        # that total, not a prepaid wallet. limit 0 means "no budget".
+        # Pay-as-you-go month-to-date spend. It counts up. Zero is not a known
+        # total: Cost Explorer returns 0 when the figure is missing. limit 0
+        # means "no budget".
         cost_used = measured_bedrock_spend(row)
         cost_value = provider_cost if isinstance(provider_cost, dict) else {}
         cost_limit = _f(cost_value.get("limit")) if isinstance(cost_value, dict) else None
         limit = cost_limit if cost_limit is not None and cost_limit > 0 else None
-        if cost_used is not None:
+        if cost_used is not None and cost_used > 0:
             usage_credits = UsageCredits(
                 used=cost_used,
                 limit=limit,
@@ -1253,7 +1254,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     account_error = None
     if provider == "bedrock":
         # Nothing above may turn this meter into a prepaid balance. The only
-        # dollars are month-to-date PAYG spend, including a measured $0.
+        # dollars are a positive month-to-date PAYG spend. Zero stays UNKNOWN.
         billing = BillingKind.PAYG_API
         balance_usd = None
         credits_remaining = None

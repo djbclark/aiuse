@@ -767,7 +767,7 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
     from aiuse.report import _api_inventory_note, dollar_meter
 
     if canonical_provider(account.provider) == "bedrock":
-        # Pay-as-you-go spend. A measured $0, including the old UNKNOWN snapshot, is that total.
+        # Pay-as-you-go spend. A missing or zero total is UNKNOWN, not $0.
         lines.append(f"{EMOJI_INFO} **{name}{acct_part}**: `{_api_inventory_note(account)}`")
         return lines
 
