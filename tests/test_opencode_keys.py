@@ -1,8 +1,11 @@
 import subprocess
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
 
+from aiuse.collectors import opencode_keys
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.opencode_go import collect_opencode_go
 from aiuse.collectors.opencode_keys import (
@@ -170,3 +173,107 @@ def test_zen_reports_a_vault_timeout_and_does_not_use_the_cookie(monkeypatch):
 
     with pytest.raises(CollectorError, match="sudo-secretspec timed out reading OPENCODE_GO_API_KEY_DJBCLARK"):
         collect_opencode_zen()
+
+
+def _wait_for_joiner() -> None:
+    """Block until the second collector is waiting on the in-flight vault read."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        flight = opencode_keys._vault_flight
+        if flight is not None and flight.waiters >= 1:
+            return
+        time.sleep(0.01)
+    raise AssertionError("second collector did not join the vault read")
+
+
+def _patch_vault(monkeypatch, fake_run):
+    monkeypatch.setattr(
+        "aiuse.collectors.opencode_keys.shutil.which",
+        lambda name: "/usr/local/bin/sudo-secretspec" if name == "sudo-secretspec" else None,
+    )
+    monkeypatch.setattr("aiuse.collectors.opencode_keys.subprocess.run", fake_run)
+
+
+def test_parallel_vault_reads_share_one_lookup_and_do_not_stick(monkeypatch):
+    """Go and Zen start together. One vault read serves both, then the next collect reads again."""
+    calls: list[str] = []
+    lock = threading.Lock()
+    first_entered = threading.Event()
+    release = threading.Event()
+
+    def fake_run(command, **_kwargs):
+        name = command[2]
+        with lock:
+            calls.append(name)
+            first = len(calls) == 1
+        if first:
+            first_entered.set()
+            assert release.wait(3)
+        value = _KEYS.get(name, "")
+        return SimpleNamespace(returncode=0 if value else 1, stdout=f"{value}\n")
+
+    _patch_vault(monkeypatch, fake_run)
+
+    results: list[list[tuple[str, str]] | None] = []
+
+    def read() -> None:
+        results.append(resolve_opencode_api_keys({}, 5, allow_vault=True))
+
+    threads = [threading.Thread(target=read), threading.Thread(target=read)]
+    for thread in threads:
+        thread.start()
+    assert first_entered.wait(2)
+    _wait_for_joiner()
+    release.set()
+    for thread in threads:
+        thread.join(3)
+        assert not thread.is_alive()
+
+    assert len(calls) == 4
+    assert results[0] == results[1]
+    assert [label for label, _key in results[0] or []] == ["djbclark", "dclark", "t-e"]
+
+    again = resolve_opencode_api_keys({}, 5, allow_vault=True)
+    assert len(calls) == 8
+    assert again == results[0]
+
+
+def test_parallel_vault_timeout_is_a_single_read(monkeypatch):
+    calls: list[str] = []
+    lock = threading.Lock()
+    first_entered = threading.Event()
+    release = threading.Event()
+
+    def fake_run(command, **_kwargs):
+        with lock:
+            calls.append(command[2])
+            first = len(calls) == 1
+        if first:
+            first_entered.set()
+            assert release.wait(3)
+        raise subprocess.TimeoutExpired(command, 5)
+
+    _patch_vault(monkeypatch, fake_run)
+    errors: list[str] = []
+
+    def read() -> None:
+        try:
+            resolve_opencode_api_keys({}, 5, allow_vault=True)
+        except CollectorError as exc:
+            errors.append(str(exc))
+
+    threads = [threading.Thread(target=read), threading.Thread(target=read)]
+    for thread in threads:
+        thread.start()
+    assert first_entered.wait(2)
+    _wait_for_joiner()
+    release.set()
+    for thread in threads:
+        thread.join(3)
+        assert not thread.is_alive()
+
+    assert calls == ["OPENCODE_GO_API_KEY_DJBCLARK"]
+    assert errors == [
+        "sudo-secretspec timed out reading OPENCODE_GO_API_KEY_DJBCLARK",
+        "sudo-secretspec timed out reading OPENCODE_GO_API_KEY_DJBCLARK",
+    ]

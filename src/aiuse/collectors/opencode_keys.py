@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import threading
 from collections.abc import Mapping
 
 from .base import CollectorError
@@ -35,6 +36,20 @@ _VAULT_KEY_NAMES = (
 )
 _SECRETSPEC_TIMEOUT = 5.0
 _ACTIVE_LINE = re.compile(r"^\*\s+opencode\s+'([^']+)'")
+# Go and Zen collect in parallel. Each would otherwise start the same
+# sudo-secretspec get, and the two clients stall each other past this cap.
+_vault_lock = threading.Lock()
+_vault_flight: _VaultFlight | None = None
+
+
+class _VaultFlight:
+    """One in-flight vault read shared by every collector that arrives during it."""
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.waiters = 0
+        self.result: list[tuple[str, str]] | None = None
+        self.error: BaseException | None = None
 
 
 def resolve_opencode_api_keys(
@@ -95,6 +110,42 @@ def _keys_from_mapping(env: Mapping[str, str]) -> list[tuple[str, str]]:
 
 
 def _keys_from_vault(timeout: float) -> list[tuple[str, str]]:
+    """Read the vault once. A second caller waits for that read and reuses it.
+
+    The flight is cleared when the read finishes, so a later collect reads
+    again. Nothing is cached across calls.
+    """
+    global _vault_flight
+    with _vault_lock:
+        flight = _vault_flight
+        if flight is None:
+            flight = _VaultFlight()
+            _vault_flight = flight
+            leader = True
+        else:
+            flight.waiters += 1
+            leader = False
+    if not leader:
+        wait_s = _SECRETSPEC_TIMEOUT * len(_VAULT_KEY_NAMES) + 1.0
+        if not flight.done.wait(wait_s):
+            raise CollectorError(f"sudo-secretspec timed out reading {_VAULT_KEY_NAMES[0]}")
+        if flight.error is not None:
+            raise flight.error
+        return list(flight.result or [])
+    try:
+        flight.result = _read_vault_keys(timeout)
+        return list(flight.result)
+    except BaseException as exc:
+        flight.error = exc
+        raise
+    finally:
+        flight.done.set()
+        with _vault_lock:
+            if _vault_flight is flight:
+                _vault_flight = None
+
+
+def _read_vault_keys(timeout: float) -> list[tuple[str, str]]:
     executable = shutil.which("sudo-secretspec")
     if executable is None:
         return []
