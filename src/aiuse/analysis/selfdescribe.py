@@ -905,18 +905,20 @@ def _reset_fragment(resets_at: Any, verb: str = "resets") -> str:
 
 
 def _grant_fragment(pool: Mapping[str, Any], window: Mapping[str, Any]) -> str:
-    """``, $0.73 spent / $249.27 left of $250.00 expiring grant`` (omp only)."""
+    """``, ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan`` (omp only)."""
     spent = pool.get("spent_usd")
     if spent is None:
         return ""
-    text = f", ${float(spent):.2f} spent"
+    text = f", ↑ ${float(spent):.2f} spent"
     left = pool.get("balance_usd")
     if left is not None:
-        text += f" / ${float(left):.2f} left"
+        text += f" · ↓ ${float(left):.2f} left"
         cap = window.get("refill_capacity")
         if cap and window.get("refill_capacity_unit") == "usd":
-            text += f" of ${float(cap):.2f}"
-    return text + " expiring grant"
+            text += f" of ${float(cap):.2f} plan"
+        else:
+            text += " plan"
+    return text
 
 
 def _format_age(seconds: float | None) -> str:

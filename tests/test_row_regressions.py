@@ -250,8 +250,9 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert len(grok) == 1
     assert grok[0].scope == "—"
     assert set(grok[0].clocks) == {"weekly"}
-    # The wallet rides in the OTHER column as bare dollars, no "(counts down)".
-    assert grok[0].tail_note is not None and grok[0].tail_note.startswith("$")
+    # OTHER is compact prepaid dollars: direction and kind, no long parenthetical.
+    assert grok[0].tail_note is not None and grok[0].tail_note.startswith("↓$")
+    assert grok[0].tail_note.endswith(" prepaid")
     assert "(counts down)" not in grok[0].tail_note
 
     zai = _rows("zai/zcode")
@@ -322,7 +323,7 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
     auto = _line(text, "cursor", "auto")
 
     assert "ACCT" not in text.splitlines()[0]
-    assert "100u/0l" in grok and grok.endswith("$1.69")
+    assert "100u/0l" in grok and grok.endswith("↓$1.69 prepaid")
     assert grok.index("->") < grok.index("100u/0l") < grok.index("<-") < grok.index("$1.69")
     _no_post_pace_arrow(grok)
 
@@ -374,11 +375,14 @@ def test_empty_clock_arrows_sit_centered_under_the_column_label():
         assert abs(label_mid - glyph_mid) <= 1, (label, header, grok)
 
 
-def test_overflowing_legend_wraps_between_clauses_and_centers():
+def test_overflowing_legend_wraps_between_clauses():
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=150)
     lines = text.splitlines()
     assert all(len(line) <= 150 for line in lines)
-    pace = next(line for line in lines if "+N%/-N% = pace" in line)
-    assert pace.startswith(" ") and pace.rstrip().endswith("PACE = the row’s highest")
-    early = lines[lines.index(pace) + 1]
-    assert early.startswith(" ") and early.strip() == "~ = early: under a tenth of the window has elapsed"
+    legend = [line for line in lines if "percent used / percent left" in line or "+ ahead / - behind" in line]
+    assert len(legend) >= 2
+    assert all(" · " in line and not line.startswith(" · ") for line in legend)
+    assert "PACE = highest" in text
+    assert "~ = early" in text
+    assert "under a tenth" not in text
+    assert "+N%/-N%" not in text

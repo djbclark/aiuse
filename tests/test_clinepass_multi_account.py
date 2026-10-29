@@ -49,6 +49,11 @@ class _FakeCodexBar:
 
     def __call__(self, argv: list[str], *, timeout: float = 90.0, allow_empty: bool = False) -> Any:
         self.calls.append(list(argv))
+        # A discovery collect also runs `codexbar config providers` (no
+        # --provider). An empty catalog lists no Bedrock, so the Cost Explorer
+        # gate stays idle and the usage assertions below stay about usage.
+        if "--provider" not in argv:
+            return []
         provider = argv[argv.index("--provider") + 1]
         every = "--all-accounts" in argv
         if provider == "clinepass":
@@ -138,8 +143,11 @@ def test_widget_cache_does_not_collapse_all_accounts_provider(fake_codexbar: _Fa
     )
 
     # codex still comes from the snapshot; clinepass is queried live with every account.
+    # The catalog read (`config providers`) has no --provider and must not add a usage query.
     assert [a.provider for a in accounts if a.provider == "codex"] == ["codex"]
-    assert [call[call.index("--provider") + 1] for call in fake_codexbar.calls] == ["clinepass"]
+    usage = [call for call in fake_codexbar.calls if "--provider" in call]
+    assert [call[call.index("--provider") + 1] for call in usage] == ["clinepass"]
+    assert any(call[1:3] == ["config", "providers"] for call in fake_codexbar.calls)
     clinepass_rows = [a for a in accounts if a.provider == "clinepass"]
     assert sorted(a.account or "" for a in clinepass_rows) == ["dc", "technoeuphora"]
     assert not any("widget snapshot" in note for a in clinepass_rows for note in a.notes)

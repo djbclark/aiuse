@@ -118,6 +118,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     # collapsing their provider identities.
     "clinepass": "clinepass/cline",
     "zai": "zai/zcode",
+    "bedrock": "bedrock",
     "devin": "devin",
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",

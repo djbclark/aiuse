@@ -31,6 +31,8 @@ from aiuse.models import coerce_int as _int_or_none
 from aiuse.timefmt import format_clock
 
 from .base import CollectorError, CollectorNotInstalled, CollectorTimeout, run_json, which
+from .bedrock_gate import cached_payload as cached_bedrock_payload
+from .bedrock_gate import gated_bedrock_payload
 from .throttle import QueryGate, TimeoutBackoff
 
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
@@ -381,9 +383,33 @@ def _collect_codexbar_impl(
     provider_list = _normalize_providers(providers)
     # CodexBar has no `omp` provider: its credits ride on the Claude row.
     provider_list = list(dict.fromkeys("claude" if p == "omp" else p for p in provider_list))
+    # "enabled" / "all" discovers the catalog. An explicit provider list does not,
+    # and must not gain a Bedrock Cost Explorer call it did not ask for.
+    was_discovery = provider_list == [None]
     all_accounts = frozenset(canonical_provider(p) for p in all_accounts_providers if p) - (
         skip_providers or frozenset()
     )
+    catalog_box: dict[str, Any] = {"done": False, "payload": None}
+
+    def catalog() -> Any:
+        if not catalog_box["done"]:
+            catalog_box["payload"] = _load_provider_catalog(
+                timeout=discovery_timeout if discovery_timeout is not None else timeout
+            )
+            catalog_box["done"] = True
+        return catalog_box["payload"]
+
+    def finish(found: list[AccountUsage], *, queried: bool) -> list[AccountUsage]:
+        return _with_disabled(
+            _attach_bedrock(
+                found,
+                queried=queried,
+                skip_providers=skip_providers,
+                enabled_collect=was_discovery or include_disabled,
+                timeout=timeout,
+                catalog=catalog,
+            )
+        )
 
     def _with_disabled(found: list[AccountUsage]) -> list[AccountUsage]:
         if not include_disabled:
@@ -427,7 +453,7 @@ def _collect_codexbar_impl(
             else:
                 live_list = [p for p in provider_list if p is not None and canonical_provider(p) in all_accounts]
             if not live_list:
-                return _with_disabled(cached + omp)
+                return finish(cached + omp, queried=False)
             live, errors = _collect_live(
                 live_list,
                 timeout=timeout,
@@ -436,7 +462,8 @@ def _collect_codexbar_impl(
                 backoff=backoff,
                 all_accounts_providers=all_accounts,
             )
-            return _with_disabled(cached + omp + live + _query_error_rows(errors))
+            live_queried = any(p is not None and canonical_provider(p) == "bedrock" for p in live_list)
+            return finish(cached + omp + live + _query_error_rows(errors), queried=live_queried)
 
     if not which("codexbar"):
         raise CollectorNotInstalled("codexbar not found on PATH")
@@ -444,9 +471,7 @@ def _collect_codexbar_impl(
         # Discover the actual enabled-provider list ourselves so each can be
         # queried as its own concurrent subprocess, instead of asking CodexBar
         # for "enabled providers" in one call that it resolves serially.
-        discovered = _discover_enabled_providers(
-            timeout=discovery_timeout if discovery_timeout is not None else timeout
-        )
+        discovered = _parse_enabled_providers(catalog())
         if discovered:
             provider_list = discovered
 
@@ -455,7 +480,9 @@ def _collect_codexbar_impl(
         # provider the operator turned off, even if CodexBar still has it enabled.
         kept = [p for p in provider_list if p is None or canonical_provider(p) not in skip_providers]
         if not kept:
-            return []
+            if "bedrock" in (skip_providers or ()):
+                return []
+            return finish([], queried=False)
         provider_list = kept
 
     accounts, errors = _collect_live(
@@ -468,7 +495,8 @@ def _collect_codexbar_impl(
     )
     if not accounts and errors and not include_disabled:
         raise CollectorError("; ".join(errors))
-    return _with_disabled(accounts + _query_error_rows(errors))
+    bedrock_queried = any(p is not None and canonical_provider(p) == "bedrock" for p in provider_list)
+    return finish(accounts + _query_error_rows(errors), queried=bedrock_queried)
 
 
 def _query_error_rows(errors: list[str]) -> list[AccountUsage]:
@@ -575,19 +603,80 @@ def _normalize_providers(providers: str | list[str] | None) -> list[str | None]:
     return list(items) if items else [None]
 
 
-def _discover_enabled_providers(*, timeout: float = 45.0) -> list[str | None] | None:
-    """Ask CodexBar's own fast, documented config lookup which providers are
-    enabled (`codexbar config providers`, a local read that takes milliseconds),
-    so the caller can query each one independently instead of via the slow
-    bundled call. Returns None if unavailable or unparsable, so the caller
-    falls back to that bundled call. Any failure here must fall back rather
-    than propagate, since discovery is a best-effort optimization.
+def _load_provider_catalog(*, timeout: float = 45.0) -> Any | None:
+    """CodexBar's provider catalog. A local read; None when it cannot be parsed.
+
+    Discovery is best-effort. A failure falls back to the bundled usage call
+    rather than failing the collect.
     """
     try:
-        payload = run_json([_codexbar_bin(), "config", "providers", "--format", "json"], timeout=timeout)
+        return run_json([_codexbar_bin(), "config", "providers", "--format", "json"], timeout=timeout)
     except Exception:  # noqa: BLE001
         return None
-    return _parse_enabled_providers(payload)
+
+
+def _discover_enabled_providers(*, timeout: float = 45.0) -> list[str | None] | None:
+    """Ask CodexBar which providers are enabled, so each can be queried alone.
+
+    Returns None if unavailable or unparsable, so the caller falls back to the
+    bundled call.
+    """
+    return _parse_enabled_providers(_load_provider_catalog(timeout=timeout))
+
+
+def _catalog_has_bedrock(payload: Any) -> bool:
+    if not isinstance(payload, list):
+        return False
+    return any(isinstance(row, dict) and "bedrock" in str(row.get("provider") or "").lower() for row in payload)
+
+
+def _bedrock_accounts(*, timeout: float) -> list[AccountUsage]:
+    """One gated Bedrock read. An error is a row, not a failed collect."""
+    outcome = _query_provider("bedrock", timeout=timeout)
+    if isinstance(outcome, CollectorError):
+        return [
+            AccountUsage(
+                source="codexbar",
+                provider="bedrock",
+                error=str(outcome),
+                billing_kind=BillingKind.PAYG_API,
+            )
+        ]
+    rows = outcome if isinstance(outcome, list) else [outcome]
+    accounts: list[AccountUsage] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        provider = str(row.get("provider") or "").strip().lower()
+        if provider and provider != "bedrock":
+            continue
+        accounts.append(_from_row(row))
+    return accounts
+
+
+def _attach_bedrock(
+    found: list[AccountUsage],
+    *,
+    queried: bool,
+    skip_providers: frozenset[str] | None,
+    enabled_collect: bool,
+    timeout: float,
+    catalog: Any,
+) -> list[AccountUsage]:
+    """Add Bedrock when CodexBar lists it and this run did not already ask.
+
+    ``catalog`` is the provider-config payload, or a zero-arg loader. The
+    loader runs only when a query is still possible, so an explicit
+    single-provider collect does not touch Cost Explorer.
+    """
+    if queried or not enabled_collect or "bedrock" in (skip_providers or ()):
+        return found
+    if any(canonical_provider(account.provider) == "bedrock" for account in found):
+        return found
+    payload = catalog() if callable(catalog) else catalog
+    if not _catalog_has_bedrock(payload):
+        return found
+    return found + _bedrock_accounts(timeout=timeout)
 
 
 def _parse_enabled_providers(payload: Any) -> list[str | None] | None:
@@ -615,6 +704,10 @@ def _disabled_known_query_ids(payload: Any, *, already: set[str], skip: frozense
         if not isinstance(row, dict) or row.get("enabled") or not row.get("provider"):
             continue
         provider_id = str(row["provider"]).strip().lower()
+        # Bedrock has its own Cost Explorer gate. The disabled sweep must not
+        # start a second billed read beside that gate.
+        if "bedrock" in provider_id:
+            continue
         canonical = canonical_provider(provider_id)
         if canonical not in PROVIDER_DISPLAY_NAMES or canonical in already or canonical in skip:
             continue
@@ -701,12 +794,29 @@ def _query_providers(
             return _query_provider(None, timeout=timeout)
         provider = provider_arg.lower()
         provider_timeout = per_provider.get(provider, timeout)
+        # Only passed when set, so stand-ins with the plain signature still work.
+        extra: dict[str, bool] = {"all_accounts": True} if provider in all_accounts_providers else {}
+        if provider == "bedrock":
+            # The $0.01 gate lives inside _query_provider. QueryGate's reused
+            # payload would freeze updatedAt and paint the held row STALE.
+            if backoff is not None:
+                reason = backoff.blocked(provider)
+                if reason is not None:
+                    held = cached_bedrock_payload()
+                    if held is not None:
+                        return held
+                    return CollectorError(reason)
+            outcome = _query_provider(provider_arg, timeout=provider_timeout, **extra)
+            if backoff is not None:
+                if isinstance(outcome, CollectorTimeout):
+                    backoff.record_timeout(provider, provider_timeout)
+                else:
+                    backoff.clear(provider)
+            return outcome
         if backoff is not None:
             reason = backoff.blocked(provider)
             if reason is not None:
                 return CollectorError(reason)
-        # Only passed when set, so stand-ins with the plain signature still work.
-        extra: dict[str, bool] = {"all_accounts": True} if provider in all_accounts_providers else {}
         if intervals.get(provider, 0) > 0:
             outcome = _query_provider_gated(
                 provider_arg, intervals[provider], timeout=provider_timeout, notes=notes, **extra
@@ -755,14 +865,24 @@ def _query_provider_gated(
         return gate.reuse("codexbar")
 
 
-def _query_provider(provider_arg: str | None, *, timeout: float = 45.0, all_accounts: bool = False) -> Any:
+def _query_provider(
+    provider_arg: str | None,
+    *,
+    timeout: float = 45.0,
+    all_accounts: bool = False,
+    bedrock_live: bool = False,
+) -> Any:
+    provider = provider_arg.lower() if provider_arg is not None else None
+    if provider == "bedrock" and not bedrock_live:
+        return gated_bedrock_payload(
+            lambda: _query_provider(provider_arg, timeout=timeout, all_accounts=all_accounts, bedrock_live=True)
+        )
     # Omitting --provider asks CodexBar for its enabled-provider list and data
     # (only reached as a fallback if _discover_enabled_providers() fails).
     argv = [_codexbar_bin(), "usage", "--format", "json"]
     if provider_arg is not None:
         argv.extend(["--provider", provider_arg])
 
-    provider = provider_arg.lower() if provider_arg is not None else None
     preferred = _PREFERRED_SOURCES.get(provider) if provider is not None else None
     if all_accounts and provider_arg is not None:
         # One row per CodexBar token account. A provider with no token
@@ -1026,6 +1146,31 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         zen = _f(provider_cost.get("used"))
         if zen is not None and "zen" in period.lower():
             pass
+        elif provider == "bedrock":
+            # Month-to-date Cost Explorer spend. limit 0 means "no budget",
+            # not an empty wallet: the dollars count up, and there is no plan
+            # window to draw a percent clock from.
+            cost_used = _f(provider_cost.get("used"))
+            cost_limit = _f(provider_cost.get("limit"))
+            limit = cost_limit if cost_limit is not None and cost_limit > 0 else None
+            if cost_used is not None:
+                usage_credits = UsageCredits(
+                    used=cost_used,
+                    limit=limit,
+                    remaining=max(0.0, limit - cost_used) if limit is not None else None,
+                    currency=str(provider_cost.get("currencyCode") or "USD"),
+                    used_percent=(cost_used / limit) * 100.0 if limit else None,
+                    resets_at=parse_dt(provider_cost.get("resetsAt")) if limit else None,
+                )
+                read_at = parse_dt(usage.get("bedrockReadAt"))
+                updated = parse_dt(usage.get("updatedAt"))
+                if read_at is not None and updated is not None and (updated - read_at).total_seconds() > 90:
+                    notes.append(
+                        f"Cost Explorer ${cost_used:.2f} read at {format_clock(read_at)}; "
+                        "held until other usage moves and 6h have passed."
+                    )
+                else:
+                    notes.append(f"Bedrock month-to-date spend: ${cost_used:.2f} PAYG.")
         else:
             cost_used = _f(provider_cost.get("used"))
             cost_limit = _f(provider_cost.get("limit"))
@@ -1039,7 +1184,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     used_percent=(cost_used / cost_limit) * 100.0,
                     resets_at=parse_dt(provider_cost.get("resetsAt")),
                 )
-                notes.append(f"On-demand: ${cost_used:.2f} of ${cost_limit:.2f} ({remaining:.2f} remaining).")
+                notes.append(f"On-demand: ↑ ${cost_used:.2f} of ${cost_limit:.2f} (↓ ${remaining:.2f} prepaid).")
                 if provider == "cursor":
                     used_pct = (cost_used / cost_limit) * 100.0 if cost_limit else None
                     rem_pct = max(0.0, 100.0 - used_pct) if used_pct is not None else None
@@ -1064,6 +1209,11 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         notes.append(f"CodexBar data confidence: {usage['dataConfidence']}.")
 
     billing = _billing_kind(provider, usage, windows)
+    if provider == "bedrock":
+        billing = BillingKind.PAYG_API
+        # "Spend: $16.89" is the meter, not a prepaid balance left.
+        if isinstance(plan, str) and plan.lower().startswith("spend:"):
+            plan = "PAYG"
     if billing == BillingKind.PREPAID_BALANCE and balance_usd is None and credits_remaining is not None:
         balance_usd = credits_remaining
 
@@ -1086,7 +1236,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     # OpenRouter often puts the wallet only in loginMethod (`Balance: $2.51`) when
     # `openRouterUsage` is absent — same display path DeepSeek gets from
     # reset_description. Without this, the ladder falls back to "prepaid API".
-    if balance_usd is None and isinstance(plan, str) and "$" in plan:
+    if balance_usd is None and isinstance(plan, str) and "$" in plan and not plan.lower().startswith("spend:"):
         match = re.search(r"\$(-?[0-9]+(?:\.[0-9]+)?)", plan)
         if match and re.match(r"\s*/", plan[match.end() :]):
             match = None

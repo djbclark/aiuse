@@ -72,7 +72,8 @@ use a 90s budget, the other collectors 45s; see
    elapsed seconds so the user knows it is not frozen. Process isolation is
    required: collector thread pools are non-daemon, so a background thread
    made `q` close the screen but left Python waiting for slow CodexBar calls.
-3. **Staleness is shown.** Header: `last: 9:02:07pm · next in M:SS · q/esc quit`.
+3. **Staleness is shown.** The header is one line:
+   `aiuse watch · now: 9:02:07pm · last: 9:02:07pm · next in M:SS · q/esc quit · u now · a all`.
 4. **Floor the interval.** Warn if `< 30s` (sub-collect-time intervals starve
    the six external tools). Hard floor at `5s` to prevent abuse.
 5. **Honor `persist_snapshots`.** If snapshot persistence is enabled in config,
@@ -201,7 +202,7 @@ polling, terminal restore, tests, docs, completions). Matches Issue #14's
 ## Interactive keys (`u`, `a`) — added 2026-10-10
 
 The board stays read-only except for three one-shot keys (header shows
-`q/esc quit · u update now · a all providers`):
+`q/esc quit · u now · a all`):
 
 1. **`u` — update now.** Starts a refresh immediately instead of waiting out
    the interval, and passes `max_age=0` so the on-disk snapshot is _not_
@@ -217,11 +218,12 @@ The board stays read-only except for three one-shot keys (header shows
    service hidden by default (oc-go) still appears here and stays hidden on
    the normal board. The sweep runs in a second worker
    process beside the regular cycle. The result replaces the board with a
-   header marker `ALL PROVIDERS · screen only` until the next regular frame
+   header marker `ALL · hidden+total · screen only` until the next regular frame
    lands. **Nothing is recorded**: no snapshot, token ledger, sampler state,
    or burst partials (`collect_watch_frame(persist=False)`). The
    cross-process `QueryGate` / timeout-backoff throttle still applies — the
-   sweep must not hammer a vendor the gate is protecting.
+   sweep must not hammer a vendor the gate is protecting. Bedrock's Cost
+   Explorer hold is not waived either ([`bedrock-quota.md`](bedrock-quota.md)).
 3. **`q` / Esc / Ctrl-C** — unchanged quit.
 
 ### Manual-command throttling (2026-10-10, same day)
@@ -254,8 +256,8 @@ The sweep is **operator-only**: AI agents and automation must not trigger it
 (`a` key or `aiuse watch --all-providers`) without explicit permission from
 the human operator. Providers are disabled for reasons — vendor rate limits,
 cost, opt-outs — that the sweep deliberately overrides. While the sweep is
-active the header reads `ALL PROVIDERS · hidden + total rows shown · screen
-only`; pressing `a` again exits the sweep and restores the normal filtered
+active the header reads `ALL · hidden+total · screen only`; pressing `a`
+again exits the sweep and restores the normal filtered
 board (respecting `[hidden_pools]`, exclusions, and hidden ceiling rows). The
 restriction is flagged in `--help`, the stderr warning, README, and AGENTS.md.
 

@@ -87,7 +87,7 @@ Canonical pricing table:
 3. Default `analysis.provider_overrides.cursor.shared_allotment: true`, with
    `independent_pool_key()` separating on-demand and grok-bot.
 4. Parse on-demand `providerCost` into `usage_credits` when `limit > 0`.
-   The clock matrix prints that remainder as `$1.64 (counts down)` after the
+   The clock matrix prints that remainder as `↓$1.64 prepaid` after the
    last column of the auto row. It is not a percent-left row, and it does not
    change any pool's used/left percent.
 5. Hide ceiling **total** rows by default in human outputs and `--available`

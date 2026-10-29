@@ -244,9 +244,9 @@ _OPERATOR_GATE_SHORT = "(AI: ask operator)"
 # The two adjacent clock columns the operator-gate text spans, centered.
 _GATE_CLOCKS = ("5h", "weekly")
 _GATE_FIRST = [key for key, _label in CLOCK_COLUMNS].index(_GATE_CLOCKS[0])
-_UNSTARTED_LEGEND = f"{_UNSTARTED_MARK} = clock starts on first use"
+_UNSTARTED_LEGEND = f"{_UNSTARTED_MARK} = starts on first use"
 _FOLD_MARK = "+"  # more than one window on this clock, showing the most-used
-_FOLD_LEGEND = f"{_FOLD_MARK} = >1 window on that clock, showing most-used"
+_FOLD_LEGEND = f"{_FOLD_MARK} = >1 window, most-used shown"
 
 
 @dataclass(frozen=True)
@@ -596,12 +596,64 @@ def _overage_remaining_usd(account: AccountUsage) -> float | None:
     return None
 
 
+def dollar_meter(
+    direction: str,
+    kind: str,
+    amount: float,
+    total: float | None = None,
+    *,
+    compact: bool = False,
+) -> str:
+    """One dollar figure with its direction and its kind.
+
+    ``down`` is a balance being spent (plan grant or prepaid wallet). ``up``
+    is a meter that climbs (pay-as-you-go). ``kind`` is ``plan`` (included in
+    a monthly grant), ``prepaid`` (bought ahead), or ``PAYG``. ``compact`` is
+    the OTHER column; the spaced form is the ladder, the detail view, and chat.
+    """
+    arrow = "↓" if direction == "down" else "↑"
+    if compact:
+        head = f"{arrow}${amount:.2f}"
+        if total is not None:
+            head += f"/${total:.2f}"
+        return f"{head} {kind}"
+    if direction == "down" and kind == "plan":
+        if total is not None:
+            return f"↓ ${amount:.2f} left of ${total:.2f} plan"
+        return f"↓ ${amount:.2f} plan"
+    if direction == "down":
+        if total is not None:
+            return f"↓ ${amount:.2f} left of ${total:.2f} {kind}"
+        return f"↓ ${amount:.2f} {kind}"
+    if total is not None:
+        return f"↑ ${amount:.2f} of ${total:.2f} {kind}"
+    return f"↑ ${amount:.2f} {kind}"
+
+
+def _usd_refill_total(account: AccountUsage) -> float | None:
+    for window in account.windows:
+        if window.refill_capacity_unit == "usd" and window.refill_capacity:
+            return float(window.refill_capacity)
+    return None
+
+
+def _bedrock_clock(account: AccountUsage) -> str:
+    """`` @9:02pm`` when this row carries a Cost Explorer measurement time."""
+    raw = account.raw if isinstance(account.raw, dict) else {}
+    usage = raw.get("usage") if isinstance(raw.get("usage"), dict) else {}
+    stamp = usage.get("bedrockReadAt") if isinstance(usage, dict) else None
+    when = parse_dt(stamp) if isinstance(stamp, str) else None
+    if when is None:
+        return ""
+    return " @" + format_clock(when)
+
+
 def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
     """Short suffix when a subscription row also has a prepaid overage wallet."""
     remaining = _overage_remaining_usd(account)
     if remaining is None:
         return ""
-    return f" · ${remaining:.2f} (counts down)"
+    return " · " + dollar_meter("down", "prepaid", remaining)
 
 
 def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
@@ -621,19 +673,19 @@ def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
 
 
 def _api_inventory_note(account: AccountUsage) -> str:
-    """Ladder/matrix note for prepaid count-down vs spend-up meters."""
+    """Ladder/matrix note for a prepaid countdown or a pay-as-you-go meter."""
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits
         assert uc is not None and uc.used is not None
-        used = float(uc.used)
-        if uc.limit is not None:
-            limit = float(uc.limit)
-            return f"spent ${used:.2f} of ${limit:.2f} (counts up)"
-        return f"spent ${used:.2f} (counts up)"
+        limit = float(uc.limit) if uc.limit is not None else None
+        return dollar_meter("up", "PAYG", float(uc.used), limit) + _bedrock_clock(account)
     if account.balance_usd is not None:
-        return f"${account.balance_usd:.2f} (counts down)"
+        if account.spent_usd is not None:
+            left = dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account))
+            return f"↑ ${account.spent_usd:.2f} spent · {left}"
+        return dollar_meter("down", "prepaid", account.balance_usd)
     if account.credits_remaining is not None:
-        return f"{account.credits_remaining:g} credits (counts down)"
+        return f"↓ {account.credits_remaining:g} credits"
     return "API"
 
 
@@ -1547,21 +1599,20 @@ def _build_matrix_rows(
                     if window.reset_description:
                         note = window.reset_description
                         break
-            extra_note = _extra_usage_wallet_fragment(account).strip(" ·")
-            if extra_note and _matrix_row_shows_wallet(account, pool_id):
+            wallet = _overage_remaining_usd(account)
+            if wallet is not None and _matrix_row_shows_wallet(account, pool_id):
                 # A wallet is inventory, not a clock: it annotates the row
                 # after the reset cells and never replaces them. Rows with
                 # no clocks at all keep the note as the row.
                 if clocks:
-                    # The OTHER column is already inventory; "(counts down)"
-                    # only adds width there.
-                    tail_note = extra_note.removesuffix(" (counts down)")
+                    tail_note = dollar_meter("down", "prepaid", wallet, compact=True)
                 else:
-                    note = extra_note if note is None else f"{note} · {extra_note}"
+                    phrase = dollar_meter("down", "prepaid", wallet)
+                    note = phrase if note is None else f"{note} · {phrase}"
             if clocks and account.spent_usd is not None and account.balance_usd is not None:
-                # An expiring dollar grant (omp): dollars left, like the wallet
-                # balances; spent stays in JSON spent_usd.
-                tail_note = f"${account.balance_usd:.2f}"
+                # An expiring dollar grant (omp): what is left of the plan.
+                # Spent stays in JSON spent_usd.
+                tail_note = dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account), compact=True)
             data_age = _account_data_age(account, now)
             stale = data_age is not None and data_age > fresh_threshold
             pace_windows = [window for window in pool if claude_model_scope(window.label) is None]
@@ -1574,7 +1625,11 @@ def _build_matrix_rows(
                 raw_reset = gate_info.get("resets_at")
                 reset = parse_dt(raw_reset if isinstance(raw_reset, str) else None)
                 until = format_clock(reset, date=reset - now > timedelta(hours=24)) if reset is not None else "reset"
-                dollars = f" · ${account.balance_usd:.2f} left" if account.balance_usd is not None else ""
+                dollars = (
+                    " · " + dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account))
+                    if account.balance_usd is not None
+                    else ""
+                )
                 note = f"rate-gated until {until}{dollars}"
                 clocks = {}
                 tail_note = None
@@ -2230,41 +2285,27 @@ def render_clock_matrix_parts(
         for note in row.sublimit_notes:
             lines.append(_clamp_display_width(s.dim(f"        {note}"), avail))
 
-    legend_items: list[tuple[str, str]] = []
+    legend_bits = ["u/l = percent used / percent left"]
     if any_deadline:
-        legend_items.append(
-            (
-                "2d14h = until this clock resets · bold = largest unit",
-                s.dim("2d14h = until this clock resets · bold = largest unit"),
-            )
-        )
+        legend_bits.append("span = until this clock resets")
     if any_unstarted:
-        legend_items.append((_UNSTARTED_LEGEND, s.dim(_UNSTARTED_LEGEND)))
+        legend_bits.append(_UNSTARTED_LEGEND)
     if any_inferred:
-        legend_items.append(("dim u/l = inferred, not reported", s.dim("dim u/l = inferred, not reported")))
+        legend_bits.append("dim = inferred")
     if any_folded:
-        legend_items.append((_FOLD_LEGEND, s.dim(_FOLD_LEGEND)))
+        legend_bits.append(_FOLD_LEGEND)
     if any_arrow:
-        arrow_note = "-> / <- in an empty clock points at this row's window; a hole points at the earlier one"
-        legend_items.append((arrow_note, s.dim(arrow_note)))
+        legend_bits.append("-> / <- points at this row's clock")
     if any(row.stale for row in rows):
-        legend_items.append(
-            (
-                "STALE = reading older than the freshness threshold; re-collect before trusting it",
-                s.yellow("STALE")
-                + s.dim(" = reading older than the freshness threshold; re-collect before trusting it"),
-            )
-        )
-
-    plain_note = "u/l = percent used / percent left — l is what you can still spend"
-    fmt_note = s.dim("u/l = ") + s.bold("percent used / percent left") + s.dim(" — l is what you can still spend")
-    legend_items.append((plain_note, fmt_note))
-    if layout.show_value:
-        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under a tenth of the window has elapsed"
-        legend_items.append((pace_note, s.dim(pace_note)))
-    elif layout.show_pace:
-        pace_note = "+N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · ~ = early: under a tenth of the window has elapsed"
-        legend_items.append((pace_note, s.dim(pace_note)))
+        legend_bits.append("STALE = older than the freshness threshold")
+    if layout.show_value or layout.show_pace:
+        pace = "+ ahead / - behind"
+        if layout.show_value:
+            pace += " · PACE = highest"
+        pace += " · ~ = early"
+        legend_bits.append(pace)
+    legend_bits.append("↑$ PAYG counts up · ↓$ plan or prepaid counts down")
+    legend_items: list[tuple[str, str]] = [(" · ".join(legend_bits), s.dim(" · ".join(legend_bits)))]
 
     parts = ClockMatrixParts(table=lines, center_width=min(zebra_width, avail), avail=avail)
     parts.ai_line = parts.center(s.dim(AI_JSON_NOTE))
@@ -2396,10 +2437,8 @@ def _priority_account_line(
             f"{name} · {who} · {window.label}: {_format_remaining_percent(rem)} left · {status} {when}"
             f"{_extra_usage_wallet_fragment(account)}"
         )
-    elif account.balance_usd is not None:
-        body = f"{name} · {who} · ${account.balance_usd:.2f} (counts down)"
-    elif account.credits_remaining is not None:
-        body = f"{name} · {who} · {account.credits_remaining:g} credits (counts down)"
+    elif account.balance_usd is not None or account.credits_remaining is not None:
+        body = f"{name} · {who} · {_api_inventory_note(account)}"
     elif account.context_usage is not None:
         body = f"{name} · {who} · {_context_fragment(account)}"
     else:
@@ -3032,18 +3071,12 @@ def _render_account(
     if acc.error:
         lines.append(s.red(f"  ERROR: {acc.error}"))
 
-    if acc.usage_credits is not None:
-        if _account_is_spend_up_payg(acc):
-            used = float(acc.usage_credits.used or 0.0)
-            lines.append(f"  spent (counts up): {s.green(f'${used:.2f}')}")
-            if acc.usage_credits.limit is not None or acc.usage_credits.remaining is not None:
-                lines.extend(_usage_credits_lines(acc.usage_credits, s))
-        else:
-            lines.extend(_usage_credits_lines(acc.usage_credits, s))
-    elif acc.balance_usd is not None:
-        lines.append(f"  (counts down): {s.green(f'${acc.balance_usd:.2f}')}")
-    if acc.credits_remaining is not None and acc.usage_credits is None and acc.balance_usd is None:
-        lines.append(f"  credits (counts down): {acc.credits_remaining}")
+    if _account_is_spend_up_payg(acc) or (
+        acc.usage_credits is None and (acc.balance_usd is not None or acc.credits_remaining is not None)
+    ):
+        lines.append(f"  {_api_inventory_note(acc)}")
+    elif acc.usage_credits is not None:
+        lines.extend(_usage_credits_lines(acc.usage_credits, s))
 
     for w in acc.windows:
         if _hide_ceiling_window(acc, w, config):
@@ -3171,20 +3204,18 @@ def _fmt_dt(dt: datetime | None) -> str:
 def _usage_credits_lines(credits: Any, s: _Style) -> list[str]:
     """Pretty-print Claude (or similar) extra-usage wallet beside plan windows."""
     cur = getattr(credits, "currency", None) or "USD"
-    lines = [s.bold("  usage credits (extra / pay-as-you-go / on-demand)")]
+    lines = [s.bold("  extra $")]
     used = getattr(credits, "used", None)
     limit = getattr(credits, "limit", None)
     remaining = getattr(credits, "remaining", None)
-    pct = getattr(credits, "used_percent", None)
     resets = getattr(credits, "resets_at", None)
 
     if used is not None and limit is not None:
-        pct_s = f" · {pct:.0f}% of limit" if pct is not None else ""
-        lines.append(f"    spent: {used:g} of {limit:g} {cur}{pct_s}")
+        lines.append(f"    ↑ ${float(used):.2f} of ${float(limit):.2f} {cur}")
     elif used is not None:
-        lines.append(f"    spent: {used:g} {cur}")
+        lines.append(f"    ↑ ${float(used):.2f} {cur}")
     if remaining is not None:
-        lines.append(f"    remaining headroom: {s.green(f'{remaining:g} {cur}')}")
+        lines.append(f"    ↓ ${float(remaining):.2f} {cur} left")
     if resets is not None:
         lines.append(f"    resets: {_fmt_dt(resets)}")
     return lines

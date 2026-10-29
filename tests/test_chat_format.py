@@ -577,8 +577,7 @@ class TestRenderChatReport:
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
         assert "PREPAID" in output
-        assert "$4.03" in output
-        assert "counts down" in output
+        assert "↓ $4.03 prepaid" in output
         assert "no expiry" not in output
         assert EMOJI_PREPAID in output
 
@@ -591,10 +590,9 @@ class TestRenderChatReport:
         )
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
-        assert "counts down" in output
+        assert "↓ $-0.04 prepaid" in output
         assert "no expiry" not in output
         assert "negative reported" in output
-        assert "$-0.04" in output
 
     def test_zero_prepaid_balance(self):
         acc = _account(
@@ -1207,5 +1205,5 @@ class TestPaceHeadlinesAndWindowPace:
     def test_legend_line_at_end_of_chat_output(self):
         snap = _snapshot([_account()])
         output = render_chat_report(snap, [])
-        expected_legend = "pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest · ~ = early: under 10% of the window has elapsed"
+        expected_legend = "+ ahead / - behind · ~ = early · ↑$ PAYG counts up · ↓$ plan or prepaid counts down"
         assert output.strip().endswith(expected_legend)

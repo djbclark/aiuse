@@ -113,9 +113,9 @@ def test_render_report_full_has_no_estimated_dollars():
     report = render_report(snap, [alert_unblended, alert_blended], config=cfg, color=False, full=True)
 
     # 1. Real money preserved:
-    assert "(counts down): $5.00" in report
+    assert "↓ $5.00 prepaid" in report
     assert "plan=Pro ($20/mo)" in report
-    assert "2.03 USD" in report
+    assert "↓ $2.03 USD left" in report
 
     # 2. No estimated dollar figures anywhere:
     assert "$12.50" not in report
@@ -124,9 +124,11 @@ def test_render_report_full_has_no_estimated_dollars():
 
     # Find every dollar amount in the report via regex:
     dollar_matches = re.findall(r"\$\d+(?:\.\d+)?", report)
-    # The only dollar matches should be $20 (from plan name) and $5.00 (from balance_usd).
+    # Plan price, the prepaid wallet, and the reported extra-usage wallet.
+    # Estimated waste ($12.50, $8.00) must stay out.
+    allowed = {"$20", "$5.00", "$1.00", "$10.00", "$2.03"}
     for match in dollar_matches:
-        assert match in ("$20", "$5.00"), f"Unexpected estimated dollar amount found: {match}"
+        assert match in allowed, f"Unexpected estimated dollar amount found: {match}"
 
     # 3. Action-plan pace formatting:
     # alert_unblended has pace_ratio=0.25 -> round((0.25 - 1) * 100) = -75

@@ -52,10 +52,10 @@ pools most worth using right now sort to the bottom.
 ```diff
   AI: Use `aiuse --json` for machine-readable output
         ## SERVICE    SCOPE      PACE      5H              WEEK              MONTH
-- error ?? oc-zen     —             —                                                        No available fetch strategy for opencode-zen.
+- error ?? oc-zen     * [No available fetch strategy for opencode-zen.]
 - empty  0 oc-go      —             —      ->           100u/0l/4d12h         <-
-  n/a   -- deepseek   —             —                                                        $4.15 (counts down)
-  n/a   -- openrouter —             —                                                        $18.55 (counts down)
+  n/a   -- deepseek   * [↓ $4.15 prepaid]
+  n/a   -- openrouter * [↓ $18.55 prepaid]
   slow  38 agy        claude/gpt    —      ->           78u/22l/1d5h          <-
   mid   50 claude     —          +38% 12u/88l/3h7m -68% 77u/23l/3d2h +38%     <-
   mid   50 grok       —             —      ->            6u/94l/6d14h         <-
@@ -63,10 +63,7 @@ pools most worth using right now sort to the bottom.
   mid   66 cursor     total      -20%      ->               ->             71u/29l/3d7h -20%
   mid   66 agy        gemini     -63%  4u/96l/4h5m -78% 16u/84l/4d -63%       <-
 + use   91 copilot    —          -39%      ->               ->             58u/42l/~1d -39%
-                       2d14h = until this clock resets · bold = largest unit
-      -> / <- in an empty clock points at this row's window; a hole points at the earlier one
-                 u/l = percent used / percent left — l is what you can still spend
-  +N%/-N% = pace: ahead (+) or behind (-) of an even spend across the window · PACE = the row’s highest · ~ = early: under a tenth of the window has elapsed
+  u/l = percent used / percent left · span = until this clock resets · dim = inferred · -> / <- points at this row's clock · + ahead / - behind · PACE = highest · ~ = early · ↑$ PAYG counts up · ↓$ plan or prepaid counts down
 ```
 
 <!-- readme-demo:end -->
@@ -84,7 +81,7 @@ slower than an even spend across the window.
 A sub-day rolling window (the 5-hour kind) that has not been used yet sends no reset
 time — its clock starts on first use — so its cell shows the window's full length and a
 `↻` marker instead of a countdown, e.g. `0u/100l/5h↻`. Unused windows of a day or
-longer get no span. The legend line `↻ = clock starts on first use` appears
+longer get no span. The legend line `↻ = starts on first use` appears
 only when at least one such cell is on the board. The marker is screen-only; `--json`
 is unchanged.
 
@@ -397,7 +394,7 @@ aiuse suggest              # single best burn pool
 aiuse status               # one line for prompts / status bars
 aiuse prompt               # synonym of status
 aiuse serve                # loopback HTTP API for agents
-aiuse watch                # full-screen board (q/esc quit · u update now · a toggle all-providers sweep; default 10m)
+aiuse watch                # full-screen board (q/esc quit · u now · a all; screen-only sweep; default 10m)
 aiuse watch -i 2m          # faster refresh
 aiuse watch --once         # one frame on stdout (scripts / tmux)
 aiuse watch --all-providers  # OPERATOR-ONLY: live board of every provider, screen only (see below)

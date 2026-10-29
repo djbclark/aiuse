@@ -36,6 +36,7 @@ from aiuse.report import (
     _strip_ansi,
     _Style,
     _throttled_waste_line,
+    dollar_meter,
     render_clock_matrix,
     render_priority_ladder,
     render_report,
@@ -185,8 +186,7 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     assert "~lockout" not in go_line
     zen_line = next(line for line in lines if "oc-zen" in line)
     assert zen_line.startswith("empty")
-    assert "$-0.04" in zen_line
-    assert "counts down" in zen_line
+    assert "↓ $-0.04 prepaid" in zen_line
     assert "balance" not in zen_line
     assert "no expiry" not in zen_line
 
@@ -483,9 +483,9 @@ def test_render_report_shows_usage_credits_section():
         ),
     )
     text = render_report(Snapshot(collected_at=now, accounts=[acc]), [], config={}, color=False, full=True)
-    assert "usage credits" in text.lower()
-    assert "50 of 100 USD" in text or "spent: 50" in text
-    assert "remaining headroom" in text.lower()
+    assert "extra $" in text.lower()
+    assert "↑ $50.00 of $100.00 USD" in text
+    assert "↓ $50.00 USD left" in text
 
 
 def test_action_plan_line_includes_pace_fragment():
@@ -1300,13 +1300,24 @@ def test_priority_ladder_lists_antigravity_pools_separately():
     assert "Claude/GPT weekly" in text2
 
 
+def test_dollar_meter_names_direction_and_kind():
+    """↓ counts down, ↑ counts up; plan, prepaid, and PAYG stay distinct."""
+    assert dollar_meter("down", "plan", 80, 200) == "↓ $80.00 left of $200.00 plan"
+    assert dollar_meter("down", "plan", 249.27, 250, compact=True) == "↓$249.27/$250.00 plan"
+    assert dollar_meter("down", "prepaid", 1.64) == "↓ $1.64 prepaid"
+    assert dollar_meter("down", "prepaid", 1.64, compact=True) == "↓$1.64 prepaid"
+    assert dollar_meter("up", "PAYG", 16.89) == "↑ $16.89 PAYG"
+    assert dollar_meter("up", "PAYG", 16.89, 50) == "↑ $16.89 of $50.00 PAYG"
+    assert dollar_meter("up", "PAYG", 16.89, 50, compact=True) == "↑$16.89/$50.00 PAYG"
+
+
 def test_grok_extra_usage_wallet_fragment():
     account = AccountUsage(
         provider="grok",
         source="codexbar",
         usage_credits=UsageCredits(remaining=18.93, currency="USD"),
     )
-    assert _extra_usage_wallet_fragment(account) == " · $18.93 (counts down)"
+    assert _extra_usage_wallet_fragment(account) == " · ↓ $18.93 prepaid"
     assert _extra_usage_wallet_fragment(AccountUsage(provider="grok", source="codexbar")) == ""
 
 
@@ -1336,8 +1347,8 @@ def test_clock_matrix_shows_reset_clock_beside_wallet_note():
     text = render_clock_matrix([], snapshot=snap, color=False)
     grok_line = next(line for line in text.splitlines() if "grok" in line)
     assert "100u/0l/3d14h" in grok_line
-    # The wallet sits in the OTHER column, after the clocks, as bare dollars.
-    assert grok_line.endswith(" $14.46")
+    # The wallet sits in OTHER, after the clocks: compact prepaid dollars.
+    assert grok_line.endswith("↓$14.46 prepaid")
     assert grok_line.index("100u/0l/3d14h") < grok_line.index("$14.46")
     assert text.splitlines()[0].split()[-1] == "OTHER"
 
@@ -1421,7 +1432,7 @@ def test_clock_matrix_wallet_only_row_stays_note_only():
     )
     text = render_clock_matrix([], snapshot=snap, color=False)
     grok_line = next(line for line in text.splitlines() if "grok" in line)
-    assert "$14.46 (counts down)" in grok_line
+    assert "↓ $14.46 prepaid" in grok_line
     assert "%/" not in grok_line
 
 
@@ -1518,8 +1529,7 @@ def test_deepseek_prepaid_has_no_use_urgency():
     text = render_priority_ladder([empty, slow], snapshot=snap, color=False)
     deep_line = next(line for line in text.splitlines() if "eepseek" in line)
     assert deep_line.startswith("n/a")
-    assert "$4.99" in deep_line
-    assert "counts down" in deep_line
+    assert "↓ $4.99 prepaid" in deep_line
     assert "balance" not in deep_line
     assert "no expiry" not in deep_line
     assert "100%" not in deep_line
@@ -1836,7 +1846,7 @@ def test_clock_matrix_splits_independent_pools_into_their_own_rows():
 
 def test_clock_matrix_keeps_non_window_accounts_as_notes():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
-    assert "$4.30 (counts down)" in text
+    assert "↓ $4.30 prepaid" in text
     assert "session expired" in text
 
 
@@ -2190,7 +2200,7 @@ def _unused_window_snapshot(*, five_hour_used: float, five_hour_resets: bool = F
     )
 
 
-_UNSTARTED_LEGEND_LINE = "↻ = clock starts on first use"
+_UNSTARTED_LEGEND_LINE = "↻ = starts on first use"
 
 
 def test_unused_rolling_window_shows_full_length_and_marker_with_legend():
@@ -2620,4 +2630,4 @@ def test_fold_mark_hangs_after_the_pair_so_the_l_column_stays_aligned():
     assert "98l/" in spanned
     # Same column for the end of the `u/l` pair on every row.
     assert folded.index("100l") == plain.index("100l") == spanned.index("98l") - 1
-    assert "+ = >1 window on that clock" in text
+    assert "+ = >1 window, most-used shown" in text

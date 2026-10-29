@@ -42,6 +42,7 @@ project's guides by the job they help you do; most people only need one or two.
 
 - [`devin-quota.md`](devin-quota.md) — Devin Free/Pro/Max daily + weekly included quota.
 - [`muse-quota.md`](muse-quota.md) — Muse Code pay-as-you-go spend, plus the 5 h / weekly plan percent when `subs_usage` is present.
+- [`bedrock-quota.md`](bedrock-quota.md) — AWS Bedrock month-to-date spend via CodexBar, one Cost Explorer read per 6h and only after other usage moves.
 - [`qwencloud-quota.md`](qwencloud-quota.md) — QwenCloud plans + PAYG limit via `qwencloud` CLI; Alibaba Cloud (Bailian) `alibaba` via `bl`.
 - [`antigravity-pools.md`](antigravity-pools.md) — independent Gemini and Claude/GPT pools.
 - [`tokscale-per-provider-investigation.md`](tokscale-per-provider-investigation.md) — current tokscale per-provider limitation.

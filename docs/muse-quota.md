@@ -22,16 +22,16 @@ Muse Code's paid plans are billed monthly, but Meta does not publish a monthly u
 
 When those windows are present the row is `SUBSCRIPTION_WINDOW` and the clock matrix shows them. Month-to-date portal spend stays on `usage_credits`. The key endpoint is rate-limited, so a successful or empty read is reused for five minutes inside one process.
 
-An inactive subscription (`is_subs_active: false` and no `subs_usage`) has no plan percent. The row stays pay-as-you-go spend (`spent $X.XX (counts up)`). That includes a login Meta still treats as the free / unpaid state. Do not invent a free-tier cap; the portal free-credit banner (`free_untouched` / `free_partial`) is a dollar grant, and this collector still will not turn it into a percent unless Meta sends `subs_usage`.
+An inactive subscription (`is_subs_active: false` and no `subs_usage`) has no plan percent. The row stays pay-as-you-go spend (`↑ $X.XX PAYG`). That includes a login Meta still treats as the free / unpaid state. Do not invent a free-tier cap; the portal free-credit banner (`free_untouched` / `free_partial`) is a dollar grant, and this collector still will not turn it into a percent unless Meta sends `subs_usage`.
 
 ## What `aiuse` shows
 
 - **Provider id:** `muse` (canonical). Aliases `meta`, `muse-spark`, `muse-code`, `metamuse` → `muse` via `PROVIDER_ID_ALIASES`. Display name is `muse` (grep-able — `grep -i muse`).
 - **Without a key:** no `muse` row at all (like `openrouter` when `AIUSE_OPENROUTER_MANAGEMENT_KEY` is absent). Correctness: absent credential → `[]`, not an error.
 - **With `muse login` only:** reads `~/.config/muse/auth.json` (`providers.meta.api_key`). Meta’s Model API currently has no billing route (candidates 404); when `/models` accepts the key, `aiuse` still shows a `muse` inventory row and points at Chrome cookie refresh for a dollar balance.
-- **With a key, balance shape** (`{"data":{"total_credits":…,"total_usage":…}}` or `{"balance":…}`): one `n/a` row `balance $X.XX (pay-as-you-go)`, `billing_kind=PREPAID_BALANCE` or `PAYG_API`, `balance_usd` set.
+- **With a key, balance shape** (`{"data":{"total_credits":…,"total_usage":…}}` or `{"balance":…}`): one `n/a` row `↓ $X.XX prepaid` or `↑ $X.XX PAYG`, `billing_kind=PREPAID_BALANCE` or `PAYG_API`, `balance_usd` set when the figure counts down.
   ```
-  n/a   muse     —  —  spent $18.25 (counts up)
+  n/a   muse     —  —  ↑ $18.25 PAYG
   ```
 - **With a key, spend shape** (`{"spend":…,"limit":…}` / `{"remaining":…}`): `PAYG_API` with `usage_credits` (`used`/`limit`/`remaining` + `balance_usd = remaining`).
 - **With a Muse CLI device login whose key response includes `subs_usage`:** `Muse 5-hour` and `Muse weekly` windows (`used_percent` is consumed), `billing_kind=SUBSCRIPTION_WINDOW`. Portal spend, when the cookie is also present, stays on `usage_credits`.
@@ -53,13 +53,13 @@ An inactive subscription (`is_subs_active: false` and no `subs_usage`) has no pl
   is the Muse chat app and does not authorize this. The
   collector calls `GET /api/auth/me`, `GET /api/portal/teams`, then
   `billing-banner` and `usage` with `metric=USAGE_BILLABLE_COST`. **Muse’s
-  dashboard “balance” is month-to-date spend (counts up from $0)** — shown as
-  `spent $X.XX (counts up)`. DeepSeek / oc-zen show `$X.XX (counts down)`.
+  dashboard “balance” is month-to-date spend (↑ PAYG, counts up from $0)** — shown as
+  `↑ $X.XX PAYG`. DeepSeek / oc-zen show `↓ $X.XX prepaid`.
   Set AIUSE_MUSE_TEAM_ID when the account has more than one team. The old
   usage HTML scrape for fb_dtsg and LSD runs only when the portal routes are
   absent. The usage page itself now redirects to the public marketing page.
 - **Failover:** Bearer tried first; on 401/403/404/timeout it falls through to cookie, and vice-versa. Absent both → `[]`.
-- **Display:** `PREPAID_BALANCE` / `PAYG_API` → `n/a` band like `deepseek`/`openrouter`/`opencode-zen`: `$X.XX (counts down)` or Muse `spent $X.XX (counts up)`.
+- **Display:** `PREPAID_BALANCE` / `PAYG_API` → `n/a` band like `deepseek`/`openrouter`/`opencode-zen`: `↓ $X.XX prepaid` or Muse `↑ $X.XX PAYG`.
 - **Timeout:** `timeouts.muse` (or `default`/`force`), same as every other collector (`runner.py` + `config.py` `KNOWN_*` sets).
 - **Failure contract:** timeout / 5xx / non-JSON → `CollectorError` (→ `snapshot.collector_errors`); 401/403 after both transports → `AccountUsage(error=…)`; no credential → `[]`.
 

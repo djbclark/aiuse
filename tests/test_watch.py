@@ -651,15 +651,15 @@ def test_board_header_shows_now_data_time_and_the_sampler_schedule():
     schedule = sampler.schedule(state, sampler.sampling_settings(None))
     assert schedule is not None and schedule[1] == snap.collected_at + timedelta(minutes=15)
     board = render_watch_board(snap, [], color=False, quiet=True, now=now, sample_schedule=schedule)
-    header, sampler_line = board.splitlines()[:2]
+    header = board.splitlines()[0]
 
     def hms(value):
         return format_clock(value, seconds=True)
 
     assert f"now: {hms(now)}" in header and f"last: {hms(snap.collected_at)}" in header
-    assert sampler_line == f"sampler: previous {hms(snap.collected_at)} · next {hms(schedule[1])} · active tier"
+    assert f"sampler {hms(snap.collected_at)}→{hms(schedule[1])} active" in header
     late = render_watch_board(snap, [], color=False, quiet=True, now=now + timedelta(hours=1), sample_schedule=schedule)
-    assert "(due)" in late.splitlines()[1]
+    assert "(due)" in late.splitlines()[0]
     assert sampler.schedule({}, sampler.sampling_settings(None)) is None
 
 
@@ -746,6 +746,8 @@ def test_all_providers_config_enables_everything_and_keeps_the_original():
     assert original["disabled_services"] == {"grok": "burst limit"}
     assert original["collectors"]["grok_billing"]["enabled"] is False
     assert original["collectors"]["codexbar"]["providers"] == "codex"
+    bare = all_providers_config({"collectors": {}})
+    assert bare["analysis"]["show_total_rows"] is True
 
 
 def test_all_providers_config_leaves_deprecated_collectors_at_config_state():
@@ -801,13 +803,13 @@ def test_screen_only_sweep_collects_through_the_shared_pipeline(monkeypatch):
 
 def test_render_watch_board_marks_the_all_providers_view():
     text = render_watch_board(_snap(), [], color=False, quiet=True, all_providers=True)
-    assert "ALL PROVIDERS · hidden + total rows shown · screen only" in text
-    assert "u update now" in text and "a all providers" in text
+    assert "ALL · hidden+total · screen only" in text
+    assert "u now" in text and "a all" in text
 
 
 def test_render_watch_board_shows_collecting_all():
     text = render_watch_board(None, [], collecting_all_for=9, color=False)
-    assert "collecting all providers… (9s)" in text
+    assert "all… (9s)" in text
 
 
 class _LoopFakes:
@@ -934,7 +936,7 @@ def test_a_key_runs_a_screen_only_all_providers_sweep(monkeypatch):
     assert "disabled_services" not in sweep_config
     assert sweep_config["collectors"]["grok_billing"]["enabled"] is True
     assert sweep_config["collectors"]["codexbar"]["providers"] == "all"
-    assert any("ALL PROVIDERS · hidden + total rows shown · screen only" in text for text in fakes.texts)
+    assert any("ALL · hidden+total · screen only" in text for text in fakes.texts)
     # the base config object was not mutated by the sweep
     assert config["disabled_services"] == {"grok": "burst limit"}
 
@@ -958,7 +960,7 @@ def test_a_key_toggles_sweep_shows_hidden_and_total_then_filters(monkeypatch):
     )
     assert code == 0
     texts = fakes.texts
-    sweep_frames = [t for t in texts if "ALL PROVIDERS · hidden + total rows shown" in t]
+    sweep_frames = [t for t in texts if "ALL · hidden+total · screen only" in t]
     assert sweep_frames, "expected at least one all-providers sweep frame"
     sweep_text = sweep_frames[-1]
     assert " total " in f" {sweep_text} "
@@ -967,7 +969,7 @@ def test_a_key_toggles_sweep_shows_hidden_and_total_then_filters(monkeypatch):
     last_sweep_idx = max(i for i, t in enumerate(texts) if t == sweep_frames[-1])
     post_toggle = texts[last_sweep_idx + 1 :]
     assert post_toggle, "expected filtered frames after the second `a`"
-    filtered_body = "\n".join(t for t in post_toggle if "ALL PROVIDERS" not in t)
+    filtered_body = "\n".join(t for t in post_toggle if "ALL · hidden+total" not in t)
     assert " total " not in f" {filtered_body} "
     assert " auto " not in f" {filtered_body} "
     assert "3rd-party" in filtered_body
@@ -986,7 +988,7 @@ def test_a_key_is_ignored_while_a_sweep_is_still_running(monkeypatch):
     )
     assert code == 0
     assert len(fakes.sweep.starts) == 1, "a second `a` press must not restart an in-flight sweep"
-    assert any("collecting all providers" in text for text in fakes.texts)
+    assert any("all…" in text for text in fakes.texts)
 
 
 def test_u_within_90s_of_a_is_rolled_into_the_sweep(monkeypatch):
@@ -1107,7 +1109,7 @@ def test_a_queued_behind_a_scheduled_refresh_fires_when_it_finishes(monkeypatch)
     # One scheduled collect, then the released sweep — never overlapping.
     assert len(fakes.regular.starts) == 1
     assert len(fakes.sweep.starts) == 1
-    assert any("ALL PROVIDERS · hidden + total rows shown · screen only" in text for text in fakes.texts)
+    assert any("ALL · hidden+total · screen only" in text for text in fakes.texts)
 
 
 def test_u_waits_for_a_queued_sweep(monkeypatch):
@@ -1174,7 +1176,7 @@ def test_cli_watch_all_providers_once(monkeypatch, capsys):
     monkeypatch.setattr(cli, "check_dependencies", lambda _c: [])
     assert cli.main(["watch", "--all-providers", "--once", "-q", "--no-color"]) == 0
     captured = capsys.readouterr()
-    assert "ALL PROVIDERS · hidden + total rows shown · screen only" in captured.out
+    assert "ALL · hidden+total · screen only" in captured.out
     assert "Operator-only" in captured.err
     assert seen and "disabled_services" not in seen[0]
 

@@ -677,10 +677,13 @@ otherwise `resets_at` stays `null`:
 ### `omp` — an expiring dollar grant
 
 Added 2026-10-15. Provider `omp` (display name `omp`, `cli_binary` `omp`) is
-claude.ai's promotional **cloud-session credit**, which the omp TUI spends
-through the Claude API. It is not the Claude 5h/weekly plan and never refills:
-unused dollars are lost at expiry. Source: CodexBar's Claude row
-([`omp-cloud-credits.md`](omp-cloud-credits.md)).
+the Claude Platform API credit that ships with Max. The omp TUI spends it
+through the Claude API. It is separate from the Claude 5h/weekly plan. Max
+20x deposits $200 and Max 5x deposits $100 each billing cycle; unused dollars
+expire at that reset. Source: CodexBar's Claude row
+([`omp-cloud-credits.md`](omp-cloud-credits.md)). Display counts spent dollars
+up (`↑ $`) and the remainder down (`↓ $… plan`). It is a plan grant, not
+pay-as-you-go.
 
 ```json
 {
@@ -709,18 +712,18 @@ unused dollars are lost at expiry. Source: CodexBar's Claude row
 
 | Field                        | Meaning                                                                                                                                                                       |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `balance_usd`                | dollars left                                                                                                                                                                  |
-| `spent_usd`                  | dollars spent so far                                                                                                                                                          |
+| `balance_usd`                | dollars left of the plan grant (counts down)                                                                                                                                  |
+| `spent_usd`                  | dollars of that grant already used (counts up)                                                                                                                                |
 | `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)                                                                                                                         |
 | `windows[0].resets_at`       | the grant's **expiry**, not a refill                                                                                                                                          |
-| `windows[0].window_minutes`  | `null`: the grant date is unknown, so there is no pace                                                                                                                        |
+| `windows[0].window_minutes`  | 43800: one nominal month ending at the reset, so pace is ahead or behind even spend of that month                                                                             |
 | `windows[0].pool_family`     | `claude` (the board's SCOPE column; internal pool key `omp_claude`)                                                                                                           |
 | `rate_gated_by`              | present while every observed Claude account's shared weekly/monthly window is exhausted with a future reset: credits cannot be spent until `resets_at` (see schema 1.4 above) |
 
 Without a grant total the row falls back to `billing_kind: "prepaid_balance"`
 with no window, still carrying `balance_usd` (and `spent_usd` when CodexBar
 reports it). Summary line:
-`omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator`.
+`omp claude: credits: ok (<1% used / 100% left, ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator`.
 
 **Operator gate (historical; lifted 2026-10-19).** Between 2026-10-15 and
 2026-10-19 `omp` carried `requires_operator_approval: true` and `ai_notice`
@@ -741,6 +744,14 @@ providers the operator may gate in the future.
 | `currency`     | string                   |
 | `used_percent` | number \| null           |
 | `resets_at`    | string (ISO) \| optional |
+
+Direction is display-only (no new field). `balance_usd` and a prepaid
+`usage_credits.remaining` count down. `usage_credits.used` on
+`billing_kind: payg_api` (Muse, Bedrock) counts up. Bedrock's month-to-date
+Cost Explorer spend is that `used`, with `limit` set only when a budget is
+configured, and `balance_usd` left null. `spent_usd` stays the expiring plan
+grant already consumed (`omp`), paired with `balance_usd` still left. It is
+not the Bedrock meter.
 
 ### `cross_checks[]`
 

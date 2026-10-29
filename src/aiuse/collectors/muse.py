@@ -544,8 +544,8 @@ def _accounts_from_portal(
     notes = [
         "Live data fetched directly from Muse (dev.meta.ai portal).",
         f"Endpoint: {_PORTAL_ORIGIN}/api/portal/teams/{team_id}/usage",
-        "Muse dashboard balance is cumulative PAYG spend (counts up from $0), "
-        "not prepaid remaining (DeepSeek / oc-zen count down to $0).",
+        "Muse dashboard balance is ↑ PAYG spend (counts up from $0), "
+        "not ↓ prepaid (DeepSeek / oc-zen count down to $0).",
     ]
     raw: dict[str, Any] = {"team_id": team_id, "banner": banner}
     if usage_raw is not None:
@@ -553,7 +553,7 @@ def _accounts_from_portal(
     if isinstance(banner, dict) and banner.get("kind"):
         notes.append(f"Muse billing banner: {banner.get('kind')}.")
     if spend_usd is not None:
-        notes.append(f"Muse spend this month: ${spend_usd:.2f} (counts up).")
+        notes.append(f"Muse spend this month: ↑ ${spend_usd:.2f} PAYG.")
         return [
             AccountUsage(
                 source="muse",
@@ -566,7 +566,7 @@ def _accounts_from_portal(
             )
         ]
     if free_remaining is not None and free_remaining > 0:
-        notes.append(f"Muse free credits remaining: ${free_remaining:.2f} (counts down).")
+        notes.append(f"Muse free credits remaining: ↓ ${free_remaining:.2f} prepaid.")
         return [
             AccountUsage(
                 source="muse",
@@ -821,7 +821,7 @@ def _accounts_from_muse_cookie_payloads(
     Muse's dashboard "balance" is cumulative PAYG spend (counts up from $0).
     DeepSeek / oc-zen ``balance_usd`` is prepaid remaining (counts down to $0).
     Prefer spend as ``usage_credits.used`` with no ``balance_usd`` so the report
-    can label it ``spent $X (counts up)`` instead of ``balance $X remaining``.
+    can label it ``↑ $X PAYG`` instead of ``↓ $X prepaid``.
     """
     if not isinstance(data, dict):
         raise CollectorError(f"Muse cookie: unexpected GraphQL response at {url}")
@@ -851,8 +851,8 @@ def _accounts_from_muse_cookie_payloads(
     notes = [
         "Live data fetched directly from Muse (dev.meta.ai GraphQL).",
         f"Endpoint: {url} banner={_BILLING_DOC_ID} spend={_SPEND_DOC_ID}.",
-        "Muse dashboard balance is cumulative PAYG spend (counts up from $0), "
-        "not prepaid remaining (DeepSeek / oc-zen count down to $0).",
+        "Muse dashboard balance is ↑ PAYG spend (counts up from $0), "
+        "not ↓ prepaid (DeepSeek / oc-zen count down to $0).",
     ]
     if granted is not None:
         notes.append(f"Muse free credits granted: ${granted:.2f}.")
@@ -866,7 +866,7 @@ def _accounts_from_muse_cookie_payloads(
         raw["spend"] = spend_raw
 
     if spend_usd is not None:
-        notes.append(f"Muse spend this month: ${spend_usd:.2f} (counts up).")
+        notes.append(f"Muse spend this month: ↑ ${spend_usd:.2f} PAYG.")
         return [
             AccountUsage(
                 source="muse",
@@ -880,7 +880,7 @@ def _accounts_from_muse_cookie_payloads(
         ]
 
     if free_remaining > 0:
-        notes.append(f"Muse free credits remaining: ${free_remaining:.2f} (counts down).")
+        notes.append(f"Muse free credits remaining: ↓ ${free_remaining:.2f} prepaid.")
         return [
             AccountUsage(
                 source="muse",
@@ -937,7 +937,7 @@ def _accounts_from_legacy_billing_info(billing: dict[str, Any], data: Any, url: 
     ]
     if credit_limit is not None and rem is not None:
         used = max(0.0, credit_limit - rem)
-        notes.append(f"Muse spend: ${used:.2f} of ${credit_limit:.2f} (remaining ${rem:.2f}).")
+        notes.append(f"Muse spend: ↑ ${used:.2f} of ${credit_limit:.2f} PAYG (↓ ${rem:.2f} prepaid left).")
         credits = UsageCredits(
             used=used,
             limit=credit_limit,
@@ -958,7 +958,7 @@ def _accounts_from_legacy_billing_info(billing: dict[str, Any], data: Any, url: 
         ]
     if balance_usd is None:
         raise CollectorError(f"Muse cookie: billing_info had no recognizable amount at {url}: {billing}")
-    notes.append(f"Muse balance: ${float(balance_usd):.2f} remaining (counts down).")
+    notes.append(f"Muse balance: ↓ ${float(balance_usd):.2f} prepaid.")
     return [
         AccountUsage(
             source="muse",

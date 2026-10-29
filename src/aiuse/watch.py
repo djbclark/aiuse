@@ -147,12 +147,13 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     sweep = copy.deepcopy(config)
     sweep.pop("disabled_services", None)
     sweep.pop("hidden_pools", None)
+    # A config with no [analysis] table still has to reveal ceiling rows.
+    # The header says hidden+total; that was a no-op unless analysis existed.
     analysis = sweep.get("analysis")
-    if isinstance(analysis, dict):
-        analysis = dict(analysis)
-        analysis.pop("excluded_pools", None)
-        analysis["show_total_rows"] = True
-        sweep["analysis"] = analysis
+    analysis = dict(analysis) if isinstance(analysis, dict) else {}
+    analysis.pop("excluded_pools", None)
+    analysis["show_total_rows"] = True
+    sweep["analysis"] = analysis
     collectors = sweep.get("collectors")
     if isinstance(collectors, dict):
         for name, entry in collectors.items():
@@ -273,7 +274,7 @@ def render_watch_board(
     """
     header_bits = ["aiuse watch"]
     if all_providers:
-        header_bits.append("ALL PROVIDERS · hidden + total rows shown · screen only")
+        header_bits.append("ALL · hidden+total · screen only")
     if now is not None:
         header_bits.append(f"now: {format_clock(now, seconds=True)}")
     data_at = snapshot.collected_at if snapshot is not None else last_at
@@ -287,18 +288,17 @@ def render_watch_board(
         mins, secs = divmod(max(0, int(next_in)), 60)
         header_bits.append(f"next in {mins}:{secs:02d}")
     if collecting_all_for is not None:
-        header_bits.append(f"collecting all providers… ({collecting_all_for:.0f}s)")
+        header_bits.append(f"all… ({collecting_all_for:.0f}s)")
     if key_note:
         header_bits.append(key_note)
-    header_bits.append("q/esc quit · u update now · a all providers")
-    lines = [" · ".join(header_bits)]
     if sample_schedule is not None:
         previous, due, tier = sample_schedule
         overdue = " (due)" if now is not None and due <= now else ""
-        lines.append(
-            f"sampler: previous {format_clock(previous, seconds=True)}"
-            f" · next {format_clock(due, seconds=True)}{overdue} · {tier} tier"
+        header_bits.append(
+            f"sampler {format_clock(previous, seconds=True)}→{format_clock(due, seconds=True)}{overdue} {tier}"
         )
+    header_bits.append("q/esc quit · u now · a all")
+    lines = [" · ".join(header_bits)]
     if error:
         lines.append(f"collect error: {error}")
     if snapshot is not None:

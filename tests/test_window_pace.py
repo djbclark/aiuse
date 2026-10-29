@@ -80,7 +80,7 @@ def test_matrix_pace_fixed_columns_and_footer():
     # A prepaid row has no clocks: its note starts at the first data column.
     header = lines[0]
     first_data = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
-    assert prepaid[first_data:].startswith("* [$5.00 (counts down)]")
+    assert prepaid[first_data:].startswith("* [↓ $5.00 prepaid]")
     clocks_only = Snapshot(
         collected_at=NOW,
         accounts=[account for account in snap.accounts if account.provider != "jev"],
@@ -93,7 +93,7 @@ def test_matrix_pace_fixed_columns_and_footer():
     assert first.index("+50%") == solo.index("+50%")
     assert first.index("-50%") == solo.index("-50%")
     assert "$" not in first + second
-    assert "PACE = the row" in text and "+N%/-N%" in text
+    assert "PACE = highest" in text and "+ ahead / - behind" in text
     assert "Pace:" not in render_stderr_meta(snap, [], color=False)
     narrow = render_clock_matrix([], snapshot=snap, color=False, width=65)
     assert "-50%" not in next(line for line in narrow.splitlines() if "codex" in line)
@@ -239,7 +239,8 @@ def test_matrix_cell_shows_tilde_and_columns_aligned():
     # Month column in oc-go shows ~ and PACE column shows +1360%~
     assert oc_line.count("+1360%~") == 2
     # Ensure footer explains ~
-    assert "~ = early: under a tenth of the window has elapsed" in text
+    assert "~ = early" in text
+    assert "under a tenth" not in text
 
 
 def test_json_fields_pace_early_and_overall_pace_early():

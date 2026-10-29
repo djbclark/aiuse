@@ -763,6 +763,8 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
     name = provider_display_name(account.provider)
     acct_part = f" · {account.account}" if include_account and account.account else ""
 
+    from aiuse.report import _api_inventory_note, dollar_meter
+
     uc = account.usage_credits
     spend_up = (
         account.billing_kind == BillingKind.PAYG_API
@@ -770,39 +772,21 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
         and uc.used is not None
         and account.balance_usd is None
     )
-    if spend_up:
-        used = float(uc.used or 0.0)
-        if uc.limit is not None:
+    if spend_up or account.balance_usd is not None or account.credits_remaining is not None:
+        if account.balance_usd is not None and account.balance_usd < 0:
             lines.append(
-                f"{EMOJI_PREPAID} **{name}{acct_part}**: `spent ${used:.2f} of ${float(uc.limit):.2f} (counts up)`"
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `{dollar_meter('down', 'prepaid', account.balance_usd)}` (negative reported)"
             )
-        else:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `spent ${used:.2f} (counts up)`")
-        return lines
-
-    if account.balance_usd is not None:
-        bal = account.balance_usd
-        if bal < 0:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `$-{abs(bal):.2f} (counts down)` (negative reported)")
-        elif bal == 0:
+        elif not spend_up and (
+            account.balance_usd == 0 or (account.balance_usd is None and account.credits_remaining == 0)
+        ):
             lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
-        elif account.spent_usd is not None:
-            # An expiring grant whose size was not reported (omp without a total).
+        elif account.credits_remaining is not None and account.credits_remaining < 0 and account.balance_usd is None:
             lines.append(
-                f"{EMOJI_PREPAID} **{name}{acct_part}**: `${account.spent_usd:.2f} spent · ${bal:.2f} left (expiring grant)`"
+                f"{EMOJI_PREPAID} **{name}{acct_part}**: `↓ {account.credits_remaining:g} credits` (negative reported)"
             )
         else:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `${bal:.2f} (counts down)`")
-    elif account.credits_remaining is not None:
-        creds = account.credits_remaining
-        if creds < 0:
-            lines.append(
-                f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits (counts down)` (negative reported)"
-            )
-        elif creds == 0:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `empty`")
-        else:
-            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `{creds:g} credits (counts down)`")
+            lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: `{_api_inventory_note(account)}`")
     else:
         lines.append(f"{EMOJI_PREPAID} **{name}{acct_part}**: API")
 
@@ -950,19 +934,23 @@ def _render_pool_entry(
 
 
 def _grant_fragment(account: AccountUsage, window: QuotaWindow) -> str | None:
-    """``$0.73 spent · $249.27 left of $250.00`` for an expiring dollar grant.
+    """``↑ $0.73 spent · ↓ $249.27 left of $250.00 plan`` for an expiring grant.
 
-    Only accounts that report ``spent_usd`` (omp's Claude cloud-session
-    credits) carry one; every other window keeps its plain status line.
+    Only accounts that report ``spent_usd`` (omp's Claude API credits) carry
+    one; every other window keeps its plain status line. The spent figure
+    counts up through the grant. The left figure counts down and is part of
+    the monthly plan, not pay-as-you-go.
     """
     if account.spent_usd is None:
         return None
-    parts = [f"${account.spent_usd:.2f} spent"]
+    from aiuse.report import dollar_meter
+
+    parts = [f"↑ ${account.spent_usd:.2f} spent"]
     if account.balance_usd is not None:
-        left = f"${account.balance_usd:.2f} left"
-        if window.refill_capacity_unit == "usd" and window.refill_capacity:
-            left += f" of ${window.refill_capacity:.2f}"
-        parts.append(left)
+        total = (
+            float(window.refill_capacity) if window.refill_capacity_unit == "usd" and window.refill_capacity else None
+        )
+        parts.append(dollar_meter("down", "plan", account.balance_usd, total))
     return " · ".join(parts)
 
 
@@ -1165,9 +1153,7 @@ def render_chat_report(
         sections.append("\n".join(lines))
 
     if pool_entries:
-        sections.append(
-            "pace +N% / -N% = ahead / behind an even spend across the window · header pace = the highest · ~ = early: under 10% of the window has elapsed"
-        )
+        sections.append("+ ahead / - behind · ~ = early · ↑$ PAYG counts up · ↓$ plan or prepaid counts down")
 
     if not sections[1:]:  # Only header, no data.
         sections.append("No usage data collected.")

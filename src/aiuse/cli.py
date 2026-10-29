@@ -68,7 +68,7 @@ config & setup:
   aiuse status / prompt       one-line status for shell prompts / status bars
   aiuse suggest               single best pool to burn next (or nothing urgent)
   aiuse serve                 loopback HTTP API for agents (127.0.0.1 only)
-  aiuse watch                 full-screen quota board (q/esc quit, u update now, a toggle all-providers sweep; default 10m)
+  aiuse watch                 full-screen board (q/esc quit · u now · a all; screen-only sweep; default 10m)
   aiuse sample                scheduled entry point: collects hourly when idle, every 15m when a
                            window moved, every 3m in a burst (docs/attribution.md)
   aiuse attribute             quota burned beside the tokens each client spent (--since 24h,
@@ -83,11 +83,10 @@ config & setup:
   aiuse --no-tui              classic plain-text report (skip Rich styling)
   aiuse --print-completion bash|zsh   shell completion script to stdout
 
-matrix: ## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER. u/l = percent used / percent
-  left; signed pace = ahead (+) or behind (-) of even spend across the window.
-  PACE = the row’s highest window pace. OTHER = per-row notes: dollars (omp
-  `$left` of its expiring Claude cloud-session grant; JSON spent_usd /
-  balance_usd), Fable model cap, grok wallet. A row gated for AI (omp) shows
+matrix: ## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER. One legend line:
+  u/l = percent used / percent left · + ahead / - behind · PACE = highest ·
+  ~ = early · ↑$ PAYG counts up · ↓$ plan or prepaid counts down (omp plan
+  grant, grok prepaid wallet, Fable cap). A row gated for AI (omp) shows
   `({OPERATOR_APPROVAL_NOTICE})` across 5H/WEEK; JSON
   requires_operator_approval / ai_notice.
 
@@ -1052,9 +1051,7 @@ def diagnose(
     lines.append("  aiuse trust setup         # macOS: stable codesign for caut / Keychain Always Allow")
     lines.append("  aiuse --full              # long report (per-provider + detailed plan)")
     lines.append("  aiuse --brief             # same as default glance-first report")
-    lines.append(
-        "  aiuse watch               # full-screen board (q/esc quit; u update now; a toggle all-providers sweep)"
-    )
+    lines.append("  aiuse watch               # full-screen board (q/esc quit · u now · a all; screen-only sweep)")
     lines.append("  aiuse watch --all-providers  # OPERATOR-ONLY live board: every provider, screen only")
     lines.append("  aiuse --no-tui            # classic plain-text pretty report")
     lines.append("  aiuse -t 45               # force all tool timeouts for one run")

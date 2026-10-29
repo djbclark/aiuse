@@ -184,7 +184,7 @@ def test_override_used_through_enrich_and_pool_json_carries_source_and_observed_
     assert pool["observed_at"] == (NOW - timedelta(minutes=5)).isoformat()
     assert pool["expires_at"] == EXPIRY.isoformat()
     assert round(pool["headroom_percent"], 2) == 47.78
-    assert "$104.43 spent / $95.57 left of $200.00" in summary_line(pool)
+    assert "↑ $104.43 spent · ↓ $95.57 left of $200.00 plan" in summary_line(pool)
 
 
 def test_burn_before_reset_fires_within_21_days_above_50_percent():

@@ -88,7 +88,7 @@ def _row_line(text, service, *, extra=None):
 def test_omp_row_tail_note_is_dollars_left():
     rows = _build_matrix_rows([], _snapshot(_omp), None)
     (omp,) = [row for row in rows if row.service == "omp"]
-    assert omp.tail_note == "$249.27"
+    assert omp.tail_note == "↓$249.27/$250.00 plan"
     assert omp.note is None
 
 
@@ -107,7 +107,7 @@ def test_rate_gated_omp_is_not_a_spendable_clock():
     line = _row_line(text, "omp")
     assert line.startswith("empty")
     assert "rate-gated until" in line
-    assert "$95.57 left" in line
+    assert "↓ $95.57 left of $250.00 plan" in line
     assert "99l" not in line
     assert "u/" not in line
 
@@ -128,8 +128,8 @@ def test_other_column_header_width_and_alignment():
     grok = _row_line(text, "grok")
     fable = _row_line(text, "claude", extra="fable")
     # Left-aligned: every note starts under the O of OTHER.
-    assert omp[col:] == "$249.27"
-    assert grok[col:] == "$1.64"
+    assert omp[col:] == "↓$249.27/$250.00 plan"
+    assert grok[col:] == "↓$1.64 prepaid"
     assert fable[col:] == "Fable-cap"
     assert "(counts down)" not in text
     # The pace placeholder stays in its own column, right-aligned under PACE.
@@ -150,9 +150,9 @@ def test_stale_follows_other():
     snap.accounts[0].collected_at = utcnow() - timedelta(days=2)
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     omp = _row_line(text, "omp")
-    assert omp.endswith("$249.27 STALE")
+    assert omp.endswith("↓$249.27/$250.00 plan STALE")
     col = text.splitlines()[0].index("OTHER")
-    assert omp[col:].startswith("$249.27")
+    assert omp[col:].startswith("↓$249.27/$250.00 plan")
 
 
 def test_ai_line_leads_the_stderr_meta():
@@ -184,14 +184,14 @@ def test_watch_board_puts_ai_legend_and_footer_above_the_table():
         sample_schedule=(now - timedelta(minutes=5), now + timedelta(minutes=10), "active"),
     ).splitlines()
     assert board[0].startswith("aiuse watch")
-    assert board[1].startswith("sampler:")
-    assert board[2].strip() == AI_JSON_NOTE
+    assert "sampler " in board[0]
+    assert board[1].strip() == AI_JSON_NOTE
     assert sum(AI_JSON_NOTE in line for line in board) == 1
     header = next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "SERVICE"])
     collected = next(i for i, line in enumerate(board) if "Collected at" in line)
     detail = next(i for i, line in enumerate(board) if line.strip() == "Detail: ai --full")
     legend = next(i for i, line in enumerate(board) if "u/l = percent used" in line)
-    assert 2 < legend < collected < detail < header
+    assert 0 < legend < collected < detail < header
     # Nothing below the table: the last line is a table row.
     assert board[-1].split()[0] in {"error", "empty", "n/a", "slow", "mid", "use"} or board[-1].startswith("     ")
     assert not any("Collected at" in line or "u/l =" in line for line in board[header:])

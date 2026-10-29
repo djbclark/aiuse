@@ -31,7 +31,7 @@ from aiuse.serve import _alerts_from_dicts, _snapshot_from_accounts_dict
 NOW = datetime(2026, 10, 15, 11, 0, tzinfo=UTC)
 EXPIRY = datetime(2026, 11, 5, 7, 59, tzinfo=UTC)
 GATE_TEXT = "(AI: Do not use without asking operator)"
-ARROW_LEGEND = "-> / <- in an empty clock"
+ARROW_LEGEND = "-> / <- points at this row's clock"
 
 
 def _omp(*, gated: bool = True, extra: list[QuotaWindow] | None = None, window: bool = True) -> AccountUsage:
@@ -104,7 +104,7 @@ def test_matrix_centers_the_notice_across_5h_and_week():
     assert abs(left - right) <= 1
     # MONTH and OTHER stay as they are, under their headers.
     assert row.index(">0u/100l") + len(">0u/100l") == header.index("MONTH") + len("MONTH")
-    assert row.index("$249.27") == header.index("OTHER")
+    assert row.index("↓$249.27") == header.index("OTHER")
 
 
 def test_matrix_columns_stay_aligned_in_color():
@@ -218,7 +218,7 @@ def test_chat_adds_the_notice_under_the_status_line():
     lines = render_chat_report(Snapshot(collected_at=NOW, accounts=[_omp(), _codex()]), []).splitlines()
 
     i = next(n for n, line in enumerate(lines) if "**omp · credits**" in line)
-    assert lines[i + 1].startswith("   ↳ `100% left · $0.73 spent · $249.27 left of $250.00")
+    assert lines[i + 1].startswith("   ↳ `100% left · ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan")
     assert lines[i + 2] == f"   ↳ {OPERATOR_APPROVAL_NOTICE}"
     assert sum(OPERATOR_APPROVAL_NOTICE in line for line in lines) == 1
 

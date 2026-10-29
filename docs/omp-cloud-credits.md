@@ -90,7 +90,7 @@ OpenCode Go row):
    line reads:
 
    ```text
-   omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00 expiring grant, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator
+   omp claude: credits: ok (<1% used / 100% left, ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan, expires Thu Nov 5 2:59am) — AI: Do not use without asking operator
    ```
 
    Contract: [`json-contract.md`](json-contract.md#omp--an-expiring-dollar-grant).
@@ -99,7 +99,7 @@ OpenCode Go row):
 
    ```text
    🟢 **omp · credits**
-      ↳ `100% left · $0.73 spent · $249.27 left of $250.00 · expires in 20d 20h`
+      ↳ `100% left · ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan · expires in 20d 20h`
       ↳ AI: Do not use without asking operator
    ```
 

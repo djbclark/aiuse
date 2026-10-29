@@ -46,7 +46,7 @@ def test_chat_line_shows_the_expiring_grant_in_dollars():
     lines = _chat(_omp())
 
     i = next(n for n, line in enumerate(lines) if "**omp · credits**" in line)
-    assert lines[i + 1] == "   ↳ `100% left · $0.73 spent · $249.27 left of $250.00 · expires in 20d 20h`"
+    assert lines[i + 1] == ("   ↳ `100% left · ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan · expires in 20d 20h`")
 
 
 def test_chat_line_without_spent_keeps_the_plain_window_form():
@@ -59,7 +59,7 @@ def test_chat_line_without_spent_keeps_the_plain_window_form():
 def test_chat_plain_balance_omp_shows_spent_and_left():
     lines = _chat(_omp(window=False))
 
-    assert any("**omp**: `$0.73 spent · $249.27 left (expiring grant)`" in line for line in lines)
+    assert any("**omp**: `↑ $0.73 spent · ↓ $249.27 plan`" in line for line in lines)
 
 
 def test_json_carries_spent_usd_only_when_set():
@@ -74,8 +74,10 @@ def test_summary_line_and_semantics_describe_the_grant():
     enrich_snapshot(snap, now=NOW)
 
     (line,) = [line for line in snap["summary_lines"] if line.startswith("omp")]
-    assert line.startswith("omp claude: credits: ok (<1% used / 100% left, $0.73 spent / $249.27 left of $250.00")
-    assert "expiring grant, expires " in line
+    assert line.startswith(
+        "omp claude: credits: ok (<1% used / 100% left, ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan"
+    )
+    assert ", expires " in line
     (window,) = snap["accounts"][0]["windows"]
     assert window["pool_family"] == "claude"
     assert "spent_usd" in SEMANTICS and "spent_usd" in snap["semantics"]
