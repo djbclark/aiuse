@@ -15,6 +15,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from aiuse.models import (
     PROVIDER_DISPLAY_NAMES,
+    WINDOW_NOMINAL_MINUTES,
     AccountUsage,
     BillingKind,
     QuotaWindow,
@@ -1147,7 +1148,8 @@ def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
     it as the ``claude-cloud-credits`` row of ``usage.details``; it is not a
     Claude plan window, so it becomes its own provider. The credit does not
     refill: ``resets_at`` is its *expiry*, which makes the unused balance
-    use-it-or-lose-it.
+    use-it-or-lose-it. CodexBar reports the expiry and the dollars, not the
+    grant start, so the window length is one nominal month ending then.
     """
     if str(row.get("provider") or "").lower() != "claude":
         return None
@@ -1187,6 +1189,7 @@ def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
             used_percent=100.0 - remaining_percent,
             remaining_percent=remaining_percent,
             resets_at=expires_at,
+            window_minutes=WINDOW_NOMINAL_MINUTES["monthly"],
             reset_description=f"${remaining:.2f} of ${total:.2f} left, expires",
             refill_capacity=total,
             refill_capacity_unit="usd",

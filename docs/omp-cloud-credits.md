@@ -40,8 +40,12 @@ OpenCode Go row):
 
 1. One window, label `credits`, `used`/`remaining` percent of the grant, and
    `resets_at` = the **expiry**. The credit does not refill, so the unused
-   balance is use-it-or-lose-it by that date. `window_minutes` stays unknown
-   (the grant date is not reported), so there is no pace figure.
+   balance is use-it-or-lose-it by that date. `window_minutes` is the monthly
+   nominal (43,800). CodexBar reports the expiry and the dollars left, not
+   when the grant started, and this credit is the Max plan's monthly grant.
+   Pace is ahead or behind even spend of that month ending at the expiry. A
+   reset further out than one nominal month has no elapsed time yet, so the
+   pace reads as very fast until the expiry is inside that month.
 2. `balance_usd` carries the remaining dollars and `spent_usd` the dollars
    spent (CodexBar's `progress.used`, else grant minus remaining). `spent_usd`
    is deliberately not `usage_credits`, which means an overage wallet.

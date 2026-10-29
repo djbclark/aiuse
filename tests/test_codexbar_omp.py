@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+from aiuse.analysis.pace import window_pace
 from aiuse.collectors import codexbar
 from aiuse.collectors.codexbar import _omp_credits_from_row, collect_codexbar
-from aiuse.models import AccountUsage, BillingKind
+from aiuse.models import WINDOW_NOMINAL_MINUTES, AccountUsage, BillingKind
 
 
 def _claude_row(**details_row):
@@ -35,9 +36,28 @@ def test_omp_row_carries_balance_and_expiry_window():
     (window,) = account.windows
     assert window.label == "credits"
     assert window.resets_at == datetime(2026, 11, 5, 7, 59, tzinfo=UTC)
+    assert window.window_minutes == WINDOW_NOMINAL_MINUTES["monthly"]
     assert window.refill_capacity == 250.0
     assert round(window.remaining_percent or 0, 2) == 99.71
     assert account.spent_usd == 0.730479
+
+
+def test_omp_pace_from_dollars_left_and_the_reset():
+    """$80 left of a $200 grant, halfway through the nominal month, is 20% ahead."""
+    account = _omp_credits_from_row(
+        _claude_row(
+            usageValue=80,
+            secondaryValue="Expires 2026-11-15T00:00:00Z",
+            progress={"used": 120, "total": 200},
+        )
+    )
+
+    assert account is not None
+    (window,) = account.windows
+    assert window.remaining_percent == 40.0
+    assert window.resets_at is not None
+    now = window.resets_at - timedelta(minutes=WINDOW_NOMINAL_MINUTES["monthly"] / 2)
+    assert window_pace(window, now) == (20, False)
 
 
 def test_omp_spent_falls_back_to_total_minus_remaining():
