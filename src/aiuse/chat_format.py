@@ -767,7 +767,7 @@ def _render_prepaid_row(account: AccountUsage, *, include_account: bool = True) 
     from aiuse.report import _api_inventory_note, dollar_meter
 
     if canonical_provider(account.provider) == "bedrock":
-        # Pay-as-you-go spend, or UNKNOWN when Cost Explorer reported $0.
+        # Pay-as-you-go spend. A measured $0, including the old UNKNOWN snapshot, is that total.
         lines.append(f"{EMOJI_INFO} **{name}{acct_part}**: `{_api_inventory_note(account)}`")
         return lines
 
@@ -1042,8 +1042,12 @@ def render_chat_report(
     error_accounts: list[AccountUsage] = []
     no_data_accounts: list[AccountUsage] = []
 
+    from aiuse.report import _bedrock_stored_unknown
+
     for account in snapshot.accounts:
-        if account.error:
+        if _bedrock_stored_unknown(account):
+            prepaid_accounts.append(account)
+        elif account.error:
             error_accounts.append(account)
         elif account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API):
             prepaid_accounts.append(account)

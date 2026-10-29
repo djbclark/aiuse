@@ -49,7 +49,10 @@ balance.
 JSON: `billing_kind` `payg_api`, `usage_credits.used` is the spend (0 when
 the total was `$0.00`), `usage_credits.limit` is the budget or null,
 `balance_usd` is null. `spent_usd` is not this meter. That field is the
-expiring plan grant (`omp`). When the row names no total at all, `error` is
-`UNKNOWN` and `usage_credits` is omitted.
+expiring plan grant (`omp`). An older snapshot stored a measured `$0.00` as
+`error` `UNKNOWN` and omitted `usage_credits`. Watch reuses that file when
+it is younger than the interval and does not recollect, so the board reads
+the sentinel as `↑ $0.00 PAYG (as of …)` on the n/a band. A different error
+string stays on the error band.
 
 There is no percent clock. A 0–100 bar would look like a plan window.

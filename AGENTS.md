@@ -232,7 +232,13 @@ Full path-by-path map with "read when" hints:
   console entry (`.venv/bin/aiuse`, `aiuse-test.sh`) re-execs into the installed
   Homebrew release (`prefer_homebrew_formula`), so without it a smoke run shows
   the released code, not your change (2026-10-13: the `↻` marker looked absent
-  until set).
+  until set). For a display or collector change, run
+  `./aiuse-test.sh watch --once` before a normal `./aiuse-test.sh` and before
+  any other test. Watch reuses a snapshot younger than its interval, so a
+  normal run first rewrites that file and hides a bug that shows up only when
+  watch is the first collect (2026-10-29: Bedrock `??` / `[UNKNOWN]`). Do not
+  pass `--all-providers` or press `a` unless djbclark asked for that sweep in
+  this session.
 - **Beads profile: this repo opts in to team-maintainer behavior.** Agents may
   close beads, run quality gates, commit, and push, and should sync beads
   proactively — `bd dolt pull` then `bd dolt push` — after creating, updating,

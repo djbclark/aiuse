@@ -585,6 +585,40 @@ def test_watch_frame_reuses_a_fresh_snapshot_instead_of_collecting(monkeypatch):
     assert alerts == []
 
 
+def test_watch_reuses_unknown_bedrock_snapshot_as_payg_zero(monkeypatch):
+    """A first watch paints a reused UNKNOWN Bedrock row as $0 PAYG and does not collect."""
+    from aiuse.analysis.history import save_snapshot
+    from aiuse.timefmt import format_as_of
+
+    when = utcnow()
+    snap = Snapshot(
+        collected_at=when,
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="bedrock",
+                billing_kind=BillingKind.PAYG_API,
+                error="UNKNOWN",
+                collected_at=when,
+            ),
+            AccountUsage(
+                source="codexbar",
+                provider="codex",
+                error="signed out",
+            ),
+        ],
+    )
+    save_snapshot(snap, [])
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: pytest.fail("must not collect"))
+    snapshot, alerts = collect_watch_frame({"analysis": {"persist_snapshots": True}}, max_age=600)
+    board = render_watch_board(snapshot, alerts, color=False, quiet=True, now=when)
+    bedrock = [line for line in board.splitlines() if "bedrock" in line]
+    codex = [line for line in board.splitlines() if "codex" in line]
+    assert bedrock and all("??" not in line and "[UNKNOWN]" not in line for line in bedrock)
+    assert any("↑ $0.00 PAYG " + format_as_of(when) in line for line in bedrock)
+    assert any("??" in line and "signed out" in line for line in codex)
+
+
 def test_watch_frame_does_not_reuse_a_snapshot_from_a_different_disable_list(monkeypatch):
     """The failure that dropped agy: a young snapshot still listed it as disabled."""
     from aiuse.analysis.history import save_snapshot

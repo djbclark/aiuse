@@ -595,6 +595,17 @@ def _bedrock_meter_usd(account: AccountUsage) -> float | None:
     return None
 
 
+def _bedrock_stored_unknown(account: AccountUsage) -> bool:
+    """An older snapshot stored this Bedrock total as ``error="UNKNOWN"``.
+
+    A measured ``$0.00`` used that string and omitted ``usage_credits``. Watch
+    reuses the snapshot and does not recollect, so the board reads the sentinel
+    as ``↑ $0.00 PAYG`` instead of the error band. Any other error string stays
+    an error.
+    """
+    return canonical_provider(account.provider) == "bedrock" and (account.error or "").strip() == "UNKNOWN"
+
+
 def _bedrock_display_spend(account: AccountUsage) -> float | None:
     """Positive Bedrock spend. A measured zero stays on :func:`_bedrock_meter_usd`."""
     return _positive_usd(_bedrock_meter_usd(account))
@@ -711,7 +722,10 @@ def _api_inventory_note(account: AccountUsage) -> str:
     """Ladder/matrix note for a prepaid countdown or a pay-as-you-go meter."""
     if canonical_provider(account.provider) == "bedrock":
         # Pay-as-you-go only. A measured $0 is that total, with the reading time.
+        # The UNKNOWN error string is that same $0 on a snapshot watch reused.
         spent = _bedrock_meter_usd(account)
+        if spent is None and _bedrock_stored_unknown(account):
+            spent = 0.0
         if spent is None:
             return "UNKNOWN"
         uc = account.usage_credits
@@ -1405,7 +1419,7 @@ def render_priority_ladder(
             )
             covered.add(cov)
             continue
-        if account.error or not _account_has_usage(account):
+        if (account.error or not _account_has_usage(account)) and not _bedrock_stored_unknown(account):
             cov = _ladder_coverage_key(account.provider, account.account, "")
             if cov in covered:
                 continue
@@ -1417,7 +1431,7 @@ def render_priority_ladder(
             )
             covered.add(cov)
             continue
-        if _account_is_non_expiring_prepaid(account):
+        if _account_is_non_expiring_prepaid(account) or _bedrock_stored_unknown(account):
             cov = _ladder_coverage_key(account.provider, account.account, "")
             if cov in covered:
                 continue
@@ -1758,7 +1772,7 @@ def _build_matrix_rows(
                 )
             )
             continue
-        if account.error or not _account_has_usage(account):
+        if (account.error or not _account_has_usage(account)) and not _bedrock_stored_unknown(account):
             if account.provider == "sipb" and not account.error:
                 band = _BAND_NA
                 priority = _account_queue_priority(account, band)
