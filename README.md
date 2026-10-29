@@ -184,19 +184,20 @@ of the optional data-source tools ([below](#data-sources)) it found, and
 
 ## Data sources
 
-| Tool                                                                                                      | Purpose                                                    | Authority                                                                                                                           |
-| --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                                  | Live Claude Code quota for every configured email/account  | Canonical multi-account Claude source                                                                                               |
-| [**CodexBar**](https://github.com/) `codexbar usage --format json`                                        | Live quotas and balances for enabled providers             | Preferred for non-Claude providers; keep its Claude source disabled on macOS until its Keychain prompting is fixed                  |
-| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json`           | Independent multi-provider usage (CodexBar-class probes)   | **Deprecated** (overlap with cswap, CodexBar, tokscale). Still runs if installed. Happy to re-add support.                          |
-| [**caam**](https://github.com/Dicklesworthstone/coding_agent_account_manager) `caam limits --format json` | Vault-profile limits for claude / codex / grok / cursor    | **Deprecated** (overlap; vault echo behind every direct source). Still runs if installed. See [`docs/caam.md`](docs/caam.md).       |
-| [**OpenUsage.ai**](https://www.openusage.ai/) `openusage` / `127.0.0.1:6736/v1/limits`                    | Quiet macOS menu-bar companion + live limits API           | **Deprecated** (overlap with cswap, CodexBar, tokscale, native OpenCode Go). Collector key `openusage_ai`. Still runs if installed. |
-| [**OpenUsage.sh**](https://openusage.sh/) `openusage-sh export --output - --format json`                  | Terminal dashboard, local telemetry, and quota export      | **Deprecated** (overlap). Collector key `openusage_sh`. Still runs if installed.                                                    |
-| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                            | Independent live subscription quota measurement            | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                                             |
-| [**paseo**](https://paseo.sh/) `paseo usage ls --json`                                                    | Per-account quota windows + balances from the Paseo daemon | Second source behind the direct collectors (claude/codex/copilot/grok/antigravity); see [`docs/paseo.md`](docs/paseo.md)            |
+| Tool                                                                                                         | Purpose                                                    | Authority                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [**cswap**](https://github.com/realiti4/claude-swap) `cswap list --json`                                     | Live Claude Code quota for every configured email/account  | Canonical multi-account Claude source                                                                                               |
+| [**CodexBar**](https://github.com/) HTTP `/usage` when `http_url` is up, else `codexbar usage --format json` | Live quotas and balances for enabled providers             | Preferred for non-Claude providers; keep its Claude source disabled on macOS until its Keychain prompting is fixed                  |
+| [**caut**](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) `caut usage --json`              | Independent multi-provider usage (CodexBar-class probes)   | **Deprecated** (overlap with cswap, CodexBar, tokscale). Still runs if installed. Happy to re-add support.                          |
+| [**caam**](https://github.com/Dicklesworthstone/coding_agent_account_manager) `caam limits --format json`    | Vault-profile limits for claude / codex / grok / cursor    | **Deprecated** (overlap; vault echo behind every direct source). Still runs if installed. See [`docs/caam.md`](docs/caam.md).       |
+| [**OpenUsage.ai**](https://www.openusage.ai/) `openusage` / `127.0.0.1:6736/v1/limits`                       | Quiet macOS menu-bar companion + live limits API           | **Deprecated** (overlap with cswap, CodexBar, tokscale, native OpenCode Go). Collector key `openusage_ai`. Still runs if installed. |
+| [**OpenUsage.sh**](https://openusage.sh/) `openusage-sh export --output - --format json`                     | Terminal dashboard, local telemetry, and quota export      | **Deprecated** (overlap). Collector key `openusage_sh`. Still runs if installed.                                                    |
+| [**tokscale**](https://www.npmjs.com/) `tokscale usage --json`                                               | Independent live subscription quota measurement            | Cross-checked against peers; preferred for Copilot; fill-in when others lack a live row                                             |
+| [**paseo**](https://paseo.sh/) `paseo usage ls --json`                                                       | Per-account quota windows + balances from the Paseo daemon | Second source behind the direct collectors (claude/codex/copilot/grok/antigravity); see [`docs/paseo.md`](docs/paseo.md)            |
 
 This project shells out to tools already on your `PATH` (and optionally hits
-OpenUsage’s loopback API); it does not scrape billing dashboards itself. For
+CodexBar's loopback HTTP server and OpenUsage’s loopback API); it does not
+scrape billing dashboards itself. For
 more on collector setup, reliability, and source selection, see the
 [documentation index](docs/index.md).
 
@@ -308,6 +309,8 @@ label. Several ClinePass accounts, for example, need CodexBar's
 # One row per CodexBar token account.
 [collectors.codexbar]
 all_accounts = ["clinepass"]
+# http_url = "http://127.0.0.1:10546"
+# http_token = ""
 
 # Label = the CodexBar token-account name. Key: env first, then
 # secretspec, then sudo-secretspec.

@@ -38,6 +38,10 @@ prerequisites are absent).
 paseo:** caut, caam, OpenUsage.ai, and OpenUsage.sh. The code stays; the
 maintainer is happy to re-add support on request
 ([`collectors-caut-openusage.md`](collectors-caut-openusage.md)).
+**CodexBar HTTP (2026-10-29):** `collectors.codexbar.http_url` and
+`http_token`. A healthy `/health` sends usage queries to that server, bearer
+header only, and skips the widget snapshot. A down server falls back to the
+snapshot and the CLI. The token stays in the operator config, never in git.
 Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
 monthly reset parsed from the billing API's `currentPeriod`, see
 [`docs/grok-quota.md`](docs/grok-quota.md)) beside the prepaid wallet — and a

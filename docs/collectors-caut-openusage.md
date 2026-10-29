@@ -51,15 +51,15 @@ zero credits).
 `aiuse` prefers ranking quality over a single data path. In addition to
 **cswap**, **CodexBar**, and **tokscale**, it can also collect:
 
-| Source                                                                        | Role                                                                       | Recommendation                             |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
-| **[CodexBar](https://github.com/steipete/CodexBar)**                          | Primary multi-provider usage probe (instant widget snapshot cache)         | **Recommended**                            |
-| **[cswap](https://github.com/realiti4/claude-swap)**                          | Authoritative multi-account Claude Code rate limits                        | **Recommended**                            |
-| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`          | **Deprecated** (overlap)                   |
-| **[tokscale](https://github.com/Dicklesworthstone/tokscale)**                 | Copilot & Cursor token quotas                                              | **Recommended**                            |
-| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                            | **Deprecated** (overlap; keychain prompts) |
-| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md)) | **Deprecated** (overlap)                   |
-| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`           | **Deprecated** (overlap)                   |
+| Source                                                                        | Role                                                                                       | Recommendation                             |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| **[CodexBar](https://github.com/steipete/CodexBar)**                          | Primary multi-provider usage probe (HTTP server when configured, else the widget snapshot) | **Recommended**                            |
+| **[cswap](https://github.com/realiti4/claude-swap)**                          | Authoritative multi-account Claude Code rate limits                                        | **Recommended**                            |
+| **[OpenUsage.ai](https://www.openusage.ai/)**                                 | macOS menu bar app + CLI and/or `http://127.0.0.1:6736/v1/limits`                          | **Deprecated** (overlap)                   |
+| **[tokscale](https://github.com/Dicklesworthstone/tokscale)**                 | Copilot & Cursor token quotas                                                              | **Recommended**                            |
+| **[caut](https://github.com/Dicklesworthstone/coding_agent_usage_tracker)**   | Cross-platform CLI usage probe (`caut.v1` JSON)                                            | **Deprecated** (overlap; keychain prompts) |
+| **[caam](https://github.com/Dicklesworthstone/coding_agent_account_manager)** | Account vault; `caam limits` reads vault profiles (see [caam.md](caam.md))                 | **Deprecated** (overlap)                   |
+| **[OpenUsage.sh](https://openusage.sh/)**                                     | Terminal dashboard; versioned JSON export through `openusage-sh`                           | **Deprecated** (overlap)                   |
 
 Primary selection still follows priority (Claude → cswap; Copilot → tokscale;
 others → CodexBar first). **All live sources are pair-wise cross-checked.**

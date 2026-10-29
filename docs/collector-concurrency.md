@@ -10,15 +10,15 @@ code stays. Happy to re-add support if anyone wants them
 
 ## Data sources (all seven)
 
-| Collector        | Interface                                                | Role                                        |
-| ---------------- | -------------------------------------------------------- | ------------------------------------------- |
-| **cswap**        | `cswap list --json`                                      | Multi-account Claude (canonical)            |
-| **CodexBar**     | `codexbar usage --format json`                           | Broad live quotas (preferred non-Claude)    |
-| **caut**         | `caut usage --json`                                      | Independent multi-provider peer / fill-in   |
-| **caam**         | `caam limits --format json` (vault profiles)             | Last-resort peer behind every direct source |
-| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits` | Deprecated (overlap); still runs if enabled |
-| **OpenUsage.sh** | `openusage-sh export --output - --format json`           | Independent local telemetry / quota backup  |
-| **tokscale**     | `tokscale usage --json`                                  | Independent peer; preferred for Copilot     |
+| Collector        | Interface                                                               | Role                                        |
+| ---------------- | ----------------------------------------------------------------------- | ------------------------------------------- |
+| **cswap**        | `cswap list --json`                                                     | Multi-account Claude (canonical)            |
+| **CodexBar**     | `GET /usage` when `http_url` is up, else `codexbar usage --format json` | Broad live quotas (preferred non-Claude)    |
+| **caut**         | `caut usage --json`                                                     | Independent multi-provider peer / fill-in   |
+| **caam**         | `caam limits --format json` (vault profiles)                            | Last-resort peer behind every direct source |
+| **OpenUsage.ai** | `openusage` CLI and/or `http://127.0.0.1:6736/v1/limits`                | Deprecated (overlap); still runs if enabled |
+| **OpenUsage.sh** | `openusage-sh export --output - --format json`                          | Independent local telemetry / quota backup  |
+| **tokscale**     | `tokscale usage --json`                                                 | Independent peer; preferred for Copilot     |
 
 The default
 [`packaging/install-deps.sh`](../packaging/install-deps.sh) (and site
