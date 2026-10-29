@@ -19,7 +19,7 @@ and the Cursor-pools batch arrived after a handoff written against 3.4.3 (djbcla
 2026-10-14). Check `git log --oneline -6` and `git branch -r --no-merged origin/main`
 before assuming the tree is what the handoff describes.
 
-**Status (2026-10-29):** Package/CLI **`aiuse`**, packaging **3.10.2**
+**Status (2026-10-29):** Package/CLI **`aiuse`**, packaging **3.10.3**
 (PyPI/GitHub/Homebrew; 3.9.4 made the omp gate a durable fail-closed latch —
 evidence persisted in `~/.local/state/aiuse/rate-gates.json`, Anthropic 429
 retry-after ingested from omp's own logs, `aiuse gate status|clear`, and the
