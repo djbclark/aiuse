@@ -155,6 +155,12 @@ def _windows_from_access(access: Mapping[str, Any]) -> list[QuotaWindow]:
             continue
         percent = min(100.0, max(0.0, used / limit * 100.0))
         resets_at = _parse_timestamp(meter.get("resetsAt")) or (period_end if key == "month" else None)
+        if key == "month" and resets_at is not None:
+            starts_at = _parse_timestamp(access.get("startsAt"))
+            if starts_at is not None:
+                period_minutes = int((resets_at - starts_at).total_seconds() / 60)
+                if period_minutes > 0:
+                    minutes = period_minutes
         windows.append(
             QuotaWindow(
                 label=label,

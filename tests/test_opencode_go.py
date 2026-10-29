@@ -1,4 +1,7 @@
+from copy import deepcopy
 from types import SimpleNamespace
+
+import pytest
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.opencode_go import (
@@ -80,6 +83,31 @@ def test_monthly_window_falls_back_to_the_billing_period_end():
     monthly = account.windows[-1]
     assert monthly.resets_at is not None
     assert monthly.resets_at.isoformat().startswith("2026-10-19T17:20:12")
+
+
+def test_monthly_window_uses_vendor_cycle_start():
+    payload = deepcopy(_ACTIVE_STATUS)
+    payload["access"]["startsAt"] = "2026-10-19T17:20:12.000Z"
+    payload["access"]["endsAt"] = "2026-11-19T17:20:12.000Z"
+
+    account = _account_from_go_status(payload)
+
+    assert account is not None
+    assert [window.window_minutes for window in account.windows] == [300, 10080, 44640]
+
+
+@pytest.mark.parametrize("starts_at", [None, "invalid", "2026-11-19T17:20:12.000Z"])
+def test_monthly_window_without_valid_start_uses_thirty_days(starts_at):
+    payload = deepcopy(_ACTIVE_STATUS)
+    payload["access"].pop("startsAt")
+    payload["access"]["endsAt"] = "2026-11-19T17:20:12.000Z"
+    if starts_at is not None:
+        payload["access"]["startsAt"] = starts_at
+
+    account = _account_from_go_status(payload)
+
+    assert account is not None
+    assert account.windows[-1].window_minutes == 43200
 
 
 def test_meters_without_a_limit_are_not_quota_windows():
