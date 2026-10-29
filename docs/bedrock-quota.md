@@ -20,7 +20,8 @@ managed machine, `sudo-secretspec run` can inject the existing
 `CODEXBAR_AWS_ACCESS_KEY_ID` and `CODEXBAR_AWS_SECRET_ACCESS_KEY` into the AWS
 child process. Secret values are never command arguments or output. aiuse
 does not install the CLI, authenticate a profile, or access a keychain.
-The source reports `aws-cost-explorer`; CodexBar remains the discovery path.
+The collector source remains `codexbar` so existing source pins keep working;
+the native billing breakdown is identified by `bedrock_billing`.
 
 ## Query limits and cached readings
 

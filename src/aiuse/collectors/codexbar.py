@@ -1266,7 +1266,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             account_error = "UNKNOWN"
 
     return AccountUsage(
-        source="aws-cost-explorer" if provider == "bedrock" and usage.get("bedrockBilling") else "codexbar",
+        source="codexbar",
         provider=provider,
         account=str(account) if account else None,
         plan=str(plan) if plan else None,

@@ -33,6 +33,7 @@ def test_native_bedrock_credit_offset_survives_snapshot_roundtrip():
     assert _api_inventory_note(account) == note
     assert "$3.45 credits, $0.00 net" in note
     assert restored.balance_usd is None
+    assert restored.source == "codexbar"  # existing source pins still select this collector
 
 
 def test_native_zero_is_measured_legacy_zero_is_unknown():
