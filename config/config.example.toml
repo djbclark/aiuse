@@ -43,6 +43,13 @@
 # account. They skip the widget-snapshot cache (it holds one account). A
 # provider with no token accounts falls back to the plain query.
 # all_accounts = ["clinepass"]
+# CodexBar's HTTP server (Settings → Advanced). When /health answers, usage
+# queries go there instead of the widget snapshot and the CLI. A down server
+# falls back to those.
+# The token is the server's bearer token. It stays in this file on this
+# machine and is sent only as an Authorization header.
+# http_url = "http://127.0.0.1:10546"
+# http_token = ""
 
 [collectors.openusage_ai]
 # OpenUsage.ai — the macOS menu-bar app's CLI / loopback API.

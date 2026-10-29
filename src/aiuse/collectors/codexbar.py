@@ -6,8 +6,12 @@ import json
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from aiuse.models import (
     PROVIDER_DISPLAY_NAMES,
@@ -282,6 +286,27 @@ def _read_widget_snapshot(
     return accounts
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    """Refuse redirects so the bearer token stays on the configured host."""
+
+    def redirect_request(self, req: Request, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
+
+
+class _CodexbarHttp:
+    """A CodexBar ``serve`` base URL and the bearer token for its data routes."""
+
+    def __init__(self, base_url: str, token: str | None) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.token = token
+
+
+# Set for the duration of one ``collect_codexbar`` call. Worker threads copy
+# the context at submit time, so concurrent provider queries see the same server.
+_CODEXBAR_HTTP: ContextVar[_CodexbarHttp | None] = ContextVar("aiuse_codexbar_http", default=None)
+_HTTP_MISS = object()
+
+
 def collect_codexbar(
     *,
     providers: str | list[str] | None = "enabled",
@@ -296,6 +321,8 @@ def collect_codexbar(
     cache_path: Path | str | None = None,
     all_accounts_providers: frozenset[str] = frozenset(),
     include_disabled: bool = False,
+    http_url: str | None = None,
+    http_token: str | None = None,
 ) -> list[AccountUsage]:
     """Collect CodexBar usage rows.
 
@@ -309,7 +336,47 @@ def collect_codexbar(
     knows that provider and this run did not already collect it. The widget
     cache only holds CodexBar's enabled set, so a provider disabled in both
     places (OpenCode Go on this machine) would otherwise never appear.
+
+    ``http_url`` is CodexBar's HTTP server (Settings → Advanced). When
+    ``/health`` answers, usage queries use that server instead of the widget
+    snapshot and the CLI. A server that is down falls back to those. The
+    token is sent only as an Authorization bearer header.
     """
+    reset = _CODEXBAR_HTTP.set(_codexbar_http_if_up(http_url, http_token))
+    try:
+        return _collect_codexbar_impl(
+            providers=providers,
+            timeout=timeout,
+            discovery_timeout=discovery_timeout,
+            min_intervals=min_intervals,
+            skip_providers=skip_providers,
+            provider_timeouts=provider_timeouts,
+            timeout_backoff=timeout_backoff,
+            use_cache=use_cache,
+            max_cache_age=max_cache_age,
+            cache_path=cache_path,
+            all_accounts_providers=all_accounts_providers,
+            include_disabled=include_disabled,
+        )
+    finally:
+        _CODEXBAR_HTTP.reset(reset)
+
+
+def _collect_codexbar_impl(
+    *,
+    providers: str | list[str] | None = "enabled",
+    timeout: float = 45.0,
+    discovery_timeout: float | None = None,
+    min_intervals: dict[str, float] | None = None,
+    skip_providers: frozenset[str] | None = None,
+    provider_timeouts: dict[str, float] | None = None,
+    timeout_backoff: float | None = DEFAULT_TIMEOUT_BACKOFF_SECONDS,
+    use_cache: bool = False,
+    max_cache_age: float = 300.0,
+    cache_path: Path | str | None = None,
+    all_accounts_providers: frozenset[str] = frozenset(),
+    include_disabled: bool = False,
+) -> list[AccountUsage]:
     provider_list = _normalize_providers(providers)
     # CodexBar has no `omp` provider: its credits ride on the Claude row.
     provider_list = list(dict.fromkeys("claude" if p == "omp" else p for p in provider_list))
@@ -331,7 +398,9 @@ def collect_codexbar(
         )
         return found + extra + _query_error_rows(extra_errors)
 
-    if use_cache:
+    # A live HTTP server is the menu bar's own cache. Skip the widget snapshot
+    # so a provider the snapshot omits is still read from that server.
+    if use_cache and _CODEXBAR_HTTP.get() is None:
         cache_list = [p for p in provider_list if p is None or canonical_provider(p) not in all_accounts]
         cached = (
             _read_widget_snapshot(
@@ -720,7 +789,88 @@ def _query_provider(provider_arg: str | None, *, timeout: float = 45.0, all_acco
     return _run_codexbar_usage(argv, timeout=timeout)
 
 
+def _usage_query_params(argv: list[str]) -> list[tuple[str, str]]:
+    """Map a ``codexbar usage`` argv onto the HTTP server's query string."""
+    params: list[tuple[str, str]] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg in ("--provider", "--source") and index + 1 < len(argv):
+            params.append((arg[2:], argv[index + 1]))
+            index += 2
+            continue
+        if arg == "--all-accounts":
+            params.append(("allAccounts", "true"))
+        index += 1
+    return params
+
+
+def _codexbar_http_if_up(url: str | None, token: str | None) -> _CodexbarHttp | None:
+    """The configured server when ``/health`` answers, otherwise the CLI path."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        return None
+    bearer = token.strip() if isinstance(token, str) and token.strip() else None
+    client = _CodexbarHttp(url.strip(), bearer)
+    try:
+        status, body = _http_get(client, "/health", timeout=3.0)
+    except (URLError, TimeoutError, OSError):
+        return None
+    if status != 200:
+        return None
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict) or payload.get("status") != "ok":
+        return None
+    return client
+
+
+def _http_get(
+    client: _CodexbarHttp, path: str, *, timeout: float, params: list[tuple[str, str]] | None = None
+) -> tuple[int, bytes]:
+    """GET one CodexBar HTTP route. Redirects are not followed."""
+    query = f"?{urlencode(params)}" if params else ""
+    req = Request(f"{client.base_url}{path}{query}", headers={"Accept": "application/json"})
+    if client.token:
+        req.add_header("Authorization", f"Bearer {client.token}")
+    opener = build_opener(_NoRedirect)
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            return int(resp.status), resp.read()
+    except HTTPError as exc:
+        return int(exc.code), exc.read()
+
+
+def _fetch_codexbar_http_usage(client: _CodexbarHttp, argv: list[str], *, timeout: float) -> Any:
+    """One ``/usage`` read. ``_HTTP_MISS`` means the CLI should run instead."""
+    try:
+        status, body = _http_get(client, "/usage", timeout=timeout, params=_usage_query_params(argv))
+    except TimeoutError:
+        return CollectorTimeout(f"codexbar HTTP usage exceeded {timeout:g}s")
+    except URLError as exc:
+        if isinstance(getattr(exc, "reason", None), TimeoutError):
+            return CollectorTimeout(f"codexbar HTTP usage exceeded {timeout:g}s")
+        return _HTTP_MISS
+    except OSError:
+        return _HTTP_MISS
+    if status != 200:
+        return _HTTP_MISS
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        return _HTTP_MISS
+
+
 def _run_codexbar_usage(argv: list[str], *, timeout: float) -> Any:
+    http = _CODEXBAR_HTTP.get()
+    if http is not None:
+        fetched = _fetch_codexbar_http_usage(http, argv, timeout=timeout)
+        if fetched is not _HTTP_MISS:
+            return fetched
     try:
         return run_json(argv, timeout=timeout)
     except CollectorError as exc:

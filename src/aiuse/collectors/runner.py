@@ -247,6 +247,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         cache_path = (codexbar_cfg or {}).get("cache_path")
         all_accounts = _provider_names((codexbar_cfg or {}).get("all_accounts"))
         include_disabled = bool((codexbar_cfg or {}).get("include_disabled", False))
+        http_url = (codexbar_cfg or {}).get("http_url")
+        http_token = (codexbar_cfg or {}).get("http_token")
         jobs.append(
             (
                 "codexbar",
@@ -264,6 +266,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     cache_path=cache_path,
                     all_accounts_providers=all_accounts,
                     include_disabled=include_disabled,
+                    http_url=http_url if isinstance(http_url, str) else None,
+                    http_token=http_token if isinstance(http_token, str) else None,
                 ),
             )
         )

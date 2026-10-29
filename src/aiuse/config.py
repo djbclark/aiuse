@@ -429,6 +429,8 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "cache_path",
         "all_accounts",
         "include_disabled",
+        "http_url",
+        "http_token",
         "accounts",
         "ignore_expired_certificates",
         "verify_ssl",

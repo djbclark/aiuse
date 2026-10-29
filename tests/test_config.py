@@ -285,6 +285,13 @@ def test_validate_config_accepts_native_collector_keys():
     assert issues == []
 
 
+def test_validate_config_accepts_codexbar_http_server():
+    issues = validate_config(
+        {"collectors": {"codexbar": {"http_url": "http://127.0.0.1:10546/", "http_token": "server-token"}}}
+    )
+    assert issues == []
+
+
 def test_validate_config_rejects_non_bool_ignore_expired_certificates():
     issues = validate_config({"collectors": {"sipb": {"ignore_expired_certificates": "yes"}}})
     assert any("collectors.sipb.ignore_expired_certificates must be a boolean" in i for i in issues)

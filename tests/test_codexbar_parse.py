@@ -1006,3 +1006,94 @@ def test_cursor_json_ondemand_usd_and_window_ids():
     assert on_demand["currency"] == "USD"
     assert on_demand["refill_capacity"] == 2
     assert on_demand["refill_capacity_unit"] == "usd"
+
+
+def _codex_usage_body() -> bytes:
+    return json.dumps(
+        [
+            {
+                "provider": "codex",
+                "source": "oauth",
+                "usage": {
+                    "primary": {
+                        "usedPercent": 10,
+                        "windowMinutes": 10080,
+                        "resetsAt": "2026-11-04T15:00:00Z",
+                    }
+                },
+            }
+        ]
+    ).encode()
+
+
+def test_usage_query_params_map_cli_flags_onto_the_http_server():
+    from aiuse.collectors.codexbar import _usage_query_params
+
+    argv = ["codexbar", "usage", "--format", "json", "--provider", "opencodego", "--source", "web", "--all-accounts"]
+    assert _usage_query_params(argv) == [("provider", "opencodego"), ("source", "web"), ("allAccounts", "true")]
+
+
+def test_http_server_supplies_usage_and_sends_the_bearer_token(monkeypatch):
+    from aiuse.collectors.codexbar import collect_codexbar
+
+    def run_json(argv, timeout):  # noqa: ARG001
+        raise AssertionError(argv)
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", run_json)
+    monkeypatch.setattr("aiuse.collectors.codexbar.which", lambda _name: "/usr/bin/codexbar")
+
+    seen: list[tuple[str, list[tuple[str, str]] | None, str | None]] = []
+
+    def http_get(client, path, *, timeout, params=None):  # noqa: ARG001
+        seen.append((path, params, client.token))
+        if path == "/health":
+            return 200, b'{"status":"ok","version":"0.82.0"}'
+        return 200, _codex_usage_body()
+
+    monkeypatch.setattr("aiuse.collectors.codexbar._http_get", http_get)
+
+    def snapshot(*_args, **_kwargs):
+        raise AssertionError("widget snapshot")
+
+    monkeypatch.setattr("aiuse.collectors.codexbar._read_widget_snapshot", snapshot)
+    rows = collect_codexbar(
+        providers=["codex"],
+        use_cache=True,
+        timeout_backoff=None,
+        http_url="http://127.0.0.1:10546/",
+        http_token="server-token",
+    )
+
+    assert [row.provider for row in rows] == ["codex"]
+    usage = [item for item in seen if item[0] == "/usage"]
+    assert usage == [("/usage", [("provider", "codex")], "server-token")]
+
+
+def test_http_server_down_falls_back_to_the_cli(monkeypatch):
+    from urllib.error import URLError
+
+    from aiuse.collectors.codexbar import collect_codexbar
+
+    def http_get(client, path, *, timeout, params=None):  # noqa: ARG001
+        raise URLError("connection refused")
+
+    monkeypatch.setattr("aiuse.collectors.codexbar._http_get", http_get)
+    monkeypatch.setattr("aiuse.collectors.codexbar.which", lambda _name: "/usr/bin/codexbar")
+    cli: list[list[str]] = []
+
+    def run_json(argv, timeout):  # noqa: ARG001
+        cli.append(argv)
+        return json.loads(_codex_usage_body())
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", run_json)
+    rows = collect_codexbar(
+        providers=["codex"],
+        use_cache=False,
+        timeout_backoff=None,
+        http_url="http://127.0.0.1:9/",
+        http_token="server-token",
+    )
+
+    assert [row.provider for row in rows] == ["codex"]
+    assert cli and "usage" in cli[0]
+    assert "server-token" not in " ".join(cli[0])
