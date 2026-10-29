@@ -39,13 +39,15 @@ No extra login or request is needed.
 OpenCode Go row):
 
 1. One window, label `credits`, `used`/`remaining` percent of the grant, and
-   `resets_at` = the **expiry**. The credit does not refill, so the unused
-   balance is use-it-or-lose-it by that date. `window_minutes` is the monthly
-   nominal (43,800). CodexBar reports the expiry and the dollars left, not
-   when the grant started, and this credit is the Max plan's monthly grant.
-   Pace is ahead or behind even spend of that month ending at the expiry. A
-   reset further out than one nominal month has no elapsed time yet, so the
-   pace reads as very fast until the expiry is inside that month.
+   `resets_at` = the end of the billing cycle. Max 20x deposits $200 and Max
+   5x deposits $100 of Claude Platform API credit each cycle, separate from
+   the plan's 5-hour and weekly limits
+   ([Monthly API credits](https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans)).
+   Unused dollars expire at the reset. CodexBar lists that reset and the
+   dollars, not a minute count, so `window_minutes` is the monthly nominal
+   (43,800) ending at the reset. Pace is ahead or behind even spend of that
+   month. A reset further out than one nominal month has no elapsed time yet,
+   so the pace reads as very fast until the reset is inside that month.
 2. `balance_usd` carries the remaining dollars and `spent_usd` the dollars
    spent (CodexBar's `progress.used`, else grant minus remaining). `spent_usd`
    is deliberately not `usage_credits`, which means an overage wallet.

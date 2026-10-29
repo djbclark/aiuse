@@ -1143,13 +1143,13 @@ _CLOUD_CREDITS_ROW_ID = "claude-cloud-credits"
 def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
     """Extract Claude's promotional cloud-session credits as the ``omp`` service.
 
-    claude.ai grants an expiring dollar credit that applies to cloud sessions,
-    which is what the omp TUI (Claude via the API) spends. CodexBar surfaces
-    it as the ``claude-cloud-credits`` row of ``usage.details``; it is not a
-    Claude plan window, so it becomes its own provider. The credit does not
-    refill: ``resets_at`` is its *expiry*, which makes the unused balance
-    use-it-or-lose-it. CodexBar reports the expiry and the dollars, not the
-    grant start, so the window length is one nominal month ending then.
+    The Max plan deposits Claude Platform API credits each billing cycle
+    ($200 on Max 20x, $100 on Max 5x). omp spends that balance. It is separate
+    from the plan's 5-hour and weekly limits, so CodexBar's ``claude-cloud-credits``
+    row becomes its own provider. Unused dollars expire at ``resets_at``, and
+    the next cycle deposits a new grant. CodexBar lists that reset and the
+    dollars, not ``windowMinutes``, so the length is one nominal month ending
+    at the reset.
     """
     if str(row.get("provider") or "").lower() != "claude":
         return None
