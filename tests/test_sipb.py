@@ -117,3 +117,64 @@ def test_sipb_authd_success(monkeypatch):
     assert len(accounts) == 1
     assert accounts[0].error is None
     assert any("2 models available" in n for n in accounts[0].notes)
+
+
+def test_sipb_verify_default_true(monkeypatch):
+    calls = []
+
+    class MockResponse:
+        def json(self):
+            return {"status": True}
+
+        def raise_for_status(self):
+            pass
+
+    def mock_get(url, *args, **kwargs):
+        calls.append(kwargs.get("verify"))
+        return MockResponse()
+
+    monkeypatch.setattr(requests, "get", mock_get)
+    accounts = collect_sipb(env={})
+    assert len(accounts) == 1
+    assert calls == [True]
+
+
+def test_sipb_ignore_expired_certificates(monkeypatch):
+    calls = []
+
+    class MockResponse:
+        def json(self):
+            return {"status": True}
+
+        def raise_for_status(self):
+            pass
+
+    def mock_get(url, *args, **kwargs):
+        calls.append(kwargs.get("verify"))
+        return MockResponse()
+
+    monkeypatch.setattr(requests, "get", mock_get)
+    accounts = collect_sipb(env={}, ignore_expired_certificates=True)
+    assert len(accounts) == 1
+    assert calls == [False]
+    assert any("Expired TLS certificate ignored" in n for n in accounts[0].notes)
+    assert accounts[0].raw.get("status", {}).get("ignore_expired_certificates") is True
+
+
+def test_runner_passes_ignore_expired_to_sipb(monkeypatch):
+    from aiuse.collectors.runner import _run_collectors
+
+    captured = {}
+
+    def mock_collect_sipb(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr("aiuse.collectors.runner.collect_sipb", mock_collect_sipb)
+    _run_collectors(
+        {
+            "collectors": {"sipb": {"enabled": True, "ignore_expired_certificates": True}},
+            "disabled_services": {},
+        }
+    )
+    assert captured.get("ignore_expired_certificates") is True

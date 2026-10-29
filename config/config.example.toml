@@ -117,6 +117,7 @@
 # Unlimited quota but very slow (shared GPU) — use sparingly / as a last resort.
 # Requires MITnet or VPN. Set MIT_SIPB_API_KEY (or secretspec) for auth'd models.
 # enabled = false
+# ignore_expired_certificates = false
 
 [collectors.acp]
 # Context-window fill and per-turn tokens from acp-run JSONL logs

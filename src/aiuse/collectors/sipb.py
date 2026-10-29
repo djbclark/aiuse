@@ -79,7 +79,12 @@ def _resolve_key(env: Mapping[str, str], timeout: float) -> str | None:
     return None
 
 
-def collect_sipb(*, env: Mapping[str, str] | None = None, timeout: float = 120.0) -> list[AccountUsage]:
+def collect_sipb(
+    *,
+    env: Mapping[str, str] | None = None,
+    timeout: float = 120.0,
+    ignore_expired_certificates: bool = False,
+) -> list[AccountUsage]:
     """Collect status from MIT SIPB LLM server."""
     if env is None:
         env = os.environ
@@ -95,8 +100,14 @@ def collect_sipb(*, env: Mapping[str, str] | None = None, timeout: float = 120.0
 
     notes = ["SIPB LLMs (MIT): Unlimited quota.", "Slow (shared GPU) — use sparingly / as a last resort."]
 
+    verify = not ignore_expired_certificates
+    if ignore_expired_certificates:
+        import urllib3
+
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     try:
-        resp = requests.get(config_url, timeout=timeout)
+        resp = requests.get(config_url, timeout=timeout, verify=verify)
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
@@ -116,12 +127,21 @@ def collect_sipb(*, env: Mapping[str, str] | None = None, timeout: float = 120.0
 
     # Successfully fetched config, it's UP
     notes.append(f"Server is UP (latency: {latency:.2f}s).")
+    if ignore_expired_certificates:
+        notes.append("Expired TLS certificate ignored by config.")
 
     raw = {"config": data, "status": {"up": True, "latency_s": round(latency, 3)}}
+    if ignore_expired_certificates:
+        raw["status"]["ignore_expired_certificates"] = True
 
     if api_key:
         try:
-            m_resp = requests.get(models_url, headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout)
+            m_resp = requests.get(
+                models_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=timeout,
+                verify=verify,
+            )
             m_resp.raise_for_status()
             models_data = m_resp.json()
             models = models_data.get("data", [])

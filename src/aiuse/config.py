@@ -290,7 +290,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "qwencloud": {"enabled": True},
         "bailian": {"enabled": True},
         # SIPB LLMs (MIT): Opt-in only; unlimited but very slow.
-        "sipb": {"enabled": False},
+        "sipb": {"enabled": False, "ignore_expired_certificates": False},
         # Passive ACP context fill from acp-run JSONL. Not a plan-quota source.
         # max_age_hours drops logs older than this (0 keeps every log).
         "acp": {"enabled": True, "max_age_hours": 168},
@@ -429,6 +429,8 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "cache_path",
         "all_accounts",
         "accounts",
+        "ignore_expired_certificates",
+        "verify_ssl",
     }
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
@@ -767,6 +769,10 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     )
             if "use_cache" in entry and not isinstance(entry["use_cache"], bool):
                 issues.append(f"error: collectors.{name}.use_cache must be a boolean (got {entry['use_cache']!r})")
+            if "ignore_expired_certificates" in entry and not isinstance(entry["ignore_expired_certificates"], bool):
+                issues.append(
+                    f"error: collectors.{name}.ignore_expired_certificates must be a boolean (got {entry['ignore_expired_certificates']!r})"
+                )
             for age_key in ("max_cache_age_seconds", "max_cache_age"):
                 if age_key in entry:
                     try:
@@ -1191,6 +1197,8 @@ def _toml_collector_section(name: str, entry: dict[str, Any]) -> str:
             lines.append(f"health_path = {_toml_string(value)}")
         elif key == "max_age_hours" and isinstance(value, (int, float)):
             lines.append(f"max_age_hours = {int(value)}")
+        elif key == "ignore_expired_certificates" and isinstance(value, bool):
+            lines.append(f"ignore_expired_certificates = {_toml_bool(value)}")
     lines.extend(_COLLECTOR_SECTION_EXAMPLES.get(name, ()))
     return "\n".join(lines)
 
@@ -1309,16 +1317,24 @@ def _deep_copy(obj: Any) -> Any:
 
 
 def _canonicalize_collector_names(data: Any) -> Any:
-    """Map the former ambiguous ``openusage`` configuration to OpenUsage.ai."""
+    """Map ambiguous or legacy collector names to canonical keys."""
     if not isinstance(data, dict):
         return data
     data = _deep_copy(data)
     collectors = data.get("collectors")
-    if isinstance(collectors, dict) and "openusage" in collectors:
-        collectors.setdefault("openusage_ai", collectors.pop("openusage"))
+    if isinstance(collectors, dict):
+        if "openusage" in collectors:
+            collectors.setdefault("openusage_ai", collectors.pop("openusage"))
+        for alias in ("sipb-llms", "sipb_llms", "mit-sipb-llms", "mit_sipb_llms"):
+            if alias in collectors:
+                collectors.setdefault("sipb", collectors.pop(alias))
     timeouts = data.get("timeouts")
-    if isinstance(timeouts, dict) and "openusage" in timeouts:
-        timeouts.setdefault("openusage_ai", timeouts.pop("openusage"))
+    if isinstance(timeouts, dict):
+        if "openusage" in timeouts:
+            timeouts.setdefault("openusage_ai", timeouts.pop("openusage"))
+        for alias in ("sipb-llms", "sipb_llms", "mit-sipb-llms", "mit_sipb_llms"):
+            if alias in timeouts:
+                timeouts.setdefault("sipb", timeouts.pop(alias))
     return data
 
 

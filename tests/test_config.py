@@ -278,10 +278,25 @@ def test_validate_config_accepts_native_collector_keys():
                 "grok_billing": {"enabled": True},
                 "openrouter": {"enabled": False},
                 "clinepass": {"enabled": False},
+                "sipb": {"enabled": True, "ignore_expired_certificates": True},
             },
         }
     )
     assert issues == []
+
+
+def test_validate_config_rejects_non_bool_ignore_expired_certificates():
+    issues = validate_config({"collectors": {"sipb": {"ignore_expired_certificates": "yes"}}})
+    assert any("collectors.sipb.ignore_expired_certificates must be a boolean" in i for i in issues)
+
+
+def test_canonicalize_collector_names_maps_sipb_aliases():
+    from aiuse.config import _canonicalize_collector_names
+
+    raw = {"collectors": {"sipb-llms": {"enabled": True, "ignore_expired_certificates": True}}}
+    canonical = _canonicalize_collector_names(raw)
+    assert "sipb" in canonical["collectors"]
+    assert canonical["collectors"]["sipb"]["ignore_expired_certificates"] is True
 
 
 def test_validate_config_checks_disabled_services():

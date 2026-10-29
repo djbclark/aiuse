@@ -309,7 +309,20 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     if _enabled(collectors_cfg, "deepseek"):
         jobs.append(("deepseek", partial(collect_deepseek, timeout=timeout_for(config, "deepseek"))))
     if _enabled(collectors_cfg, "sipb"):
-        jobs.append(("sipb", partial(collect_sipb, timeout=timeout_for(config, "sipb"))))
+        sipb_cfg = collectors_cfg.get("sipb") if isinstance(collectors_cfg.get("sipb"), dict) else {}
+        ignore_expired = bool(
+            (sipb_cfg or {}).get("ignore_expired_certificates", False) or not (sipb_cfg or {}).get("verify_ssl", True)
+        )
+        jobs.append(
+            (
+                "sipb",
+                partial(
+                    collect_sipb,
+                    timeout=timeout_for(config, "sipb"),
+                    ignore_expired_certificates=ignore_expired,
+                ),
+            )
+        )
     if _enabled(collectors_cfg, "tokscale"):
         tokscale_timeout = timeout_for(config, "tokscale")
         jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
