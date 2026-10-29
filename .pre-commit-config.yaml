@@ -61,7 +61,7 @@ repos:
     hooks:
       - id: semgrep
         name: semgrep
-        entry: semgrep scan --config auto --quiet --error --exclude .github
+        entry: semgrep scan --config p/default --quiet --error --exclude .github
         language: system
         pass_filenames: false
 

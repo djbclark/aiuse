@@ -67,7 +67,7 @@ bandit:
 
 # Pattern-based security scan.
 semgrep:
-    semgrep scan --config auto --quiet --error --exclude .github
+    semgrep scan --config p/default --quiet --error --exclude .github
 
 # Secret-leak scan.
 gitleaks:
