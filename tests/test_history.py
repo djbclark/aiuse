@@ -16,6 +16,7 @@ from aiuse.analysis.history import (
     chronic_waste_summary,
     compute_learned_burn_rates,
     compute_learned_flexibility,
+    count_snapshots,
     history_insights,
     history_section_lines,
     history_status_line,
@@ -257,6 +258,28 @@ def test_should_learn_from_history_auto(tmp_path: Path):
         assert should_learn_from_history({"learn_from_history": "auto"}) is True
         assert should_learn_from_history({"learn_from_history": False}) is False
         assert should_learn_from_history({"learn_from_history": True}) is True
+
+
+def test_count_snapshots_uses_filename_time(tmp_path: Path):
+    now = _now()
+    recent = now.strftime("%Y-%m-%dT%H%M%S.%fZ") + ".json"
+    also_recent = (now - timedelta(seconds=1)).strftime("%Y-%m-%dT%H%M%S.%fZ") + "-1.json"
+    old = (now - timedelta(days=120)).strftime("%Y-%m-%dT%H%M%S.%fZ") + ".json"
+    (tmp_path / recent).write_text("not json", encoding="utf-8")
+    (tmp_path / also_recent).write_text("not json", encoding="utf-8")
+    (tmp_path / old).write_text("not json", encoding="utf-8")
+    (tmp_path / "latest.json").write_text("not json", encoding="utf-8")
+
+    def opened(path: Path) -> dict[str, object]:
+        raise AssertionError(path)
+
+    with (
+        patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path),
+        patch("aiuse.analysis.history._read_snapshot_file", side_effect=opened),
+    ):
+        assert count_snapshots(retention_days=90) == 2
+        assert count_snapshots(retention_days=90, max_count=1) == 1
+        assert count_snapshots(retention_days=90, max_count=0) == 0
 
 
 def test_load_recent_snapshots_empty_dir(tmp_path: Path):

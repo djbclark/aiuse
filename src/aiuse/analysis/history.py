@@ -1001,9 +1001,57 @@ def _duration_key(window_minutes: Any) -> str | None:
     return None
 
 
+def _untimestamped_snapshot_counts(path: Path, cutoff: datetime) -> bool:
+    """Whether a ``*.json`` with no time in its name is a retained snapshot.
+
+    Same rule as ``load_recent_snapshots``: a missing ``collected_at`` still
+    counts, an unreadable one does not, and an older one does not.
+    """
+    data = _read_snapshot_file(path)
+    if data is None:
+        return False
+    raw = data.get("collected_at")
+    if not raw:
+        return True
+    try:
+        collected = datetime.fromisoformat(str(raw))
+    except ValueError:
+        return False
+    if collected.tzinfo is None:
+        collected = collected.replace(tzinfo=timezone.utc)
+    return collected >= cutoff
+
+
 def count_snapshots(*, retention_days: int = _DEFAULT_RETENTION_DAYS, max_count: int = 10_000) -> int:
-    """How many retained snapshot files are on disk (newest-first load)."""
-    return len(load_recent_snapshots(retention_days=retention_days, max_count=max_count))
+    """How many retained snapshot files are on disk.
+
+    Timestamped names are counted from the filename, not by parsing JSON.
+    ``latest.json`` is a copy of the newest sample, not another sample. A
+    ``*.json`` whose name has no timestamp is opened and judged by
+    ``collected_at``.
+    """
+    if max_count <= 0:
+        return 0
+    directory = snapshot_dir()
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    cutoff = utcnow() - timedelta(days=retention_days)
+    counted = 0
+    for name in names:
+        if not name.lower().endswith(".json") or name == "latest.json":
+            continue
+        stamp = _snapshot_file_time(name)
+        if stamp is None:
+            if not _untimestamped_snapshot_counts(directory / name, cutoff):
+                continue
+        elif stamp < cutoff:
+            continue
+        counted += 1
+        if counted >= max_count:
+            return counted
+    return counted
 
 
 def should_persist_snapshots(analysis_cfg: dict[str, Any] | None = None) -> bool:
@@ -1048,7 +1096,7 @@ def should_learn_from_history(analysis_cfg: dict[str, Any] | None = None) -> boo
         retention = int(cfg.get("snapshot_retention_days") or _DEFAULT_RETENTION_DAYS)
     except (TypeError, ValueError):
         retention = _DEFAULT_RETENTION_DAYS
-    return count_snapshots(retention_days=retention) >= _DEFAULT_MIN_SNAPSHOTS
+    return count_snapshots(retention_days=retention, max_count=_DEFAULT_MIN_SNAPSHOTS) >= _DEFAULT_MIN_SNAPSHOTS
 
 
 def history_status_line(*, analysis_cfg: dict[str, Any] | None = None) -> str:
