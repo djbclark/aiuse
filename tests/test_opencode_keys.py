@@ -1,7 +1,9 @@
+import subprocess
 from types import SimpleNamespace
 
 import pytest
 
+from aiuse.collectors.base import CollectorError
 from aiuse.collectors.opencode_go import collect_opencode_go
 from aiuse.collectors.opencode_keys import (
     active_label_from_list_output,
@@ -148,3 +150,23 @@ def test_zen_api_keys_read_each_balance(monkeypatch):
     assert [account.account for account in accounts] == ["djbclark", "dclark", "t-e"]
     assert [account.balance_usd for account in accounts] == pytest.approx([-0.038, 0.0, 5.0])
     assert "oc_test" not in repr(accounts)
+
+
+def test_zen_reports_a_vault_timeout_and_does_not_use_the_cookie(monkeypatch):
+    """A vault read that exceeds 5s is the collector error, not a signed-out cookie."""
+
+    def fake_run(command, **_kwargs):
+        raise subprocess.TimeoutExpired(command, 5)
+
+    monkeypatch.setattr(
+        "aiuse.collectors.opencode_keys.shutil.which",
+        lambda name: "/usr/local/bin/sudo-secretspec" if name == "sudo-secretspec" else None,
+    )
+    monkeypatch.setattr("aiuse.collectors.opencode_keys.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "aiuse.collectors.opencode_zen._fetch_console",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("cookie path")),
+    )
+
+    with pytest.raises(CollectorError, match="sudo-secretspec timed out reading OPENCODE_GO_API_KEY_DJBCLARK"):
+        collect_opencode_zen()

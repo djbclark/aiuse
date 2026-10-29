@@ -680,6 +680,25 @@ def test_run_collectors_skips_single_provider_collector_when_disabled(monkeypatc
     assert snapshot.disabled_services == {"grok": "off-limits"}
 
 
+def test_disabled_opencode_zen_does_not_surface_a_vault_timeout(monkeypatch):
+    import aiuse.collectors.runner as runner
+
+    def explode(**_kwargs):
+        raise AssertionError("opencode_zen ran")
+
+    monkeypatch.setattr(runner, "collect_sipb", lambda **_kw: [])
+    monkeypatch.setattr(runner, "collect_opencode_zen", explode)
+    snapshot = run_collectors(
+        {
+            "collectors": _only("opencode_zen"),
+            "disabled_services": {"opencode-zen": "unused"},
+        }
+    )
+    assert snapshot.accounts == []
+    assert snapshot.collector_errors == []
+    assert snapshot.disabled_services == {"opencode-zen": "unused"}
+
+
 def test_fresh_source_beats_stale_source_despite_priority():
     from datetime import timedelta
 
