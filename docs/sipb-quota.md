@@ -18,6 +18,7 @@ Collector: `sipb`
 
 This collector is **opt-in only** and disabled by default.
 To enable it, set `[collectors.sipb] enabled = true` in your `aiuse/config.toml`.
+If the server's TLS certificate has expired, set `ignore_expired_certificates = true` under `[collectors.sipb]` to allow the collector to proceed with TLS verification disabled.
 
 The public unauthenticated endpoint is used for the up/down latency probe.
 To list available models, provide an API key using the `MIT_SIPB_API_KEY` environment variable or SecretSpec.
