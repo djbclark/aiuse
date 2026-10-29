@@ -1487,7 +1487,7 @@ def _build_matrix_rows(
                     continue
                 if account.provider == "cursor":
                     used = _cursor_matrix_used_percent(account, window, used)
-                clock, inferred = infer_window_clock(window)
+                clock, inferred = infer_window_clock(window, now=now)
                 days = window.days_until_reset(now)
                 estimated = not window.reset_time_is_precise()
                 window_minutes = effective_window_minutes(window.label, window.window_minutes)

@@ -248,7 +248,7 @@ def test_load_overrides_tolerates_garbage():
 def test_newer_override_replaces_older_one():
     save_override("omp", remaining=90.0, total=200.0, expires=EXPIRY, note=None, now=NOW)
     save_override("omp", remaining=80.0, total=200.0, expires=EXPIRY, note="later", now=NOW)
-    assert load_overrides()["omp"]["remaining_usd"] == 80.0
+    assert load_overrides(now=NOW)["omp"]["remaining_usd"] == 80.0
 
 
 def test_cli_main_dispatches_set_credits(capsys):
