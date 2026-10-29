@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import fcntl
 import multiprocessing
 import os
 import re
@@ -323,36 +322,22 @@ _ESCAPE_WAIT_S = 0.05
 
 
 class StdinKeyReader:
-    """Non-blocking stdin key poller. Injectable in tests via ``read``."""
+    """Stdin key poller. Injectable in tests via ``read``.
+
+    The tty stays blocking. ``O_NONBLOCK`` belongs to the open file
+    description, and a terminal's stdin and stdout often share one, so
+    setting it makes Rich's screen write raise ``BlockingIOError``.
+    """
 
     def __init__(self, stream: TextIO | None = None) -> None:
         self.stream = stream if stream is not None else sys.stdin
         self._pending = b""
-        self._flags: int | None = None
 
     def _fileno(self) -> int | None:
         try:
             return self.stream.fileno()
         except (AttributeError, OSError, ValueError):
             return None
-
-    def arm(self) -> None:
-        """Read the tty one byte at a time. ``disarm`` restores the old flags."""
-        fd = self._fileno()
-        if fd is None or self._flags is not None:
-            return
-        self._flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-        fcntl.fcntl(fd, fcntl.F_SETFL, self._flags | os.O_NONBLOCK)
-
-    def disarm(self) -> None:
-        fd = self._fileno()
-        if fd is None or self._flags is None:
-            return
-        try:
-            fcntl.fcntl(fd, fcntl.F_SETFL, self._flags)
-        except OSError:
-            pass
-        self._flags = None
 
     def read(self) -> str | None:
         self._pull(0)
@@ -375,6 +360,7 @@ class StdinKeyReader:
             return key
 
     def _pull(self, timeout: float) -> bool:
+        """Read bytes already queued. ``select`` keeps the fd blocking."""
         fd = self._fileno()
         if fd is None:
             return False
@@ -854,13 +840,6 @@ def run_watch(
     except Exception:  # noqa: BLE001 — no cbreak available (tests, pipes, Windows)
         old_attrs = None
 
-    arm = getattr(reader, "arm", None)
-    if callable(arm):
-        try:
-            arm()
-        except OSError:
-            pass
-
     try:
         from rich.live import Live
         from rich.text import Text
@@ -988,9 +967,6 @@ def run_watch(
             process_worker.stop()
         if sweep_worker is not None:
             sweep_worker.stop()
-        disarm = getattr(reader, "disarm", None)
-        if callable(disarm):
-            disarm()
         if fd is not None and old_attrs is not None:
             try:
                 import termios

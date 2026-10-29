@@ -153,6 +153,34 @@ def test_trackpad_scroll_is_not_a_quit_key():
         stream.close()
 
 
+def test_key_poll_leaves_stdin_blocking():
+    """Reading a key must not set O_NONBLOCK on the tty.
+
+    That flag is shared with stdout when both are the same open file
+    description. Rich then fails the first alternate-screen write with
+    BlockingIOError (EAGAIN, errno 35).
+    """
+    import fcntl
+
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(read_fd, True)
+    shared = os.dup(read_fd)
+    stream = os.fdopen(read_fd, "rb", buffering=0)
+    reader = StdinKeyReader(stream)
+    try:
+        arm = getattr(reader, "arm", None)
+        if callable(arm):
+            arm()
+        os.write(write_fd, b"q")
+        assert reader.read() == "q"
+        flags = fcntl.fcntl(shared, fcntl.F_GETFL)
+        assert flags & os.O_NONBLOCK == 0
+    finally:
+        os.close(write_fd)
+        os.close(shared)
+        stream.close()
+
+
 @pytest.mark.parametrize(
     ("no_color", "detected", "force_color", "no_color_env", "expected"),
     [
