@@ -10,6 +10,26 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [3.13.0] - 2026-11-01
+
+### Added
+
+- **Support Copilot weekly (7-day) and session quota windows** in tokscale and
+  codexbar collectors, model definitions, and quota refusal records.
+- Copilot quota architecture and rate-limit documentation in
+  [`docs/copilot-quota.md`](docs/copilot-quota.md).
+- GitHub Actions CI workflow running a full Semgrep scan (`p/default`, `--error`,
+  excluding `.github`) on push and pull requests.
+
+### Fixed
+
+- **Prevent repeated macOS Keychain prompts from the Muse collector** by
+  making Keychain access opt-in via `AIUSE_MUSE_KEYCHAIN=1` and bypassing quota
+  probes when subscription status is inactive (`subs_active: false`).
+- Scope local Semgrep hook in `.pre-commit-config.yaml` to `stages: [pre-push]`
+  with changed files only and exclude `.github/`, avoiding whole-repo scan CPU
+  spikes on routine commits.
+
 ## [3.12.1] - 2026-11-01
 
 ### Changed
@@ -165,6 +185,7 @@ Releases before 3.9.0 are in the
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
+[3.13.0]: https://github.com/djbclark/aiuse/compare/v3.12.1...v3.13.0
 [3.12.1]: https://github.com/djbclark/aiuse/compare/v3.12.0...v3.12.1
 [3.12.0]: https://github.com/djbclark/aiuse/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/djbclark/aiuse/compare/v3.10.5...v3.11.0
