@@ -144,7 +144,9 @@ def run_note_exhausted(argv: list[str]) -> int:
         description="Record an agent-reported exhaustion override (advisory; expires at its reset time).",
     )
     parser.add_argument("provider", help="provider id as it appears in aiuse --json (e.g. codex, antigravity)")
-    parser.add_argument("--family", default=None, help="pool family for split vendors (e.g. claude_gpt, gemini, fable)")
+    parser.add_argument(
+        "--family", default=None, help="pool family for split vendors (e.g. claude_gpt, gemini, gemini_argon, fable)"
+    )
     when = parser.add_mutually_exclusive_group(required=True)
     when.add_argument("--resets-in", metavar="DURATION", help="e.g. 4h53m, 90m, 2h")
     when.add_argument("--resets-at", metavar="ISO", help="ISO timestamp of the reset")

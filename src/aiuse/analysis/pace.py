@@ -3,6 +3,7 @@ analyze_use_or_lose (see use_or_lose.py)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -304,6 +305,43 @@ def cursor_pool_family(
     return None
 
 
+# Antigravity names each Gemini frontier model's budget after the model
+# ("Gemini 4 Argon weekly", window id ``...-gemini-argon-wtu-weekly``). Those
+# budgets are not the Flash ``gemini`` pool: a real Argon call moved only the
+# Argon window (2026-10-31). The model name is the pool's identity, so an
+# unknown frontier name (a future "Gemini 4 Carbon") becomes its own
+# ``gemini_<name>`` family rather than folding into ``gemini`` or into Argon.
+_GEMINI_SPAN = r"(?:weekly|5-?hour|5h|daily|monthly)"
+_GEMINI_ID_FRONTIER = re.compile(rf"(?:^|-)gemini-(?P<name>[a-z][a-z0-9]*)(?:-wtu)?-{_GEMINI_SPAN}$")
+_GEMINI_LABEL_FRONTIER = re.compile(rf"\bgemini\s+(?:v?\d+(?:\.\d+)*\s+)?(?P<name>[a-z][a-z0-9]*)\s+{_GEMINI_SPAN}\b")
+# Names that denote the original Flash ``gemini`` pool, not a frontier budget.
+_GEMINI_FLASH_NAMES = frozenset({"flash"})
+# ACP / agy model-id prefix -> frontier name, for the model -> family mapping.
+GEMINI_FRONTIER_MODEL_PREFIXES: dict[str, str] = {"gemini-4-argon": "argon"}
+
+
+def gemini_frontier_name(label: str | None, window_id: str | None = None) -> str | None:
+    """Frontier model name of an Antigravity Gemini window ("argon"), else None.
+
+    The window id wins (CodexBar has titled the Argon window plain "Gemini
+    weekly" as well as "Gemini 4 Argon weekly"); the label is the fallback.
+    """
+    for pattern, text in (
+        (_GEMINI_ID_FRONTIER, (window_id or "").strip().casefold()),
+        (_GEMINI_LABEL_FRONTIER, (label or "").strip().casefold()),
+    ):
+        match = pattern.search(text)
+        if match and match.group("name") not in _GEMINI_FLASH_NAMES:
+            return match.group("name")
+    return None
+
+
+def gemini_pool_family(label: str | None, window_id: str | None = None) -> str:
+    """``gemini`` (Flash) or ``gemini_<frontier name>`` for an Antigravity Gemini window."""
+    name = gemini_frontier_name(label, window_id)
+    return f"gemini_{name}" if name else "gemini"
+
+
 def independent_pool_key(
     label: str | None,
     *,
@@ -342,8 +380,8 @@ def independent_pool_key(
         or "non gemini" in text
     ):
         return "claude_gpt"
-    if "gemini" in text:
-        return "gemini"
+    if "gemini" in text or "-gemini-" in (window_id or "").casefold():
+        return gemini_pool_family(label, window_id)
     return None
 
 
@@ -383,6 +421,7 @@ def cursor_breakdown_window(window: QuotaWindow, *, provider: str | None = None)
 # renderer so the table and the chat format name a pool the same way.
 POOL_SCOPE_LABELS = {
     "gemini": "gemini",
+    "gemini_argon": "gemini-argon",
     "claude_gpt": "claude/gpt",
     "omp_claude": "claude",
     "cursor_total": "total",

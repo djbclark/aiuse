@@ -46,7 +46,7 @@ from aiuse.models import (
 )
 from aiuse.timefmt import format_as_of, format_clock
 
-SCHEMA_VERSION = "1.4"
+SCHEMA_VERSION = "1.5"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -68,7 +68,7 @@ SEMANTICS: dict[str, str] = {
     "usable_now": "false if any applicable window is exhausted or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
     "available_at": "earliest resets_at among exhausted windows; null when nothing is exhausted or no reset time is known; for omp, the shared Claude window's reset while rate_gated_by is set",
-    "pool_family": "routing family, not necessarily independent quota: antigravity gemini vs claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
+    "pool_family": "routing family, not necessarily independent quota: antigravity gemini (Flash), gemini_argon (Gemini 4 Argon, its own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
     "shared_pool_family": "parent routing family whose windows also constrain this model sublimit",
     "max_share_of_parent_percent": "model cap as a share of the shared weekly budget; Fable <=50%, not an extra 50%",
@@ -152,7 +152,7 @@ def pool_family_id(provider: str, label: str, window_id: str | None = None) -> s
         family = cursor_pool_family(label, window_id=window_id, provider=provider)
         if family is not None:
             return family
-    family, _ = window_family(provider, label)
+    family, _ = window_family(provider, label, window_id)
     return family
 
 
@@ -179,8 +179,15 @@ def window_state(window: Mapping[str, Any]) -> str:
     return "ok"
 
 
-def window_family(provider: str, label: str) -> tuple[str | None, str | None]:
-    """(pool_family, models_hint) for split vendors; (None, None) otherwise."""
+_GEMINI_FRONTIER_HINTS = {"argon": "gemini-4-argon* draws this pool"}
+
+
+def window_family(provider: str, label: str, window_id: str | None = None) -> tuple[str | None, str | None]:
+    """(pool_family, models_hint) for split vendors; (None, None) otherwise.
+
+    An Antigravity Gemini frontier window (Argon) is its own family, found by
+    its window id or its model name in the label; see ``gemini_pool_family``.
+    """
     model = claude_model_scope(label) if provider == "claude" else None
     if model is not None:
         return model.casefold().replace(" ", "_"), f"Claude {model}; also draws shared Claude quota"
@@ -190,6 +197,12 @@ def window_family(provider: str, label: str) -> tuple[str | None, str | None]:
     low = str(label).lower()
     for needle, family, hint in rules:
         if needle in low:
+            if family == "gemini":
+                from aiuse.analysis.pace import gemini_frontier_name
+
+                name = gemini_frontier_name(label, window_id)
+                if name:
+                    return f"gemini_{name}", _GEMINI_FRONTIER_HINTS.get(name, f"gemini-*-{name}* draws this pool")
             return family, hint
     return None, None
 
@@ -234,8 +247,10 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
             window["role"] = "ceiling"
         elif family == "on_demand":
             window["models_hint"] = "Cursor on-demand dollar cap"
-    _, hint = window_family(provider, str(window.get("label") or ""))
-    if hint is not None and window.get("models_hint") is None:
+    _, hint = window_family(provider, str(window.get("label") or ""), wid or None)
+    # Antigravity's hint follows its family, so a stored pre-1.5 snapshot re-enriched
+    # here swaps the Argon window's old "gemini-*" hint for its own.
+    if hint is not None and (window.get("models_hint") is None or provider == "antigravity"):
         window["models_hint"] = hint
     return window
 
