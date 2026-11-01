@@ -1,5 +1,8 @@
 ---
-default_install_hook_types: [pre-commit, pre-push]
+# Hooks run at commit time only (djbclark, 2026-11-01): the pre-push all-files gate duplicated GitHub CI
+# (test.yml, semgrep.yml) on every agent push (8 parallel prettier, mypy, semgrep; a load and memory spike on the Mac).
+default_install_hook_types: [pre-commit]
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -11,13 +14,6 @@ repos:
 
   - repo: local
     hooks:
-      - id: ci-all-files
-        name: CI all-files quality gate
-        entry: uv run pre-commit run --all-files
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-
       - id: mypy
         name: mypy
         entry: uv run --extra dev mypy src tests
@@ -29,6 +25,7 @@ repos:
     rev: v1.48.0
     hooks:
       - id: typos
+        stages: [pre-commit]  # its manifest also lists pre-push
 
   - repo: local
     hooks:
@@ -56,16 +53,6 @@ repos:
       - id: bandit
         args: ["-ll"]
         exclude: "^tests/"
-
-  - repo: local
-    hooks:
-      - id: semgrep
-        name: semgrep
-        entry: semgrep scan --config p/default --quiet --error --exclude .github
-        language: system
-        stages: [pre-push]
-        pass_filenames: true
-        exclude: "^.github/"
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4

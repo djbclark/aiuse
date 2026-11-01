@@ -184,14 +184,15 @@ Full path-by-path map with "read when" hints:
   hits twice before it was caught; plain `grep` also rejects `--glob`, which is
   an `rg` flag).
 - Python 3.14, `src/` layout, dependencies via `pyproject.toml` + `.venv`.
-- Run tests with `.venv/bin/python -m pytest -q`; before pushing, run `just ci`
-  (the same all-files quality gate as GitHub Actions). The tracked
-  `.beads/hooks/pre-push` runs it on every push (`core.hooksPath` points at
-  `.beads/hooks`, so `pre-commit install` refuses and the pre-commit stanza is
-  kept in that file by hand; 2026-10-17: it was missing, and two pushes went out
-  with a red test nobody saw). It checks the working tree, so a dirty file from
-  another session can fail your push. Read the test summary line, never a
-  wrapper's or a background task's exit code.
+- Run tests with `.venv/bin/python -m pytest -q`. The all-files quality gate runs
+  on GitHub Actions (`test.yml`, plus `semgrep.yml`) on every push; nothing runs locally at push
+  time (djbclark, 2026-11-01: the pre-push `ci-all-files` hook put 8 prettier
+  processes, mypy and semgrep on the Mac for every agent push). So after every
+  push, watch that push's run (`gh run watch` on it) and fix a red one at once:
+  2026-10-17, before the hook existed, two pushes went out with a red test nobody
+  saw. `.beads/hooks/pre-push` (tracked, `core.hooksPath` points at `.beads/hooks`)
+  still runs beads and pre-commit's pre-push stage, which is empty now. Read the
+  test summary line, never a wrapper's or a background task's exit code.
 - This repo shells out to external tools that must already be
   installed/authenticated (`cswap`, `codexbar`, `tokscale`) — do not attempt to install, configure, or
   authenticate them as part of a normal feature change. Operators install via
