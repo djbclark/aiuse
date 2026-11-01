@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from aiuse.analysis.pace import canonical_gemini_label
 from aiuse.models import (
     PROVIDER_DISPLAY_NAMES,
     WINDOW_NOMINAL_MINUTES,
@@ -1064,6 +1065,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             continue
         extra_id = str(extra.get("id") or "").strip()
         title = str(extra.get("title") or extra_id or "Unnamed CodexBar quota")
+        if provider == "antigravity":
+            title = canonical_gemini_label(title, extra_id or None)
         window = _window(title, extra["window"], window_id=extra_id or None)
         if window:
             if extra_id == "cursor-grok-bot":

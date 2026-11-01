@@ -24,6 +24,8 @@ fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
 replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
 "How to read this".
 **Schema 1.2 (2026-10-12):** per-window pace (`pace_percent`, `pace_ratio`), per-account `overall_pace_percent`, PACE column replaces `$ UNUSED` in clock matrix with cell-level signed pace percentages and lined-up notes; pace in `summary_lines` and `aiuse --available`. Early readings (under 10% of the window elapsed) are marked `~` (JSON `pace_early`, `overall_pace_early`; released 3.4.1).
+
+**Schema 1.5 (2026-10-31, unreleased):** additive `pool_family: "gemini_argon"` — the antigravity "Gemini 4 Argon weekly" window (id `antigravity-quota-summary-gemini-argon-wtu-weekly`) is its own pool row, separate from Flash `gemini`, in `--available`, the matrix and exhaustion notes; `gemini-4-argon*` models map to it. Whether an Argon call also draws the Gemini 5-hour window is unmeasured (kept in `gemini`). See [`json-contract.md`](json-contract.md).
 The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
 tracks only what a fresh session must know. **21 registered collectors**

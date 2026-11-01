@@ -28,8 +28,9 @@ watch `a` sweep leaves deprecated collectors at their configured state;
 reviewed 2026-10-22; 3.7.0 added the `omp` row, OTHER column, and
 PACE-after-SCOPE layout; 3.7.1 reworded the gate's JSON semantics). Fix-plan
 Steps **1–34** and product issues **#1–#9**
-done; JSON schema **1.4** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`; 1.4 adds the omp `rate_gated_by` shared-Claude-window
+done; JSON schema **1.5** (self-describing output, `aiuse --available`,
+`aiuse note-exhausted`; 1.5 gives Gemini 4 Argon its own `gemini_argon` pool family and
+publishes the model-to-family map; 1.4 added the omp `rate_gated_by` shared-Claude-window
 gate; 1.3 added ceiling/hidden-pool fields and per-pool learned burn rates;
 1.2 added per-window pace and the matrix PACE column,
 early readings marked `~`); 20 registered collectors (including passive `acp`

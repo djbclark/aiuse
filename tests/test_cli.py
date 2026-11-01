@@ -377,7 +377,7 @@ def test_json_keeps_nested_live_envelope(monkeypatch, capsys):
         "summary_lines",
         "semantics",
     }
-    assert payload["schema_version"] == "1.4"
+    assert payload["schema_version"] == "1.5"
     assert payload["snapshot"]["accounts"] == []
     assert "used_percent" in payload["semantics"]
 

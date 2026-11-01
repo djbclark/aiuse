@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.agent_notes import load_active_notes
+from aiuse.analysis.pace import GEMINI_FRONTIER_MODEL_PREFIXES
 from aiuse.collectors.acp_usage import ACP_AGENT_PROVIDERS, default_acp_log_dir
 from aiuse.models import parse_dt, utcnow
 
@@ -54,8 +55,9 @@ def _agent_of(name: str) -> str | None:
 def pool_family_for_acp_model(provider: str, model: str | None) -> str | None:
     """Map an ACP agent model id to an aiuse pool_family for split vendors.
 
-    Antigravity: ``claude-*`` / ``gpt-*`` → ``claude_gpt``; ``gemini-*`` →
-    ``gemini``. Other providers return ``None`` (one residual pool).
+    Antigravity: ``claude-*`` / ``gpt-*`` → ``claude_gpt``; ``gemini-4-argon*``
+    → ``gemini_argon`` (its own weekly window); other ``gemini-*`` → ``gemini``.
+    Other providers return ``None`` (one residual pool).
     """
     if provider != "antigravity" or not model:
         return None
@@ -63,6 +65,9 @@ def pool_family_for_acp_model(provider: str, model: str | None) -> str | None:
     if low.startswith(("claude-", "gpt-")):
         return "claude_gpt"
     if low.startswith("gemini-"):
+        for prefix, name in GEMINI_FRONTIER_MODEL_PREFIXES.items():
+            if low.startswith(prefix):
+                return f"gemini_{name}"
         return "gemini"
     return None
 

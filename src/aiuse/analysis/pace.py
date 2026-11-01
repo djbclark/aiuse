@@ -3,6 +3,7 @@ analyze_use_or_lose (see use_or_lose.py)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -304,6 +305,71 @@ def cursor_pool_family(
     return None
 
 
+# Antigravity names each Gemini frontier model's budget after the model
+# ("Gemini 4 Argon weekly", window id ``...-gemini-argon-wtu-weekly``). Those
+# budgets are not the Flash ``gemini`` pool: a real Argon call moved only the
+# Argon window (2026-10-31). The model name is the pool's identity, so an
+# unknown frontier name (a future "Gemini 4 Carbon") becomes its own
+# ``gemini_<name>`` family rather than folding into ``gemini`` or into Argon.
+_GEMINI_SPAN = r"(?:weekly|5-?hour|5h|daily|monthly)"
+_GEMINI_ID_FRONTIER = re.compile(
+    rf"(?:^|-)gemini-(?:(?P<version>\d+(?:\.\d+)*)-)?(?P<name>[a-z][a-z0-9]*)(?:-wtu)?-(?P<span>{_GEMINI_SPAN})$"
+)
+_GEMINI_LABEL_FRONTIER = re.compile(rf"\bgemini\s+(?:v?\d+(?:\.\d+)*\s+)?(?P<name>[a-z][a-z0-9]*)\s+{_GEMINI_SPAN}\b")
+# Words that are not a model name: Flash is the original ``gemini`` pool, ``wtu``
+# is a CodexBar id infix, the rest are window spans.
+_GEMINI_NON_MODEL_NAMES = frozenset({"flash", "wtu", "weekly", "daily", "monthly", "hourly", "hour", "week"})
+# ACP / agy model-id prefix -> frontier name, for the model -> family mapping.
+GEMINI_FRONTIER_MODEL_PREFIXES: dict[str, str] = {"gemini-4-argon": "argon"}
+# Version CodexBar's id does not carry, per known frontier name (label canonicalisation).
+_GEMINI_FRONTIER_VERSIONS: dict[str, str] = {"argon": "4"}
+_GEMINI_SPAN_LABELS = {"weekly": "weekly", "5h": "5-hour", "5-hour": "5-hour", "daily": "daily", "monthly": "monthly"}
+
+
+def gemini_frontier_name(label: str | None, window_id: str | None = None) -> str | None:
+    """Frontier model name of an Antigravity Gemini window ("argon"), else None.
+
+    The window id wins (CodexBar has titled the Argon window plain "Gemini
+    weekly" as well as "Gemini 4 Argon weekly"); the label is the fallback.
+    Any other word is taken as a model name and gets its own family (fails
+    separate, never folded into Flash); ``flash``, ``wtu`` and span words are not.
+    """
+    for pattern, text in (
+        (_GEMINI_ID_FRONTIER, (window_id or "").strip().casefold()),
+        (_GEMINI_LABEL_FRONTIER, (label or "").strip().casefold()),
+    ):
+        match = pattern.search(text)
+        if match and match.group("name") not in _GEMINI_NON_MODEL_NAMES:
+            return match.group("name")
+    return None
+
+
+def canonical_gemini_label(label: str, window_id: str | None) -> str:
+    """Name the frontier model in a label whose window id names it but it does not.
+
+    "Gemini weekly" + argon id -> "Gemini 4 Argon weekly". Surfaces keyed on the
+    label alone (alert dedupe, suggestion masking, attribution series) then split
+    Argon from Flash. A label that already names a frontier model, or an id that
+    does not, is returned unchanged.
+    """
+    wid = (window_id or "").strip().casefold()
+    match = _GEMINI_ID_FRONTIER.search(wid)
+    if not match or match.group("name") in _GEMINI_NON_MODEL_NAMES:
+        return label
+    if _GEMINI_LABEL_FRONTIER.search(label.casefold()):
+        return label
+    name = match.group("name")
+    version = match.group("version") or _GEMINI_FRONTIER_VERSIONS.get(name)
+    span = _GEMINI_SPAN_LABELS.get(match.group("span"), match.group("span"))
+    return " ".join(part for part in ("Gemini", version, name.capitalize(), span) if part)
+
+
+def gemini_pool_family(label: str | None, window_id: str | None = None) -> str:
+    """``gemini`` (Flash) or ``gemini_<frontier name>`` for an Antigravity Gemini window."""
+    name = gemini_frontier_name(label, window_id)
+    return f"gemini_{name}" if name else "gemini"
+
+
 def independent_pool_key(
     label: str | None,
     *,
@@ -342,8 +408,8 @@ def independent_pool_key(
         or "non gemini" in text
     ):
         return "claude_gpt"
-    if "gemini" in text:
-        return "gemini"
+    if "gemini" in text or "-gemini-" in (window_id or "").casefold():
+        return gemini_pool_family(label, window_id)
     return None
 
 
@@ -383,6 +449,7 @@ def cursor_breakdown_window(window: QuotaWindow, *, provider: str | None = None)
 # renderer so the table and the chat format name a pool the same way.
 POOL_SCOPE_LABELS = {
     "gemini": "gemini",
+    "gemini_argon": "gemini-argon",
     "claude_gpt": "claude/gpt",
     "omp_claude": "claude",
     "cursor_total": "total",
