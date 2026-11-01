@@ -6,7 +6,9 @@ weekly window; Gemini weekly (Flash) did not move.
 
 from __future__ import annotations
 
-from datetime import timedelta
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -196,9 +198,280 @@ def test_reenriching_a_stored_snapshot_replaces_the_old_gemini_hint():
 
     stored = _snapshot()
     for window in stored["accounts"][0]["windows"]:
-        window["pool_family"] = "gemini" if "Gemini" in window["label"] else "claude_gpt"
-        window["models_hint"] = "agy models — gemini-* models draw this pool"
+        gemini = "Gemini" in window["label"]
+        window["pool_family"] = "gemini" if gemini else "claude_gpt"
+        window["models_hint"] = (
+            "agy models — gemini-* models draw this pool"
+            if gemini
+            else "agy models — claude-* / gpt-* models draw this pool"
+        )
     windows = {w["label"]: w for w in enrich_snapshot(stored)["accounts"][0]["windows"]}
     assert windows["Gemini 4 Argon weekly"]["pool_family"] == "gemini_argon"
     assert windows["Gemini 4 Argon weekly"]["models_hint"] == "gemini-4-argon* draws this pool"
-    assert windows["Gemini weekly"]["models_hint"] == "agy models — gemini-* models draw this pool"
+    assert (
+        windows["Gemini weekly"]["models_hint"]
+        == "agy models — gemini-* models (except gemini-4-argon*) draw this pool"
+    )
+    assert windows["Claude/GPT weekly"]["models_hint"] == "agy models — claude-* / gpt-* models draw this pool"
+
+
+# ── round 2 (adversary review of 464e785) ───────────────────────────────────
+
+FROZEN_NOW = datetime(2026, 10, 18, 13, 48, 18, tzinfo=timezone.utc)
+FLAT_RESETS = "2026-10-24T18:18:05+00:00"
+
+
+def _flat_snapshot(collected: datetime) -> dict:
+    """Every antigravity window flat (same used_percent and reset) at ``collected``."""
+    windows = []
+    for label, used, minutes, wid in (
+        ("Gemini 5-hour", 3.0, 300, "antigravity-quota-summary-gemini-5h"),
+        ("Gemini weekly", 10.0, 10080, "antigravity-quota-summary-gemini-weekly"),
+        ("Gemini 4 Argon weekly", 20.0, 10080, ARGON_ID),
+        ("Claude/GPT weekly", 30.0, 10080, "antigravity-quota-summary-3p-weekly"),
+    ):
+        window = _window(label, used, minutes, window_id=wid)
+        window["resets_at"] = FLAT_RESETS
+        windows.append(window)
+    return {
+        "collected_at": collected.isoformat(),
+        "accounts": [
+            {
+                "provider": "antigravity",
+                "account": None,
+                "source": "codexbar",
+                "billing_kind": "subscription_window",
+                "cli_binary": "agy",
+                "windows": windows,
+            }
+        ],
+    }
+
+
+def _write_agy_turn(log_dir: Path, *, model: str) -> None:
+    when = datetime(2026, 10, 18, 13, 0, 0, tzinfo=timezone.utc)
+    name = f"{when.astimezone().strftime('%Y%m%d-%H%M%S')}-agy-1.jsonl"
+    events = [
+        {"t": when.timestamp(), "kind": "initialize", "data": {}},
+        {"t": when.timestamp() + 0.1, "kind": "set_config", "data": {"id": "model", "value": model}},
+        {"t": when.timestamp() + 1.0, "kind": "prompt_response", "data": {"stopReason": "end_turn"}},
+    ]
+    (log_dir / name).write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+
+def _frozen_after_turn(tmp_path, model: str) -> dict:
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    times = [datetime(2026, 10, 18, h, m, tzinfo=timezone.utc) for h, m in ((12, 1), (13, 14), (13, 34))]
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(log_dir, model=model)
+    return enrich_snapshot(
+        _flat_snapshot(times[-1]),
+        now=FROZEN_NOW,
+        history=[_flat_snapshot(t) for t in times],
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+
+
+def _frozen_labels(snap: dict) -> set[str]:
+    return {w["label"] for w in snap["accounts"][0]["windows"] if w.get("measurement_frozen")}
+
+
+def test_frozen_argon_window_leaves_flash_and_claude_gpt_usable(tmp_path):
+    from aiuse.analysis.selfdescribe import available_pools
+
+    snap = _frozen_after_turn(tmp_path, "gemini-4-argon")
+    # F5: an Argon turn freezes only the Argon window; the flat Flash windows stay unfrozen.
+    assert _frozen_labels(snap) == {"Gemini 4 Argon weekly"}
+    pools = _families(snap)
+    assert pools["gemini_argon"]["usable_now"] is False
+    assert pools["gemini"]["usable_now"] is True
+    assert pools["claude_gpt"]["usable_now"] is True
+    assert {p["pool_family"] for p in available_pools(snap)} == {"gemini", "claude_gpt"}
+    # the account-level flag stays for account-level consumers
+    assert snap["accounts"][0]["measurement_frozen"] is True
+    assert snap["accounts"][0]["usable_now"] is False
+
+
+def test_frozen_flash_window_leaves_argon_and_claude_gpt_usable(tmp_path):
+    from aiuse.analysis.selfdescribe import available_pools
+
+    snap = _frozen_after_turn(tmp_path, "gemini-3-flash")
+    assert _frozen_labels(snap) == {"Gemini 5-hour", "Gemini weekly"}
+    pools = _families(snap)
+    assert pools["gemini"]["usable_now"] is False
+    assert pools["gemini_argon"]["usable_now"] is True
+    assert pools["claude_gpt"]["usable_now"] is True
+    assert {p["pool_family"] for p in available_pools(snap)} == {"gemini_argon", "claude_gpt"}
+
+
+@pytest.mark.parametrize(
+    ("window_id", "name"),
+    [
+        ("antigravity-quota-summary-gemini-argon-wtu-weekly", "argon"),
+        ("antigravity-quota-summary-gemini-4-argon-wtu-weekly", "argon"),
+        ("antigravity-quota-summary-gemini-4.1-argon-wtu-weekly", "argon"),
+        ("antigravity-quota-summary-gemini-carbon-wtu-weekly", "carbon"),
+        ("antigravity-quota-summary-gemini-argon-5h", "argon"),
+        # Flash ids, with or without the wtu infix: never a family of their own.
+        ("antigravity-quota-summary-gemini-weekly", None),
+        ("antigravity-quota-summary-gemini-5h", None),
+        ("antigravity-quota-summary-gemini-wtu-weekly", None),
+        ("antigravity-quota-summary-gemini-flash-weekly", None),
+        ("antigravity-quota-summary-3p-weekly", None),
+        (None, None),
+    ],
+)
+def test_gemini_id_regex_names(window_id, name):
+    from aiuse.analysis.pace import gemini_frontier_name
+
+    assert gemini_frontier_name(None, window_id) == name
+
+
+@pytest.mark.parametrize(
+    ("label", "window_id", "expected"),
+    [
+        ("Gemini weekly", ARGON_ID, "Gemini 4 Argon weekly"),
+        ("Gemini 4 Argon weekly", ARGON_ID, "Gemini 4 Argon weekly"),
+        ("Gemini weekly", "antigravity-quota-summary-gemini-4-carbon-wtu-weekly", "Gemini 4 Carbon weekly"),
+        ("Gemini weekly", "antigravity-quota-summary-gemini-carbon-wtu-weekly", "Gemini Carbon weekly"),
+        ("Gemini 5-hour", "antigravity-quota-summary-gemini-argon-5h", "Gemini 4 Argon 5-hour"),
+        ("Gemini weekly", "antigravity-quota-summary-gemini-weekly", "Gemini weekly"),
+        ("Gemini weekly", None, "Gemini weekly"),
+    ],
+)
+def test_canonical_gemini_label(label, window_id, expected):
+    from aiuse.analysis.pace import canonical_gemini_label
+
+    assert canonical_gemini_label(label, window_id) == expected
+
+
+def test_collector_names_the_argon_window_when_codexbar_titles_it_gemini_weekly():
+    from aiuse.collectors.codexbar import _from_row
+
+    def extra(title: str, wid: str) -> dict:
+        return {
+            "id": wid,
+            "title": title,
+            "window": {"usedPercent": 40, "resetsAt": "2026-11-03T02:35:35Z", "windowMinutes": 10080},
+        }
+
+    acc = _from_row(
+        {
+            "provider": "antigravity",
+            "source": "cli",
+            "usage": {
+                "extraRateWindows": [
+                    extra("Gemini weekly", ARGON_ID),
+                    extra("Gemini weekly", "antigravity-quota-summary-gemini-weekly"),
+                ]
+            },
+        }
+    )
+    assert [w.label for w in acc.windows] == ["Gemini 4 Argon weekly", "Gemini weekly"]
+
+
+def test_enrichment_canonicalises_a_stored_plain_label():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    snap = enrich_snapshot(_snapshot(argon_label="Gemini weekly"))
+    labels = sorted(w["label"] for w in snap["accounts"][0]["windows"] if w["pool_family"].startswith("gemini"))
+    assert labels == ["Gemini 4 Argon weekly", "Gemini 5-hour", "Gemini weekly"]
+    assert _families(snap)["gemini_argon"]["binding_window"] == "Gemini 4 Argon weekly"
+
+
+def test_argon_window_without_gemini_in_label_still_gets_the_family():
+    """The id alone decides (matrix/history keys already did; JSON pool_family now agrees)."""
+    from aiuse.analysis.pace import independent_pool_key
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    assert pool_family_id("antigravity", "Argon weekly", ARGON_ID) == "gemini_argon"
+    assert independent_pool_key("Argon weekly", window_id=ARGON_ID, provider="antigravity") == "gemini_argon"
+    assert pool_family_id("antigravity", "Claude/GPT weekly", "antigravity-quota-summary-3p-weekly") == "claude_gpt"
+
+
+def test_flash_models_hint_excludes_argon():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    windows = {w["label"]: w for w in enrich_snapshot(_snapshot())["accounts"][0]["windows"]}
+    assert "except gemini-4-argon*" in windows["Gemini weekly"]["models_hint"]
+
+
+def _burn_alert(label: str, *, remaining: float, kind: str = "burn"):
+    from aiuse.models import Urgency, UseOrLoseAlert
+
+    return UseOrLoseAlert(
+        urgency=Urgency.MEDIUM,
+        provider="antigravity",
+        account=None,
+        window_label=label,
+        remaining_percent=remaining,
+        days_until_reset=2.0,
+        plan=None,
+        message=f"{label} alert",
+        source="test",
+        score=50.0,
+        kind=kind,
+        window_minutes=10080,
+    )
+
+
+def _labels_for_argon_and_flash() -> tuple[str, str]:
+    from aiuse.analysis.pace import canonical_gemini_label
+
+    return (
+        canonical_gemini_label("Gemini weekly", ARGON_ID),
+        canonical_gemini_label("Gemini weekly", "antigravity-quota-summary-gemini-weekly"),
+    )
+
+
+def test_chat_format_action_items_keep_argon_and_flash_apart():
+    from aiuse.chat_format import _build_action_items
+
+    argon_label, flash_label = _labels_for_argon_and_flash()
+    alerts = [_burn_alert(argon_label, remaining=60.0), _burn_alert(flash_label, remaining=40.0)]
+    assert len(_build_action_items(alerts)) == 2
+    # the unfixed shape: two plain "Gemini weekly" labels collapse into one pool
+    assert len(_build_action_items([_burn_alert("Gemini weekly", remaining=60.0)] * 2)) == 1
+
+
+def test_ranking_flash_alert_does_not_mask_argon_alert():
+    from aiuse.analysis.ranking import _pool_id_for_label, pool_masked
+
+    argon_label, flash_label = _labels_for_argon_and_flash()
+    assert _pool_id_for_label(argon_label, "antigravity") == "gemini_argon"
+    assert _pool_id_for_label(flash_label, "antigravity") == "gemini"
+    argon = _burn_alert(argon_label, remaining=60.0)
+    flash_empty = _burn_alert(flash_label, remaining=0.0)
+    assert pool_masked(argon, [argon, flash_empty]) is False
+
+
+def test_attribute_series_key_splits_argon_from_flash():
+    from aiuse.analysis.history import window_series_key
+
+    argon_label, flash_label = _labels_for_argon_and_flash()
+    argon_key = window_series_key("antigravity", argon_label, 10080)
+    assert argon_key == "antigravity:gemini_argon:weekly"
+    assert argon_key != window_series_key("antigravity", flash_label, 10080)
+
+
+def test_frontier_model_prefix_table_covers_every_named_frontier_hint():
+    """A frontier name with a window hint but no model prefix maps its turns to Flash."""
+    from aiuse.analysis.pace import GEMINI_FRONTIER_MODEL_PREFIXES
+    from aiuse.analysis.selfdescribe import _GEMINI_FRONTIER_HINTS
+
+    assert set(_GEMINI_FRONTIER_HINTS) <= set(GEMINI_FRONTIER_MODEL_PREFIXES.values())
+
+
+def test_schema_semantics_publish_the_model_family_mapping():
+    from aiuse.analysis.pace import GEMINI_FRONTIER_MODEL_PREFIXES
+    from aiuse.analysis.selfdescribe import SEMANTICS
+    from aiuse.quota_refusals import pool_family_for_acp_model
+
+    text = SEMANTICS["model_pool_family"]
+    for prefix, name in GEMINI_FRONTIER_MODEL_PREFIXES.items():
+        assert f"{prefix}* -> gemini_{name}" in text
+        assert pool_family_for_acp_model("antigravity", prefix) == f"gemini_{name}"

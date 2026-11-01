@@ -74,15 +74,39 @@ the Flash `gemini` pool.
   `gemini` and `gemini_argon` as two entries, each judged by its own windows:
   an exhausted Argon window no longer makes Flash `usable_now: false` (and no
   longer drops it from `--available`), and an exhausted Flash window no longer
-  hides Argon. The matrix shows Argon as its own `gemini-argon` row.
+  hides Argon. The matrix shows Argon as its own `gemini-argon` row. A frozen
+  (flat-while-spent) reading is judged the same way: on an antigravity account
+  with several families, each row's `usable_now` uses only its own windows'
+  `measurement_frozen`; the account-level `measurement_frozen` / `usable_now`
+  stay as they were for account-level consumers.
+- **Breaking for consumers that map models themselves:** the `gemini` row no
+  longer includes the Argon window, so an Argon dispatch gated on the `gemini`
+  row is gated by Flash headroom, not Argon's. Any consumer that maps a model
+  id to `("antigravity", "gemini")` must map `gemini-4-argon*` to `gemini_argon`
+  (the Flash `models_hint` now says "except gemini-4-argon*"). The mapping is
+  published in `aiuse schema` under `semantics.model_pool_family` so consumers
+  need not hard-code it. An operator `[hidden_pools]` / `excluded_pools` rule
+  for `antigravity/gemini` no longer covers Argon; add `antigravity/gemini_argon`.
 - **The "Gemini 5-hour" window stays in `gemini` only.** CodexBar has never
-  reported an Argon 5-hour window (no such window id in ~150 snapshots), so
-  whether an Argon call also draws the Gemini 5-hour window is **unmeasured**;
-  aiuse does not guess.
+  reported an Argon 5-hour window (none of the ~2,800 local snapshots that
+  carry the Argon id has one). Whether an Argon call also draws the Gemini
+  5-hour window is not measured directly; a review scan found 8 intervals where
+  Argon weekly rose while Flash weekly and Gemini 5-hour stayed flat, which
+  weakly suggests it does not. aiuse does not guess and keeps it in `gemini`.
 - **Other frontier names.** A future `Gemini 4 Carbon weekly` (id
   `...-gemini-carbon-wtu-weekly`) becomes its own `gemini_carbon` family, not
   folded into Argon or Flash. Only the name `flash` (and unnamed
-  "Gemini 5-hour" / "Gemini weekly") means the original `gemini` family.
+  "Gemini 5-hour" / "Gemini weekly") means the original `gemini` family; `wtu`
+  in an id and the span words are never a model name. Any other word between
+  "Gemini" (and an optional version) and the span in a label is taken as a model
+  name, so an odd label such as "Gemini models weekly" becomes `gemini_models`:
+  unknown labels fail separate, not into Flash. The window id wins over the
+  label; an id that names a model but a label that does not is rewritten to
+  `Gemini 4 Argon weekly` (`Gemini <Name> <span>` for other names) at collection
+  and enrichment, so label-keyed surfaces (alert dedupe, suggestion masking,
+  attribution series) split Argon from Flash too. A model id has no such
+  shape, so a new frontier model needs a prefix added to aiuse's table; until
+  then its turns and refusals map to `gemini` (fails closed for Flash).
 - **Model → family** (`acp-run` logs, auto-persisted exhaustion notes):
   `gemini-4-argon*` → `gemini_argon`; every other `gemini-*` → `gemini`;
   `claude-*` / `gpt-*` → `claude_gpt`. Notes match by exact family, so an Argon
@@ -91,7 +115,12 @@ the Flash `gemini` pool.
   hand. An exhaustion note written before 1.5 with `--family gemini` (or from
   an Argon refusal, which used to map to `gemini`) still marks only Flash; let
   it expire or `rm` it from `~/.cache/aiuse/agent-notes/`.
-- History: an Argon window keeps its own label, so its series is unchanged.
+- History: the series key changes. Argon moves from `antigravity:gemini:weekly`
+  to `antigravity:gemini_argon:weekly`, re-keyed at read time from each record's
+  label and window id, so past records split retroactively. Learned burn rates
+  and chronic-waste detection for `gemini` weekly no longer include Argon
+  (before 1.5 the two were mixed in one series; records with no window id stay
+  `gemini`).
 
 ## What's new in schema 1.4 (2026-10-21)
 

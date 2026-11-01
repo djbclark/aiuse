@@ -12,7 +12,8 @@ aiuse cannot fix Google's endpoint. Fail closed only when **both** hold:
    ``min_frozen_seconds`` of recent snapshot history, and
 2. An acp-run log under ``~/.local/state/acp-run/`` shows a turn for that
    provider whose applied model belongs to that pool family **during** the
-   flat span (claude-*/gpt-* → ``claude_gpt``, gemini-* → ``gemini``).
+   flat span (claude-*/gpt-* → ``claude_gpt``, gemini-4-argon* → ``gemini_argon``, other
+   gemini-* → ``gemini``).
 
 Idle flat pools (overnight Gemini, unused grok/copilot reserves, quiet
 weekly windows) stay routable — those are exactly what ``--available``
