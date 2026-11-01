@@ -1503,6 +1503,25 @@ def _slot_label(
         cursor_label = _cursor_rate_label(index, rate_labels)
         if cursor_label:
             return cursor_label
+    if provider == "copilot":
+        if rate_labels:
+            slot = ("primary", "secondary", "tertiary")[index - 1]
+            raw = rate_labels.get(slot)
+            if raw:
+                low = str(raw).strip().casefold()
+                if "week" in low or "7-day" in low or "7d" in low:
+                    return "GitHub Copilot weekly quota"
+                if "session" in low or "5-hour" in low or "5h" in low:
+                    return "GitHub Copilot session quota"
+                if "premium" in low:
+                    return "GitHub Copilot premium requests"
+                if "chat" in low:
+                    return "GitHub Copilot chat messages"
+        kind = _block_window_kind(block)
+        if kind == "weekly":
+            return "GitHub Copilot weekly quota"
+        if kind == "5h":
+            return "GitHub Copilot session quota"
     slot_labels = _SLOT_LABELS.get(provider)
     if slot_labels:
         return slot_labels[index - 1]

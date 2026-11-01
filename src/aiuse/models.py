@@ -246,10 +246,14 @@ def provider_cli_binary(provider: str) -> str | None:
 def keep_copilot_report_window(label: str) -> bool:
     """Whether a Copilot quota window belongs in the use-or-lose report.
 
-    Completions (inline autocomplete) and chat-message caps are not comparable to
-    Claude/Codex/OpenCode subscription burn windows. Only premium requests are.
+    Completions (inline autocomplete) and standard chat-message caps are not comparable to
+    Claude/Codex/OpenCode subscription burn windows. Premium requests, 7-day/weekly, and
+    session/5h quota windows belong in the report.
     """
-    return "premium" in (label or "").lower()
+    low = (label or "").lower()
+    if "completions" in low or "chat messages" in low:
+        return False
+    return any(marker in low for marker in ("premium", "weekly", "7-day", "7d", "session", "5-hour", "5h"))
 
 
 def parse_dt(value: str | None) -> datetime | None:

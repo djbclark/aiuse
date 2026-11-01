@@ -24,8 +24,41 @@ def test_15h_label_does_not_match_5h_bucket():
 
 def test_keep_copilot_report_window_premium_only():
     assert keep_copilot_report_window("GitHub Copilot premium requests")
+    assert keep_copilot_report_window("GitHub Copilot weekly quota")
+    assert keep_copilot_report_window("GitHub Copilot session quota")
     assert not keep_copilot_report_window("GitHub Copilot completions")
     assert not keep_copilot_report_window("GitHub Copilot chat messages")
+
+
+def test_infer_window_minutes_copilot_windows():
+    assert _infer_window_minutes("copilot", "premium", "Premium") == WINDOW_NOMINAL_MINUTES["monthly"]
+    assert _infer_window_minutes("copilot", "weekly", "Weekly") == WINDOW_NOMINAL_MINUTES["weekly"]
+    assert _infer_window_minutes("copilot", "7-day", "7-day") == WINDOW_NOMINAL_MINUTES["weekly"]
+    assert _infer_window_minutes("copilot", "session", "Session") == WINDOW_NOMINAL_MINUTES["5h"]
+
+
+def test_tokscale_copilot_keeps_weekly_and_session_drops_completions():
+    acc = _from_row(
+        {
+            "provider": "Copilot",
+            "plan": "Individual",
+            "metrics": [
+                {"label": "Chat", "used_percent": 36, "remaining_percent": 64, "resets_at": "2026-08-01"},
+                {"label": "Completions", "used_percent": 0, "remaining_percent": 100, "resets_at": "2026-08-01"},
+                {"label": "Premium", "used_percent": 100, "remaining_percent": 0, "resets_at": "2026-08-01"},
+                {"label": "Weekly", "used_percent": 50, "remaining_percent": 50, "resets_at": "2026-08-08"},
+                {"label": "Session", "used_percent": 10, "remaining_percent": 90, "resets_at": "2026-08-01T15:00:00Z"},
+            ],
+        }
+    )
+    labels = [w.label for w in acc.windows]
+    assert labels == [
+        "GitHub Copilot premium requests",
+        "GitHub Copilot weekly quota",
+        "GitHub Copilot session quota",
+    ]
+    assert acc.windows[1].window_minutes == WINDOW_NOMINAL_MINUTES["weekly"]
+    assert acc.windows[2].window_minutes == WINDOW_NOMINAL_MINUTES["5h"]
 
 
 def test_tokscale_copilot_drops_completions_and_chat():
