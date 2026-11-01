@@ -59,6 +59,7 @@ project's guides by the job they help you do; most people only need one or two.
 ## Maintainers and contributors
 
 - [`../AGENTS.md`](../AGENTS.md) — repository orientation and current priorities.
+- [`../CHANGELOG.md`](../CHANGELOG.md) — what changed in each release; add an entry before every `just release`.
 - [`handoffs/`](handoffs/) — per-session handoffs; the newest file is the resume point.
 - [`ralph-orchestrator-phase1-pilot.md`](ralph-orchestrator-phase1-pilot.md) — parked Phase 1 ralph-orchestrator PRD (`aiuse-juk`).
 - [`handoff.md`](handoff.md) — archive of releases 2.1.16–3.0.12, superseded by `handoffs/`.

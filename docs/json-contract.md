@@ -208,6 +208,13 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-11-01, schema stays 1.5)
+
+- `accounts[].bedrock_billing.since_month` (`YYYY-MM` | null): earliest month with
+  Cost Explorer records in the window behind the Bedrock total. `billing_month`
+  is the UTC month that was read; the total now covers up to 13 earlier months
+  ([`bedrock-quota.md`](bedrock-quota.md)).
+
 #### Additive (2026-10-15, schema stays 1.3)
 
 - `accounts[].expires_at` (ISO string | omitted): when an expiring dollar grant (`omp`)

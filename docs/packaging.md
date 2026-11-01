@@ -123,6 +123,11 @@ Useful flags: `--notes-file PATH`, `--notes '…'`, `--skip-tests`,
 `--skip-pypi-wait`, `--skip-homebrew`, `--allow-dirty`,
 `--tap-path PATH`.
 
+**Changelog:** before `just release X.Y.Z`, add that version's entry to
+[`CHANGELOG.md`](../CHANGELOG.md) (newest first, `Added` / `Changed` /
+`Fixed`, plus the compare link at the bottom) and commit it. Pass the entry
+as the GitHub release notes with `--notes-file`.
+
 Release identifiers are always plain numeric `X.Y.Z`. The script accepts only
 one deterministic step from the current version: the next patch (the usual
 choice), the next minor with patch reset to zero, or the next major with minor

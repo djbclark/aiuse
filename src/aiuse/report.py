@@ -641,6 +641,11 @@ def _overage_remaining_usd(account: AccountUsage) -> float | None:
     return None
 
 
+def _overage_kind(account: AccountUsage) -> str:
+    """Cursor's on-demand dollars are a spend cap, not a wallet bought ahead."""
+    return "cap left" if canonical_provider(account.provider) == "cursor" else "prepaid"
+
+
 def dollar_meter(
     direction: str,
     kind: str,
@@ -704,7 +709,7 @@ def _extra_usage_wallet_fragment(account: AccountUsage) -> str:
     remaining = _overage_remaining_usd(account)
     if remaining is None:
         return ""
-    return " · " + dollar_meter("down", "prepaid", remaining)
+    return " · " + dollar_meter("down", _overage_kind(account), remaining)
 
 
 def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
@@ -1675,9 +1680,9 @@ def _build_matrix_rows(
                 # after the reset cells and never replaces them. Rows with
                 # no clocks at all keep the note as the row.
                 if clocks:
-                    tail_note = dollar_meter("down", "prepaid", wallet, compact=True)
+                    tail_note = dollar_meter("down", _overage_kind(account), wallet, compact=True)
                 else:
-                    phrase = dollar_meter("down", "prepaid", wallet)
+                    phrase = dollar_meter("down", _overage_kind(account), wallet)
                     note = phrase if note is None else f"{note} · {phrase}"
             if clocks and account.spent_usd is not None and account.balance_usd is not None:
                 # An expiring dollar grant (omp): what is left of the plan.

@@ -1191,7 +1191,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     used_percent=(cost_used / cost_limit) * 100.0,
                     resets_at=parse_dt(provider_cost.get("resetsAt")),
                 )
-                notes.append(f"On-demand: ↑ ${cost_used:.2f} of ${cost_limit:.2f} (↓ ${remaining:.2f} prepaid).")
+                wallet_kind = "cap left" if provider == "cursor" else "prepaid"
+                notes.append(f"On-demand: ↑ ${cost_used:.2f} of ${cost_limit:.2f} (↓ ${remaining:.2f} {wallet_kind}).")
                 if provider == "cursor":
                     used_pct = (cost_used / cost_limit) * 100.0 if cost_limit else None
                     rem_pct = max(0.0, 100.0 - used_pct) if used_pct is not None else None
