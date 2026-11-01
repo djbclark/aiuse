@@ -32,6 +32,14 @@ _RESET_STAMP = re.compile(
     r"quotaResetTimeStamp:(?P<reset>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)",
     re.IGNORECASE,
 )
+_ISO_TIMESTAMP = re.compile(
+    r"\b(?P<stamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b",
+    re.IGNORECASE,
+)
+_RETRY_AFTER = re.compile(
+    r"retry-after[:=]\s*(?P<seconds>\d+)",
+    re.IGNORECASE,
+)
 _MODEL = re.compile(
     r"model:(?P<model>claude-[A-Za-z0-9._+-]+|gpt-[A-Za-z0-9._+-]+|gemini-[A-Za-z0-9._+-]+)",
     re.IGNORECASE,
@@ -40,6 +48,16 @@ _QUOTA_MARKERS = (
     "individual quota reached",
     "reason:quota_exhausted",
     "QUOTA_EXHAUSTED",
+    "user_weekly_rate_limited",
+    "weekly_rate_limited",
+    "user_session_rate_limited",
+    "session_rate_limited",
+)
+_COPILOT_QUOTA_MARKERS = (
+    "user_weekly_rate_limited",
+    "weekly_rate_limited",
+    "user_session_rate_limited",
+    "session_rate_limited",
 )
 _LOG_NAME = re.compile(r"^(\d{8})-(\d{6})-(.+)-(\d+)\.(jsonl|stderr)$")
 # Multi-day reset: shorter resets are often the 5h / burst window, which the
@@ -76,10 +94,33 @@ def _family_for(provider: str, model: str | None) -> str | None:
     return pool_family_for_acp_model(provider, model)
 
 
-def _extract_refusal(text: str, *, now: datetime) -> dict[str, Any] | None:
+def _extract_refusal(text: str, *, now: datetime, provider: str | None = None) -> dict[str, Any] | None:
     low = text.casefold()
     if not any(marker.casefold() in low for marker in _QUOTA_MARKERS):
         return None
+
+    if provider == "copilot" or any(m in low for m in _COPILOT_QUOTA_MARKERS):
+        is_weekly = "weekly" in low or "user_weekly" in low
+        reset_match = _RESET_STAMP.search(text) or _ISO_TIMESTAMP.search(text)
+        retry_match = _RETRY_AFTER.search(text)
+        resets_at = None
+        if reset_match:
+            resets_at = parse_dt(reset_match.group(1))
+        elif retry_match:
+            try:
+                resets_at = now + timedelta(seconds=int(retry_match.group("seconds")))
+            except (ValueError, OverflowError):
+                resets_at = None
+        if resets_at is None or resets_at <= now:
+            resets_at = now + timedelta(days=7 if is_weekly else 1)
+        reason_label = "weekly rate limit (7-day)" if is_weekly else "session rate limit"
+        return {
+            "resets_at": resets_at,
+            "model": None,
+            "reason": f"Copilot {reason_label} exceeded",
+            "snippet": text[:240],
+        }
+
     reset_match = _RESET_STAMP.search(text)
     if reset_match is None:
         return None
@@ -90,7 +131,7 @@ def _extract_refusal(text: str, *, now: datetime) -> dict[str, Any] | None:
         return None
     model_match = _MODEL.search(text)
     model = model_match.group("model") if model_match else None
-    return {"resets_at": resets_at, "model": model, "snippet": text[:240]}
+    return {"resets_at": resets_at, "model": model, "reason": None, "snippet": text[:240]}
 
 
 def scan_acp_quota_refusals(
@@ -138,19 +179,24 @@ def scan_acp_quota_refusals(
             marker.casefold() in text.casefold() for marker in _QUOTA_MARKERS
         ):
             continue
-        refusal = _extract_refusal(text, now=now)
+        refusal = _extract_refusal(text, now=now, provider=provider)
         if refusal is None:
             continue
         family = _family_for(provider, refusal.get("model"))
         key = (provider, family)
         if key in found:
             continue
+        reason = (
+            f"acp-run log {path.name}: {refusal['reason']}"
+            if refusal.get("reason")
+            else f"acp-run log {path.name}: Individual/QUOTA_EXHAUSTED (model={refusal.get('model') or '?'})"
+        )
         found[key] = {
             "schema_version": "1.0",
             "provider": provider,
             "pool_family": family,
             "resets_at": refusal["resets_at"].astimezone(timezone.utc).isoformat(),
-            "reason": (f"acp-run log {path.name}: Individual/QUOTA_EXHAUSTED (model={refusal.get('model') or '?'})"),
+            "reason": reason,
             "created_at": now.isoformat(),
             "source": "agent-reported",
             "evidence": str(path),

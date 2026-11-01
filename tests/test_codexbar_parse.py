@@ -1097,3 +1097,13 @@ def test_http_server_down_falls_back_to_the_cli(monkeypatch):
     assert [row.provider for row in rows] == ["codex"]
     assert cli and "usage" in cli[0]
     assert "server-token" not in " ".join(cli[0])
+
+
+def test_copilot_slot_label_with_rate_labels_and_window_kinds():
+    from aiuse.collectors.codexbar import _slot_label
+
+    assert _slot_label("copilot", 1, {}, rate_labels={"primary": "Premium"}) == "GitHub Copilot premium requests"
+    assert _slot_label("copilot", 2, {}, rate_labels={"secondary": "Weekly"}) == "GitHub Copilot weekly quota"
+    assert _slot_label("copilot", 3, {}, rate_labels={"tertiary": "Session"}) == "GitHub Copilot session quota"
+    assert _slot_label("copilot", 2, {"windowMinutes": 10080}) == "GitHub Copilot weekly quota"
+    assert _slot_label("copilot", 3, {"windowMinutes": 300}) == "GitHub Copilot session quota"

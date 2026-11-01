@@ -94,6 +94,9 @@ def _metric_label(provider: str, label: str) -> str:
             "chat": "GitHub Copilot chat messages",
             "completions": "GitHub Copilot completions",
             "premium": "GitHub Copilot premium requests",
+            "weekly": "GitHub Copilot weekly quota",
+            "7-day": "GitHub Copilot weekly quota",
+            "session": "GitHub Copilot session quota",
         }.get(key, f"GitHub Copilot {label}")
     if provider == "grok-build" and key == "weekly":
         return "Grok weekly quota"
@@ -104,8 +107,13 @@ def _infer_window_minutes(provider: str, raw_label: str, display_label: str) -> 
     key = (raw_label or "").lower().strip()
     provider_key = (provider or "").lower().replace(" ", "-")
     # Copilot label vocabulary only — do not apply to other providers.
-    if provider_key == "copilot" and key in ("chat", "completions", "premium"):
-        return WINDOW_NOMINAL_MINUTES["monthly"]
+    if provider_key == "copilot":
+        if key in ("session", "5h", "5-hour", "5 hour") or "session" in key or "5-hour" in key:
+            return WINDOW_NOMINAL_MINUTES["5h"]
+        if key in ("weekly", "7-day", "7d") or "week" in key or "7-day" in key:
+            return WINDOW_NOMINAL_MINUTES["weekly"]
+        if key in ("chat", "completions", "premium"):
+            return WINDOW_NOMINAL_MINUTES["monthly"]
     if key in ("session", "5h", "5-hour", "5 hour") or "5-hour" in key or "5 hour" in key:
         return WINDOW_NOMINAL_MINUTES["5h"]
     # Avoid matching "15h" / "45h" via bare "5h" substring.

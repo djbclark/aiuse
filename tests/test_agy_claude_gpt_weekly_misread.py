@@ -321,3 +321,22 @@ def test_short_reset_refusal_is_ignored(tmp_path):
         encoding="utf-8",
     )
     assert scan_acp_quota_refusals(log_dir=log_dir, now=NOW) == []
+
+
+def test_copilot_weekly_rate_limited_refusal(tmp_path):
+    """Copilot user_weekly_rate_limited refusal is recorded as a weekly pool refusal."""
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    log = log_dir / "20261018-100000-copilot-42.jsonl"
+    log.write_text(
+        json.dumps(
+            {"data": {"rawOutput": ("Error: user_weekly_rate_limited. 2026-10-23T09:55:28Z retry-after: 432000")}}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    refusals = scan_acp_quota_refusals(log_dir=log_dir, now=NOW)
+    assert len(refusals) == 1
+    assert refusals[0]["provider"] == "copilot"
+    assert "weekly rate limit" in refusals[0]["reason"]
+    assert refusals[0]["resets_at"] == "2026-10-23T09:55:28+00:00"
