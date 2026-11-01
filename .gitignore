@@ -30,3 +30,7 @@ htmlcov/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Local OpenCode MCP config
+opencode.json
+
