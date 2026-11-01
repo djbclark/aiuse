@@ -4,7 +4,7 @@ CodexBar's Bedrock provider calls ``ce:GetCostAndUsage``, which AWS bills at
 $0.01 per request. The operator uses other models whenever Bedrock is in use,
 so a new reading is worth paying for only when some other quota has moved,
 and at most once every six hours. The first reading is always taken, so a
-month-to-date figure appears. A failed call is stamped too: a Cost Explorer
+total appears. A failed call is stamped too: a Cost Explorer
 error must not retry on every collect.
 
 The store keeps the dollars and the time, never the CodexBar payload (that
@@ -114,7 +114,7 @@ def _cost_and_spoken(row: dict[str, Any]) -> tuple[float | None, float | None]:
 
 
 def positive_bedrock_spend(row: dict[str, Any]) -> float | None:
-    """Positive month-to-date PAYG spend. A zero total is not returned.
+    """Positive total PAYG spend. A zero total is not returned.
 
     ``providerCost.used`` wins when it is at least one cent. Otherwise a
     ``Spend: $…`` line. :func:`measured_bedrock_spend` keeps a measured zero.
@@ -299,7 +299,7 @@ def _remember_failure(store: dict[str, Any], *, now: datetime, message: str, pat
 def _keep_positive_cache(
     store: dict[str, Any], *, now: datetime, path: str | Path | None
 ) -> list[dict[str, Any]] | None:
-    """A later ``$0.00`` must not wipe a cached positive month-to-date total."""
+    """A later ``$0.00`` must not wipe a cached positive total."""
     prior = _positive_usd(_float(store.get("spent_usd")))
     if prior is None:
         return None
@@ -342,17 +342,6 @@ def _gated_bedrock_payload(
         held = cached_payload(moment, store)
         if held is not None:
             return held
-        if account_id is None and saved.get("error") == "UNKNOWN":
-            # An older build stored a $0 total as UNKNOWN and did not keep the
-            # dollars. Show that zero from the attempt time; do not call again.
-            fetched = parse_dt(saved.get("fetched_at") if isinstance(saved.get("fetched_at"), str) else None)
-            read_at = fetched or moment
-            saved["schema_version"] = _SCHEMA
-            saved["spent_usd"] = 0.0
-            saved["read_at"] = read_at.isoformat()
-            saved.pop("error", None)
-            _write_store(saved, store)
-            return [_row(0.0, None, read_at=read_at, updated_at=moment)]
         if saved.get("error"):
             return CollectorError(str(saved["error"]))
         return CollectorError("Bedrock spend unavailable")
@@ -371,7 +360,7 @@ def _gated_bedrock_payload(
             rows = outcome if isinstance(outcome, list) else [outcome]
             if any(isinstance(row, dict) for row in rows):
                 return _stamp_rows(outcome, read_at=moment, updated_at=moment)
-            return [_row(0.0, None, read_at=moment, updated_at=moment)]
+            return CollectorError("Bedrock spend unavailable")
         message = str(outcome)
         _remember_failure(saved, now=moment, message=message, path=store)
         held = cached_payload(moment, store)

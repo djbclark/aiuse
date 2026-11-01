@@ -580,12 +580,11 @@ def _positive_usd(amount: float | None) -> float | None:
 
 
 def _bedrock_meter_usd(account: AccountUsage) -> float | None:
-    """Bedrock's month-to-date PAYG figure, or ``None`` when the row names none.
+    """Bedrock's total PAYG figure, or ``None`` when the row names none.
 
     A ``balance_usd`` on this provider is the old misread of ``Spend: $…``.
-    Zero is not a known total: Cost Explorer reports ``0`` when the data is
-    missing, so callers that display the figure must use
-    :func:`_bedrock_display_spend`.
+    Zero is not a known total unless native billing measured it, so callers
+    that display the figure must use :func:`_bedrock_display_spend`.
     """
     if canonical_provider(account.provider) != "bedrock":
         return None
@@ -727,14 +726,14 @@ def _matrix_row_shows_wallet(account: AccountUsage, pool_id: str) -> bool:
 def _api_inventory_note(account: AccountUsage) -> str:
     """Ladder/matrix note for a prepaid countdown or a pay-as-you-go meter."""
     if canonical_provider(account.provider) == "bedrock":
-        # Pay-as-you-go only. Zero is not shown: a missing Cost Explorer total
-        # comes back as 0, which would claim an empty month.
+        # Pay-as-you-go only. A legacy zero is not shown: it cannot be told
+        # from a missing total. Native billing proves its own zero.
         spent = _bedrock_display_spend(account)
         if spent is None:
             return "UNKNOWN"
         uc = account.usage_credits
         limit = float(uc.limit) if uc is not None and uc.limit is not None and uc.limit > 0 else None
-        label = "AWS MTD" if (account.bedrock_billing or {}).get("scope") == "aws_account" else "PAYG"
+        label = "AWS total" if (account.bedrock_billing or {}).get("scope") == "aws_account" else "PAYG"
         return dollar_meter("up", label, spent, limit) + _bedrock_as_of(account)
     if _account_is_spend_up_payg(account):
         uc = account.usage_credits

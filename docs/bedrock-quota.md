@@ -1,11 +1,13 @@
-# AWS account month-to-date spend
+# AWS account total spend
 
 Related: [`provider-identity.md`](provider-identity.md) ·
 [`json-contract.md`](json-contract.md) · [`omp-cloud-credits.md`](omp-cloud-credits.md)
 
-The `bedrock` provider/config identity now displays **overall AWS account**
-month-to-date charges before credits, as requested on 2026-10-29. The compact
-row is `↑ $16.89 AWS MTD (as of …)` with no category, credit, or net breakdown.
+The `bedrock` provider/config identity displays the **overall AWS account
+total** billed so far, before credits. It began as month-to-date (2026-10-29)
+and became a running total on 2026-11-01, when the new month's first day read
+as `$0.00` while October had charges. The compact row is
+`↑ $25.66 AWS total (as of …)` with no category, credit, or net breakdown.
 It counts up and is not a prepaid balance.
 
 ## Billing source and authentication
@@ -16,7 +18,15 @@ usage: $3.44721901 of Amazon Bedrock usage and -$3.44721901 of credit net to
 zero. Earlier releases misclassified that zero as unavailable. The repaired
 account total is $16.89 once the $13.44 Cost Explorer charges are included.
 The row shows only that account total and its measurement time.
-AWS may mark current-month totals estimated.
+AWS may mark recent totals estimated.
+
+The query spans the 13 whole months before the current one plus the current
+month (Cost Explorer rejects an older `Start` with `ValidationException`;
+probed 2026-11-01). History older than that is not counted. `since_month`
+names the earliest month that had records. Cost Explorer lags by up to a day
+and answers a period with no records as `Amount: "0"`; a window with no
+records at all is therefore `UNKNOWN` ("no AWS cost records since …"), never
+`$0.00`. A real zero-amount record is a measured zero.
 
 Existing AWS environment credentials or `AWS_PROFILE` are supported. On a
 managed machine, `sudo-secretspec run` can inject the existing
@@ -37,19 +47,20 @@ operator-only all-provider sweep waives the gate.
 
 The store is `~/.local/state/aiuse/bedrock-spend.json`, overridable with
 `AIUSE_BEDROCK_STORE`. `AIUSE_BEDROCK_SNAPSHOT` overrides the activity snapshot.
-The store is scoped to the STS-verified AWS account and UTC billing month;
-previous-month, different-account, or Bedrock-only dollars cannot be presented
-as the current account total. An earlier Bedrock-only cache keeps its attempt
-throttle but not its measurement during migration.
-Legacy unscoped readings are not proof of a current total. An old attempt's
-six-hour hold is retained during migration.
+The store is scoped to the STS-verified AWS account and UTC calendar month,
+so a new month forces one fresh read; different-account or Bedrock-only
+dollars cannot be presented as the current account total. An earlier
+Bedrock-only cache keeps its attempt throttle but not its measurement during
+migration. Legacy unscoped readings are not proof of a current total, and an
+old `UNKNOWN` store stays unknown rather than becoming `$0.00`. An old
+attempt's six-hour hold is retained during migration.
 
 ## Output contract
 
 `billing_kind` remains `payg_api`; `usage_credits.used` is gross AWS account charges,
 `balance_usd` remains null. `spent_usd` remains the expiring grant field, not
 this meter. Additive `bedrock_billing` metadata carries `account_id`,
-`billing_month`, `scope` (`aws_account`), `gross_usd`, signed `credits_usd`, `net_usd`, `estimated`,
+`billing_month` (the UTC month read), `since_month`, `scope` (`aws_account`), `gross_usd`, signed `credits_usd`, `net_usd`, `estimated`,
 and `read_at` (the original measurement time, retained on cached snapshots).
 The metadata survives snapshot serialization and watch reuse.
 

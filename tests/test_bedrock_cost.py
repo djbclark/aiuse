@@ -10,10 +10,11 @@ NOW = datetime(2026, 10, 29, 20, tzinfo=UTC)
 ACCOUNT = "828035973072"
 
 
-def _page(*groups, token=None):
+def _page(*groups, token=None, month="2026-10"):
     return {
         "ResultsByTime": [
             {
+                "TimePeriod": {"Start": f"{month}-01", "End": f"{month}-28"},
                 "Groups": [
                     {"Keys": [service, kind], "Metrics": {"UnblendedCost": {"Amount": str(amount), "Unit": "USD"}}}
                     for service, kind, amount in groups
@@ -59,13 +60,14 @@ def test_credit_offset_keeps_gross_and_net_distinct(monkeypatch):
         "scope": "aws_account",
         "account_id": ACCOUNT,
         "billing_month": "2026-10",
+        "since_month": "2026-10",
         "gross_usd": pytest.approx(16.88721901),
         "credits_usd": pytest.approx(-16.88721901),
         "net_usd": 0,
         "estimated": True,
     }
     assert "Type=DIMENSION,Key=RECORD_TYPE" in calls[1]
-    assert "Start=2026-10-01,End=2026-10-30" in calls[1]
+    assert "Start=2025-09-01,End=2026-10-30" in calls[1]
     c.account_id()
     assert len(calls) == 2  # identity reused
 
@@ -75,10 +77,23 @@ def test_zero_amount_record_is_a_measured_zero(monkeypatch):
     assert c.fetch(now=NOW)[0]["usage"]["bedrockBilling"]["gross_usd"] == 0
 
 
-def test_empty_period_is_unknown_not_zero(monkeypatch):
+def test_empty_window_is_unknown_not_zero(monkeypatch):
     c, _ = _client(monkeypatch, [_page()])
-    with pytest.raises(CollectorError, match="no cost records for 2026-10"):
+    with pytest.raises(CollectorError, match="no AWS cost records since 2025-09"):
         c.fetch(now=NOW)
+
+
+def test_empty_new_month_keeps_the_total_of_earlier_months(monkeypatch):
+    november_first = datetime(2026, 11, 1, 12, tzinfo=UTC)
+    older = _page(("AWS Cost Explorer", "Usage", 22.21), ("Amazon Bedrock", "Usage", 3.45))
+    current = _page(month="2026-11")
+    older["ResultsByTime"].extend(current["ResultsByTime"])
+    c, calls = _client(monkeypatch, [older])
+    row = c.fetch(now=november_first)[0]
+    assert row["usage"]["providerCost"]["used"] == pytest.approx(25.66)
+    assert row["usage"]["bedrockBilling"]["since_month"] == "2026-10"
+    assert row["usage"]["bedrockBilling"]["billing_month"] == "2026-11"
+    assert "Start=2025-10-01,End=2026-11-02" in calls[1]
 
 
 def test_missing_period_is_unknown(monkeypatch):

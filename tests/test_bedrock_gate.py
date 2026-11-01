@@ -197,7 +197,7 @@ def test_from_row_spend_is_payg_and_not_a_prepaid_balance():
     assert account.usage_credits.limit is None
     note = _api_inventory_note(account)
     assert note == "↑ $16.89 PAYG " + format_as_of(datetime.fromisoformat(READ_AT))
-    assert any("Bedrock month-to-date spend: $16.89 PAYG." in item for item in account.notes)
+    assert any("Bedrock total spend: $16.89 PAYG." in item for item in account.notes)
 
     budgeted = _from_row(_live_row(limit=50))
     assert budgeted.usage_credits is not None
@@ -359,7 +359,7 @@ def test_later_zero_keeps_the_cached_positive_spend():
     assert "error" not in load_store()
 
 
-def test_old_unknown_store_shows_zero_without_another_call():
+def test_old_unknown_store_stays_unknown_without_another_call():
     from aiuse.collectors.bedrock_gate import store_path
 
     fetched = (NOW - timedelta(hours=1)).isoformat()
@@ -375,11 +375,8 @@ def test_old_unknown_store_shows_zero_without_another_call():
 
     held = gated_bedrock_payload(live, now=NOW)
     assert calls == []
-    assert isinstance(held, list)
-    assert held[0]["usage"]["providerCost"]["used"] == 0.0
-    assert held[0]["usage"]["bedrockReadAt"] == fetched
-    assert load_store().get("spent_usd") == 0.0
-    assert "error" not in load_store()
+    assert isinstance(held, CollectorError)
+    assert load_store().get("spent_usd") is None
 
 
 def test_board_shows_payg_spend_never_an_error_or_prepaid():

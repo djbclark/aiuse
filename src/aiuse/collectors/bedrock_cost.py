@@ -1,7 +1,9 @@
-"""AWS account billed usage before credit adjustments, from AWS Cost Explorer.
+"""Total AWS account billed usage before credit adjustments, from AWS Cost Explorer.
 
 Cost Explorer's service-only total is net of promotional credits. Grouping
 by record type preserves the spend even when credits cover the entire bill.
+The total spans every month Cost Explorer still serves, not only the current
+one, so a new month's empty first day does not read as $0.00.
 """
 
 from __future__ import annotations
@@ -19,6 +21,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .base import CollectorError
+
+# Whole months before the current one that Cost Explorer's monthly API serves
+# (probed: 13 accepted, 14 rejected with ValidationException).
+_HISTORY_MONTHS = 13
 
 # This code executes *inside* sudo-secretspec's child. Secret values never enter
 # argv, output, or the caller's environment.
@@ -125,7 +131,12 @@ class BedrockCostClient:
     def fetch(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
         moment = (now or datetime.now(UTC)).astimezone(UTC)
         account = self.account_id()
-        start = moment.date().replace(day=1).isoformat()
+        # Total billed so far, not month-to-date: Cost Explorer's monthly
+        # history reaches back 13 whole months before the current one (an
+        # older Start is a ValidationException). Charges of an earlier month
+        # still count when the current month has no records yet.
+        months = moment.year * 12 + moment.month - 1 - _HISTORY_MONTHS
+        start = f"{months // 12:04d}-{months % 12 + 1:02d}-01"
         end = (moment.date() + timedelta(days=1)).isoformat()
         args = [
             "ce",
@@ -145,6 +156,7 @@ class BedrockCostClient:
         ]
         gross = credits = net = 0.0
         records = 0
+        since: str | None = None
         estimated = False
         tokens: set[str] = set()
         while True:
@@ -158,6 +170,10 @@ class BedrockCostClient:
                 estimated = estimated or bool(period.get("Estimated"))
                 for group in period["Groups"]:
                     records += 1
+                    period_span = period.get("TimePeriod")
+                    first = period_span.get("Start") if isinstance(period_span, dict) else None
+                    if isinstance(first, str) and (since is None or first[:7] < since):
+                        since = first[:7]
                     keys = group.get("Keys") if isinstance(group, dict) else None
                     if not isinstance(keys, list) or len(keys) != 2:
                         raise CollectorError("Bedrock billing group malformed")
@@ -185,14 +201,14 @@ class BedrockCostClient:
                 token,
             ]
         if not records:
-            # Cost Explorer lags by up to a day and answers an empty period
-            # with an Amount of "0", most visibly on the 1st of a month. No
-            # record is not a measurement of $0.00.
-            raise CollectorError(f"Bedrock billing data unavailable (no cost records for {start[:7]} yet)")
+            # Cost Explorer lags by up to a day and answers an empty window
+            # with an Amount of "0". No record is not a measurement of $0.00.
+            raise CollectorError(f"Bedrock billing data unavailable (no AWS cost records since {start[:7]})")
         metadata = {
             "scope": "aws_account",
             "account_id": account,
-            "billing_month": start[:7],
+            "billing_month": moment.strftime("%Y-%m"),
+            "since_month": since,
             "gross_usd": gross,
             "credits_usd": credits,
             "net_usd": net,
@@ -204,7 +220,7 @@ class BedrockCostClient:
                 "source": "aws-cost-explorer",
                 "usage": {
                     "loginMethod": f"Spend: ${gross:.2f}",
-                    "providerCost": {"used": gross, "currencyCode": "USD", "period": "Monthly"},
+                    "providerCost": {"used": gross, "currencyCode": "USD", "period": "Total"},
                     "updatedAt": moment.isoformat(),
                     "bedrockReadAt": moment.isoformat(),
                     "bedrockBilling": metadata,

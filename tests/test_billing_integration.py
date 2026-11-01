@@ -30,7 +30,7 @@ def test_native_bedrock_credit_offset_survives_snapshot_roundtrip():
     assert restored.bedrock_billing == account.bedrock_billing
     assert restored.bedrock_billing["read_at"] == "2026-10-29T18:00:00Z"
     note = _api_inventory_note(restored)
-    assert "$16.89 AWS MTD" in note
+    assert "$16.89 AWS total" in note
     assert _api_inventory_note(account) == note
     assert "credits" not in note
     assert "net" not in note

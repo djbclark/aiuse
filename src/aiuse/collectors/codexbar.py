@@ -1170,9 +1170,9 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     "held until other usage moves and 6h have passed."
                 )
             else:
-                notes.append(f"Bedrock month-to-date spend: ${cost_used:.2f} PAYG.")
+                notes.append(f"Bedrock total spend: ${cost_used:.2f} PAYG.")
         else:
-            notes.append("Bedrock month-to-date spend: UNKNOWN.")
+            notes.append("Bedrock total spend: UNKNOWN.")
     elif isinstance(provider_cost, dict):
         period = str(provider_cost.get("period") or "")
         zen = _f(provider_cost.get("used"))
@@ -1259,7 +1259,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     account_error = None
     if provider == "bedrock":
         # Nothing above may turn this meter into a prepaid balance. The only
-        # dollars are month-to-date PAYG spend. Native billing can prove zero.
+        # dollars are total PAYG spend. Native billing can prove zero.
         billing = BillingKind.PAYG_API
         balance_usd = None
         credits_remaining = None

@@ -811,8 +811,8 @@ providers the operator may gate in the future.
 
 Direction is display-only (no new field). `balance_usd` and a prepaid
 `usage_credits.remaining` count down. `usage_credits.used` on
-`billing_kind: payg_api` (Muse, Bedrock) counts up. Bedrock's month-to-date
-Cost Explorer spend is that `used`, with `limit` set only when a budget is
+`billing_kind: payg_api` (Muse, Bedrock) counts up. Bedrock's total AWS
+Cost Explorer spend (13 months of history plus the current month) is that `used`, with `limit` set only when a budget is
 configured, and `balance_usd` left null. `spent_usd` stays the expiring plan
 grant already consumed (`omp`), paired with `balance_usd` still left. It is
 not the Bedrock meter.
