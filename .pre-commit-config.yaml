@@ -65,6 +65,7 @@ repos:
         language: system
         stages: [pre-push]
         pass_filenames: true
+        exclude: "^.github/"
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
