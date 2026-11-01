@@ -63,7 +63,8 @@ repos:
         name: semgrep
         entry: semgrep scan --config p/default --quiet --error --exclude .github
         language: system
-        pass_filenames: false
+        stages: [pre-push]
+        pass_filenames: true
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
