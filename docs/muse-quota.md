@@ -14,7 +14,11 @@ Muse Spark on the Model API is **pay-as-you-go**. Muse Code also sells a monthly
 
 Rate limits are burst throttles, not use-or-lose allotments. `aiuse` therefore does **not** turn `60 req/min` into a `QuotaWindow`.
 
-Muse Code's paid plans are billed monthly, but Meta does not publish a monthly used-percent. The plan meter is `subs_usage` on `POST https://api.meta.ai/muse-code/key`, read with the Muse CLI device-login access token (macOS Keychain item `ai.meta.dev.credentials` / account `meta`, not the `LLM|` API key):
+Muse Code's paid plans are billed monthly, but Meta does not publish a monthly used-percent. The plan meter is `subs_usage` on `POST https://api.meta.ai/muse-code/key`, read with the Muse CLI device-login access token:
+
+- **Token resolution precedence:** `AIUSE_MUSE_ACCESS_TOKEN` / `MUSE_ACCESS_TOKEN` → `~/.config/muse/auth.json` (`providers.meta.access_token`) → macOS Keychain item `ai.meta.dev.credentials` / account `meta` (opt-in only via `AIUSE_MUSE_KEYCHAIN=1`, not the `LLM|` API key).
+- **Inactive subscriptions:** When `~/.config/muse/auth.json` indicates `subs_active: false`, `aiuse` skips probing plan usage entirely since Meta reports no active plan.
+- **Keychain opt-in:** macOS Keychain access via the `security` CLI is opt-in (`AIUSE_MUSE_KEYCHAIN=1`) to prevent unattended, background, or sweep runs from triggering repeated macOS GUI authorization dialogs when no CLI ACL grant exists.
 
 - `subs_usage.window.used_percent` is the share **consumed** of the rolling window. `window_duration_mins` of `300` is the 5-hour clock.
 - `subs_usage.weekly.used_percent` is the share consumed of the week (`window_minutes` 10080).

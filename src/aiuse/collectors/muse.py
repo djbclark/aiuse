@@ -64,6 +64,11 @@ _URL_ENV = "AIUSE_MUSE_API_URL"
 _AUTH_PATH_ENV = "MUSE_AUTH_PATH"
 _MODELS_URL = f"{_API_BASE}/models"
 
+# Device-login access token and Keychain opt-in
+_ACCESS_TOKEN_ENV_PRIMARY = "AIUSE_MUSE_ACCESS_TOKEN"
+_ACCESS_TOKEN_ENV_FALLBACK = "MUSE_ACCESS_TOKEN"
+_KEYCHAIN_OPT_IN_ENV = "AIUSE_MUSE_KEYCHAIN"
+
 # Cookie transport
 _COOKIE_ENV = "AIUSE_MUSE_COOKIE"
 _COOKIE_SECRET = "MUSE_COOKIE"
@@ -126,7 +131,7 @@ def collect_muse(
                 if cookie and _is_soft_inventory_row(accounts[0]):
                     soft_from_key = accounts
                 else:
-                    return _merge_subscription_windows(accounts, timeout, allow_local=allow_local)
+                    return _merge_subscription_windows(accounts, timeout, allow_local=allow_local, env=env)
         except CollectorError as exc:
             msg = str(exc)
             errors.append(msg)
@@ -152,6 +157,7 @@ def collect_muse(
                 _collect_via_cookie(cookie, env, timeout, account=account),
                 timeout,
                 allow_local=allow_local,
+                env=env,
             )
         except CollectorError as exc:
             msg = str(exc)
@@ -163,7 +169,7 @@ def collect_muse(
                     *row.notes,
                     f"Cookie balance unavailable: {msg}",
                 ]
-                return _merge_subscription_windows(soft_from_key, timeout, allow_local=allow_local)
+                return _merge_subscription_windows(soft_from_key, timeout, allow_local=allow_local, env=env)
             if key:
                 # Both failed
                 raise CollectorError("; ".join(errors)) from exc
@@ -1363,8 +1369,44 @@ def _plan_note_from_key_payload(payload: Any, windows: list[QuotaWindow]) -> str
     return None
 
 
-def _read_muse_keychain_access_token() -> str | None:
-    """OAuth access token from the Muse CLI login. Never the API key."""
+def _muse_cli_auth_path(env: Mapping[str, str]) -> Path:
+    override = str(env.get(_AUTH_PATH_ENV) or "").strip()
+    if override:
+        return Path(override).expanduser()
+    xdg = str(env.get("XDG_CONFIG_HOME") or "").strip()
+    if xdg:
+        return Path(xdg).expanduser() / "muse" / "auth.json"
+    return Path.home() / ".config" / "muse" / "auth.json"
+
+
+def _read_muse_cli_meta(env: Mapping[str, str]) -> dict[str, Any]:
+    """Load providers.meta mapping from the Muse CLI auth file."""
+    path = _muse_cli_auth_path(env)
+    try:
+        raw = path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return {}
+    meta = providers.get("meta")
+    return meta if isinstance(meta, dict) else {}
+
+
+def _read_muse_keychain_access_token(env: Mapping[str, str] | None = None) -> str | None:
+    """OAuth access token from the Muse CLI login. Never the API key.
+
+    macOS Keychain prompts the user if the security CLI lacks an ACL grant.
+    To avoid unexpected UI dialogs during unattended or periodic runs,
+    keychain access is opt-in via ``AIUSE_MUSE_KEYCHAIN=1``.
+    """
+    effective_env = os.environ if env is None else env
+    opt_in = str(effective_env.get(_KEYCHAIN_OPT_IN_ENV) or "").strip().lower()
+    if opt_in not in ("1", "true", "yes", "on"):
+        return None
     try:
         result = subprocess.run(
             [
@@ -1395,6 +1437,41 @@ def _read_muse_keychain_access_token() -> str | None:
     if not isinstance(token, str) or not token.strip():
         return None
     return token.strip()
+
+
+def _resolve_muse_access_token(
+    env: Mapping[str, str],
+    *,
+    allow_keychain: bool = True,
+) -> tuple[str | None, bool]:
+    """Resolve Muse Code device-login access token.
+
+    Returns ``(token, is_subscription_active)``.
+    Precedence:
+    1. AIUSE_MUSE_ACCESS_TOKEN / MUSE_ACCESS_TOKEN environment variables
+    2. ~/.config/muse/auth.json (providers.meta.access_token)
+    3. macOS Keychain item (opt-in only via AIUSE_MUSE_KEYCHAIN=1)
+
+    If auth.json explicitly marks subs_active as False, returns (None, False)
+    to skip probing quota for an inactive plan.
+    """
+    for env_var in (_ACCESS_TOKEN_ENV_PRIMARY, _ACCESS_TOKEN_ENV_FALLBACK):
+        explicit = str(env.get(env_var) or "").strip()
+        if explicit:
+            return explicit, True
+
+    meta = _read_muse_cli_meta(env)
+    if meta.get("subs_active") is False or meta.get("is_subs_active") is False:
+        return None, False
+
+    inline_token = str(meta.get("access_token") or "").strip()
+    if inline_token:
+        return inline_token, True
+
+    if not allow_keychain:
+        return None, True
+
+    return _read_muse_keychain_access_token(env), True
 
 
 def _fetch_muse_code_key(token: str, timeout: float) -> dict[str, Any] | None:
@@ -1428,14 +1505,19 @@ def _fetch_muse_code_key(token: str, timeout: float) -> dict[str, Any] | None:
     return payload
 
 
-def _subscription_windows_for_local_login(timeout: float) -> tuple[list[QuotaWindow], str | None]:
+def _subscription_windows_for_local_login(
+    timeout: float,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> tuple[list[QuotaWindow], str | None]:
     """Plan windows from the local Muse CLI login.
 
     The key endpoint is rate-limited, and ``aiuse watch`` collects on a short
     interval, so a hit is reused for five minutes. Unit tests must not read
     the operator keychain or call Meta.
     """
-    if os.environ.get("PYTEST_CURRENT_TEST"):
+    effective_env = os.environ if env is None else env
+    if os.environ.get("PYTEST_CURRENT_TEST") and not effective_env.get("AIUSE_TEST_MUSE_SUBS"):
         return [], None
     now = time.monotonic()
     with _subs_cache_lock:
@@ -1446,8 +1528,13 @@ def _subscription_windows_for_local_login(timeout: float) -> tuple[list[QuotaWin
         else:
             payload = None
     if payload is None:
-        token = _read_muse_keychain_access_token()
-        payload = _fetch_muse_code_key(token, timeout) if token else None
+        token, subs_active = _resolve_muse_access_token(effective_env)
+        if not subs_active:
+            payload = {"is_subs_active": False}
+        elif token:
+            payload = _fetch_muse_code_key(token, timeout)
+        else:
+            payload = None
         # Cache a miss too, so a locked keychain or an inactive plan does not
         # hit the rate-limited key endpoint on every watch tick.
         stored = payload if isinstance(payload, dict) else {}
@@ -1464,11 +1551,15 @@ def _merge_subscription_windows(
     timeout: float,
     *,
     allow_local: bool,
+    env: Mapping[str, str] | None = None,
 ) -> list[AccountUsage]:
     """Attach Muse Code plan windows when the local login reports them."""
     if not accounts or not allow_local:
         return accounts
-    windows, note = _subscription_windows_for_local_login(timeout)
+    try:
+        windows, note = _subscription_windows_for_local_login(timeout, env=env)
+    except TypeError:
+        windows, note = _subscription_windows_for_local_login(timeout)
     if not windows and not note:
         return accounts
     for row in accounts:
@@ -1549,32 +1640,9 @@ def _resolve_key_via_secretspec(env: Mapping[str, str], timeout: float) -> str |
     return None
 
 
-def _muse_cli_auth_path(env: Mapping[str, str]) -> Path:
-    override = str(env.get(_AUTH_PATH_ENV) or "").strip()
-    if override:
-        return Path(override).expanduser()
-    xdg = str(env.get("XDG_CONFIG_HOME") or "").strip()
-    if xdg:
-        return Path(xdg).expanduser() / "muse" / "auth.json"
-    return Path.home() / ".config" / "muse" / "auth.json"
-
-
 def _read_muse_cli_auth(env: Mapping[str, str]) -> tuple[str | None, str | None]:
     """Load providers.meta.api_key (+ email) from the Muse CLI auth file."""
-    path = _muse_cli_auth_path(env)
-    try:
-        raw = path.read_text(encoding="utf-8")
-        data = json.loads(raw)
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return None, None
-    if not isinstance(data, dict):
-        return None, None
-    providers = data.get("providers")
-    if not isinstance(providers, dict):
-        return None, None
-    meta = providers.get("meta")
-    if not isinstance(meta, dict):
-        return None, None
+    meta = _read_muse_cli_meta(env)
     key = str(meta.get("api_key") or "").strip()
     email = str(meta.get("user_email") or "").strip() or None
     return (key or None), email

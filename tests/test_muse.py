@@ -687,3 +687,110 @@ def test_merge_subscription_windows_promotes_spend_row(monkeypatch):
     skipped = muse_mod._merge_subscription_windows([untouched], 5.0, allow_local=False)
     assert skipped[0].billing_kind == BillingKind.PAYG_API
     assert skipped[0].windows == []
+
+
+def test_read_muse_keychain_access_token_skips_security_without_opt_in(monkeypatch):
+    from aiuse.collectors import muse as muse_mod
+
+    called = []
+
+    def fake_run(*args, **kwargs):
+        called.append(args)
+        raise AssertionError("subprocess.run must not be called without opt-in")
+
+    monkeypatch.setattr(muse_mod.subprocess, "run", fake_run)
+    # Default: unset
+    assert muse_mod._read_muse_keychain_access_token({}) is None
+    assert muse_mod._read_muse_keychain_access_token({"AIUSE_MUSE_KEYCHAIN": "0"}) is None
+    assert muse_mod._read_muse_keychain_access_token({"AIUSE_MUSE_KEYCHAIN": "false"}) is None
+    assert called == []
+
+
+def test_read_muse_keychain_access_token_runs_security_with_opt_in(monkeypatch):
+    from aiuse.collectors import muse as muse_mod
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = json.dumps({"access_token": "dca:keychain-token"})
+
+    def fake_run(cmd, capture_output, text, timeout, check):
+        assert cmd[0] == "security"
+        assert "ai.meta.dev.credentials" in cmd
+        return FakeCompleted()
+
+    monkeypatch.setattr(muse_mod.subprocess, "run", fake_run)
+    token = muse_mod._read_muse_keychain_access_token({"AIUSE_MUSE_KEYCHAIN": "1"})
+    assert token == "dca:keychain-token"
+
+
+def test_resolve_muse_access_token_precedence(tmp_path):
+    from aiuse.collectors import muse as muse_mod
+
+    auth_path = tmp_path / "auth.json"
+
+    # 1. Environment variable override takes highest priority
+    token, active = muse_mod._resolve_muse_access_token({"AIUSE_MUSE_ACCESS_TOKEN": "dca:env-token"})
+    assert token == "dca:env-token"
+    assert active is True
+
+    # 2. auth.json with subs_active: False returns None, False (skip probing)
+    auth_path.write_text(
+        json.dumps({"providers": {"meta": {"subs_active": False, "access_token": "dca:old"}}}),
+        encoding="utf-8",
+    )
+    token, active = muse_mod._resolve_muse_access_token({"MUSE_AUTH_PATH": str(auth_path)})
+    assert token is None
+    assert active is False
+
+    # 3. auth.json with inline access_token and active sub
+    auth_path.write_text(
+        json.dumps({"providers": {"meta": {"subs_active": True, "access_token": "dca:auth-token"}}}),
+        encoding="utf-8",
+    )
+    token, active = muse_mod._resolve_muse_access_token({"MUSE_AUTH_PATH": str(auth_path)})
+    assert token == "dca:auth-token"
+    assert active is True
+
+
+def test_subscription_windows_for_local_login_handles_inactive_and_active(monkeypatch, tmp_path):
+    from aiuse.collectors import muse as muse_mod
+
+    # Clear cache
+    with muse_mod._subs_cache_lock:
+        muse_mod._subs_cache.clear()
+
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(
+        json.dumps({"providers": {"meta": {"subs_active": False}}}),
+        encoding="utf-8",
+    )
+
+    # Inactive subscription: returns empty windows and inactive note without network call
+    windows, note = muse_mod._subscription_windows_for_local_login(
+        5.0,
+        env={"AIUSE_TEST_MUSE_SUBS": "1", "MUSE_AUTH_PATH": str(auth_path)},
+    )
+    assert windows == []
+    assert note is not None
+    assert "inactive" in note.lower()
+
+    # Clear cache again
+    with muse_mod._subs_cache_lock:
+        muse_mod._subs_cache.clear()
+
+    # Active subscription with env token
+    fake_payload = {
+        "is_subs_active": True,
+        "subs_tier_name": "Pro Plan",
+        "subs_usage": {
+            "window": {"used_percent": 15, "window_duration_mins": 300},
+            "weekly": {"used_percent": 5},
+        },
+    }
+    monkeypatch.setattr(muse_mod, "_fetch_muse_code_key", lambda token, timeout: fake_payload)
+    windows, note = muse_mod._subscription_windows_for_local_login(
+        5.0,
+        env={"AIUSE_TEST_MUSE_SUBS": "1", "AIUSE_MUSE_ACCESS_TOKEN": "dca:test"},
+    )
+    assert len(windows) == 2
+    assert note == "Muse Code plan: Pro Plan."
