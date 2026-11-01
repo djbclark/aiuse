@@ -27,6 +27,7 @@ grouping see [`index.md`](index.md).
 - `docs/omp-cloud-credits.md` — Claude cloud-session credits (an expiring dollar grant) as the `omp` provider: SCOPE `claude`, OTHER `$left`, JSON `spent_usd`/`balance_usd`, chat line, rate-window gate. **Read when:** omp balance / expiry / missing omp row / omp 429 while dollars remain.
 - `docs/paseo.md` — Paseo daemon usage (`paseo usage ls --json`) as a second source behind the direct collectors. **Read when:** a paseo row is missing, or cursor/omp/muse entries from the daemon should stay unmapped.
 - `docs/cursor-quota.md` — Cursor total/auto/third-party/on-demand/grok-bot vs CodexBar slots. **Read when:** When Cursor % or CONSERVE disagrees with the Cursor usage UI.
+- `docs/copilot-quota.md` — GitHub Copilot: monthly premium interactions vs reactive 7-day / session token limits. **Read when:** Copilot % or lockout windows disagree with expectations.
 - `docs/qwencloud-quota.md` — QwenCloud + sibling Alibaba Cloud (Bailian) plans via `qwencloud` / `bl` CLIs. **Read when:** Qwen/alibaba rows missing; qwencloud / bl CLI auth setup.
 - `docs/antigravity-pools.md` — Antigravity Gemini vs Claude/GPT independent pools (score + ladder rows). **Read when:** When Antigravity is listed only once or pools look merged.
 - `docs/pretty-display.md` — Rich vs Textual for long scrollback-safe reports. **Read when:** When changing pretty/TTY display.
