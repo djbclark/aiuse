@@ -144,6 +144,7 @@ class BedrockCostClient:
             "--no-paginate",
         ]
         gross = credits = net = 0.0
+        records = 0
         estimated = False
         tokens: set[str] = set()
         while True:
@@ -156,6 +157,7 @@ class BedrockCostClient:
                     raise CollectorError("Bedrock billing data malformed")
                 estimated = estimated or bool(period.get("Estimated"))
                 for group in period["Groups"]:
+                    records += 1
                     keys = group.get("Keys") if isinstance(group, dict) else None
                     if not isinstance(keys, list) or len(keys) != 2:
                         raise CollectorError("Bedrock billing group malformed")
@@ -182,6 +184,11 @@ class BedrockCostClient:
                 "--next-page-token",
                 token,
             ]
+        if not records:
+            # Cost Explorer lags by up to a day and answers an empty period
+            # with an Amount of "0", most visibly on the 1st of a month. No
+            # record is not a measurement of $0.00.
+            raise CollectorError(f"Bedrock billing data unavailable (no cost records for {start[:7]} yet)")
         metadata = {
             "scope": "aws_account",
             "account_id": account,

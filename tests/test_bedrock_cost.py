@@ -70,9 +70,15 @@ def test_credit_offset_keeps_gross_and_net_distinct(monkeypatch):
     assert len(calls) == 2  # identity reused
 
 
-def test_native_zero_is_a_measured_zero(monkeypatch):
-    c, _ = _client(monkeypatch, [_page()])
+def test_zero_amount_record_is_a_measured_zero(monkeypatch):
+    c, _ = _client(monkeypatch, [_page(("Amazon Bedrock", "Usage", 0))])
     assert c.fetch(now=NOW)[0]["usage"]["bedrockBilling"]["gross_usd"] == 0
+
+
+def test_empty_period_is_unknown_not_zero(monkeypatch):
+    c, _ = _client(monkeypatch, [_page()])
+    with pytest.raises(CollectorError, match="no cost records for 2026-10"):
+        c.fetch(now=NOW)
 
 
 def test_missing_period_is_unknown(monkeypatch):
