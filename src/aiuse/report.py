@@ -1561,6 +1561,22 @@ def _account_data_age(account: AccountUsage, now: datetime) -> float | None:
     return max(0.0, (now - account.collected_at).total_seconds())
 
 
+def _matrix_rate_gate_note(account: AccountUsage, now: datetime) -> str | None:
+    """One gate explanation for clocked and spend-only accounts alike."""
+    gate = account.rate_gated_by
+    if not isinstance(gate, dict) or not gate:
+        return None
+    raw_reset = gate.get("resets_at")
+    reset = parse_dt(raw_reset if isinstance(raw_reset, str) else None)
+    until = format_clock(reset, date=reset - now > timedelta(hours=24)) if reset is not None else "reset"
+    dollars = (
+        " · " + dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account))
+        if account.balance_usd is not None
+        else ""
+    )
+    return f"rate-gated until {until}{dollars}"
+
+
 def _build_matrix_rows(
     alerts: list[UseOrLoseAlert],
     snapshot: Snapshot | None,
@@ -1734,15 +1750,7 @@ def _build_matrix_rows(
                 # The grant's expiry is not a spendable clock. While the shared
                 # Claude rate window blocks omp, a mid-band percent-left cell is
                 # what gets tried and then 429s (2026-10-21, retry-after ~41h).
-                raw_reset = gate_info.get("resets_at")
-                reset = parse_dt(raw_reset if isinstance(raw_reset, str) else None)
-                until = format_clock(reset, date=reset - now > timedelta(hours=24)) if reset is not None else "reset"
-                dollars = (
-                    " · " + dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account))
-                    if account.balance_usd is not None
-                    else ""
-                )
-                note = f"rate-gated until {until}{dollars}"
+                note = _matrix_rate_gate_note(account, now)
                 clocks = {}
                 tail_note = None
                 band = _BAND_EMPTY
@@ -1805,6 +1813,25 @@ def _build_matrix_rows(
             continue
         service = provider_display_name(account.provider)
         short = _short_account(account.account)
+        deferred_scope = matrix_pool_scope("", provider=account.provider)
+        gate_note = _matrix_rate_gate_note(account, now)
+        if gate_note is not None:
+            rows.append(
+                _MatrixRow(
+                    sort_key=_ladder_sort_key(_BAND_EMPTY, (0.0, 0.0, 0.0), account.provider, account.account),
+                    band=_BAND_EMPTY,
+                    queue_score=0,
+                    service=service,
+                    account=short,
+                    account_full=account.account,
+                    scope=deferred_scope,
+                    note=gate_note,
+                    measured_at=account.collected_at,
+                    stale=(_account_data_age(account, now) or 0.0) > fresh_threshold,
+                    operator_gate=account.requires_operator_approval,
+                )
+            )
+            continue
         if not account.windows and account.context_usage is not None and not account.error:
             rows.append(
                 _MatrixRow(
@@ -1814,6 +1841,7 @@ def _build_matrix_rows(
                     service=service,
                     account=short,
                     account_full=account.account,
+                    scope=deferred_scope,
                     note=_context_fragment(account),
                 )
             )
@@ -1849,6 +1877,7 @@ def _build_matrix_rows(
                         service=service,
                         account=short,
                         account_full=account.account,
+                        scope=deferred_scope,
                         note=(account.error or "no usage data").strip(),
                     )
                 )
@@ -1870,6 +1899,7 @@ def _build_matrix_rows(
                 service=service,
                 account=short,
                 account_full=account.account,
+                scope=deferred_scope,
                 note=note,
                 operator_gate=account.requires_operator_approval,
             )

@@ -349,8 +349,12 @@ def test_disabled_known_query_ids_pick_one_spelling_per_aiuse_provider():
         "alibaba",
         "deepseek",
         "opencodego",
+        "openai",  # Pi API billing is now a supported independent service.
     ]
-    assert _disabled_known_query_ids(payload, already={"opencode-go"}, skip=frozenset({"deepseek"})) == ["alibaba"]
+    assert _disabled_known_query_ids(payload, already={"opencode-go"}, skip=frozenset({"deepseek"})) == [
+        "alibaba",
+        "openai",
+    ]
 
 
 def test_providers_all_does_not_query_codexbar_disabled_providers(monkeypatch):

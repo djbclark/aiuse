@@ -106,3 +106,6 @@ def test_pi_spend_only_and_explanatory_rows_keep_scope(gated):
     assert "pi" in line
     if gated:
         assert line.index("codex-api") < line.index("rate-gated until")
+    else:
+        assert "$2.80" in line
+        assert "↓" not in line  # Spend is not a countdown balance.

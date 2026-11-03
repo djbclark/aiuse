@@ -490,12 +490,15 @@ def matrix_pool_scope(
 ) -> str:
     """SCOPE column label for a matrix/ladder pool row.
 
-    A residual pool is ``—``. Cursor's ``primary`` slot (or a ``total`` label)
+    A residual pool is ``—`` except for an identified API funding service.
+    Cursor's ``primary`` slot (or a ``total`` label)
     is the ceiling scope, and only for Cursor — other vendors' first rate slot
     is not a total row.
     """
     if provider is not None and canonical_provider(provider) == "pi":
         return "codex-api"  # A spend-only meter has no quota windows/pool id.
+    if not pool_id and provider is not None and canonical_provider(provider) == "omp":
+        return "claude-api"
     if pool_id:
         return POOL_SCOPE_LABELS.get(pool_id, pool_id)
     if _provider_is_cursor(provider) and pool:

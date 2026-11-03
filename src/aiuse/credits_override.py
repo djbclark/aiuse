@@ -421,10 +421,26 @@ def _apply_credit_override_for_provider(
             continue
         _normalize_credits_clock(account, override)
         if ignored:
-            account["notes"] = [*(account.get("notes") or []), f"credit override ignored: {ignored}"]
+            ignored_note = f"credit override ignored: {ignored}"
+            if ignored_note not in (account.get("notes") or []):
+                account["notes"] = [*(account.get("notes") or []), ignored_note]
         reading_at = parse_dt(account.get("collected_at") or snap.get("collected_at"))
         balance = account.get("balance_usd")
         ov_at = parse_dt(override.get("observed_at"))
+        # Reused effective rows keep their grant provenance on equal/older
+        # readings. Newer readings still update them, and stale rows still age.
+        if (
+            account.get("source") in (OVERRIDE_SOURCE, "admin-api")
+            and reading_at is not None
+            and (ov_at is None or ov_at <= reading_at)
+        ):
+            max_age = OVERRIDE_MAX_AGE if account.get("source") == OVERRIDE_SOURCE else CODEXBAR_MAX_AGE
+            expiry = _grant_expiry(account)
+            if expiry is not None and now >= expiry:
+                _expire_reading(account, "grant expired")
+            elif now - reading_at > max_age:
+                _expire_reading(account, "older than 7 days" if max_age == OVERRIDE_MAX_AGE else "older than 24h")
+            continue
         ov_remaining = override.get("remaining_usd")
         ov_total = override.get("total_usd")
         capacity = next(
@@ -555,13 +571,13 @@ def apply_credit_overrides_to_snapshot(
     }
     apply_credit_overrides(snap_dict, effective_overrides, now=now)
     after = snap_dict.get("accounts") or []
-    if after == before:
-        return False
     from aiuse.serve import _snapshot_from_accounts_dict
 
     rebuilt = _snapshot_from_accounts_dict(
         {"collected_at": snapshot.collected_at.isoformat(), "accounts": after}
     ).accounts
+    if [account.to_dict() for account in rebuilt] == before:
+        return False  # Compare normalized models, not sparse intermediate window dicts.
     if not has_accounts:
         snapshot.accounts.extend(rebuilt)
         return bool(rebuilt)

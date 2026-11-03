@@ -216,13 +216,14 @@ def test_situation_text_keeps_the_closing_bracket_when_it_truncates():
     assert _situation_text("session expired", 80) == "* [session expired]"
 
 
-def test_situation_note_starts_at_the_first_column():
+def test_situation_note_keeps_scope_before_the_first_data_column():
     now = utcnow()
     broken = AccountUsage(source="tokscale", provider="opencode", error="session expired")
     snap = Snapshot(collected_at=now, accounts=[_omp(now), broken])
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     header = text.splitlines()[0]
     error = next(line for line in text.splitlines() if line.startswith("error"))
-    # No clock cells: the explanation replaces SCOPE onward, left-justified.
-    assert error[header.index("SCOPE") :].startswith("* [session expired]")
-    assert "—" not in error.split("*", 1)[0]
+    # No clock cells: retain SCOPE, then render the left-justified explanation.
+    scope_and_note = error[header.index("SCOPE") :]
+    assert scope_and_note.split("*", 1)[0].strip() == "—"
+    assert scope_and_note[scope_and_note.index("*") :].startswith("* [session expired]")
