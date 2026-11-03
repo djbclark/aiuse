@@ -57,9 +57,11 @@ OpenCode Go row):
 
 ## Where it shows
 
-1. **Board / matrix** (`aiuse`, `aiuse watch`): one `omp` row, SCOPE `claude`
-   (pool key `omp_claude`), the credits percentage, and OTHER
-   `$0.73/$249.27` = dollars spent / dollars left.
+1. **Board / matrix** (`aiuse`, `aiuse watch`): one `omp` row, SCOPE `claude-api`
+   (pool key `omp_claude`, unchanged). As of 2026-11-03, explanatory rows retain
+   their scope, including while rate-gated. The normal row shows the credits
+   percentage and OTHER `↓$249.27/$250.00 plan` = dollars left / grant total;
+   dollars spent remain available in JSON as `spent_usd`.
 2. **`aiuse --json`** (schema 1.3, additive 2026-10-15):
 
    ```json

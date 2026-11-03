@@ -451,7 +451,7 @@ POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "gemini_argon": "gemini-argon",
     "claude_gpt": "claude/gpt",
-    "omp_claude": "claude",
+    "omp_claude": "claude-api",
     "cursor_total": "total",
     "cursor_third_party": "3rd-party",
     "cursor_auto": "auto",

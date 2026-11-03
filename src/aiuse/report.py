@@ -2327,6 +2327,8 @@ def render_clock_matrix_parts(
             cells = [tag, score, service]
             if layout.show_account:
                 cells.append(account)
+            if layout.show_scope:
+                cells.append(scope)
             prefix = " ".join(cells)
             as_of = _row_as_of(row)
             stale_suffix = f" {as_of}" if as_of else ""

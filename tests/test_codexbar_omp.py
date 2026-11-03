@@ -132,11 +132,11 @@ def test_cached_run_survives_a_failed_live_query(monkeypatch):
     assert [a.provider for a in collect_codexbar(providers=["claude"], use_cache=True)] == ["claude"]
 
 
-def test_omp_scope_is_claude():
+def test_omp_scope_is_claude_api():
     from aiuse.analysis.pace import independent_pool_key, matrix_pool_scope
 
     pool_id = independent_pool_key("credits", provider="omp")
 
     assert pool_id == "omp_claude"
-    assert matrix_pool_scope(pool_id, provider="omp") == "claude"
+    assert matrix_pool_scope(pool_id, provider="omp") == "claude-api"
     assert independent_pool_key("credits", provider="claude") is None

@@ -90,6 +90,7 @@ def test_omp_row_tail_note_is_dollars_left():
     (omp,) = [row for row in rows if row.service == "omp"]
     assert omp.tail_note == "↓$249.27/$250.00 plan"
     assert omp.note is None
+    assert omp.scope == "claude-api"
 
 
 def test_rate_gated_omp_is_not_a_spendable_clock():
@@ -106,6 +107,8 @@ def test_rate_gated_omp_is_not_a_spendable_clock():
     text = render_clock_matrix([], snapshot=snap, color=False, width=160)
     line = _row_line(text, "omp")
     assert line.startswith("empty")
+    assert "claude-api" in line
+    assert line.index("claude-api") < line.index("rate-gated until")
     assert "rate-gated until" in line
     assert "↓ $95.57 left of $250.00 plan" in line
     assert "99l" not in line
