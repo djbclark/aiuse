@@ -9,7 +9,7 @@ from pathlib import Path
 
 from aiuse.collectors.base import CollectorError
 from aiuse.collectors.codexbar import _from_row, _normalize_providers, _parse_enabled_providers, _query_providers
-from aiuse.models import BillingKind, QuotaWindow, infer_window_clock
+from aiuse.models import BillingKind, QuotaWindow, infer_window_clock, utcnow
 
 _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -1097,6 +1097,90 @@ def test_http_server_down_falls_back_to_the_cli(monkeypatch):
     assert [row.provider for row in rows] == ["codex"]
     assert cli and "usage" in cli[0]
     assert "server-token" not in " ".join(cli[0])
+
+
+def _antigravity_http_body(updated_at: str) -> bytes:
+    return json.dumps(
+        [
+            {
+                "provider": "antigravity",
+                "source": "cli",
+                "usage": {"updatedAt": updated_at, "primary": {"usedPercent": 1}},
+            }
+        ]
+    ).encode()
+
+
+def _stale_http_harness(monkeypatch, bodies):
+    """Serve ``bodies`` in order (the last repeats); return (requests, sleeps, cli_argvs, client)."""
+    from aiuse.collectors import codexbar
+
+    requests: list[str] = []
+    sleeps: list[float] = []
+    cli: list[list[str]] = []
+
+    def http_get(client, path, *, timeout, params=None):  # noqa: ARG001
+        requests.append(path)
+        return 200, bodies[min(len(requests) - 1, len(bodies) - 1)]
+
+    def run_json(argv, timeout):  # noqa: ARG001
+        cli.append(argv)
+        return json.loads(_antigravity_http_body(utcnow().isoformat()))
+
+    monkeypatch.setattr(codexbar, "_http_get", http_get)
+    monkeypatch.setattr(codexbar, "run_json", run_json)
+    monkeypatch.setattr(codexbar.time, "sleep", sleeps.append)
+    return requests, sleeps, cli, codexbar._CodexbarHttp("http://127.0.0.1:10546", None)
+
+
+def test_http_stale_snapshot_is_requested_again_until_it_advances(monkeypatch):
+    from aiuse.collectors import codexbar
+
+    old = (utcnow() - timedelta(minutes=28)).isoformat()
+    new = utcnow().isoformat()
+    requests, sleeps, cli, client = _stale_http_harness(
+        monkeypatch, [_antigravity_http_body(old), _antigravity_http_body(old), _antigravity_http_body(new)]
+    )
+
+    fetched = codexbar._fetch_codexbar_http_usage(
+        client, ["codexbar", "usage", "--provider", "antigravity"], timeout=45
+    )
+
+    assert fetched[0]["usage"]["updatedAt"] == new
+    assert requests == ["/usage"] * 3
+    assert len(sleeps) == 2
+    assert cli == []
+
+
+def test_http_snapshot_that_never_advances_falls_back_to_the_live_cli(monkeypatch):
+    from aiuse.collectors import codexbar
+
+    old = (utcnow() - timedelta(minutes=28)).isoformat()
+    requests, sleeps, cli, client = _stale_http_harness(monkeypatch, [_antigravity_http_body(old)])
+    token = codexbar._CODEXBAR_HTTP.set(client)
+    try:
+        outcome = codexbar._run_codexbar_usage(["codexbar", "usage", "--provider", "antigravity"], timeout=45)
+    finally:
+        codexbar._CODEXBAR_HTTP.reset(token)
+
+    assert len(cli) == 1
+    assert outcome[0]["usage"]["updatedAt"] > old
+    assert len(sleeps) == int(codexbar.HTTP_REVALIDATE_WAIT_SECONDS / codexbar.HTTP_REVALIDATE_STEP_SECONDS)
+
+
+def test_http_fresh_snapshot_is_one_request(monkeypatch):
+    from aiuse.collectors import codexbar
+
+    fresh = (utcnow() - timedelta(minutes=2)).isoformat()
+    requests, sleeps, cli, client = _stale_http_harness(monkeypatch, [_antigravity_http_body(fresh)])
+
+    fetched = codexbar._fetch_codexbar_http_usage(
+        client, ["codexbar", "usage", "--provider", "antigravity"], timeout=45
+    )
+
+    assert fetched[0]["usage"]["updatedAt"] == fresh
+    assert requests == ["/usage"]
+    assert sleeps == [] and cli == []
 
 
 def test_copilot_slot_label_with_rate_labels_and_window_kinds():

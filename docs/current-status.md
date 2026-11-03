@@ -44,6 +44,8 @@ maintainer is happy to re-add support on request
 `http_token`. A healthy `/health` sends usage queries to that server, bearer
 header only, and skips the widget snapshot. A down server falls back to the
 snapshot and the CLI. The token stays in the operator config, never in git.
+A stale-while-revalidate answer from that server (rows' `updatedAt` older than
+330 s) is re-requested until it advances, then falls back to the CLI.
 Grok rows carry both meters — the SuperGrok plan window (hourly/daily/weekly/
 monthly reset parsed from the billing API's `currentPeriod`, see
 [`docs/grok-quota.md`](docs/grok-quota.md)) beside the prepaid wallet — and a

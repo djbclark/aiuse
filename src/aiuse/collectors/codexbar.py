@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import ContextVar, copy_context
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -16,6 +18,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from aiuse.analysis.pace import canonical_gemini_label
 from aiuse.models import (
     PROVIDER_DISPLAY_NAMES,
+    REUSED_QUERY_NOTE_MARKER,
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
     BillingKind,
@@ -60,6 +63,20 @@ _MAX_CONCURRENT_PROVIDER_QUERIES = 16
 # at the full CodexBar timeout. [collectors.codexbar] timeout_backoff overrides;
 # 0 disables. See aiuse-e9d and docs/collector-concurrency.md.
 DEFAULT_TIMEOUT_BACKOFF_SECONDS = 1800.0
+
+# CodexBar's HTTP server (`serve --refresh-interval 300`) answers from a
+# response cache and is stale-while-revalidate: the first request after the
+# TTL returns the OLD snapshot (its rows' `updatedAt` is the previous refresh)
+# and starts a refresh in the background; the next request sees the new one.
+# Behind QueryGate that made every gated query one refresh behind: the reading
+# was recorded as "queried just now" while its own clock was 15-30 min old, so
+# antigravity sat past the 25 min stale line with nothing re-collecting it.
+# A snapshot whose newest `updatedAt` is older than HTTP_STALE_AFTER_SECONDS
+# (the 300 s TTL plus slack) is re-requested until it advances, for at most
+# HTTP_REVALIDATE_WAIT_SECONDS; if it never does, the CLI runs live instead.
+HTTP_STALE_AFTER_SECONDS = 330.0
+HTTP_REVALIDATE_WAIT_SECONDS = 20.0
+HTTP_REVALIDATE_STEP_SECONDS = 2.0
 
 # Providers queried with a specific CodexBar `--source` first. Antigravity
 # falls back to `auto` when that source returns nothing usable. OpenCode Go
@@ -863,9 +880,7 @@ def _query_provider_gated(
             return outcome
         reused_at = gate.reused_from("codexbar")
         if reused_at is not None:
-            notes[provider_arg] = (
-                f"{gate.describe()}; reused CodexBar's result from {format_clock(reused_at, date=True)}."
-            )
+            notes[provider_arg] = f"{gate.describe()}; {REUSED_QUERY_NOTE_MARKER} {format_clock(reused_at, date=True)}."
         return gate.reuse("codexbar")
 
 
@@ -967,7 +982,7 @@ def _http_get(
         return int(exc.code), exc.read()
 
 
-def _fetch_codexbar_http_usage(client: _CodexbarHttp, argv: list[str], *, timeout: float) -> Any:
+def _fetch_codexbar_http_once(client: _CodexbarHttp, argv: list[str], *, timeout: float) -> Any:
     """One ``/usage`` read. ``_HTTP_MISS`` means the CLI should run instead."""
     try:
         status, body = _http_get(client, "/usage", timeout=timeout, params=_usage_query_params(argv))
@@ -985,6 +1000,45 @@ def _fetch_codexbar_http_usage(client: _CodexbarHttp, argv: list[str], *, timeou
         return json.loads(body)
     except json.JSONDecodeError:
         return _HTTP_MISS
+
+
+def _newest_updated_at(payload: Any) -> datetime | None:
+    """Newest row ``usage.updatedAt`` in a ``codexbar usage`` payload (None when no row carries one)."""
+    rows = payload if isinstance(payload, list) else [payload]
+    newest: datetime | None = None
+    for row in rows:
+        usage = row.get("usage") if isinstance(row, dict) else None
+        stamp = parse_dt(usage.get("updatedAt")) if isinstance(usage, dict) else None
+        if stamp is not None and (newest is None or stamp > newest):
+            newest = stamp
+    return newest
+
+
+def _fetch_codexbar_http_usage(client: _CodexbarHttp, argv: list[str], *, timeout: float) -> Any:
+    """One ``/usage`` read that never settles for the server's stale-while-revalidate answer.
+
+    A payload whose newest ``updatedAt`` is older than ``HTTP_STALE_AFTER_SECONDS``
+    is the server's previous snapshot (a refresh is already running behind it):
+    ask again until a newer one arrives. If none does within
+    ``HTTP_REVALIDATE_WAIT_SECONDS`` the server is not refreshing, so return
+    ``_HTTP_MISS`` and let the CLI query live. Payloads without an ``updatedAt``
+    are returned as is.
+    """
+    fetched = _fetch_codexbar_http_once(client, argv, timeout=timeout)
+    if fetched is _HTTP_MISS or isinstance(fetched, CollectorError):
+        return fetched
+    stale_at = _newest_updated_at(fetched)
+    if stale_at is None or (utcnow() - stale_at).total_seconds() <= HTTP_STALE_AFTER_SECONDS:
+        return fetched
+    for _ in range(max(1, int(min(HTTP_REVALIDATE_WAIT_SECONDS, timeout) / HTTP_REVALIDATE_STEP_SECONDS))):
+        time.sleep(HTTP_REVALIDATE_STEP_SECONDS)
+        again = _fetch_codexbar_http_once(client, argv, timeout=timeout)
+        if again is _HTTP_MISS or isinstance(again, CollectorError):
+            return again
+        newest = _newest_updated_at(again)
+        if newest is not None and newest > stale_at:
+            return again
+    return _HTTP_MISS
 
 
 def _run_codexbar_usage(argv: list[str], *, timeout: float) -> Any:

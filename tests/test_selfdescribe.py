@@ -523,6 +523,33 @@ def test_fresh_account_has_no_stale_marker():
     assert not any("as of" in line for line in snap["summary_lines"])
 
 
+def test_stale_pool_names_why_it_is_stale():
+    from aiuse.analysis.selfdescribe import enrich_snapshot, pool_entries
+    from aiuse.models import REUSED_QUERY_NOTE_MARKER
+
+    now = utcnow()
+    fix = _antigravity_fixture()
+    fix["accounts"][0]["collected_at"] = (now - timedelta(minutes=40)).isoformat()
+    fix["accounts"][0]["notes"] = [
+        f"antigravity quota queried at most every 15m (next allowed in 4m); {REUSED_QUERY_NOTE_MARKER} 11/02 11:14pm."
+    ]
+    snap = enrich_snapshot(fix, now=now)
+
+    pools = {p["pool_family"]: p for p in pool_entries(snap)}
+    reason = pools["gemini"]["stale_reason"]
+    assert "40 minutes old" in reason
+    assert "queried at most every 15m" in reason
+    assert any(f"[stale: {reason}]" in line for line in snap["summary_lines"])
+
+
+def test_fresh_pool_has_no_stale_reason():
+    from aiuse.analysis.selfdescribe import enrich_snapshot, pool_entries
+
+    snap = enrich_snapshot(_antigravity_fixture())
+    assert all("stale_reason" not in pool for pool in pool_entries(snap))
+    assert "stale_reason" not in snap["accounts"][0]
+
+
 # ── human output never prints a bare percentage ─────────────────────────────
 
 
