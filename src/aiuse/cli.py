@@ -1167,10 +1167,12 @@ def _run_available(args: argparse.Namespace) -> int:
         freshness,
         summary_line,
     )
-    from aiuse.models import parse_dt, utcnow
+    from aiuse.models import canonical_provider, parse_dt, utcnow
     from aiuse.timefmt import format_as_of
 
     config = load_config(args.config)
+    _apply_cli_overrides(config, args)
+    requested = requested_providers(config)
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
     try:
         threshold = float(analysis_cfg.get("fresh_threshold_seconds") or FRESH_THRESHOLD_SECONDS_DEFAULT)
@@ -1197,9 +1199,11 @@ def _run_available(args: argparse.Namespace) -> int:
         if not args.quiet:
             print("Collecting usage from local tools…", file=sys.stderr)
         snapshot = run_collectors(config)
+        if requested is not None:
+            snapshot.accounts = [a for a in snapshot.accounts if canonical_provider(a.provider) in requested]
         if should_persist_snapshots(analysis_cfg):
             try:
-                partial = sorted(requested_providers(config) or []) if args.providers else None
+                partial = sorted(requested) if requested is not None else None
                 save_snapshot(
                     snapshot,
                     [],
@@ -1214,6 +1218,15 @@ def _run_available(args: argparse.Namespace) -> int:
     from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, filter_ceiling_pools
     from aiuse.client_limits import load_client_limits
 
+    # A shared cache can contain every provider, even for a restricted request.
+    # Filter before enrichment so unrelated subscription capacity cannot enter
+    # this routing view (Pi API spend is never Codex subscription allowance).
+    if requested is not None:
+        snap_dict["accounts"] = [
+            a
+            for a in snap_dict.get("accounts", [])
+            if isinstance(a, dict) and canonical_provider(str(a.get("provider") or "")) in requested
+        ]
     apply_hidden_pools_dict(snap_dict, config)
     from aiuse.credits_override import load_overrides
 
@@ -1232,10 +1245,10 @@ def _run_available(args: argparse.Namespace) -> int:
     # view applies it on top of the routing-only excluded_pools rules.
     exclusions = {**(config.get("disabled_services") or {}), **(analysis_cfg.get("excluded_pools") or {})}
     show_total = bool(analysis_cfg.get("show_total_rows", False))
-    pools, excluded = apply_exclusions(
-        filter_ceiling_pools(available_pools(snap_dict), show_total_rows=show_total),
-        exclusions,
-    )
+    candidates = filter_ceiling_pools(available_pools(snap_dict), show_total_rows=show_total)
+    if requested is not None:
+        candidates = [p for p in candidates if canonical_provider(str(p.get("provider") or "")) in requested]
+    pools, excluded = apply_exclusions(candidates, exclusions)
     hidden_pools = snap_dict.get("hidden_pools") or {}
 
     if args.json or args.format == "json":

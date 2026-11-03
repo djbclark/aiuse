@@ -1843,6 +1843,8 @@ def _build_matrix_rows(
                     account_full=account.account,
                     scope=deferred_scope,
                     note=_context_fragment(account),
+                    measured_at=account.collected_at,
+                    stale=(_account_data_age(account, now) or 0.0) > fresh_threshold,
                 )
             )
             continue
@@ -1879,6 +1881,8 @@ def _build_matrix_rows(
                         account_full=account.account,
                         scope=deferred_scope,
                         note=(account.error or "no usage data").strip(),
+                        measured_at=account.collected_at,
+                        stale=(_account_data_age(account, now) or 0.0) > fresh_threshold,
                     )
                 )
             continue
@@ -1901,6 +1905,8 @@ def _build_matrix_rows(
                 account_full=account.account,
                 scope=deferred_scope,
                 note=note,
+                measured_at=account.collected_at,
+                stale=(_account_data_age(account, now) or 0.0) > fresh_threshold,
                 operator_gate=account.requires_operator_approval,
             )
         )

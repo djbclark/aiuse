@@ -472,7 +472,7 @@ def _collect_codexbar_impl(
                 backoff=backoff,
             )
             if provider_list == [None]:
-                live_list: list[str | None] = sorted(all_accounts)
+                live_list: list[str | None] = [query_aliases.get(p, p) for p in sorted(all_accounts)]
             else:
                 live_list = [p for p in provider_list if p is not None and canonical_provider(p) in all_accounts]
             if (cached_bedrock or "bedrock" in provider_list) and "bedrock" not in (skip_providers or ()):
@@ -570,7 +570,7 @@ def _collect_live(
             if isinstance(row, dict):
                 if provider_arg is not None:
                     row_provider = str(row.get("provider", "")).strip().lower()
-                    if row_provider and row_provider != provider_arg.lower():
+                    if row_provider and canonical_provider(row_provider) != canonical_provider(provider_arg):
                         continue
                 account = _from_row(row)
                 if provider_arg is not None and provider_arg in reuse_notes:
@@ -823,7 +823,9 @@ def _query_providers(
         provider = provider_arg.lower()
         provider_timeout = per_provider.get(provider, timeout)
         # Only passed when set, so stand-ins with the plain signature still work.
-        extra: dict[str, bool] = {"all_accounts": True} if provider in all_accounts_providers else {}
+        extra: dict[str, bool] = (
+            {"all_accounts": True} if canonical_provider(provider) in all_accounts_providers else {}
+        )
         if provider == "bedrock":
             # The $0.01 gate lives inside _query_provider. QueryGate's reused
             # payload would freeze updatedAt. The gate restamps that clock and

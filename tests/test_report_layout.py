@@ -1,7 +1,11 @@
 """Matrix column order (PACE after SCOPE, OTHER last) and where the AI line goes."""
 
+import json
 from datetime import timedelta
 
+import pytest
+
+from aiuse.collectors import codexbar
 from aiuse.collectors.cswap import _account_from_item
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, UsageCredits, utcnow
 from aiuse.report import (
@@ -12,7 +16,54 @@ from aiuse.report import (
     render_report,
     render_stderr_meta,
 )
+from aiuse.timefmt import format_as_of
 from aiuse.watch import render_watch_board
+
+
+@pytest.mark.parametrize("age_hours", [2, 26])
+@pytest.mark.parametrize("gated", [False, True])
+def test_fresh_widget_envelope_retains_old_pi_spend_age(tmp_path, age_hours, gated):
+    now = utcnow()
+    measured = now - timedelta(hours=age_hours)
+    cache = tmp_path / "widget.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "generatedAt": now.isoformat(),
+                "entries": [
+                    {
+                        "provider": "openai",
+                        "updatedAt": measured.isoformat(),
+                        "providerCost": {"used": 2.8, "currencyCode": "USD", "limit": 200},
+                    }
+                ],
+            }
+        )
+    )
+    accounts = codexbar._read_widget_snapshot(cache, 300, ["pi"], None)
+    assert accounts is not None
+    (account,) = accounts
+    if age_hours > 24:
+        # Credit expiry can clear this convenience field; the historical meter
+        # still carries spend and must retain its original measurement clock.
+        account.spent_usd = None
+    if gated:
+        account.rate_gated_by = {
+            "provider": "pi",
+            "window_label": "API rate",
+            "resets_at": (now + timedelta(hours=1)).isoformat(),
+        }
+    snapshot = Snapshot(collected_at=now, accounts=accounts)
+    (matrix_row,) = _build_matrix_rows([], snapshot, None)
+    assert matrix_row.measured_at == measured
+    assert matrix_row.stale
+    text = render_clock_matrix([], snapshot=snapshot, color=False, width=200)
+    line = _row_line(text, "pi")
+    assert "codex-api" in line
+    assert format_as_of(measured) in line
+    if not gated:
+        assert "↑ $2.80 PAYG" in line
+        assert "↓" not in line
 
 
 def _omp(now):

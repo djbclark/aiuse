@@ -1,5 +1,6 @@
 """CodexBar's OpenAI API costs belong to Pi, never Codex subscription quota."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -109,3 +110,70 @@ def test_pi_spend_only_and_explanatory_rows_keep_scope(gated):
     else:
         assert "$2.80" in line
         assert "↓" not in line  # Spend is not a countdown balance.
+
+
+@pytest.mark.parametrize("provider", ["pi", "openai", "PI", "OpenAI"])
+@pytest.mark.parametrize("all_accounts", ["pi", "openai"])
+@pytest.mark.parametrize("response_provider", ["pi", "openai"])
+def test_all_account_aliases_query_openai_and_keep_each_account(monkeypatch, provider, all_accounts, response_provider):
+    calls = []
+    monkeypatch.setattr(cb, "which", lambda name: "/bin/codexbar")
+    monkeypatch.setattr(cb, "_codexbar_bin", lambda: "/bin/codexbar")
+
+    def usage(argv, **kwargs):
+        calls.append(argv)
+        return [dict(row(used), provider=response_provider, account=name) for name, used in [("a", 2), ("b", 3)]]
+
+    monkeypatch.setattr(cb, "_run_codexbar_usage", usage)
+    accounts = cb.collect_codexbar(
+        providers=[provider], all_accounts_providers=frozenset({all_accounts}), timeout_backoff=None
+    )
+    assert len(calls) == 1
+    assert calls[0][calls[0].index("--provider") + 1] == "openai"
+    assert "--all-accounts" in calls[0]
+    assert [(a.provider, a.account, a.spent_usd) for a in accounts] == [("pi", "a", 2), ("pi", "b", 3)]
+
+
+@pytest.mark.parametrize("providers", ["enabled", ["pi", "codex"], ["openai", "codex"]])
+@pytest.mark.parametrize("all_accounts", ["pi", "openai"])
+def test_cache_supplement_queries_vendor_alias_and_replaces_single_cached_account(
+    tmp_path, monkeypatch, providers, all_accounts
+):
+    now = datetime.now(UTC)
+    cache = tmp_path / "widget.json"
+    cache.write_text(
+        json.dumps(
+            {
+                "generatedAt": now.isoformat(),
+                "entries": [
+                    {"provider": "codex", "quotaOwnerKey": "subscription", "updatedAt": now.isoformat()},
+                    {
+                        "provider": "openai",
+                        "quotaOwnerKey": "cached-active",
+                        "updatedAt": now.isoformat(),
+                        "providerCost": row()["usage"]["providerCost"],
+                    },
+                ],
+            }
+        )
+    )
+    calls = []
+    monkeypatch.setattr(cb, "_codexbar_bin", lambda: "/bin/codexbar")
+
+    def usage(argv, **kwargs):
+        calls.append(argv)
+        return [dict(row(), account=name) for name in ("a", "b")]
+
+    monkeypatch.setattr(cb, "_run_codexbar_usage", usage)
+    accounts = cb.collect_codexbar(
+        providers=providers,
+        use_cache=True,
+        cache_path=cache,
+        all_accounts_providers=frozenset({all_accounts}),
+        skip_providers=frozenset({"omp", "bedrock"}),
+        timeout_backoff=None,
+    )
+    assert len(calls) == 1
+    assert calls[0][calls[0].index("--provider") + 1] == "openai"
+    assert "--all-accounts" in calls[0]
+    assert [(a.provider, a.account) for a in accounts] == [("codex", "subscription"), ("pi", "a"), ("pi", "b")]
