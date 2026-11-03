@@ -144,6 +144,9 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
             "omp TUI — Claude models via the API; an expiring dollar grant (cloud-session credits), not the Claude plan windows",
         ),
     ],
+    "pi": [
+        ("credits", "codex_api", "Pi TUI — OpenAI API credits, independent of Codex subscription windows"),
+    ],
 }
 
 

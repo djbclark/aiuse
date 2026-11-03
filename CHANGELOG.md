@@ -14,6 +14,11 @@ Releases before 3.9.0 are in the
 
 ### Fixed
 
+- Retained API scope on explanatory/rate-gated rows; renamed OMP's display scope
+  to `claude-api` without changing its stable pool id.
+- Preserved sibling API-provider readings during credit refreshes using locked,
+  atomic file updates; allowed already-applied readings to refresh or expire.
+
 - **Antigravity (and any provider) readings no longer sit one CodexBar refresh
   behind when `http_url` is set.** CodexBar's HTTP server is
   stale-while-revalidate: the first request after its TTL returns the previous
@@ -25,6 +30,10 @@ Releases before 3.9.0 are in the
   CLI runs live.
 
 ### Added
+
+- Added independent Pi OpenAI API grant accounting (`pi`, scope `codex-api`),
+  verified console entries and optional organization Costs API estimates, never
+  borrowing Codex subscription capacity. Added manual Linux CI dispatch.
 
 - **`stale_reason`** on stale `--available` pools and accounts (JSON, plus a
   `[stale: ...]` suffix on the summary line): the reading's age against the

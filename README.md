@@ -524,6 +524,14 @@ This tool:
 This command intentionally does not report historical local-token usage or
 API-equivalent cost estimates (use ccusage-class tools for local burn, not plan %).
 
+## OpenAI API credits (`pi`): independent grant accounting
+
+Pi uses provider `pi` and scope `codex-api`, never Codex subscription quota.
+Verified console grants can be recorded with `aiuse set-credits pi`; an optional
+organization Admin API cost refresh derives a conservative estimate, not a live
+cash balance. Missing funding data remains unknown. See
+[Pi OpenAI API credits](docs/pi-openai-credits.md) for prerequisites and limits.
+
 ## Claude API credits (`omp`): override and expiry nudge
 
 CodexBar reads the Max plan's promotional API credits from claude.ai and can report "100% unused"

@@ -51,7 +51,7 @@ def readings_path() -> Path:
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Never follow a redirect: urllib would forward x-api-key to the new origin."""
+    """Never follow a redirect: urllib can forward credential headers to the new origin."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise CostReportError("redirect refused")
@@ -221,11 +221,7 @@ def refresh(
         "observed_at": now.isoformat(),
         "source": "admin-api",
     }
-    path = readings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
-    tmp.write_text(json.dumps({co.OVERRIDE_PROVIDER: entry}, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    co.save_credit_entry(readings_path(), co.OVERRIDE_PROVIDER, entry, "admin-api")
     suffix = f"; rose above the {capped_by}, capped" if capped_by else ""
     return (
         0,
@@ -238,10 +234,14 @@ def run_refresh_credits(argv: list[str]) -> int:
 
     parser = argparse.ArgumentParser(
         prog="aiuse refresh-credits",
-        description="Read the omp credit balance from the Anthropic Admin API cost report (needs ANTHROPIC_ADMIN_KEY).",
+        description="Refresh an API grant estimate: omp needs ANTHROPIC_ADMIN_KEY; pi needs OPENAI_ADMIN_KEY and a verified grant.",
     )
-    parser.add_argument("provider", choices=[co.OVERRIDE_PROVIDER])
-    parser.parse_args(argv)
+    parser.add_argument("provider", choices=co.CREDIT_PROVIDERS)
+    args = parser.parse_args(argv)
+    if args.provider == "pi":
+        from aiuse.openai_cost import run_refresh_credits as refresh_pi
+
+        return refresh_pi()
     code, line = refresh()
     print(line, file=sys.stdout if code == 0 else sys.stderr)
     return code

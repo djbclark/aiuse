@@ -396,6 +396,8 @@ def independent_pool_key(
     # omp spends Claude cloud-session credits: one pool, scoped to the model family.
     if provider is not None and canonical_provider(provider) == "omp":
         return "omp_claude"
+    if provider is not None and canonical_provider(provider) == "pi":
+        return "pi_codex_api"
     text = (label or "").casefold()
     if not text:
         return None
@@ -452,6 +454,7 @@ POOL_SCOPE_LABELS = {
     "gemini_argon": "gemini-argon",
     "claude_gpt": "claude/gpt",
     "omp_claude": "claude-api",
+    "pi_codex_api": "codex-api",
     "cursor_total": "total",
     "cursor_third_party": "3rd-party",
     "cursor_auto": "auto",
@@ -491,6 +494,8 @@ def matrix_pool_scope(
     is the ceiling scope, and only for Cursor — other vendors' first rate slot
     is not a total row.
     """
+    if provider is not None and canonical_provider(provider) == "pi":
+        return "codex-api"  # A spend-only meter has no quota windows/pool id.
     if pool_id:
         return POOL_SCOPE_LABELS.get(pool_id, pool_id)
     if _provider_is_cursor(provider) and pool:

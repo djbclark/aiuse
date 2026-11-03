@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -399,8 +400,10 @@ def _collect_codexbar_impl(
     include_disabled: bool = False,
 ) -> list[AccountUsage]:
     provider_list = _normalize_providers(providers)
-    # CodexBar has no `omp` provider: its credits ride on the Claude row.
-    provider_list = list(dict.fromkeys("claude" if p == "omp" else p for p in provider_list))
+    # Tool funding identities map to CodexBar's vendor query names, never to
+    # another tool's subscription provider (Pi is OpenAI API, not Codex OAuth).
+    query_aliases = {"omp": "claude", "pi": "openai"}
+    provider_list = list(dict.fromkeys(query_aliases.get(p, p) if p is not None else None for p in provider_list))
     # "enabled" / "all" discovers the catalog. An explicit provider list does not,
     # and must not gain a Bedrock Cost Explorer call it did not ask for.
     was_discovery = provider_list == [None]
@@ -743,6 +746,8 @@ def _disabled_known_query_ids(payload: Any, *, already: set[str], skip: frozense
             chosen.append(canonical)
         elif dehyphen in ids:
             chosen.append(dehyphen)
+        elif canonical == "pi" and "openai" in ids:
+            chosen.append("openai")
     return chosen
 
 
@@ -1084,8 +1089,53 @@ def _display_account(value: Any) -> str | None:
     return text
 
 
+def _openai_api_from_row(row: dict[str, Any]) -> AccountUsage:
+    """Organization cost meter only: a budget/limit is never prepaid balance."""
+    usage = row.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    cost = usage.get("providerCost")
+    cost = cost if isinstance(cost, dict) else {}
+    raw_used = cost.get("used")
+    used = _f(raw_used) if not isinstance(raw_used, bool) else None
+    updated = parse_dt(usage.get("updatedAt") or cost.get("updatedAt"))
+    valid = (
+        used is not None
+        and math.isfinite(used)
+        and used >= 0
+        and cost.get("currencyCode") == "USD"
+        and updated is not None
+        and not row.get("error")
+    )
+    meter = (
+        UsageCredits(used=used, limit=None, remaining=None, currency="USD", used_percent=None, resets_at=None)
+        if valid
+        else None
+    )
+    period = cost.get("period")
+    return AccountUsage(
+        source="codexbar",
+        provider="pi",
+        account=_display_account(row.get("account")),
+        plan=period if isinstance(period, str) else "OpenAI API costs",
+        billing_kind=BillingKind.PAYG_API,
+        windows=[],
+        balance_usd=None,
+        spent_usd=used if valid else None,
+        usage_credits=meter,
+        credits_label="OpenAI API costs",
+        collected_at=updated,
+        error=None if valid else "OpenAI API costs UNKNOWN",
+        notes=[
+            "OpenAI organization API spend, not remaining credit or Codex subscription quota; funding balance unknown."
+        ],
+        raw=row,
+    )
+
+
 def _from_row(row: dict[str, Any]) -> AccountUsage:
     provider = str(row.get("provider") or "unknown").lower()
+    if provider in ("openai", "pi"):
+        return _openai_api_from_row(row)
     source_tag = str(row.get("source") or "unknown mechanism")
     err = row.get("error")
     if isinstance(err, dict):

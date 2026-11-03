@@ -1,10 +1,11 @@
-"""Operator-supplied credit balances, and the rule for which reading of the omp row wins.
+"""Independent operator/API credit readings for OMP (Claude API) and Pi (OpenAI API).
 
 CodexBar reports the Claude API credits (``omp``) from claude.ai's cloud-credits row, which
 can say "100% unused" while the Anthropic console shows the grant half spent. The Anthropic
 Admin API has no credit-balance endpoint (its cost report is cost-to-date only), so the
 operator records the console figures with ``aiuse set-credits``. The override is applied at
-read time, on the snapshot dict, so a cached snapshot is corrected too.
+read time, on the snapshot dict, so a cached snapshot is corrected too. Pi uses its own
+verified grant/console reading; no Codex subscription quota or balance is imported.
 
 Which reading wins, per account:
 
@@ -12,7 +13,8 @@ Which reading wins, per account:
 2. a newer CodexBar reading that shows MORE credits than the override is contradicted (a
    grant never grows), so the override still wins and the CodexBar reading is kept under
    ``superseded_reading``;
-   (When the snapshot has no omp row at all, the override alone makes the row.)
+   (A verified Pi console entry can create its row. A missing OMP row is created only
+   from a recent Admin API reading, not a standalone operator override.)
 3. a newer CodexBar reading that shows the same or less wins (credits were spent since);
    An active Admin API grant with a known start and expiry also wins against a differently
    sized or dated CodexBar promotion; observing that promotion does not establish a new grant.
@@ -21,7 +23,7 @@ Which reading wins, per account:
    API reading (``source: admin-api``) gets the 24 h limit CodexBar readings get; the
    CodexBar rules then apply alone. An ``observed_at`` in the future is invalid. Anything
    malformed (non-finite or non-numeric figures, remaining > total, bad timestamps, wrong pool
-   name) is ignored with one stderr line and never raises. A hidden or disabled omp pool is never
+   name) is ignored with one stderr line and never raises. A hidden or disabled credit pool is never
    rebuilt or rewritten.
 4. a CodexBar reading older than 24 h with no override that supersedes it is expired:
    its balance and percentages are dropped, so the pool is ``unknown`` and not routable.
@@ -30,10 +32,12 @@ Which reading wins, per account:
 from __future__ import annotations
 
 import copy
+import fcntl
 import json
 import math
 import os
 import sys
+import tempfile
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -43,7 +47,10 @@ from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
 from aiuse.models import WINDOW_NOMINAL_MINUTES, AccountUsage, Snapshot, parse_dt, provider_cli_binary, utcnow
 
-OVERRIDE_PROVIDER = "omp"
+OVERRIDE_PROVIDER = "omp"  # Backward-compatible default for existing callers.
+CREDIT_PROVIDERS = ("omp", "pi")
+CREDIT_LABELS = {"omp": "Claude API credits", "pi": "OpenAI API credits"}
+CREDIT_WINDOW_IDS = {"omp": "claude-cloud-credits", "pi": "openai-api-credits"}
 OVERRIDE_SOURCE = "operator-override"
 CODEXBAR_MAX_AGE = timedelta(hours=24)
 OVERRIDE_MAX_AGE = timedelta(days=7)
@@ -123,19 +130,17 @@ def overrides_path() -> Path:
     return history.snapshot_dir().parent / "credit-overrides.json"
 
 
-def _config_hides_omp(config: Mapping[str, Any] | None) -> bool:
-    """The operator hid or disabled omp in config: no override output at all."""
+def _config_hides_omp(config: Mapping[str, Any] | None, provider: str = OVERRIDE_PROVIDER) -> bool:
+    """The operator hid or disabled this credit provider: no override output."""
     for section in ("hidden_pools", "disabled_services"):
         mapping = (config or {}).get(section)
-        if isinstance(mapping, Mapping) and any(
-            parse_pool_rule_key(str(key))[0] == OVERRIDE_PROVIDER for key in mapping
-        ):
+        if isinstance(mapping, Mapping) and any(parse_pool_rule_key(str(key))[0] == provider for key in mapping):
             return True
     if isinstance(config, dict):
         from aiuse.config import requested_providers
 
         req = requested_providers(config)
-        if req is not None and OVERRIDE_PROVIDER not in req:
+        if req is not None and provider not in req:
             return True
     return False
 
@@ -151,8 +156,6 @@ def load_overrides(
 
     Empty when ``config`` hides or disables omp. Never raises.
     """
-    if _config_hides_omp(config):
-        return {}
     now = now or utcnow()
     merged: dict[str, dict[str, Any]] = {}
     has_admin: set[str] = set()
@@ -160,6 +163,8 @@ def load_overrides(
     # invalid (future-dated, expired, too old) reading can never hide a valid override.
     for path, source in ((overrides_path(), OVERRIDE_SOURCE), (readings_file(), "admin-api")):
         for provider, entry in _load_file(path, source).items():
+            if _config_hides_omp(config, provider):
+                continue
             valid, _why = _safe_clean(entry, now=now)
             if valid is None:
                 continue
@@ -176,17 +181,17 @@ def load_overrides(
     return merged
 
 
-def load_file_entry(path: Path, source: str) -> dict[str, Any] | None:
-    """The structurally valid omp entry of one file (no time rules), or None."""
-    return _load_file(path, source).get(OVERRIDE_PROVIDER)
+def load_file_entry(path: Path, source: str, provider: str = OVERRIDE_PROVIDER) -> dict[str, Any] | None:
+    """One structurally valid credit entry (no time rules), or None."""
+    return _load_file(path, source).get(provider)
 
 
-def load_grant_params() -> tuple[float, datetime, datetime | None] | None:
+def load_grant_params(provider: str = OVERRIDE_PROVIDER) -> tuple[float, datetime, datetime | None] | None:
     """``(total_usd, granted_at, expires_at)`` from the operator override, or None.
 
     The grant's parameters do not age, so the override's 7-day limit is not applied.
     """
-    entry = _load_file(overrides_path(), OVERRIDE_SOURCE).get(OVERRIDE_PROVIDER)
+    entry = _load_file(overrides_path(), OVERRIDE_SOURCE).get(provider)
     granted = parse_dt(entry.get("granted_at")) if entry else None
     if entry is None or granted is None:
         return None
@@ -211,7 +216,7 @@ def _load_file(path: Path, source: str) -> dict[str, dict[str, Any]]:
         return {}
     out: dict[str, dict[str, Any]] = {}
     for provider, raw in data.items():
-        if provider != OVERRIDE_PROVIDER:
+        if provider not in CREDIT_PROVIDERS:
             print(f"aiuse: ignoring credit override for unknown pool {str(provider)[:40]!r}", file=sys.stderr)
             continue
         if isinstance(raw, Mapping):
@@ -231,6 +236,31 @@ def _safe_clean(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, Any
         return clean_override(raw, now=now)
     except Exception as exc:  # noqa: BLE001 - hostile input must only ever mean "ignored"
         return None, f"unreadable ({exc.__class__.__name__})"
+
+
+def save_credit_entry(path: Path, provider: str, entry: Mapping[str, Any], source: str) -> None:
+    """Atomically update one provider without losing a concurrent sibling refresh."""
+    if provider not in CREDIT_PROVIDERS or source not in (OVERRIDE_SOURCE, "admin-api"):
+        raise ValueError("unsupported credit provider or source")
+    valid, why = _safe_clean({**entry, "source": source})
+    if valid is None:
+        raise ValueError(f"invalid credit reading: {why}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_name(path.name + ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        data = _load_file(path, source)
+        data[provider] = valid
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False
+            ) as handle:
+                temporary = Path(handle.name)
+                handle.write(json.dumps(data, indent=2) + "\n")
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def save_override(
@@ -257,11 +287,7 @@ def save_override(
         "note": note,
         "observed_at": (now or utcnow()).isoformat(),
     }
-    data[provider] = entry
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    save_credit_entry(path, provider, entry, OVERRIDE_SOURCE)
     return entry
 
 
@@ -273,7 +299,9 @@ def parse_expiry(text: str) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _credits_window(total: float, remaining: float, expires: str | None) -> dict[str, Any]:
+def _credits_window(
+    total: float, remaining: float, expires: str | None, provider: str = OVERRIDE_PROVIDER
+) -> dict[str, Any]:
     pct = max(0.0, min(100.0, remaining / total * 100.0)) if total > 0 else None
     return {
         "label": "credits",
@@ -283,7 +311,7 @@ def _credits_window(total: float, remaining: float, expires: str | None) -> dict
         "reset_description": f"${remaining:.2f} of ${total:.2f} left, expires",
         "refill_capacity": total,
         "refill_capacity_unit": "usd",
-        "window_id": "claude-cloud-credits",
+        "window_id": CREDIT_WINDOW_IDS[provider],
     }
 
 
@@ -293,8 +321,9 @@ def _normalize_credits_clock(account: dict[str, Any], override: Mapping[str, Any
     Only borrow a grant start from a reading with the same capacity and expiry.
     A new grant must never inherit the previous grant's elapsed time.
     """
+    window_id = CREDIT_WINDOW_IDS.get(str(account.get("provider") or OVERRIDE_PROVIDER), "claude-cloud-credits")
     for window in account.get("windows") or []:
-        if not isinstance(window, dict) or window.get("window_id") != "claude-cloud-credits":
+        if not isinstance(window, dict) or window.get("window_id") != window_id:
             continue
         expiry = _timestamp(window.get("resets_at") or account.get("expires_at"))
         capacity = _number(window.get("refill_capacity"))
@@ -314,13 +343,11 @@ def _normalize_credits_clock(account: dict[str, Any], override: Mapping[str, Any
             window["window_minutes"] = WINDOW_NOMINAL_MINUTES["monthly"]
 
 
-def _omp_hidden(snap: Mapping[str, Any]) -> bool:
-    """omp is hidden or disabled by the operator: the override must not bring it back."""
+def _omp_hidden(snap: Mapping[str, Any], provider: str = OVERRIDE_PROVIDER) -> bool:
+    """A hidden/disabled credit provider must never be rebuilt by its override."""
     for section in ("hidden_pools", "disabled_services"):
         mapping = snap.get(section)
-        if isinstance(mapping, Mapping) and any(
-            parse_pool_rule_key(str(key))[0] == OVERRIDE_PROVIDER for key in mapping
-        ):
+        if isinstance(mapping, Mapping) and any(parse_pool_rule_key(str(key))[0] == provider for key in mapping):
             return True
     return False
 
@@ -344,55 +371,55 @@ def _expire_reading(account: dict[str, Any], why: str = "older than 24h") -> Non
     account["balance_usd"] = None
     account["spent_usd"] = None
     account["reading_expired"] = True
-    account["notes"] = [
-        *(account.get("notes") or []),
+    note = (
         f"{account.get('source')} reading {why}: balance unknown; "
-        "record the console figure with `aiuse set-credits omp`.",
-    ]
+        f"record the console figure with `aiuse set-credits {account.get('provider', OVERRIDE_PROVIDER)}`."
+    )
+    if note not in (account.get("notes") or []):
+        account["notes"] = [*(account.get("notes") or []), note]
 
 
-def apply_credit_overrides(
+def _apply_credit_override_for_provider(
     snap: dict[str, Any],
     overrides: Mapping[str, Mapping[str, Any]] | None,
     *,
+    provider: str,
     now: datetime | None = None,
 ) -> None:
-    """Rewrite the omp account(s) of a snapshot dict in place (see the module doc)."""
+    """Rewrite one independent API-credit provider's snapshot accounts."""
     now = now or utcnow()
-    if _omp_hidden(snap):
+    if _omp_hidden(snap, provider):
         return
     override: Mapping[str, Any] = {}
     ignored: str | None = None
-    if (overrides or {}).get(OVERRIDE_PROVIDER) is not None:
-        cleaned, ignored = _safe_clean(overrides[OVERRIDE_PROVIDER], now=now)  # type: ignore[index]
+    if (overrides or {}).get(provider) is not None:
+        cleaned, ignored = _safe_clean(overrides[provider], now=now)  # type: ignore[index]
         override = cleaned or {}
     accounts = snap.get("accounts")
     if (
         override
-        and (override.get("source") == "admin-api" or override.get("has_admin_reading"))
+        and (provider == "pi" or override.get("source") == "admin-api" or override.get("has_admin_reading"))
         and isinstance(accounts, list)
-        and not any(isinstance(a, dict) and a.get("provider") == OVERRIDE_PROVIDER for a in accounts)
+        and not any(isinstance(a, dict) and a.get("provider") == provider for a in accounts)
     ):
         # An Admin API reading is collector output, so it may make the row when the snapshot
         # has none. An operator override only decorates a row the collectors produced.
         accounts.append(
             {
                 "source": "none",
-                "provider": OVERRIDE_PROVIDER,
-                "cli_binary": provider_cli_binary(OVERRIDE_PROVIDER),
+                "provider": provider,
+                "cli_binary": provider_cli_binary(provider),
                 "billing_kind": "subscription_window",
                 "windows": [],
-                "credits_label": "Claude API credits",
+                "credits_label": CREDIT_LABELS[provider],
                 "notes": [],
                 "error": None,
             }
         )
     for account in snap.get("accounts") or []:
-        if not isinstance(account, dict) or account.get("provider") != OVERRIDE_PROVIDER:
+        if not isinstance(account, dict) or account.get("provider") != provider:
             continue
         _normalize_credits_clock(account, override)
-        if account.get("source") in (OVERRIDE_SOURCE, "admin-api"):
-            continue
         if ignored:
             account["notes"] = [*(account.get("notes") or []), f"credit override ignored: {ignored}"]
         reading_at = parse_dt(account.get("collected_at") or snap.get("collected_at"))
@@ -435,7 +462,7 @@ def apply_credit_overrides(
                 or (same_grant and float(balance) > float(ov_remaining) + _EPSILON)
             )
         ):
-            if account.get("source") != "none":
+            if account.get("source") not in ("none", OVERRIDE_SOURCE, "admin-api"):
                 account["superseded_reading"] = {
                     "source": account.get("source"),
                     "observed_at": reading_at.isoformat() if reading_at else None,
@@ -447,17 +474,21 @@ def apply_credit_overrides(
                 collector_id=override.get("source") or OVERRIDE_SOURCE,
                 balance_usd=float(ov_remaining),
                 spent_usd=round(max(0.0, float(ov_total) - float(ov_remaining)), 6),
-                windows=[_credits_window(float(ov_total), float(ov_remaining), expires)],
+                windows=[_credits_window(float(ov_total), float(ov_remaining), expires, provider)],
                 collected_at=ov_at.isoformat(),
                 expires_at=expires,
                 error=None,
             )
-            account["billing_kind"] = "subscription_window"
+            account["billing_kind"] = "prepaid_balance" if provider == "pi" and not expires else "subscription_window"
+            account["credits_label"] = CREDIT_LABELS[provider]
+            account["usage_credits"] = None  # Costs are not an additional wallet beside the grant.
+            account.pop("reading_expired", None)
             _normalize_credits_clock(account, override)
             note = f"{'Admin API reading' if override.get('source') == 'admin-api' else 'Operator override (aiuse set-credits)'} at {ov_at.isoformat()}"
             if override.get("note"):
                 note += f": {override['note']}"
-            account["notes"] = [*(account.get("notes") or []), note]
+            if note not in (account.get("notes") or []):
+                account["notes"] = [*(account.get("notes") or []), note]
             reading_at = ov_at
         elif override and ov_at is not None and reading_at is not None and reading_at > ov_at:
             # A fresher CodexBar reading wins: say so, and keep what the override claimed.
@@ -479,6 +510,17 @@ def apply_credit_overrides(
         account["observed_at"] = reading_at.isoformat() if reading_at else None
 
 
+def apply_credit_overrides(
+    snap: dict[str, Any],
+    overrides: Mapping[str, Mapping[str, Any]] | None,
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Apply independent API-credit readings without mixing provider balances."""
+    for provider in CREDIT_PROVIDERS:
+        _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now)
+
+
 def apply_credit_overrides_to_snapshot(
     snapshot: Snapshot,
     config: Mapping[str, Any] | None = None,
@@ -488,18 +530,23 @@ def apply_credit_overrides_to_snapshot(
 ) -> bool:
     """Apply ``apply_credit_overrides`` to ``snapshot.accounts`` in place.
 
-    Returns True when an ``omp`` account was added or updated so callers can
+    Returns True when an API-credit account was added or updated so callers can
     re-derive ``UseOrLoseAlert`` rows against the effective balance.
     """
-    if _config_hides_omp(config):
+    visibility = {"hidden_pools": snapshot.hidden_pools, "disabled_services": snapshot.disabled_services}
+    providers = {
+        provider
+        for provider in CREDIT_PROVIDERS
+        if not _config_hides_omp(config, provider) and not _omp_hidden(visibility, provider)
+    }
+    if not providers:
         return False
-    if _omp_hidden({"hidden_pools": snapshot.hidden_pools, "disabled_services": snapshot.disabled_services}):
+    loaded = load_overrides(config, now=now) if overrides is None else overrides
+    effective_overrides = {provider: entry for provider, entry in (loaded or {}).items() if provider in providers}
+    has_accounts = any(a.provider in providers for a in snapshot.accounts)
+    if not has_accounts and not effective_overrides:
         return False
-    effective_overrides = load_overrides(config, now=now) if overrides is None else overrides
-    has_omp = any(a.provider == OVERRIDE_PROVIDER for a in snapshot.accounts)
-    if not has_omp and not (effective_overrides or {}).get(OVERRIDE_PROVIDER):
-        return False
-    before = [a.to_dict() for a in snapshot.accounts if a.provider == OVERRIDE_PROVIDER]
+    before = [a.to_dict() for a in snapshot.accounts if a.provider in providers]
     snap_dict: dict[str, Any] = {
         "collected_at": snapshot.collected_at.isoformat(),
         "accounts": [copy.deepcopy(d) for d in before],
@@ -515,13 +562,13 @@ def apply_credit_overrides_to_snapshot(
     rebuilt = _snapshot_from_accounts_dict(
         {"collected_at": snapshot.collected_at.isoformat(), "accounts": after}
     ).accounts
-    if not has_omp:
+    if not has_accounts:
         snapshot.accounts.extend(rebuilt)
         return bool(rebuilt)
     rebuilt_iter = iter(rebuilt)
     new_accounts: list[AccountUsage] = []
     for account in snapshot.accounts:
-        if account.provider == OVERRIDE_PROVIDER:
+        if account.provider in providers:
             replacement = next(rebuilt_iter, None)
             if replacement is not None:
                 new_accounts.append(replacement)
@@ -563,9 +610,9 @@ def run_set_credits(argv: list[str]) -> int:
 
     parser = argparse.ArgumentParser(
         prog="aiuse set-credits",
-        description="Record the console's credit balance for a pool CodexBar misreads (omp = Claude API credits).",
+        description="Record a verified API credit balance (omp = Claude API; pi = OpenAI API).",
     )
-    parser.add_argument("provider", choices=[OVERRIDE_PROVIDER])
+    parser.add_argument("provider", choices=CREDIT_PROVIDERS)
     parser.add_argument("--remaining", type=_finite, required=True, metavar="USD", help="dollars left")
     parser.add_argument("--total", type=_finite, required=True, metavar="USD", help="dollars granted")
     parser.add_argument("--expires", metavar="DATE", help="grant expiry, YYYY-MM-DD or ISO datetime (UTC)")

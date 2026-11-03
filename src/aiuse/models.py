@@ -129,6 +129,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "opencode-go": "oc-go",
     "opencode-zen": "oc-zen",
     "omp": "omp",
+    "pi": "pi",
     "openrouter": "openrouter",
     "muse": "muse",
     "qwencloud": "qwen",
@@ -149,6 +150,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
 PROVIDER_ID_ALIASES: dict[str, str] = {
     "chatgpt": "codex",
     "openai-codex": "codex",
+    "openai": "pi",  # CodexBar's API costs, not its codex/OAuth subscription
     "github-copilot": "copilot",
     "grok-build": "grok",
     "supergrok": "grok",
@@ -206,6 +208,7 @@ PROVIDER_CLI_BINARIES: dict[str, str] = {
     "opencode-go": "opencode",
     "opencode-zen": "opencode",
     "omp": "omp",  # oh-my-pi TUI; spends the Claude cloud-session credits via the API
+    "pi": "pi",  # Pi TUI; OpenAI API billing, not the Codex subscription
     "qwencloud": "qwen",  # Qwen Code TUI; `qwencloud` itself is the quota CLI
     "alibaba": "qwen",  # Bailian coding plan is spent via the qwen TUI (BAILIAN_CODING_PLAN_API_KEY)
 }
