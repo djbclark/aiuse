@@ -52,7 +52,19 @@ Other API clients spending the same organization's credit affect this estimate.
 
 If funding is pay-as-you-go, the grant model does not apply. The CodexBar cost
 meter still reports measured spend, but remaining capacity stays unknown until
-appropriate budget semantics are established.
+an organizational budget cap is declared. Declare `monthly_spend_limit` under
+`[plans.pi]` in `~/.config/aiuse/config.toml`:
+
+```toml
+[plans.pi]
+monthly_spend_limit = 100
+```
+
+This anchors the cost meter against a monthly budget ceiling, displaying in the
+`MONTH` matrix column with accurate percentage and pace instead of staying `n/a`.
+When both a monthly spend limit and a verified credit grant are present, the spend
+limit tracks the monthly budget in the `MONTH` column, while the credit grant tracks
+remaining cash liquidity in the `OTHER` column.
 
 The reader follows all pages and rejects malformed/non-USD costs, negative
 adjustments needing reconciliation, repeated buckets/cursors, empty reports,

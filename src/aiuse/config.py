@@ -246,6 +246,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "bailian-cli once with `bl auth login --console`."
             ),
         },
+        "pi": {
+            "name": "OpenAI API (Pi)",
+            "notes": (
+                "Organization API spend meter from CodexBar. Does not include "
+                "Codex subscription quota. Monthly spend limit sets a budget ceiling; "
+                "prepaid credit grants are recorded with `aiuse set-credits pi`."
+            ),
+        },
     },
     "collectors": {
         "cswap": {"enabled": True},
@@ -683,6 +691,31 @@ def plan_monthly_price(plans: Any, provider: str, account: str | None = None) ->
     return _positive_number(meta.get("monthly_price"))
 
 
+def plan_monthly_spend_limit(plans: Any, provider: str, account: str | None = None) -> float | None:
+    """Configured monthly spend limit / budget cap for a provider, optionally per account.
+
+    ``[plans.pi] monthly_spend_limit = 100`` sets an organizational budget cap
+    against a pay-as-you-go cost meter or API spend. Per-account sub-tables
+    are supported (e.g. ``[plans.pi."account"] monthly_spend_limit = 100``).
+    Accepts ``monthly_spend_limit`` or alias ``spend_limit``.
+    """
+    if not isinstance(plans, dict):
+        return None
+    meta = plans.get(provider_config_key(provider)) or plans.get(provider)
+    if not isinstance(meta, dict):
+        return None
+    want = (account or "").strip().casefold()
+    if want:
+        for key, sub in meta.items():
+            if key == "value_multiplier" or not isinstance(sub, dict):
+                continue
+            if str(key).strip().casefold() == want:
+                limit = _positive_number(sub.get("monthly_spend_limit") or sub.get("spend_limit"))
+                if limit is not None:
+                    return limit
+    return _positive_number(meta.get("monthly_spend_limit") or meta.get("spend_limit"))
+
+
 def timeout_for(config: dict[str, Any] | None, name: str) -> float:
     """Resolve subprocess timeout (seconds) for a named tool.
 
@@ -950,22 +983,28 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 issues.append(
                     f"warning: plans.{name}.monthly_price must be a non-negative number (got {meta['monthly_price']!r})"
                 )
+            for limit_key in ("monthly_spend_limit", "spend_limit"):
+                if limit_key in meta and not _is_price(meta[limit_key]):
+                    issues.append(
+                        f"warning: plans.{name}.{limit_key} must be a non-negative number (got {meta[limit_key]!r})"
+                    )
             for sub_key, sub in meta.items():
                 # Dict-valued keys other than value_multiplier are per-account
                 # sub-tables: [plans.<provider>."<account>"] monthly_price = N.
                 if sub_key == "value_multiplier" or not isinstance(sub, dict):
                     continue
                 for field in sub:
-                    if field != "monthly_price":
+                    if field not in ("monthly_price", "monthly_spend_limit", "spend_limit"):
                         issues.append(
                             f"warning: unknown plans.{name}.{sub_key!r} key {field!r} "
-                            "(per-account plan sub-tables take only monthly_price)"
+                            "(per-account plan sub-tables take monthly_price or monthly_spend_limit)"
                         )
-                if "monthly_price" in sub and not _is_price(sub["monthly_price"]):
-                    issues.append(
-                        f"warning: plans.{name}.{sub_key!r}.monthly_price must be a non-negative number "
-                        f"(got {sub['monthly_price']!r})"
-                    )
+                for field in ("monthly_price", "monthly_spend_limit", "spend_limit"):
+                    if field in sub and not _is_price(sub[field]):
+                        issues.append(
+                            f"warning: plans.{name}.{sub_key!r}.{field} must be a non-negative number "
+                            f"(got {sub[field]!r})"
+                        )
 
     sampling = cfg.get("sampling")
     if sampling is not None and not isinstance(sampling, dict):

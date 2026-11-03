@@ -45,6 +45,7 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
+from aiuse.config import plan_monthly_spend_limit
 from aiuse.models import (
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
@@ -460,6 +461,7 @@ def _apply_credit_override_for_provider(
     *,
     provider: str,
     now: datetime | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> None:
     """Rewrite one independent API-credit provider's snapshot accounts."""
     now = now or utcnow()
@@ -629,12 +631,49 @@ def _apply_credit_override_for_provider(
                 _expire_reading(account, f"is for a grant that expired {expiry.date().isoformat()}")
         account["observed_at"] = reading_at.isoformat() if reading_at else None
 
+        plans = config.get("plans") if isinstance(config, Mapping) else None
+        spend_limit = plan_monthly_spend_limit(plans, provider, account.get("account")) if plans else None
+        if spend_limit is not None and spend_limit > 0:
+            used = account.get("spent_usd")
+            if used is None and isinstance(account.get("usage_credits"), dict):
+                used = account["usage_credits"].get("used")
+            if used is not None and math.isfinite(used):
+                used = float(used)
+                used_pct = round(used / spend_limit * 100.0, 4)
+                rem_pct = round(max(0.0, 100.0 - used_pct), 4)
+                rem_usd = round(max(0.0, spend_limit - used), 4)
+                account["usage_credits"] = {
+                    "used": used,
+                    "limit": spend_limit,
+                    "remaining": rem_usd,
+                    "currency": "USD",
+                    "used_percent": used_pct,
+                }
+                account["spent_usd"] = used
+                windows = account.setdefault("windows", [])
+                monthly_wid = f"{provider}-spend-limit"
+                has_monthly = any(isinstance(w, dict) and w.get("window_id") == monthly_wid for w in windows)
+                if not has_monthly:
+                    windows.append(
+                        {
+                            "label": "monthly-spend",
+                            "window_id": monthly_wid,
+                            "used_percent": used_pct,
+                            "remaining_percent": rem_pct,
+                            "window_minutes": 43200,
+                            "reset_description": f"Spend cap ${used:.2f} / ${spend_limit:.2f}",
+                            "refill_capacity": spend_limit,
+                            "refill_capacity_unit": "usd",
+                        }
+                    )
+
 
 def apply_credit_overrides(
     snap: dict[str, Any],
     overrides: Mapping[str, Mapping[str, Any]] | None,
     *,
     now: datetime | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> None:
     """Apply independent API-credit readings without mixing provider balances."""
     # Cached snapshots may retain CodexBar's OpenAI spelling. Normalize before
@@ -643,7 +682,7 @@ def apply_credit_overrides(
         if isinstance(account, dict) and canonical_provider(str(account.get("provider") or "")) == "pi":
             account["provider"] = "pi"
     for provider in CREDIT_PROVIDERS:
-        _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now)
+        _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now, config=config)
 
 
 def apply_credit_overrides_to_snapshot(
@@ -678,7 +717,7 @@ def apply_credit_overrides_to_snapshot(
         "hidden_pools": dict(snapshot.hidden_pools),
         "disabled_services": dict(snapshot.disabled_services),
     }
-    apply_credit_overrides(snap_dict, effective_overrides, now=now)
+    apply_credit_overrides(snap_dict, effective_overrides, now=now, config=config)
     after = snap_dict.get("accounts") or []
     from aiuse.serve import _snapshot_from_accounts_dict
 

@@ -603,6 +603,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
         client_limits=load_client_limits(config),
         check_frozen=True,
         credit_overrides=credit_overrides,
+        config=config,
     )
     if apply_credit_overrides_to_snapshot(snapshot, config, overrides=credit_overrides):
         alerts = analyze_use_or_lose(snapshot, config)

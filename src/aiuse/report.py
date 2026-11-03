@@ -579,7 +579,16 @@ def _queue_score(band: int, priority: _Priority) -> int | None:
 
 def _account_is_non_expiring_prepaid(account: AccountUsage) -> bool:
     """Purchased API credits that roll until spent (Deepseek, OpenRouter, …)."""
-    return account.billing_kind in (BillingKind.PREPAID_BALANCE, BillingKind.PAYG_API)
+    if account.billing_kind == BillingKind.PREPAID_BALANCE:
+        return True
+    if account.billing_kind == BillingKind.PAYG_API:
+        # A PAYG meter without a budget window has no recurring clock and rolls upward.
+        # A PAYG meter with a spend-limit window has a declared recurring budget clock.
+        return not any(
+            (w.window_id or "").endswith("-spend-limit") or (w.label or "").startswith("monthly-spend")
+            for w in account.windows
+        )
+    return False
 
 
 def _positive_usd(amount: float | None) -> float | None:
@@ -651,8 +660,10 @@ def _overage_remaining_usd(account: AccountUsage) -> float | None:
 
 
 def _overage_kind(account: AccountUsage) -> str:
-    """Cursor's on-demand dollars are a spend cap, not a wallet bought ahead."""
-    return "cap left" if canonical_provider(account.provider) == "cursor" else "prepaid"
+    """Cursor on-demand and PAYG budget limits are spend caps, not wallets bought ahead."""
+    if canonical_provider(account.provider) == "cursor" or account.billing_kind == BillingKind.PAYG_API:
+        return "cap left"
+    return "prepaid"
 
 
 def dollar_meter(

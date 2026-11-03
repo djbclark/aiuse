@@ -230,6 +230,11 @@
 # [plans.claude."me@example.com"]
 # monthly_price = 200
 
+# Pi (OpenAI API): declare an organizational monthly budget cap. Anchors the
+# cost meter in the MONTH column so it shows percentage and pace instead of `n/a`.
+# [plans.pi]
+# monthly_spend_limit = 100
+
 # Optional macOS codesign identity for `aiuse trust sign-caut`.
 # [macos]
 # codesign_identity = "aiuse-local-codesign"

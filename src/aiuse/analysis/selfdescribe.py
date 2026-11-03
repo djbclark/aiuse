@@ -668,6 +668,7 @@ def enrich_snapshot(
     check_frozen: bool = False,
     acp_log_dir: str | None = None,
     credit_overrides: Mapping[str, Mapping[str, Any]] | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Enrich accounts in place and attach summary_lines / semantics.
 
@@ -684,11 +685,11 @@ def enrich_snapshot(
     """
     now = now or utcnow()
     if credit_overrides is not None or any(
-        isinstance(a, dict) and a.get("provider") == "omp" for a in snap.get("accounts") or []
+        isinstance(a, dict) and a.get("provider") in ("omp", "pi") for a in snap.get("accounts") or []
     ):
         from aiuse.credits_override import apply_credit_overrides
 
-        apply_credit_overrides(snap, credit_overrides, now=now)
+        apply_credit_overrides(snap, credit_overrides, now=now, config=config)
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
     collected = snap.get("collected_at")
     for account in accounts:

@@ -177,3 +177,91 @@ def test_cache_supplement_queries_vendor_alias_and_replaces_single_cached_accoun
     assert calls[0][calls[0].index("--provider") + 1] == "openai"
     assert "--all-accounts" in calls[0]
     assert [(a.provider, a.account) for a in accounts] == [("codex", "subscription"), ("pi", "a"), ("pi", "b")]
+
+
+def test_plan_monthly_spend_limit_and_validation():
+    from aiuse.config import plan_monthly_spend_limit, validate_config
+
+    plans = {
+        "pi": {
+            "monthly_spend_limit": 100,
+            "team@x.com": {"monthly_spend_limit": 250},
+        }
+    }
+    assert plan_monthly_spend_limit(plans, "pi") == 100.0
+    assert plan_monthly_spend_limit(plans, "pi", "team@x.com") == 250.0
+    assert plan_monthly_spend_limit(plans, "pi", "TEAM@X.COM") == 250.0
+    assert plan_monthly_spend_limit(plans, "pi", "other@x.com") == 100.0
+    assert plan_monthly_spend_limit({}, "pi") is None
+
+    # Validation
+    assert validate_config({"plans": plans}) == []
+    issues = validate_config({"plans": {"pi": {"monthly_spend_limit": -10}}})
+    assert any("monthly_spend_limit must be a non-negative number" in i for i in issues)
+    issues_sub = validate_config({"plans": {"pi": {"sub": {"monthly_spend_limit": "bad"}}}})
+    assert any("monthly_spend_limit must be a non-negative number" in i for i in issues_sub)
+
+
+def test_pi_spend_limit_from_config_anchors_payg_meter():
+    from aiuse.analysis.use_or_lose import analyze_use_or_lose
+    from aiuse.serve import _snapshot_from_accounts_dict
+
+    account = cb._from_row(row(used=125.55, limit=0)).to_dict()
+    snap = {"collected_at": NOW.isoformat(), "accounts": [account]}
+    cfg = {"plans": {"pi": {"monthly_spend_limit": 100.0}}}
+
+    co.apply_credit_overrides(snap, {}, now=NOW, config=cfg)
+    acc = snap["accounts"][0]
+    assert acc["usage_credits"]["limit"] == 100.0
+    assert acc["usage_credits"]["used"] == 125.55
+    assert acc["usage_credits"]["remaining"] == 0.0
+    assert acc["usage_credits"]["used_percent"] == 125.55
+
+    windows = acc["windows"]
+    assert len(windows) == 1
+    assert windows[0]["window_id"] == "pi-spend-limit"
+    assert windows[0]["label"] == "monthly-spend"
+    assert windows[0]["window_minutes"] == 43200
+    assert windows[0]["used_percent"] == 125.55
+    assert windows[0]["remaining_percent"] == 0.0
+
+    # Test matrix rendering
+    snapshot = _snapshot_from_accounts_dict(snap)
+    alerts = analyze_use_or_lose(snapshot, cfg)
+    matrix = render_clock_matrix(alerts, snapshot=snapshot, config=cfg)
+    assert "codex-api" in matrix
+    assert "126u/0l" in matrix
+    assert "cap left" in matrix
+    assert "n/a" not in matrix
+
+
+def test_pi_spend_limit_and_grant_coexist():
+    from aiuse.analysis.use_or_lose import analyze_use_or_lose
+    from aiuse.serve import _snapshot_from_accounts_dict
+
+    account = cb._from_row(row(used=125.55, limit=0)).to_dict()
+    override = {
+        "total_usd": 154.0,
+        "remaining_usd": 28.45,
+        "observed_at": NOW.isoformat(),
+        "expires_at": (NOW + timedelta(days=390)).isoformat(),
+        "source": "operator-override",
+    }
+    snap = {"collected_at": NOW.isoformat(), "accounts": [account]}
+    cfg = {"plans": {"pi": {"monthly_spend_limit": 100.0}}}
+
+    co.apply_credit_overrides(snap, {"pi": override}, now=NOW, config=cfg)
+    acc = snap["accounts"][0]
+    assert acc["balance_usd"] == 28.45
+    assert acc["spent_usd"] == 125.55
+
+    window_ids = [w["window_id"] for w in acc["windows"]]
+    assert "openai-api-credits" in window_ids
+    assert "pi-spend-limit" in window_ids
+
+    snapshot = _snapshot_from_accounts_dict(snap)
+    alerts = analyze_use_or_lose(snapshot, cfg)
+    matrix = render_clock_matrix(alerts, snapshot=snapshot, config=cfg)
+    assert "codex-api" in matrix
+    assert "126u/0l" in matrix
+    assert "↓$28.45/$154.00 plan" in matrix
