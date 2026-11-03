@@ -1353,6 +1353,43 @@ def test_clock_matrix_shows_reset_clock_beside_wallet_note():
     assert text.splitlines()[0].split()[-1] == "OTHER"
 
 
+def test_clock_matrix_trims_other_before_dropping_pace():
+    snap = Snapshot(
+        collected_at=utcnow(),
+        accounts=[
+            AccountUsage(
+                source="codexbar",
+                provider="grok",
+                account="djbclark@gmail.com",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[
+                    QuotaWindow(
+                        label="Grok usage limit",
+                        used_percent=100.0,
+                        remaining_percent=0.0,
+                        resets_at=utcnow() + timedelta(days=3, hours=14),
+                        window_minutes=10080,
+                    )
+                ],
+                usage_credits=UsageCredits(remaining=14.46, currency="USD"),
+            )
+        ],
+    )
+    full = render_clock_matrix([], snapshot=snap, color=False, width=200).splitlines()
+    full_width = len(next(line for line in full if "grok" in line))
+
+    trimmed = render_clock_matrix([], snapshot=snap, color=False, width=full_width - 4).splitlines()
+    grok_line = next(line for line in trimmed if "grok" in line)
+    assert "PACE" in trimmed[0]
+    assert grok_line.endswith("…✂")
+    assert len(grok_line) == full_width - 4
+    assert trimmed[0].split()[-1] == "OTHER"
+
+    # Trimming stops at the OTHER header's width; narrower than that PACE goes.
+    narrow = render_clock_matrix([], snapshot=snap, color=False, width=full_width - 12).splitlines()
+    assert "PACE" not in narrow[0]
+
+
 def test_clock_matrix_depleted_clock_reads_empty_despite_sibling_conserve_alert():
     """A depleted 5h clock blocks its pool; a sibling weekly conserve alert must
     not downgrade the row tag from ``empty`` to ``slow``.

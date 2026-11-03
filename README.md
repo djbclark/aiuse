@@ -108,7 +108,8 @@ is never carried: its reported reset only slides with every query.
   when no window has a pace reading or when **any** window in the row is exhausted (since the
   row is locked out until that reset).
 - **Column alignment**: all free text notes (`<-`, prepaid wallet, prepaid notes)
-  appear after all fixed columns so columns align on every row. Narrow terminals shed `PACE` first,
+  appear after all fixed columns so columns align on every row. Narrow terminals first cut characters
+  off the right of the `OTHER` column (marked `…✂`, down to the header's width), then shed `PACE`,
   then individual cell pace suffixes.
 
 The colored `##` score is the action queue from `0` (empty) to `99` (use as

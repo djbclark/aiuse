@@ -118,6 +118,10 @@ Collection time, capacity blurb, and `Detail: ai --full` go to **stderr**
 (110). A narrow terminal **sheds optional detail** rather than slicing a number
 in half, in this order:
 
+0. Cut characters off the right of the `OTHER` column, only as many as needed and no
+   further than the header's width. Each cut cell ends in a yellow `…` and a magenta `✂`
+   (`↓$79.73/$200.00 p…✂`). This comes before `PACE` is shed.
+
 1. `$ UNUSED`
 2. Duration compact to its largest unit (`2h27m` → `2h`)
 3. `SCOPE` designed short tokens (`gemini` → `gem`, `claude/gpt` → `c/gpt`,

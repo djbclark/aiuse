@@ -240,6 +240,12 @@ class _ClockCell:
 
 
 _UNSTARTED_MARK = "↻"  # a rolling window's clock starts on first use
+# Trailing marker on an OTHER cell cut to fit a narrow terminal: a yellow ellipsis, then magenta scissors.
+_OTHER_CUT_ELLIPSIS = "…"
+_OTHER_CUT_SCISSORS = "✂"
+_OTHER_CUT_WIDTH = len(_OTHER_CUT_ELLIPSIS) + len(_OTHER_CUT_SCISSORS)
+# OTHER is trimmed no narrower than its own header; past that the PACE columns give way.
+_OTHER_MIN_WIDTH = len("OTHER")
 _OPERATOR_GATE_TEXT = f"({OPERATOR_APPROVAL_NOTICE})"
 # Shorter wording for terminals too narrow for the full text; keeps the instruction readable.
 _OPERATOR_GATE_SHORT = "(AI: ask operator)"
@@ -281,6 +287,9 @@ class _MatrixLayout:
     # Widen 5H + WEEK so an operator-gate row's text fits whole; the last
     # thing a narrow terminal gives up (the text is then clamped).
     reserve_gate: bool = True
+    # Narrowed OTHER width; None leaves the column at its natural width. This is the
+    # first squish, so PACE survives as long as clipping OTHER alone makes the table fit.
+    other_cap: int | None = None
 
 
 def terminal_width(default: int = ACTION_PLAN_WIDTH) -> int:
@@ -1246,7 +1255,7 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
     w_pct, w_spans = _clock_column_widths(rows, layout)
     for w_span in w_spans:
         total += 1 + (w_pct + ((1 + w_span) if w_span else 0))
-    w_other = _other_column_width(rows)
+    w_other = _other_column_width(rows, layout.other_cap)
     if w_other:
         total += 1 + w_other
     # Reserve the as-of stamp, or the start of a free-text note (never the
@@ -1267,10 +1276,38 @@ def _pace_column_width(rows: list[_MatrixRow]) -> int:
     )
 
 
-def _other_column_width(rows: list[_MatrixRow]) -> int:
-    """Width of the OTHER column (wallet, grant, Fable-cap); 0 when no row has a tail note."""
+def _other_column_width(rows: list[_MatrixRow], cap: int | None = None) -> int:
+    """Width of the OTHER column (wallet, grant, Fable-cap); 0 when no row has a tail note.
+
+    ``cap`` narrows it: longer notes are cut and marked with ``…✂``.
+    """
     notes = [len(row.tail_note) for row in rows if row.tail_note and row.note is None]
-    return max([len("OTHER")] + notes) if notes else 0
+    if not notes:
+        return 0
+    width = max([len("OTHER")] + notes)
+    return width if cap is None else min(width, cap)
+
+
+def _fit_matrix_layout(rows: list[_MatrixRow], layout: _MatrixLayout, avail: int) -> None:
+    """Squish ``layout`` until the matrix fits ``avail`` columns (or nothing is left to drop).
+
+    The first stage cuts characters off the right of the OTHER column, only as many
+    as needed; PACE, deadlines, SCOPE and ACCT are given up only after OTHER is down
+    to its header width.
+    """
+    natural_other = _other_column_width(rows)
+    while (overflow := _matrix_needed_width(rows, layout) - avail) > 0:
+        if layout.other_cap is None and natural_other > _OTHER_MIN_WIDTH:
+            layout.other_cap = max(_OTHER_MIN_WIDTH, natural_other - overflow)
+            continue
+        if not _advance_matrix_layout(layout, rows):
+            break
+    if layout.other_cap is not None:
+        # Later stages may have freed room: hand OTHER back whatever still fits.
+        layout.other_cap = None
+        overflow = _matrix_needed_width(rows, layout) - avail
+        if overflow > 0:
+            layout.other_cap = max(_OTHER_MIN_WIDTH, natural_other - overflow)
 
 
 def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple[int, list[int]]:
@@ -2220,9 +2257,7 @@ def render_clock_matrix_parts(
         show_scope=any(row.scope != "—" for row in rows),
         show_account=_matrix_shows_account(rows),
     )
-    while _matrix_needed_width(rows, layout) > avail:
-        if not _advance_matrix_layout(layout, rows):
-            break
+    _fit_matrix_layout(rows, layout, avail)
 
     scope_needed = _services_needing_scope(rows)
     account_needed = _services_needing_account(rows)
@@ -2233,7 +2268,7 @@ def render_clock_matrix_parts(
     w_pct, w_spans = _clock_column_widths(rows, layout)
     w_clocks = [w_pct + ((1 + w_span) if w_span else 0) for w_span in w_spans]
     w_value = _pace_column_width(rows)
-    w_other = _other_column_width(rows)
+    w_other = _other_column_width(rows, layout.other_cap)
 
     def _line(tag: str, score: str, service: str, account: str, scope: str, pace: str, tail: list[str]) -> str:
         cells = [tag, score, service]
@@ -2352,8 +2387,13 @@ def render_clock_matrix_parts(
         value_text = "—" if row.pace_percent is None else format_pace(row.pace_percent, row.pace_early)
         if w_other:
             other = row.tail_note or ""
-            # Pad outside the dim codes so a trailing blank still rstrips.
-            tail.append((s.dim(other) if other else "") + " " * (w_other - len(other)))
+            if len(other) > w_other:
+                kept = other[: w_other - _OTHER_CUT_WIDTH]
+                cut = s.dim(kept) + s.yellow(_OTHER_CUT_ELLIPSIS) + s.magenta(_OTHER_CUT_SCISSORS)
+                tail.append(cut + " " * (w_other - len(kept) - _OTHER_CUT_WIDTH))
+            else:
+                # Pad outside the dim codes so a trailing blank still rstrips.
+                tail.append((s.dim(other) if other else "") + " " * (w_other - len(other)))
         as_of = _row_as_of(row)
         if as_of:
             tail.append(s.yellow(as_of))
