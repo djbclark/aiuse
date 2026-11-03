@@ -63,8 +63,11 @@ refreshes do not overwrite one another. The same lock protects operator updates
 and rejects API results whose console anchor changed while the request ran.
 Same-anchor refreshes cannot increase the last accepted balance, even when costs
 regress or a bucket's results become empty. A genuinely newer operator console
-anchor can reconcile the balance upward. Old/equal writers cannot overwrite a
-newer reading, and oversized updates are rejected before replacing either pool.
+anchor can reconcile the balance upward. For both Pi and OMP, operator updates
+must have a strictly later observation timestamp: an equal timestamp is not a
+new observation, regardless of write order or whether the balance rises or falls.
+Old/equal writers return the already accepted reading without overwriting it,
+and oversized updates are rejected before replacing either pool.
 Legacy Pi API readings without anchor provenance require a refresh when an
 operator anchor is present. OMP retains its purchased-credit calibration rules.
 

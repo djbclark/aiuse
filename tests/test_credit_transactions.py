@@ -30,8 +30,10 @@ def entry(remaining=70, observed=NOW, **changes):
 
 
 @pytest.mark.parametrize("provider", ["omp", "pi"])
-def test_stale_writer_finishing_last_keeps_newer_entry(credit_files, provider):
+@pytest.mark.parametrize("delta", [0, 1])
+def test_old_or_equal_writer_finishing_last_keeps_accepted_entry(credit_files, provider, delta):
     older_ready, newer_saved = Event(), Event()
+    accepted_at = NOW + timedelta(minutes=delta)
 
     def older():
         value = entry(80)
@@ -42,9 +44,7 @@ def test_stale_writer_finishing_last_keeps_newer_entry(credit_files, provider):
     def newer():
         assert older_ready.wait(5)
         try:
-            return co.save_credit_entry(
-                co.readings_file(), provider, entry(60, NOW + timedelta(minutes=1)), "admin-api"
-            )
+            return co.save_credit_entry(co.readings_file(), provider, entry(60, accepted_at), "admin-api")
         finally:
             newer_saved.set()
 
@@ -53,7 +53,7 @@ def test_stale_writer_finishing_last_keeps_newer_entry(credit_files, provider):
         assert b.result(timeout=10)["remaining_usd"] == 60
         assert a.result(timeout=10)["remaining_usd"] == 60
     stored = co.load_file_entry(co.readings_file(), "admin-api", provider)
-    assert stored["observed_at"] == (NOW + timedelta(minutes=1)).isoformat()
+    assert stored["observed_at"] == accepted_at.isoformat()
 
 
 @pytest.mark.parametrize("provider", ["omp", "pi"])

@@ -245,10 +245,35 @@ def test_load_overrides_tolerates_garbage():
     assert load_overrides() == {}
 
 
-def test_newer_override_replaces_older_one():
-    save_override("omp", remaining=90.0, total=200.0, expires=EXPIRY, note=None, now=NOW)
-    save_override("omp", remaining=80.0, total=200.0, expires=EXPIRY, note="later", now=NOW)
-    assert load_overrides(now=NOW)["omp"]["remaining_usd"] == 80.0
+@pytest.mark.parametrize("provider", ["omp", "pi"])
+@pytest.mark.parametrize("remaining", [80.0, 100.0])
+def test_newer_override_replaces_older_one(provider, remaining):
+    save_override(provider, remaining=90.0, total=200.0, expires=EXPIRY, note=None, now=NOW)
+    later = NOW + timedelta(seconds=1)
+    saved = save_override(provider, remaining=remaining, total=200.0, expires=EXPIRY, note="later", now=later)
+    assert saved["remaining_usd"] == remaining
+    assert saved["observed_at"] == later.isoformat()
+    assert saved["note"] == "later"
+    assert load_overrides(now=later)[provider] == saved
+
+
+@pytest.mark.parametrize("provider", ["omp", "pi"])
+@pytest.mark.parametrize("delta", [-1, 0])
+@pytest.mark.parametrize("remaining", [80.0, 100.0])
+def test_older_or_equal_override_keeps_accepted_reading(provider, delta, remaining):
+    original = save_override(provider, remaining=90.0, total=200.0, expires=EXPIRY, note="accepted", now=NOW)
+    before = overrides_path().read_bytes()
+    saved = save_override(
+        provider,
+        remaining=remaining,
+        total=200.0,
+        expires=EXPIRY,
+        note="stale",
+        now=NOW + timedelta(seconds=delta),
+    )
+    assert saved == original
+    assert load_overrides(now=NOW)[provider] == original
+    assert overrides_path().read_bytes() == before
 
 
 def test_cli_main_dispatches_set_credits(capsys):
