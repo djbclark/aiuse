@@ -191,7 +191,8 @@ def test_operator_replacement_during_network_request_fails_closed(credit_files, 
 
 @pytest.mark.parametrize("account_names", [("A", "B"), ("same-org", "same-org"), (None, None)])
 @pytest.mark.parametrize("effective", [False, True])
-def test_unbound_pi_funding_is_not_copied_to_multiple_rows(credit_files, account_names, effective):
+@pytest.mark.parametrize("providers", [("pi", "pi"), ("openai", "openai"), ("pi", "openai")])
+def test_unbound_pi_funding_is_not_copied_to_multiple_rows(credit_files, account_names, effective, providers):
     pi = grant()
     snap = {"accounts": []}
     if effective:
@@ -199,14 +200,31 @@ def test_unbound_pi_funding_is_not_copied_to_multiple_rows(credit_files, account
         snap["accounts"].append(copy.deepcopy(snap["accounts"][0]))
     else:
         snap["accounts"] = [{"provider": "pi", "source": "codexbar", "balance_usd": None} for _ in account_names]
-    for account, name in zip(snap["accounts"], account_names, strict=True):
+    for account, name, provider in zip(snap["accounts"], account_names, providers, strict=True):
         account["account_name"] = name
+        account["provider"] = provider
     co.apply_credit_overrides(snap, {"pi": pi}, now=NOW)
     assert len(snap["accounts"]) == 2
     for account in snap["accounts"]:
         assert account["balance_usd"] is None
         assert all(w["remaining_percent"] is None for w in account.get("windows", []))
         assert any("ambiguous" in note for note in account["notes"])
+
+
+@pytest.mark.parametrize("providers", [("openai",), ("openai", "openai"), ("pi", "openai")])
+def test_model_snapshot_aliases_share_one_funding_context(credit_files, providers):
+    pi = grant()
+    codex = AccountUsage(source="codexbar", provider="codex", balance_usd=12)
+    snapshot = Snapshot(
+        collected_at=NOW,
+        accounts=[codex, *[AccountUsage(source="codexbar", provider=p) for p in providers]],
+    )
+    assert co.apply_credit_overrides_to_snapshot(snapshot, overrides={"pi": pi}, now=NOW)
+    assert snapshot.accounts[0] is codex
+    assert len(snapshot.accounts) == 1 + len(providers)
+    assert all(a.provider == "pi" for a in snapshot.accounts[1:])
+    assert [a.balance_usd for a in snapshot.accounts[1:]] == ([70] if len(providers) == 1 else [None, None])
+    assert not co.apply_credit_overrides_to_snapshot(snapshot, overrides={"pi": pi}, now=NOW)
 
 
 @pytest.mark.parametrize("with_override", [False, True])

@@ -45,7 +45,15 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
-from aiuse.models import WINDOW_NOMINAL_MINUTES, AccountUsage, Snapshot, parse_dt, provider_cli_binary, utcnow
+from aiuse.models import (
+    WINDOW_NOMINAL_MINUTES,
+    AccountUsage,
+    Snapshot,
+    canonical_provider,
+    parse_dt,
+    provider_cli_binary,
+    utcnow,
+)
 
 OVERRIDE_PROVIDER = "omp"  # Backward-compatible default for existing callers.
 CREDIT_PROVIDERS = ("omp", "pi")
@@ -629,6 +637,11 @@ def apply_credit_overrides(
     now: datetime | None = None,
 ) -> None:
     """Apply independent API-credit readings without mixing provider balances."""
+    # Cached snapshots may retain CodexBar's OpenAI spelling. Normalize before
+    # counting accounts, or an alias can evade the unbound-funding guard.
+    for account in snap.get("accounts") or []:
+        if isinstance(account, dict) and canonical_provider(str(account.get("provider") or "")) == "pi":
+            account["provider"] = "pi"
     for provider in CREDIT_PROVIDERS:
         _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now)
 
@@ -655,10 +668,10 @@ def apply_credit_overrides_to_snapshot(
         return False
     loaded = load_overrides(config, now=now) if overrides is None else overrides
     effective_overrides = {provider: entry for provider, entry in (loaded or {}).items() if provider in providers}
-    has_accounts = any(a.provider in providers for a in snapshot.accounts)
+    has_accounts = any(canonical_provider(a.provider) in providers for a in snapshot.accounts)
     if not has_accounts and not effective_overrides:
         return False
-    before = [a.to_dict() for a in snapshot.accounts if a.provider in providers]
+    before = [a.to_dict() for a in snapshot.accounts if canonical_provider(a.provider) in providers]
     snap_dict: dict[str, Any] = {
         "collected_at": snapshot.collected_at.isoformat(),
         "accounts": [copy.deepcopy(d) for d in before],
@@ -680,7 +693,7 @@ def apply_credit_overrides_to_snapshot(
     rebuilt_iter = iter(rebuilt)
     new_accounts: list[AccountUsage] = []
     for account in snapshot.accounts:
-        if account.provider in providers:
+        if canonical_provider(account.provider) in providers:
             replacement = next(rebuilt_iter, None)
             if replacement is not None:
                 new_accounts.append(replacement)

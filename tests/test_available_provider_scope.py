@@ -117,3 +117,32 @@ def test_available_provider_scope_and_partial_save(
         assert {a["provider"] for a in saved["accounts"]} == {expected}
     else:
         assert samples == []
+
+
+@pytest.mark.parametrize("providers", [("openai", "openai"), ("pi", "openai")])
+def test_available_alias_accounts_cannot_evade_unbound_grant_guard(tmp_path, monkeypatch, capsys, providers):
+    snapshot = _snapshot()
+    cached = snapshot.to_dict()
+    pi = cached["accounts"][0]
+    cached["accounts"] = [{**pi, "provider": p, "account": str(i)} for i, p in enumerate(providers)]
+    cached["accounts"].append(snapshot.accounts[1].to_dict())
+    cache = history.snapshot_dir()
+    cache.mkdir()
+    latest = cache / "latest.json"
+    original = json.dumps(cached)
+    latest.write_text(original)
+    config = tmp_path / "config.toml"
+    config.write_text('[collectors.codexbar]\nproviders = "enabled"\n')
+    override = {
+        "remaining_usd": 70,
+        "total_usd": 100,
+        "observed_at": snapshot.collected_at.isoformat(),
+        "expires_at": None,
+    }
+    monkeypatch.setattr(credits_override, "load_overrides", lambda *a, **k: {"pi": override})
+    monkeypatch.setattr(cli, "check_dependencies", lambda cfg: [])
+    assert cli.main(["--available", "--json", "-q", "--config", str(config), "--providers", "pi"]) == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["available"] == []
+    assert payload["excluded"] == []
+    assert latest.read_text() == original
