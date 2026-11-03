@@ -22,6 +22,15 @@ start using `aiuse set-credits pi --remaining USD --total USD --granted DATE`.
 Add `--expires DATE` only when an actual expiry exists. Dates accept ISO dates
 or timestamps. Do not substitute a pay-as-you-go spending limit for a grant.
 The console reading expires after seven days; API readings expire after 24 hours.
+A newer verified Pi entry without `--expires` means **non-expiring**; it does not
+inherit an earlier promotion's expiry. Equal or older entries cannot replace an
+established reading or its grant clock.
+
+Funding is currently provider-scoped, not bound to an account or organization.
+If a snapshot contains multiple Pi rows, aiuse withholds the unbound balance from
+**all** of them, including duplicate credentials for the same organization. It
+never copies one grant into independently spendable pools. Use a single verified
+funding context; multi-account grant binding is not supported by this format.
 
 ## Optional organization Costs API
 
@@ -50,7 +59,14 @@ adjustments needing reconciliation, repeated buckets/cursors, empty reports,
 and redirects. A failed refresh preserves the previous reading, which keeps
 aging rather than being made fresh by the failure. Keys and response bodies are
 never logged. Credit files are atomically updated under a lock so OMP and Pi
-refreshes do not overwrite one another.
+refreshes do not overwrite one another. The same lock protects operator updates
+and rejects API results whose console anchor changed while the request ran.
+Same-anchor refreshes cannot increase the last accepted balance, even when costs
+regress or a bucket's results become empty. A genuinely newer operator console
+anchor can reconcile the balance upward. Old/equal writers cannot overwrite a
+newer reading, and oversized updates are rejected before replacing either pool.
+Legacy Pi API readings without anchor provenance require a refresh when an
+operator anchor is present. OMP retains its purchased-credit calibration rules.
 
 ## Verification
 

@@ -221,7 +221,17 @@ def refresh(
         "observed_at": now.isoformat(),
         "source": "admin-api",
     }
-    co.save_credit_entry(readings_path(), co.OVERRIDE_PROVIDER, entry, "admin-api")
+    try:
+        saved = co.save_credit_entry(
+            readings_path(),
+            co.OVERRIDE_PROVIDER,
+            entry,
+            "admin-api",
+            allow_calibration=pre_spent > 0.0 and override_remaining is not None and post_spent == 0.0,
+        )
+    except (OSError, ValueError) as exc:
+        return 1, f"aiuse: credits refresh failed, keeping the previous reading ({exc.__class__.__name__})"
+    remaining = float(saved["remaining_usd"])
     suffix = f"; rose above the {capped_by}, capped" if capped_by else ""
     return (
         0,

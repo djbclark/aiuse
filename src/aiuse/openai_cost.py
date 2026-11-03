@@ -112,11 +112,11 @@ def refresh(*, now: datetime | None = None, fetch: Fetch | None = None) -> dict[
     key = os.environ.get(KEY_ENV)
     if not key:
         raise CostReportError(f"missing {KEY_ENV}; use managed credential injection")
-    grant = co.load_grant_params("pi")
     console = co.load_file_entry(co.overrides_path(), co.OVERRIDE_SOURCE, "pi")
-    if grant is None or console is None:
+    granted = co.parse_dt(console.get("granted_at")) if console else None
+    if console is None or granted is None:
         raise CostReportError("no verified Pi grant; record total, granted-at and console balance first")
-    total, granted, expires = grant
+    total, expires = float(console["total_usd"]), co.parse_dt(console.get("expires_at"))
     observed = co.parse_dt(console.get("observed_at"))
     if granted >= now or observed is None or observed > now or (expires is not None and expires <= now):
         raise CostReportError("grant or console timestamps are not usable")
@@ -127,12 +127,15 @@ def refresh(*, now: datetime | None = None, fetch: Fetch | None = None) -> dict[
         "remaining_usd": remaining,
         "granted_at": granted.isoformat(),
         "observed_at": now.isoformat(),
+        "anchor_observed_at": observed.isoformat(),
         "expires_at": expires.isoformat() if expires else None,
         "source": "admin-api",
         "note": "OpenAI organization costs; conservative grant-derived estimate, not a live cash balance; costs may lag",
     }
-    co.save_credit_entry(co.readings_file(), "pi", entry, "admin-api")
-    return entry
+    try:
+        return co.save_credit_entry(co.readings_file(), "pi", entry, "admin-api", anchor=console)
+    except ValueError as exc:
+        raise CostReportError(str(exc)) from None
 
 
 def run_refresh_credits() -> int:

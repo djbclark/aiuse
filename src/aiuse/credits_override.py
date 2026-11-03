@@ -104,6 +104,10 @@ def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, 
     granted = _timestamp(granted_raw)
     if granted_raw is not None and granted is None:
         return None, "granted_at must be an ISO timestamp string or null"
+    anchor_raw = raw.get("anchor_observed_at")
+    anchor = _timestamp(anchor_raw)
+    if anchor_raw is not None and (anchor is None or anchor > observed):
+        return None, "anchor_observed_at must be a timestamp no later than observed_at"
     note = raw.get("note")
     if now is not None:
         if observed > now + _CLOCK_SKEW:
@@ -123,6 +127,7 @@ def clean_override(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, 
         "observed_at": observed.isoformat(),
         "granted_at": granted.isoformat() if granted else None,
         "source": "admin-api" if raw.get("source") == "admin-api" else OVERRIDE_SOURCE,
+        **({"anchor_observed_at": anchor.isoformat()} if anchor else {}),
     }, None
 
 
@@ -161,18 +166,34 @@ def load_overrides(
     has_admin: set[str] = set()
     # Validate every candidate with the time rules first, then take the freshest valid one, so an
     # invalid (future-dated, expired, too old) reading can never hide a valid override.
-    for path, source in ((overrides_path(), OVERRIDE_SOURCE), (readings_file(), "admin-api")):
-        for provider, entry in _load_file(path, source).items():
+    # Read API state first, then the anchor once: never validate against one
+    # operator version while selecting another version of that same file.
+    api_entries = _load_file(readings_file(), "admin-api")
+    operator_entries = _load_file(overrides_path(), OVERRIDE_SOURCE)
+    for entries, source in ((operator_entries, OVERRIDE_SOURCE), (api_entries, "admin-api")):
+        for provider, entry in entries.items():
             if _config_hides_omp(config, provider):
                 continue
+            if provider == "pi" and source == "admin-api":
+                anchor = operator_entries.get(provider)
+                # A later API observation must not revive a superseded operator anchor.
+                if anchor is not None and not _matches_anchor(entry, anchor):
+                    continue
             valid, _why = _safe_clean(entry, now=now)
             if valid is None:
                 continue
             if source == "admin-api":
                 has_admin.add(provider)
             current = merged.get(provider)
-            if current is None or (parse_dt(valid["observed_at"]) or _EPOCH) > (
-                parse_dt(current["observed_at"]) or _EPOCH
+            if (
+                current is None
+                or (parse_dt(valid["observed_at"]) or _EPOCH) > (parse_dt(current["observed_at"]) or _EPOCH)
+                or (
+                    provider == "pi"
+                    and source == "admin-api"
+                    and valid["observed_at"] == current["observed_at"]
+                    and valid["remaining_usd"] < current["remaining_usd"]
+                )
             ):
                 merged[provider] = valid
     for provider in has_admin:
@@ -238,29 +259,79 @@ def _safe_clean(raw: Any, *, now: datetime | None = None) -> tuple[dict[str, Any
         return None, f"unreadable ({exc.__class__.__name__})"
 
 
-def save_credit_entry(path: Path, provider: str, entry: Mapping[str, Any], source: str) -> None:
-    """Atomically update one provider without losing a concurrent sibling refresh."""
+def _same_grant(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    return all(left.get(key) == right.get(key) for key in ("total_usd", "granted_at", "expires_at"))
+
+
+def _matches_anchor(reading: Mapping[str, Any], anchor: Mapping[str, Any]) -> bool:
+    return _same_grant(reading, anchor) and reading.get("anchor_observed_at") == anchor.get("observed_at")
+
+
+def save_credit_entry(
+    path: Path,
+    provider: str,
+    entry: Mapping[str, Any],
+    source: str,
+    *,
+    anchor: Mapping[str, Any] | None = None,
+    allow_calibration: bool = False,
+    inherit_granted: bool = False,
+) -> dict[str, Any]:
+    """Select and persist an effective reading inside one shared credit-state lock.
+
+    Pi API readings carry the operator anchor's observation time. Only a newer
+    operator anchor may increase credit; a newer cost observation may not. OMP
+    retains its explicit purchased-credit calibration exception.
+    """
     if provider not in CREDIT_PROVIDERS or source not in (OVERRIDE_SOURCE, "admin-api"):
         raise ValueError("unsupported credit provider or source")
     valid, why = _safe_clean({**entry, "source": source})
     if valid is None:
         raise ValueError(f"invalid credit reading: {why}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_name(path.name + ".lock").open("a") as lock:
+    with path.with_name("credit-state.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        if anchor is not None:
+            current_anchor = load_file_entry(overrides_path(), OVERRIDE_SOURCE, provider)
+            if current_anchor != anchor or not _matches_anchor(valid, anchor):
+                raise ValueError("operator anchor changed during refresh; retry")
+        if path.exists() and path.stat().st_size > MAX_FILE_BYTES:
+            raise ValueError("existing credit state exceeds 64 KiB; refusing to overwrite")
         data = _load_file(path, source)
+        current = data.get(provider)
+        if current is not None:
+            if inherit_granted and source == OVERRIDE_SOURCE:
+                valid["granted_at"] = current.get("granted_at")
+            if (_timestamp(valid["observed_at"]) or _EPOCH) <= (_timestamp(current["observed_at"]) or _EPOCH):
+                return current
+            if source == "admin-api":
+                new_anchor = _timestamp(valid.get("anchor_observed_at"))
+                old_anchor = _timestamp(current.get("anchor_observed_at"))
+                if old_anchor is not None and (new_anchor is None or new_anchor < old_anchor):
+                    return current
+                replacement = new_anchor is not None and new_anchor > (
+                    old_anchor or _timestamp(current["observed_at"]) or _EPOCH
+                )
+                if not replacement and _same_grant(valid, current) and not (provider == "omp" and allow_calibration):
+                    valid["remaining_usd"] = min(valid["remaining_usd"], current["remaining_usd"])
+                elif provider == "pi" and not replacement and not _same_grant(valid, current):
+                    raise ValueError("changed Pi grant requires a newer operator anchor")
         data[provider] = valid
+        serialized = json.dumps(data, indent=2) + "\n"
+        if len(serialized.encode("utf-8")) > MAX_FILE_BYTES:
+            raise ValueError("credit state exceeds 64 KiB; shorten the note")
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False
             ) as handle:
                 temporary = Path(handle.name)
-                handle.write(json.dumps(data, indent=2) + "\n")
+                handle.write(serialized)
             os.replace(temporary, path)
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+        return valid
 
 
 def save_override(
@@ -274,11 +345,7 @@ def save_override(
     granted: datetime | None = None,
 ) -> dict[str, Any]:
     path = overrides_path()
-    data = _load_file(path, OVERRIDE_SOURCE)
     granted_at = granted.isoformat() if granted else None
-    if granted_at is None:
-        # Omitting --granted keeps the grant metadata the credit refresh depends on.
-        granted_at = (data.get(provider) or {}).get("granted_at")
     entry = {
         "granted_at": granted_at,
         "remaining_usd": remaining,
@@ -287,8 +354,8 @@ def save_override(
         "note": note,
         "observed_at": (now or utcnow()).isoformat(),
     }
-    save_credit_entry(path, provider, entry, OVERRIDE_SOURCE)
-    return entry
+    # Inherit an omitted --granted only after acquiring the persistence lock.
+    return save_credit_entry(path, provider, entry, OVERRIDE_SOURCE, inherit_granted=granted is None)
 
 
 def parse_expiry(text: str) -> datetime:
@@ -396,6 +463,18 @@ def _apply_credit_override_for_provider(
         cleaned, ignored = _safe_clean(overrides[provider], now=now)  # type: ignore[index]
         override = cleaned or {}
     accounts = snap.get("accounts")
+    pi_rows = [a for a in accounts or [] if isinstance(a, dict) and a.get("provider") == "pi"]
+    if provider == "pi" and len(pi_rows) > 1:
+        # Provider-scoped funding is not proof of ownership by any individual
+        # account, even two credentials claiming the same organization.
+        for account in pi_rows:
+            if account.get("source") in (OVERRIDE_SOURCE, "admin-api"):
+                _expire_reading(account, "ambiguous across multiple Pi rows (unbound funding)")
+            elif override:
+                note = "credit override ignored: unbound funding is ambiguous across multiple Pi rows"
+                if note not in (account.get("notes") or []):
+                    account["notes"] = [*(account.get("notes") or []), note]
+        return
     if (
         override
         and (provider == "pi" or override.get("source") == "admin-api" or override.get("has_admin_reading"))
@@ -419,7 +498,8 @@ def _apply_credit_override_for_provider(
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != provider:
             continue
-        _normalize_credits_clock(account, override)
+        if account.get("source") not in (OVERRIDE_SOURCE, "admin-api"):
+            _normalize_credits_clock(account, override)
         if ignored:
             ignored_note = f"credit override ignored: {ignored}"
             if ignored_note not in (account.get("notes") or []):
@@ -434,6 +514,19 @@ def _apply_credit_override_for_provider(
             and reading_at is not None
             and (ov_at is None or ov_at <= reading_at)
         ):
+            # Never rewrite an established clock from equal/older metadata.
+            # Legacy OMP can repair a missing clock; Pi additionally requires
+            # the same observation/source/balance before borrowing metadata.
+            if provider == "omp" or (
+                ov_at == reading_at
+                and account.get("source") == override.get("source")
+                and balance == override.get("remaining_usd")
+            ):
+                missing = [
+                    w for w in account.get("windows") or [] if isinstance(w, dict) and not w.get("window_minutes")
+                ]
+                if missing:
+                    _normalize_credits_clock({**account, "windows": missing}, override)
             max_age = OVERRIDE_MAX_AGE if account.get("source") == OVERRIDE_SOURCE else CODEXBAR_MAX_AGE
             expiry = _grant_expiry(account)
             if expiry is not None and now >= expiry:
@@ -484,7 +577,9 @@ def _apply_credit_override_for_provider(
                     "observed_at": reading_at.isoformat() if reading_at else None,
                     "balance_usd": balance,
                 }
-            expires = override.get("expires_at") or account.get("expires_at")
+            expires = override.get("expires_at")
+            if provider == "omp":
+                expires = expires or account.get("expires_at")
             account.update(
                 source=override.get("source") or OVERRIDE_SOURCE,
                 collector_id=override.get("source") or OVERRIDE_SOURCE,
@@ -499,6 +594,7 @@ def _apply_credit_override_for_provider(
             account["credits_label"] = CREDIT_LABELS[provider]
             account["usage_credits"] = None  # Costs are not an additional wallet beside the grant.
             account.pop("reading_expired", None)
+            account.pop("grant_expired", None)
             _normalize_credits_clock(account, override)
             note = f"{'Admin API reading' if override.get('source') == 'admin-api' else 'Operator override (aiuse set-credits)'} at {ov_at.isoformat()}"
             if override.get("note"):
