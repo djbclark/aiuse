@@ -12,6 +12,15 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Added
+
+- **`monthly_spend_limit` in `[plans.<provider>]`**: supports declaring an
+  organizational budget ceiling for pay-as-you-go providers (e.g. `[plans.pi]
+monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
+  with accurate percentage used and queue score instead of displaying `n/a`,
+  while allowing active credit grants to track remaining cash liquidity in the
+  `OTHER` column. Supports per-account sub-tables and alias `spend_limit`.
+
 ## [3.14.0] - 2026-11-03
 
 ### Added
