@@ -12,6 +12,8 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-11-03
+
 ### Added
 
 - **Pi (`pi`, scope `codex-api`)**: independent OpenAI API credit accounting from
@@ -249,7 +251,8 @@ Releases before 3.9.0 are in the
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v3.13.2...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v3.14.0...HEAD
+[3.14.0]: https://github.com/djbclark/aiuse/compare/v3.13.2...v3.14.0
 [3.13.2]: https://github.com/djbclark/aiuse/compare/v3.13.1...v3.13.2
 [3.13.1]: https://github.com/djbclark/aiuse/compare/v3.13.0...v3.13.1
 [3.13.0]: https://github.com/djbclark/aiuse/compare/v3.12.1...v3.13.0
