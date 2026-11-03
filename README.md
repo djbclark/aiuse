@@ -551,7 +551,7 @@ time (`--json`, `--available`, `serve`), so a cached snapshot is corrected too. 
 3. A newer CodexBar reading that shows the same or less wins (credits were spent since).
 4. A CodexBar reading older than 24 h that no override supersedes is expired: `reading_expired: true`, balance and percentages dropped, state `unknown`, and the pool leaves `--available`.
 5. An override is ignored once its `--expires` time has passed (a lapsed grant; a date alone means 00:00 UTC) and once it is older than 7 days, so refresh it with `aiuse set-credits`; rules 2-4 then apply to CodexBar alone. An `observed_at` in the future is invalid.
-6. A malformed override file (non-finite or non-numeric figures, remaining above total, bad timestamps, a pool other than `omp`) is ignored with one line on stderr and never stops `aiuse --available`. `set-credits` refuses the same input with exit 2.
+6. A malformed override file (non-finite or non-numeric figures, remaining above total, bad timestamps, a pool other than `omp` or `pi`) is ignored with one line on stderr and never stops `aiuse --available`. `set-credits` refuses the same input with exit 2.
 7. An override never brings back an omp pool you hid (`[hidden_pools]`) or disabled (`[disabled_services]`): the config is checked, so it holds when the cache has no omp row. An operator override only decorates an omp row the collectors produced; it never makes one.
 8. Rule 2 applies only when the override's total equals CodexBar's grant size; otherwise the fresher CodexBar reading wins. Whenever a fresher CodexBar reading wins, the account carries `superseded_override` (`{source, observed_at, remaining_usd}`).
 9. Figures must be within 1e9 dollars and the file under 64 KiB; anything else is ignored.

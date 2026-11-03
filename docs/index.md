@@ -31,6 +31,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`opencode-go-quota.md`](opencode-go-quota.md) — authoritative OpenCode Go web data and shared quota behavior.
 - [`opencode-zen-balance.md`](opencode-zen-balance.md) — Zen-balance source audit, SecretSpec setup, and Chrome credential refresh.
 - [`omp-cloud-credits.md`](omp-cloud-credits.md) — Claude cloud-session credits (an expiring dollar grant) reported as the `omp` provider, in the board, `--json` and `--for-chat`.
+- [`pi-openai-credits.md`](pi-openai-credits.md) — Pi OpenAI API spend and verified grants reported as the `pi` provider (scope `codex-api`), independent of Codex subscription windows.
 - [`paseo.md`](paseo.md) — Paseo daemon `paseo usage ls` as a second source for claude, codex, copilot, grok, and antigravity.
 - [`source-coverage.md`](source-coverage.md) — which services currently have multiple live client sources and which do not.
 - [`acp-usage.md`](acp-usage.md) — ACP context fill and per-turn tokens from acp-run logs; `aiuse usage-sources` and `[usage_sources]` pins.

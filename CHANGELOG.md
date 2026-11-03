@@ -12,16 +12,50 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Added
+
+- **Pi (`pi`, scope `codex-api`)**: independent OpenAI API credit accounting from
+  CodexBar's `openai` source (organization spend meter), verified console
+  entries (`aiuse set-credits pi`) and optional Costs API estimates
+  (`aiuse refresh-credits pi`). It never borrows Codex subscription capacity
+  ([`docs/pi-openai-credits.md`](docs/pi-openai-credits.md)). JSON additions are
+  listed in [`docs/json-contract.md`](docs/json-contract.md#changelog).
+- Manual Linux CI dispatch (`gh workflow run test.yml`).
+
+### Changed
+
+- The provider id `openai` now canonicalizes to `pi` (CodexBar's API costs, not
+  its `codex` OAuth subscription source).
+- OMP's board scope is now `claude-api` (its stable pool id `omp_claude` and JSON
+  `pool_family: "claude"` are unchanged); API scope is kept on
+  explanatory/rate-gated rows.
+- `aiuse --available` now applies the CLI overrides (`--timeout`,
+  `--min-remaining`, `--max-days`, `--no-*`), filters accounts and pools by
+  `--providers` or the config provider list, and marks live snapshots partial
+  whenever a provider list is set.
+
 ### Fixed
 
-- Retained API scope on explanatory/rate-gated rows; renamed OMP's display scope
-  to `claude-api` without changing its stable pool id.
-- Preserved sibling API-provider readings during credit refreshes using locked,
-  atomic file updates; allowed already-applied readings to refresh or expire.
+- `aiuse set-credits omp` now rejects an equal-or-older reading instead of
+  overwriting an established one, and `aiuse set-credits` exits 1 with an
+  error instead of printing "recorded" when an equal or newer reading is
+  already accepted; already-applied readings can still refresh or expire.
+- Credit refreshes preserve sibling API-provider readings, using locked, atomic
+  file updates.
 - The installed `secretspec.toml` manifest now declares `OPENAI_ADMIN_KEY`, so
   `aiuse refresh-credits pi` can receive it from `sudo-secretspec run` on a
-  wheel or Homebrew install; `aiuse set-credits` exits 1 with an error instead
-  of printing "recorded" when an equal or newer reading is already accepted.
+  wheel or Homebrew install.
+
+## [3.13.2] - 2026-11-02
+
+### Fixed
+
+- Narrow terminals trim the OTHER column with `…✂` before dropping PACE
+  ([`docs/pretty-display.md`](docs/pretty-display.md)).
+
+## [3.13.1] - 2026-11-02
+
+### Fixed
 
 - **Antigravity (and any provider) readings no longer sit one CodexBar refresh
   behind when `http_url` is set.** CodexBar's HTTP server is
@@ -34,10 +68,6 @@ Releases before 3.9.0 are in the
   CLI runs live.
 
 ### Added
-
-- Added independent Pi OpenAI API grant accounting (`pi`, scope `codex-api`),
-  verified console entries and optional organization Costs API estimates, never
-  borrowing Codex subscription capacity. Added manual Linux CI dispatch.
 
 - **`stale_reason`** on stale `--available` pools and accounts (JSON, plus a
   `[stale: ...]` suffix on the summary line): the reading's age against the
@@ -219,6 +249,9 @@ Releases before 3.9.0 are in the
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v3.13.2...HEAD
+[3.13.2]: https://github.com/djbclark/aiuse/compare/v3.13.1...v3.13.2
+[3.13.1]: https://github.com/djbclark/aiuse/compare/v3.13.0...v3.13.1
 [3.13.0]: https://github.com/djbclark/aiuse/compare/v3.12.1...v3.13.0
 [3.12.1]: https://github.com/djbclark/aiuse/compare/v3.12.0...v3.12.1
 [3.12.0]: https://github.com/djbclark/aiuse/compare/v3.11.0...v3.12.0
