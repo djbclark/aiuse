@@ -1,4 +1,4 @@
-"""The installed SecretSpec manifest declares ANTHROPIC_ADMIN_KEY and upgrades older ones."""
+"""The installed SecretSpec manifest declares the admin keys and upgrades older ones."""
 
 from __future__ import annotations
 
@@ -27,6 +27,19 @@ def test_existing_manifest_without_the_key_gets_it_appended_once(tmp_path):
     text = path.read_text()
     assert text.count("ANTHROPIC_ADMIN_KEY =") == 1 and text.startswith("[project]")
     assert "OPENCODE_ZEN_COOKIE = { required = false }\n" in text
+
+
+def test_installed_manifest_declares_openai_admin_key_once(tmp_path):
+    """A wheel or Homebrew install has no checkout secretspec.toml: the key must come from ensure_manifest."""
+    new = tmp_path / "new.toml"
+    ensure_manifest(new)
+    line = next(x for x in new.read_text().splitlines() if x.startswith("OPENAI_ADMIN_KEY"))
+    assert "required = false" in line
+    old = tmp_path / "old.toml"
+    old.write_text('[project]\nname = "aiuse"\n\n[profiles.default]\nOPENCODE_ZEN_COOKIE = { required = false }')
+    ensure_manifest(old)
+    ensure_manifest(old)
+    assert old.read_text().count("OPENAI_ADMIN_KEY =") == 1
 
 
 def test_plist_substitution_leaves_valid_key_names(tmp_path):

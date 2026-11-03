@@ -766,9 +766,27 @@ def run_set_credits(argv: list[str]) -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-    save_override(
-        args.provider, remaining=args.remaining, total=args.total, expires=expires, note=args.note, granted=granted
-    )
+    now = utcnow()
+    try:
+        saved = save_override(
+            args.provider,
+            remaining=args.remaining,
+            total=args.total,
+            expires=expires,
+            note=args.note,
+            granted=granted,
+            now=now,
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if saved.get("observed_at") != now.isoformat():
+        print(
+            f"error: not recorded: an equal or newer {args.provider} reading is already accepted "
+            f"(${saved['remaining_usd']:.2f} of ${saved['total_usd']:.2f} left, observed {saved['observed_at']})",
+            file=sys.stderr,
+        )
+        return 1
     print(
         f"recorded: {args.provider} ${args.remaining:.2f} of ${args.total:.2f} left"
         f"{', expires ' + expires.date().isoformat() if expires else ''} ({overrides_path()})"

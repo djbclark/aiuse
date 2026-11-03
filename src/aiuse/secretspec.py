@@ -28,6 +28,7 @@ DEEPSEEK_API_KEY = { description = \"DeepSeek API key for the read-only prepaid 
 MUSE_COOKIE = { description = \"Meta Model API (dev.meta.ai) Cookie header for Muse free-credit balance via GraphQL; refresh with aiuse credential refresh muse --from chrome.\", required = false }
 MUSE_API_KEY = { description = \"Optional Muse / Meta Model API Bearer key (same as muse login providers.meta.api_key).\", required = false }
 ANTHROPIC_ADMIN_KEY = { description = \"Anthropic Admin API key (sk-ant-admin...) for `aiuse refresh-credits omp`, read through sudo-secretspec run only; reads the org cost report.\", required = false }
+OPENAI_ADMIN_KEY = { description = \"OpenAI organization Admin API key for aiuse refresh-credits pi; injected through sudo-secretspec run only; reads organization costs, not a prepaid balance.\", required = false }
 """
 
 # Keys that older manifests may lack; ensure_manifest appends any missing lines.
@@ -52,6 +53,11 @@ _OPTIONAL_SECRET_LINES = {
     "ANTHROPIC_ADMIN_KEY": (
         'ANTHROPIC_ADMIN_KEY = { description = "Anthropic Admin API key (sk-ant-admin...) for '
         '`aiuse refresh-credits omp`, read through sudo-secretspec run only; reads the org cost report.", '
+        "required = false }\n"
+    ),
+    "OPENAI_ADMIN_KEY": (
+        'OPENAI_ADMIN_KEY = { description = "OpenAI organization Admin API key for aiuse refresh-credits pi; '
+        'injected through sudo-secretspec run only; reads organization costs, not a prepaid balance.", '
         "required = false }\n"
     ),
 }

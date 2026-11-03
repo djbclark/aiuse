@@ -18,6 +18,10 @@ Releases before 3.9.0 are in the
   to `claude-api` without changing its stable pool id.
 - Preserved sibling API-provider readings during credit refreshes using locked,
   atomic file updates; allowed already-applied readings to refresh or expire.
+- The installed `secretspec.toml` manifest now declares `OPENAI_ADMIN_KEY`, so
+  `aiuse refresh-credits pi` can receive it from `sudo-secretspec run` on a
+  wheel or Homebrew install; `aiuse set-credits` exits 1 with an error instead
+  of printing "recorded" when an equal or newer reading is already accepted.
 
 - **Antigravity (and any provider) readings no longer sit one CodexBar refresh
   behind when `http_url` is set.** CodexBar's HTTP server is

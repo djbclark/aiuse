@@ -239,6 +239,17 @@ def test_set_credits_rejects_bad_input(capsys):
     assert "error" in capsys.readouterr().err
 
 
+def test_set_credits_cli_reports_an_ignored_older_reading(capsys, monkeypatch):
+    save_override("pi", remaining=50.0, total=100.0, expires=None, note=None, now=NOW)
+    monkeypatch.setattr("aiuse.credits_override.utcnow", lambda: NOW - timedelta(minutes=1))
+    rc = run_set_credits(["pi", "--remaining", "90", "--total", "100"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "recorded:" not in captured.out
+    assert "not recorded" in captured.err and "$50.00 of $100.00" in captured.err
+    assert load_overrides()["pi"]["remaining_usd"] == 50.0
+
+
 def test_load_overrides_tolerates_garbage():
     overrides_path().parent.mkdir(parents=True, exist_ok=True)
     overrides_path().write_text("not json")
