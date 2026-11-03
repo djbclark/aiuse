@@ -6,6 +6,8 @@ import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from aiuse.analysis.selfdescribe import SEMANTICS, available_pools, enrich_snapshot, summary_line
 from aiuse.analysis.use_or_lose import _mark_operator_gate
 from aiuse.chat_format import render_chat_report
@@ -160,14 +162,16 @@ def test_matrix_data_in_5h_or_week_wins_over_the_notice():
     assert "12u/88l" in row
 
 
-def test_matrix_gate_row_without_clocks_still_shows_the_notice():
-    lines = _matrix([_omp(window=False), _codex()])
-    header, row = lines[0], _omp_line(lines)
-    first = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
+@pytest.mark.parametrize("color", [False, True])
+def test_matrix_gate_row_without_clocks_still_shows_the_notice(color):
+    lines = _matrix([_omp(window=False), _codex()], color=color)
+    header, row = _strip_ansi(lines[0]), _strip_ansi(_omp_line(lines))
+    scope_start, note_start = header.index("SCOPE"), header.index("PACE")
 
-    assert row[first:].startswith("* [")
-    assert GATE_TEXT in row[first:]
-    assert row[first:].rstrip().endswith("]")
+    # SCOPE is identity, not a data column: keep the API funding source even
+    # without clocks, then start the complete gated notice under PACE.
+    assert row[scope_start:note_start].rstrip() == "claude-api"
+    assert row[note_start:].rstrip() == f"* [↑ $0.73 spent · ↓ $249.27 plan {GATE_TEXT}]"
 
 
 def test_matrix_gate_text_is_dim_in_color():
