@@ -57,6 +57,10 @@ alone. When data is cached rather than live, `age_seconds` (computed at read
 time) and `fresh` (age ≤ `analysis.fresh_threshold_seconds`, default 1500s)
 say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
 (`--live`) before trusting it for routing.
+A stale pool or account also carries `stale_reason` (additive, schema 1.5): the
+age against the fresh limit plus, when a throttled query reused an earlier
+payload, the collector's own note. Dispatchers should quote it when they
+refuse a stale pool.
 
 ## What's new in schema 1.5 (2026-10-31)
 

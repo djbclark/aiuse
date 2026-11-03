@@ -10,6 +10,27 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Antigravity (and any provider) readings no longer sit one CodexBar refresh
+  behind when `http_url` is set.** CodexBar's HTTP server is
+  stale-while-revalidate: the first request after its TTL returns the previous
+  snapshot (old `updatedAt`) and refreshes in the background. aiuse recorded
+  that as a live query, so the gated reading (and its Gemini 4 Argon window)
+  stayed 15-30 min old, past the 25 min stale line, and `acp-dispatch` refused
+  Argon with "no fresh reading". A snapshot older than 330 s is now requested
+  again until it advances (up to 20 s); if the server is not refreshing, the
+  CLI runs live.
+
+### Added
+
+- **`stale_reason`** on stale `--available` pools and accounts (JSON, plus a
+  `[stale: ...]` suffix on the summary line): the reading's age against the
+  fresh limit and, when a throttled query reused an earlier payload, the
+  collector's own note. Additive; schema stays 1.5.
+
 ## [3.13.0] - 2026-11-01
 
 ### Added

@@ -36,6 +36,7 @@ from aiuse.analysis.pool_keys import (
 )
 from aiuse.models import (
     OPERATOR_APPROVAL_NOTICE,
+    REUSED_QUERY_NOTE_MARKER,
     QuotaWindow,
     Snapshot,
     canonical_provider,
@@ -44,7 +45,7 @@ from aiuse.models import (
     parse_dt,
     utcnow,
 )
-from aiuse.timefmt import format_as_of, format_clock
+from aiuse.timefmt import format_as_of, format_clock, format_lead
 
 SCHEMA_VERSION = "1.5"
 
@@ -77,6 +78,7 @@ SEMANTICS: dict[str, str] = {
     "age_seconds": "seconds since collected_at, computed at read time; stale data can hide a fresh exhaustion",
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
     "stale": "age_seconds > fresh threshold; the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
+    "stale_reason": "present on a stale pool/account: why the reading is old — its age against the fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
     "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
@@ -354,6 +356,10 @@ def enrich_account(
             account["age_seconds"] = round(age, 1)
             account["fresh"] = age <= threshold_seconds
             account["stale"] = age > threshold_seconds
+            if account["stale"]:
+                account["stale_reason"] = _stale_reason(account, age, threshold_seconds)
+            else:
+                account.pop("stale_reason", None)
         else:
             account["age_seconds"] = None
             account["fresh"] = False
@@ -365,6 +371,20 @@ def enrich_account(
 
     _apply_ceiling_caps(provider, windows)
     return account
+
+
+def _stale_reason(account: Mapping[str, Any], age: float, threshold_seconds: float) -> str:
+    """Why a reading is stale: its age, and the collector's own note when it skipped or reused a query.
+
+    Dispatchers that refuse a stale pool quote this, so the refusal names the
+    cause (a throttled or backed-off collector) rather than just "no fresh reading".
+    """
+    reason = f"reading is {format_lead(age)} old (fresh limit {format_lead(threshold_seconds)})"
+    for note in account.get("notes") or []:
+        text = str(note)
+        if REUSED_QUERY_NOTE_MARKER in text:
+            return f"{reason}; {text}"
+    return reason
 
 
 def _apply_ceiling_caps(provider: str, windows: list[dict[str, Any]]) -> None:
@@ -903,6 +923,7 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     "age_seconds": account.get("age_seconds"),
                     "fresh": False if frozen else account.get("fresh"),
                     "stale": True if frozen else account.get("stale"),
+                    **({"stale_reason": account["stale_reason"]} if account.get("stale_reason") else {}),
                     **({"collected_at": account["collected_at"]} if account.get("collected_at") else {}),
                     **({"measurement_frozen": True} if frozen else {}),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
@@ -1037,6 +1058,8 @@ def summary_line(pool: Mapping[str, Any]) -> str:
         when = parse_dt(pool.get("collected_at") if isinstance(pool.get("collected_at"), str) else None)
         if when is not None:
             line += " " + format_as_of(when)
+        if pool.get("stale_reason"):
+            line += f" [stale: {pool['stale_reason']}]"
     if pool.get("requires_operator_approval"):
         line += f" — {OPERATOR_APPROVAL_NOTICE}"
     return line

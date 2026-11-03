@@ -36,6 +36,12 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Marker inside the account note a collector writes when a throttled query
+# reused the previous payload instead of asking again. `enrich_account` quotes
+# that note as the `stale_reason` when the reused reading has gone stale.
+REUSED_QUERY_NOTE_MARKER = "reused CodexBar's result from"
+
+
 def coerce_float(value: Any) -> float | None:
     if value is None:
         return None
