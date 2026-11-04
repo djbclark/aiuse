@@ -392,8 +392,8 @@ def test_chronic_waste_detection(tmp_path: Path):
 @pytest.mark.parametrize(
     "snapshot_kwargs",
     [
-        {"provider_selection": {"include": ["codex"], "exclude": []}},
-        {"provider_selection": {"include": [], "exclude": ["cl*"]}},
+        {"provider_selection": {"include": [], "exclude": ["claude"]}},
+        {"provider_selection": {"include": ["codex"], "exclude": ["cl*"]}},
         {"disabled_services": {"claude": "shelved"}},
     ],
 )

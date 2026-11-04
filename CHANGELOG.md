@@ -14,12 +14,12 @@ Releases before 3.9.0 are in the
 
 ### Added
 
-- **`--include LIST` / `--exclude LIST`**: per-run provider selection that
-  overrides `[disabled_services]` without editing `config.toml`. Lists are
-  comma-separated and repeatable; entries are provider ids, aliases, display
-  names or globs (`oc-*`) matched against the canonical id and display name.
-  `--include` is an allow-list that also re-enables a config-disabled
-  provider; `--exclude` adds disables and wins when both match. A narrowed run
+- **`--include LIST` / `--exclude LIST`**: per-run adjustment of the provider
+  set without editing `config.toml`. Lists are comma-separated and repeatable;
+  entries are provider ids, aliases, display names or globs (`oc-*`) matched
+  against the canonical id and display name. `--include` adds providers,
+  re-enabling a match that `[disabled_services]` disables; `--exclude` removes
+  providers from the set and wins when both match. A run adjusted this way
   is filed as a partial sample (never `latest.json`), watch shows it
   screen-only (its `a` sweep ignores the flags), and `serve` / `sample` reject
   the flags. History summaries (chronic underuse, learned burn, late-cycle)

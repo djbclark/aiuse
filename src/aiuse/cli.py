@@ -393,9 +393,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="LIST",
         help=(
-            "Only these providers (comma-separated ids, display names or globs such as 'oc-*'; repeatable), "
-            "overriding config.toml for this run: a match that [disabled_services] disables is re-enabled, "
-            "everything else is dropped. Operator-only for AI agents. A run narrowed by this or --exclude "
+            "Add these providers for this run (comma-separated ids, display names or globs such as 'oc-*'; "
+            "repeatable): a match that [disabled_services] disables is re-enabled, everything else stays as "
+            "config.toml has it. Operator-only for AI agents. A run adjusted by this or --exclude "
             "is never saved as the latest snapshot"
         ),
     )
@@ -404,8 +404,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="LIST",
         help=(
-            "Drop these providers for this run, on top of [disabled_services] (same LIST syntax as --include; "
-            "wins when a provider matches both)"
+            "Remove these providers for this run from those config.toml would collect (same LIST syntax as "
+            "--include; wins when a provider matches both)"
         ),
     )
     p.add_argument(
@@ -414,8 +414,8 @@ def build_parser() -> argparse.ArgumentParser:
         const="",
         metavar="LIST",
         help=(
-            "Print the providers this run would include (comma-separated), then exit. With LIST: which known "
-            "providers match it as an --include, after config.toml and --exclude"
+            "Print the providers this run would include (comma-separated), then exit. With LIST: the set "
+            "if LIST were added by --include, after config.toml and --exclude"
         ),
     )
     p.add_argument(
@@ -1426,7 +1426,7 @@ def _run_show_selection(args: argparse.Namespace) -> int:
     Collects nothing. The sets cover every known provider id after
     ``[disabled_services]``, ``--include`` and ``--exclude``. A ``LIST`` on
     ``--show-included`` previews that list as the ``--include`` (replacing any
-    given), still honouring ``--exclude`` and the config.
+    given): the set with it added, still honouring ``--exclude`` and the config.
     """
     config = load_config(args.config)
     _apply_cli_overrides(config, args)

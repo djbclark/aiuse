@@ -1,12 +1,11 @@
-"""Per-run provider selection: ``--include`` / ``--exclude`` override ``config.toml``.
+"""Per-run provider selection: ``--include`` / ``--exclude`` adjust ``config.toml``.
 
-The command line can narrow or widen the set of providers one run collects and
-shows, without editing ``[disabled_services]``:
+The command line can add providers to, or remove them from, the set one run
+collects and shows, without editing ``[disabled_services]``:
 
-- ``--include LIST`` is an allow-list. Only matching providers are collected and
-  shown, and a match that ``[disabled_services]`` disables is re-enabled for this
-  run.
-- ``--exclude LIST`` adds providers to the disabled set for this run. When a
+- ``--include LIST`` adds providers: a match that ``[disabled_services]`` disables
+  is re-enabled for this run. Every other provider stays as the config has it.
+- ``--exclude LIST`` removes providers that would otherwise be in the set. When a
   provider matches both flags, exclusion wins.
 
 Each ``LIST`` is comma-separated and may repeat; every entry is a provider id or
@@ -29,7 +28,6 @@ from aiuse.models import PROVIDER_DISPLAY_NAMES, canonical_provider
 
 SELECTION_KEY = "provider_selection"
 EXCLUDE_REASON = "excluded by --exclude (this run only)"
-INCLUDE_REASON = "not in --include (this run only)"
 _GLOB_CHARS = frozenset("*?[")
 
 
@@ -86,13 +84,9 @@ def selection_active(config: Mapping[str, Any] | None) -> bool:
 
 
 def blocked_reason(config: Mapping[str, Any] | None, provider: str) -> str | None:
-    """Why this run's flags drop ``provider``, or ``None`` when they leave it alone."""
-    include, exclude = get_selection(config)
-    if exclude and matches_any(provider, exclude):
-        return EXCLUDE_REASON
-    if include and not matches_any(provider, include):
-        return INCLUDE_REASON
-    return None
+    """Why this run's ``--exclude`` drops ``provider``, or ``None`` when it leaves it alone."""
+    _include, exclude = get_selection(config)
+    return EXCLUDE_REASON if exclude and matches_any(provider, exclude) else None
 
 
 def reenabled_by_include(config: Mapping[str, Any] | None, provider: str) -> bool:

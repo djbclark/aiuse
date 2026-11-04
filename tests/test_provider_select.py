@@ -59,7 +59,8 @@ def test_include_overrides_config_disable_and_exclude_wins():
     assert canonical_disabled_services(config) == {"copilot": "unused"}
     assert blocked_reason(config, "grok") is None
     assert blocked_reason(config, "claude") is not None
-    assert blocked_reason(config, "codex") is not None  # not in the allow-list
+    # --include adds; it never drops a provider it does not name.
+    assert blocked_reason(config, "codex") is None
 
 
 def test_exclude_adds_to_config_disables_without_replacing_them():
@@ -83,7 +84,7 @@ def _run_only(monkeypatch, *names, **config):
     return run_collectors(config)
 
 
-def test_run_collectors_drops_flagged_rows_even_for_unregistered_providers(monkeypatch):
+def test_run_collectors_include_adds_and_exclude_removes_even_unregistered_providers(monkeypatch):
     import aiuse.collectors.runner as runner
 
     monkeypatch.setattr(
@@ -91,12 +92,12 @@ def test_run_collectors_drops_flagged_rows_even_for_unregistered_providers(monke
         "collect_tokscale",
         lambda **_kw: [_account("claude"), _account("codex"), _account("newvendor")],
     )
-    only = _run_only(monkeypatch, "tokscale", **_selected(include=["claude"]))
-    assert [a.provider for a in only.accounts] == ["claude"]
-    without = _run_only(monkeypatch, "tokscale", **_selected(exclude=["new*"]))
-    assert [a.provider for a in without.accounts] == ["claude", "codex"]
+    added = _run_only(monkeypatch, "tokscale", **_selected(include=["claude"]))
+    assert [a.provider for a in added.accounts] == ["claude", "codex", "newvendor"]
+    removed = _run_only(monkeypatch, "tokscale", **_selected(exclude=["new*"]))
+    assert [a.provider for a in removed.accounts] == ["claude", "codex"]
     # The flags are not operator disables: they are not reported as such.
-    assert only.disabled_services == {}
+    assert removed.disabled_services == {}
 
 
 def test_include_runs_collector_the_config_disabled(monkeypatch):
@@ -138,17 +139,23 @@ def test_show_flags_print_comma_lists_without_collecting(monkeypatch, tmp_path, 
 def test_show_included_list_previews_it_as_an_include(monkeypatch, tmp_path, capsys):
     _write_config(tmp_path, monkeypatch, '[disabled_services]\ngrok = "shelved"\n')
     _no_collect(monkeypatch)
-    assert cli.main(["--exclude", "codex", "--show-included", "grok,cod*,claude"]) == 0
-    assert capsys.readouterr().out.strip() == "claude,grok"
+    assert cli.main(["--exclude", "codex", "--show-included", "grok,cod*"]) == 0
+    shown = capsys.readouterr().out.strip().split(",")
+    assert "grok" in shown  # added by the LIST
+    assert "claude" in shown  # still there: the LIST adds, it does not replace
+    assert "codex" not in shown  # --exclude still wins
 
 
 def test_both_show_flags_are_labelled(monkeypatch, tmp_path, capsys):
-    _write_config(tmp_path, monkeypatch, "")
+    _write_config(tmp_path, monkeypatch, '[disabled_services]\ngrok = "shelved"\n')
     _no_collect(monkeypatch)
-    assert cli.main(["--include", "claude", "--show-included", "--show-excluded"]) == 0
+    assert cli.main(["--include", "grok", "--exclude", "claude", "--show-included", "--show-excluded"]) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "included: claude"
-    assert "claude" not in lines[1].removeprefix("excluded: ").split(",")
+    included = lines[0].removeprefix("included: ").split(",")
+    excluded = lines[1].removeprefix("excluded: ").split(",")
+    assert lines[0].startswith("included: ") and lines[1].startswith("excluded: ")
+    assert "grok" in included and "grok" not in excluded
+    assert "claude" in excluded and "claude" not in included
 
 
 def test_unmatched_pattern_warns_and_empty_list_is_an_error(monkeypatch, tmp_path, capsys):
