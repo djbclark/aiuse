@@ -573,6 +573,33 @@ def test_organization_check_uses_console_identity_not_display_alias():
     assert omp.balance_usd == 200.0
 
 
+def test_config_grant_clock_applies_on_first_override_only_row():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(
+        snap,
+        now=NOW,
+        credit_overrides={
+            "omp": {
+                "remaining_usd": 0.0,
+                "total_usd": 200.0,
+                "observed_at": NOW.isoformat(),
+            }
+        },
+        config={
+            "credits": {
+                "omp": {
+                    "grant_total_usd": 200.0,
+                    "granted_at": "2026-10-13",
+                    "next_credit_at": "2026-10-18",
+                }
+            }
+        },
+    )
+    omp = _omp(snap)
+    assert omp["balance_usd"] is None
+    assert omp.get("reading_expired") is True
+
+
 def test_config_grant_clock_skips_mismatched_operator_override_total():
     snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
     enrich_snapshot(

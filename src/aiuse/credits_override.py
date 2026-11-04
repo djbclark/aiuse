@@ -622,6 +622,7 @@ def _apply_credit_override_for_provider(
                 if missing:
                     _normalize_credits_clock({**account, "windows": missing}, override)
             max_age = OVERRIDE_MAX_AGE if account.get("source") == OVERRIDE_SOURCE else CODEXBAR_MAX_AGE
+            _attach_config_grant_clock(account, provider=provider, config=config)
             expiry = _grant_expiry(account)
             if expiry is not None and now >= expiry:
                 _expire_reading(account, "grant expired")
@@ -707,6 +708,7 @@ def _apply_credit_override_for_provider(
                 _expire_reading(account)
         elif reading_at is not None and now - reading_at > CODEXBAR_MAX_AGE:
             _expire_reading(account)
+        _attach_config_grant_clock(account, provider=provider, config=config)
         # The grant itself lapsing is independent of how fresh the reading is.
         expiry = _grant_expiry(account)
         if expiry is not None and now >= expiry:
