@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from aiuse.collectors.codexbar import (
+    _codexbar_query_skipped,
     _filter_omp_by_config_organization,
     _from_row,
     _omp_from_claudeplatform_row,
+    _subscription_grant_from_usage,
 )
 from aiuse.config import organization_names_match
 
@@ -66,6 +68,36 @@ def test_filter_drops_omp_for_wrong_console_org(capsys):
     )
     assert kept == []
     assert "Freedom Included" in capsys.readouterr().err
+
+
+def test_skip_providers_disable_claudeplatform_when_omp_is_off():
+    skip = frozenset({"omp"})
+    assert _codexbar_query_skipped("claudeplatform", skip)
+    assert _codexbar_query_skipped("omp", skip)
+    assert not _codexbar_query_skipped("claude", skip)
+
+
+def test_primary_used_percent_alone_still_searches_other_grants():
+    usage = {
+        "updatedAt": "2026-11-04T13:00:00Z",
+        "primary": {"usedPercent": 100.0, "resetDescription": ""},
+        "details": [
+            {
+                "title": "Other credit grants",
+                "rows": [
+                    {
+                        "label": "API credit (Ultra)",
+                        "value": "$0.00 of $200.00 left",
+                        "secondaryValue": "Expires Nov 6 (UTC)",
+                    }
+                ],
+            }
+        ],
+    }
+    parsed = _subscription_grant_from_usage(usage)
+    assert parsed is not None
+    remaining, total, expires_at = parsed
+    assert remaining == 0.0 and total == 200.0 and expires_at == EXPIRY
 
 
 def test_exhausted_grant_in_other_credits_section():

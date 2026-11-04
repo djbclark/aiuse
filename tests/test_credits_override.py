@@ -97,10 +97,12 @@ def test_override_beats_older_codexbar_100_percent():
     assert round(window["remaining_percent"], 2) == 47.78
 
 
-def test_operator_override_alone_never_makes_a_row():
+def test_operator_override_alone_makes_omp_row_when_collectors_omitted_it():
     snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
     enrich_snapshot(snap, now=NOW, credit_overrides=_override())
-    assert snap["accounts"] == []
+    (omp,) = snap["accounts"]
+    assert omp["provider"] == "omp" and omp["source"] == "operator-override"
+    assert omp["balance_usd"] == 95.57
 
 
 def test_admin_api_reading_may_make_the_row_when_none_exists():
@@ -557,6 +559,27 @@ def test_override_without_expires_inherits_a_past_codexbar_expiry():
 def test_unexpired_grant_is_untouched():
     snap = _applied({}, snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=5))))
     assert "grant_expired" not in _omp(snap) and _omp(snap)["balance_usd"] == 200.0
+
+
+def test_config_grant_clock_expires_balance_before_routing():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.expires_at = None
+    account.windows[0].resets_at = None
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-10-18",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    assert omp.get("grant_expired") is True and omp.get("reading_expired") is True
+    assert omp["balance_usd"] is None
+    assert [p for p in available_pools(snap) if p["provider"] == "omp"] == []
 
 
 def test_set_credits_refuses_values_above_the_dollar_cap():

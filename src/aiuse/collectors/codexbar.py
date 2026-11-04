@@ -41,6 +41,21 @@ from .bedrock_cost import native_bedrock_payload
 from .bedrock_gate import measured_bedrock_spend
 from .throttle import QueryGate, TimeoutBackoff
 
+# CodexBar query names for credit providers (see ``query_aliases`` in ``collect``).
+_CREDIT_QUERY_ALIASES = {"claudeplatform": "omp", "claude-platform": "omp", "openai": "pi"}
+
+
+def _codexbar_query_skipped(query_name: str | None, skip_providers: frozenset[str]) -> bool:
+    """True when ``skip_providers`` disables this CodexBar query (including omp→claudeplatform)."""
+    if query_name is None:
+        return False
+    canon = canonical_provider(query_name)
+    if canon in skip_providers:
+        return True
+    mapped = _CREDIT_QUERY_ALIASES.get(canon)
+    return mapped is not None and mapped in skip_providers
+
+
 # Providers that are typically pure prepaid / API balance (not use-or-lose monthly)
 PREPAID_HINTS = {
     "openrouter",
@@ -300,7 +315,7 @@ def _read_widget_snapshot(
         if not isinstance(entry, dict) or not entry.get("provider"):
             continue
         p = canonical_provider(entry.get("provider"))
-        if skip_providers and p in skip_providers:
+        if skip_providers and _codexbar_query_skipped(p, skip_providers):
             continue
         if provider_list != [None] and p not in {canonical_provider(x) for x in provider_list if x}:
             continue
@@ -507,7 +522,7 @@ def _collect_codexbar_impl(
     if skip_providers:
         # [disabled_services]: never spawn a query (or surface its timeout) for a
         # provider the operator turned off, even if CodexBar still has it enabled.
-        kept = [p for p in provider_list if p is None or canonical_provider(p) not in skip_providers]
+        kept = [p for p in provider_list if p is None or not _codexbar_query_skipped(p, skip_providers)]
         if not kept:
             if "bedrock" in (skip_providers or ()):
                 return []
@@ -1537,10 +1552,6 @@ def _subscription_grant_from_usage(usage: dict[str, Any]) -> tuple[float, float,
         parsed = _subscription_grant_from_text(desc, reference=updated)
         if parsed is not None:
             return parsed
-        used_pct = _f(primary.get("usedPercent"))
-        if used_pct is not None:
-            # Some CodexBar builds only expose usedPercent on the primary lane.
-            return None
     for section in usage.get("details") or []:
         if not isinstance(section, dict):
             continue

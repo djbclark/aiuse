@@ -142,6 +142,22 @@ def test_no_grant_parameters_means_not_run():
     assert ac.refresh(env=ENV, fetch=fetch, now=NOW)[0] == 2
 
 
+def test_refresh_uses_config_grant_when_override_lacks_granted_at():
+    fetch = Canned((200, _page(["10443"])))
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-11-06",
+            }
+        }
+    }
+    code, line = ac.refresh(env=ENV, fetch=fetch, now=NOW, config=config)
+    assert code == 0 and "$95.57 of $200.00" in line
+    assert fetch.calls
+
+
 def test_spend_over_total_clamps_remaining_to_zero():
     _seed_grant()
     code, _ = ac.refresh(env=ENV, fetch=Canned((200, _page(["99999"]))), now=NOW)
