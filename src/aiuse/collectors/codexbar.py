@@ -626,11 +626,18 @@ def _collect_live(
     return accounts, errors
 
 
+def _omp_row_has_usable_grant(account: AccountUsage) -> bool:
+    """True when an ``omp`` row carries a parsed subscription grant, not a parse error."""
+    if account.provider != "omp" or account.error:
+        return False
+    return account.balance_usd is not None
+
+
 def _cached_omp_satisfies_organization(cached: list[AccountUsage], config: dict[str, Any] | None) -> bool:
     """True when a cached ``omp`` row is usable under ``[credits.omp] organization``."""
     from aiuse.config import credit_organization_name, omp_organization_label, organization_names_match
 
-    omp_rows = [account for account in cached if account.provider == "omp"]
+    omp_rows = [account for account in cached if _omp_row_has_usable_grant(account)]
     if not omp_rows:
         return False
     want = credit_organization_name(config, "omp")
