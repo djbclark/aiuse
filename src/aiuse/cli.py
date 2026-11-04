@@ -642,6 +642,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
                 alerts,
                 retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
                 partial_providers=partial,
+                config=config,
             )
             _progress(f"Saved snapshot to {snapshot_path}")
         except OSError as exc:
@@ -1277,6 +1278,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     [],
                     retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
                     partial_providers=partial,
+                    config=config,
                 )
             except OSError:
                 pass

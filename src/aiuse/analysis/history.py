@@ -136,6 +136,7 @@ def save_snapshot(
     *,
     retention_days: int = _DEFAULT_RETENTION_DAYS,
     partial_providers: list[str] | None = None,
+    config: Any | None = None,
 ) -> Path:
     """Persist one collection. ``partial_providers`` marks a burst-tier sample
     of only those providers, which is filed under :func:`partial_sample_dir`
@@ -165,7 +166,8 @@ def save_snapshot(
     from aiuse.credits_override import load_overrides
     from aiuse.rate_gates import ingest_omp_log_evidence
 
-    config = load_config()
+    if config is None:
+        config = load_config()
 
     # Anthropic 429s omp already hit (retry-after in omp's own logs) are the
     # strongest rate-gate evidence; refresh the durable latch every collection

@@ -318,6 +318,7 @@ class _ServeState:
                     snapshot,
                     alerts,
                     retention_days=int((analysis_cfg or {}).get("snapshot_retention_days") or 90),
+                    config=self.config,
                 )
             except OSError:
                 pass

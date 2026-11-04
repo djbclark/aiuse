@@ -462,13 +462,13 @@ def _attach_config_grant_clock(
     config: Mapping[str, Any] | None,
 ) -> None:
     """Fill ``expires_at`` from ``[credits.omp]`` when CodexBar did not supply one."""
-    if provider != OVERRIDE_PROVIDER or account.get("expires_at") is not None:
+    if provider != OVERRIDE_PROVIDER:
         return
     grant = load_grant_params(provider, config)
     if grant is None:
         return
     total, granted_at, expires = grant
-    if expires is None:
+    if expires is None and account.get("expires_at") is None:
         return
     capacity = next(
         (
@@ -488,18 +488,21 @@ def _attach_config_grant_clock(
                 return
         elif account.get("source") in (OVERRIDE_SOURCE, "admin-api", "none"):
             return
-    account["expires_at"] = expires.isoformat()
-    for window in account.get("windows") or []:
-        if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
-            window["resets_at"] = expires.isoformat()
-    _normalize_credits_clock(
-        account,
-        {
-            "total_usd": total,
-            "granted_at": granted_at.isoformat() if granted_at else None,
-            "expires_at": expires.isoformat(),
-        },
-    )
+    expiry_iso = account.get("expires_at") or (expires.isoformat() if expires is not None else None)
+    if account.get("expires_at") is None and expires is not None:
+        account["expires_at"] = expires.isoformat()
+        for window in account.get("windows") or []:
+            if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
+                window["resets_at"] = expires.isoformat()
+    if expiry_iso is not None:
+        _normalize_credits_clock(
+            account,
+            {
+                "total_usd": total,
+                "granted_at": granted_at.isoformat() if granted_at else None,
+                "expires_at": expiry_iso,
+            },
+        )
 
 
 def _expire_reading(account: dict[str, Any], why: str = "older than 24h") -> None:
