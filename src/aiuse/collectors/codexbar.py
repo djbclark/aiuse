@@ -801,9 +801,10 @@ def _disabled_known_query_ids(payload: Any, *, already: set[str], skip: frozense
         if "bedrock" in provider_id:
             continue
         canonical = canonical_provider(provider_id)
-        if canonical not in PROVIDER_DISPLAY_NAMES or canonical in already or canonical in skip:
+        bucket = _CREDIT_QUERY_ALIASES.get(canonical) or canonical
+        if bucket not in PROVIDER_DISPLAY_NAMES or bucket in already or bucket in skip:
             continue
-        grouped.setdefault(canonical, []).append(provider_id)
+        grouped.setdefault(bucket, []).append(provider_id)
     chosen: list[str] = []
     for canonical in sorted(grouped):
         ids = grouped[canonical]
@@ -814,6 +815,8 @@ def _disabled_known_query_ids(payload: Any, *, already: set[str], skip: frozense
             chosen.append(dehyphen)
         elif canonical == "pi" and "openai" in ids:
             chosen.append("openai")
+        elif canonical == "omp" and any(p in ids for p in ("claudeplatform", "claude-platform")):
+            chosen.append(next(p for p in ("claudeplatform", "claude-platform") if p in ids))
     return chosen
 
 
@@ -1551,7 +1554,12 @@ def _parse_console_expiry_label(text: str, *, reference: datetime | None = None)
         return None
     ref = reference or utcnow()
     year = int(parts[2]) if len(parts) == 3 else ref.year
-    return datetime(year, month, day, tzinfo=UTC)
+    expiry = datetime(year, month, day, tzinfo=UTC)
+    if len(parts) == 2:
+        ref_day = ref.replace(hour=0, minute=0, second=0, microsecond=0)
+        if expiry < ref_day and month <= 3 and ref.month >= 10:
+            expiry = datetime(year + 1, month, day, tzinfo=UTC)
+    return expiry
 
 
 def _subscription_grant_from_text(

@@ -143,6 +143,17 @@ def test_other_grants_ignore_unlabeled_promotional_api_credit():
     assert remaining == 0.0 and total == 200.0
 
 
+def test_yearless_january_expiry_after_december_reading_uses_next_year():
+    usage = {
+        "updatedAt": "2026-12-20T12:00:00Z",
+        "primary": {"resetDescription": "$150.00 of $200.00 left · Expires Jan 6 (UTC)"},
+    }
+    parsed = _subscription_grant_from_usage(usage)
+    assert parsed is not None
+    _, _, expires_at = parsed
+    assert expires_at == datetime(2027, 1, 6, tzinfo=UTC)
+
+
 def test_yearless_expiry_in_other_grants_does_not_roll_to_next_year():
     usage = {
         "updatedAt": "2026-11-07T12:00:00Z",
