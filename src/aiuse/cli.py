@@ -1303,6 +1303,7 @@ def _run_available(args: argparse.Namespace) -> int:
         threshold_seconds=threshold,
         check_frozen=True,
         credit_overrides=load_overrides(config),
+        config=config,
     )
     fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally

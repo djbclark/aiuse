@@ -329,6 +329,7 @@ class _ServeState:
                 client_limits=load_client_limits(self.config),
                 check_frozen=True,
                 credit_overrides=load_overrides(self.config),
+                config=self.config,
             ),
             "alerts": [a.to_dict() for a in alerts],
             "suggestion": suggestion,
@@ -364,6 +365,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
         client_limits=load_client_limits(config),
         check_frozen=True,
         credit_overrides=load_overrides(config),
+        config=config,
     )
     # Minimal history object without reloading learning (cheap path).
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}

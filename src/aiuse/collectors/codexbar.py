@@ -691,6 +691,8 @@ def _live_omp_supplement(
     """
     if "omp" in (skip_providers or ()) or _cached_omp_satisfies_organization(cached, config):
         return []
+    if all_accounts and "omp" in all_accounts:
+        return []
     if provider_list is not None and not _omp_supplement_requested(provider_list, was_discovery=was_discovery):
         return []
     outcome = _query_providers(
