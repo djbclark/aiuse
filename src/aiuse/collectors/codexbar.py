@@ -492,6 +492,7 @@ def _collect_codexbar_impl(
                 config=config,
                 provider_list=provider_list,
                 was_discovery=was_discovery,
+                all_accounts=all_accounts,
             )
             if provider_list == [None]:
                 live_list: list[str | None] = [query_aliases.get(p, p) for p in sorted(all_accounts)]
@@ -659,13 +660,20 @@ def _claudeplatform_query_timeout(provider_timeouts: dict[str, float] | None, de
     return default
 
 
-def _omp_supplement_requested(provider_list: list[str | None], *, was_discovery: bool) -> bool:
-    if was_discovery or provider_list == [None]:
-        return True
-    return any(
-        p is not None and (canonical_provider(p) == "omp" or p in ("claudeplatform", "claude-platform"))
-        for p in provider_list
-    )
+def _omp_supplement_requested(
+    provider_list: list[str | None],
+    *,
+    was_discovery: bool,
+    all_accounts: frozenset[str],
+) -> bool:
+    if provider_list != [None]:
+        return any(
+            p is not None and (canonical_provider(p) == "omp" or p in ("claudeplatform", "claude-platform"))
+            for p in provider_list
+        )
+    if all_accounts and "omp" not in all_accounts:
+        return False
+    return was_discovery
 
 
 def _live_omp_supplement(
@@ -678,6 +686,7 @@ def _live_omp_supplement(
     config: dict[str, Any] | None = None,
     provider_list: list[str | None] | None = None,
     was_discovery: bool = False,
+    all_accounts: frozenset[str] | None = None,
 ) -> list[AccountUsage]:
     """The ``omp`` row for a cache-served run.
 
@@ -689,10 +698,9 @@ def _live_omp_supplement(
     """
     if "omp" in (skip_providers or ()) or _cached_omp_satisfies_organization(cached, config):
         return []
-    if provider_list is not None and not _omp_supplement_requested(provider_list, was_discovery=was_discovery):
-        return []
-    # Widget snapshots carry Claude plan rows, not omp; supplement only then.
-    if not any(a.provider == "claude" for a in cached):
+    if provider_list is not None and not _omp_supplement_requested(
+        provider_list, was_discovery=was_discovery, all_accounts=all_accounts or frozenset()
+    ):
         return []
     outcome = _query_providers(
         ["claudeplatform"],

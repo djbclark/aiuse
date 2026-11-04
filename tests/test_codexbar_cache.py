@@ -287,7 +287,7 @@ def test_include_disabled_live_queries_opencodego_missing_from_the_cache(tmp_pat
         include_disabled=True,
         timeout_backoff=None,
     )
-    assert queried == ["opencodego"]
+    assert queried == ["claudeplatform", "opencodego"]
     assert {account.provider for account in accounts} == {"codex", "opencodego"}
 
 
