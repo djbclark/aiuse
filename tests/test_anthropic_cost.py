@@ -17,7 +17,7 @@ from aiuse.models import Snapshot
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 GRANTED = datetime(2026, 10, 13, tzinfo=UTC)
-EXPIRES = datetime(2026, 11, 8, tzinfo=UTC)
+EXPIRES = datetime(2026, 11, 6, tzinfo=UTC)
 FAKE_KEY = "sk-ant-admin-TESTONLY"
 ENV = {ac.KEY_ENV: FAKE_KEY}
 
@@ -212,7 +212,7 @@ def test_empty_report_cannot_refill_the_grant_it_is_capped_at_the_override():
     assert code == 0 and "capped" in line and "$95.57 of $200.00" in line
     entry = co.load_overrides(now=NOW)["omp"]
     assert entry["remaining_usd"] == pytest.approx(95.57) and "capped" in entry["note"]
-    assert "lower bound" in entry["note"]
+    assert "not promotional-only" in entry["note"]
 
 
 def test_reading_is_capped_at_the_previous_reading():

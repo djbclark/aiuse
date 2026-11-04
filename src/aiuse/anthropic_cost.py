@@ -153,7 +153,8 @@ def refresh(
     if grant is None:
         return (
             2,
-            "no grant parameters: run `aiuse set-credits omp --remaining N --total N --granted DATE --expires DATE` once",
+            "no grant parameters: set [credits.omp] grant_total_usd/granted_at/expires_at in config, "
+            "or run `aiuse set-credits omp --remaining N --total N --granted DATE --expires DATE` once",
         )
     total, granted_at, expires_at = grant
     if expires_at is not None and now >= expires_at:
@@ -216,7 +217,10 @@ def refresh(
         "total_usd": total,
         "granted_at": granted_at.isoformat(),
         "expires_at": expires_at.isoformat() if expires_at else None,
-        "note": f"admin api cost_report, a lower bound (counts all org spend since {granted_at.date().isoformat()}): ${spent:.2f}"
+        "note": (
+            f"admin api cost_report (all org API spend since {granted_at.date().isoformat()}, "
+            f"not promotional-only; ignores tier spend caps): ${spent:.2f}"
+        )
         + (f"; reading rose, capped at the {capped_by}'s figure" if capped_by else ""),
         "observed_at": now.isoformat(),
         "source": "admin-api",

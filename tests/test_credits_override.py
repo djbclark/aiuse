@@ -9,7 +9,7 @@ import pytest
 
 from aiuse import cli
 from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_entries, summary_line
-from aiuse.collectors.codexbar import _omp_credits_from_row
+from aiuse.collectors.codexbar import _omp_from_claudeplatform_row
 from aiuse.credits_override import (
     apply_credit_overrides,
     load_overrides,
@@ -20,7 +20,7 @@ from aiuse.credits_override import (
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
-EXPIRY = datetime(2026, 11, 8, tzinfo=UTC)
+EXPIRY = datetime(2026, 11, 6, tzinfo=UTC)
 
 
 def _codexbar_omp(*, updated: datetime, balance: float = 200.0, total: float = 200.0) -> AccountUsage:
@@ -69,24 +69,16 @@ def _omp(snap: dict) -> dict:
 
 def test_expires_at_in_account_json_and_from_codexbar_row():
     row = {
-        "provider": "claude",
+        "provider": "claudeplatform",
         "usage": {
             "updatedAt": "2026-10-19T10:00:00Z",
-            "details": [
-                {
-                    "rows": [
-                        {
-                            "id": "claude-cloud-credits",
-                            "usageValue": 95.57,
-                            "secondaryValue": "Expires 2026-11-08T00:00:00Z",
-                            "progress": {"used": 104.43, "total": 200},
-                        }
-                    ]
-                }
-            ],
+            "primary": {
+                "usedPercent": 47.785,
+                "resetDescription": "$95.57 of $200.00 left · Expires Nov 6 (UTC)",
+            },
         },
     }
-    account = _omp_credits_from_row(row)
+    account = _omp_from_claudeplatform_row(row)
     assert account is not None and account.expires_at == EXPIRY
     assert account.to_dict()["expires_at"] == EXPIRY.isoformat()
 
@@ -192,7 +184,7 @@ def test_burn_before_reset_fires_within_21_days_above_50_percent():
     enrich_snapshot(snap, now=NOW, credit_overrides={})
     (pool,) = pool_entries(snap, now=NOW)
     nudge = pool["burn_before_reset"]
-    assert nudge["days_left"] == 19.5
+    assert nudge["days_left"] == 17.5
     assert nudge["remaining_usd"] == 150.0
     assert nudge["remaining_percent"] == 75.0
     assert "use it before it lapses" in nudge["suggestion"]
@@ -218,14 +210,14 @@ def test_remaining_percent_semantics_unchanged():
 
 def test_set_credits_cli_round_trip(capsys):
     rc = run_set_credits(
-        ["omp", "--remaining", "95.57", "--total", "200", "--expires", "2026-11-08", "--note", "console 2026-10-19"]
+        ["omp", "--remaining", "95.57", "--total", "200", "--expires", "2026-11-06", "--note", "claude.ai billing"]
     )
     assert rc == 0
-    assert "recorded: omp $95.57 of $200.00 left, expires 2026-11-08" in capsys.readouterr().out
+    assert "recorded: omp $95.57 of $200.00 left, expires 2026-11-06" in capsys.readouterr().out
     entry = load_overrides()["omp"]
     assert entry["remaining_usd"] == 95.57 and entry["total_usd"] == 200.0
-    assert entry["expires_at"] == "2026-11-08T00:00:00+00:00"
-    assert entry["note"] == "console 2026-10-19"
+    assert entry["expires_at"] == "2026-11-06T00:00:00+00:00"
+    assert entry["note"] == "claude.ai billing"
     assert datetime.fromisoformat(entry["observed_at"]).tzinfo is not None
     assert {k: v for k, v in json.loads(overrides_path().read_text())["omp"].items() if k != "source"} == {
         k: v for k, v in entry.items() if k != "source"

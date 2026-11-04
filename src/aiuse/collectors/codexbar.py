@@ -6,10 +6,11 @@ import json
 import math
 import os
 import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import ContextVar, copy_context
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -252,9 +253,9 @@ def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -
     account = _from_row(row)
     account.notes.append(f"Cached widget snapshot age: {int(age_seconds)}s.")
     result = [account]
-    for sibling in (_opencode_zen_from_row(row), _omp_credits_from_row(row)):
-        if sibling is not None:
-            result.append(sibling)
+    zen = _opencode_zen_from_row(row)
+    if zen is not None:
+        result.append(zen)
     return result
 
 
@@ -345,6 +346,7 @@ def collect_codexbar(
     include_disabled: bool = False,
     http_url: str | None = None,
     http_token: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> list[AccountUsage]:
     """Collect CodexBar usage rows.
 
@@ -379,6 +381,7 @@ def collect_codexbar(
             cache_path=cache_path,
             all_accounts_providers=all_accounts_providers,
             include_disabled=include_disabled,
+            config=config,
         )
     finally:
         _CODEXBAR_HTTP.reset(reset)
@@ -398,11 +401,12 @@ def _collect_codexbar_impl(
     cache_path: Path | str | None = None,
     all_accounts_providers: frozenset[str] = frozenset(),
     include_disabled: bool = False,
+    config: dict[str, Any] | None = None,
 ) -> list[AccountUsage]:
     provider_list = _normalize_providers(providers)
     # Tool funding identities map to CodexBar's vendor query names, never to
     # another tool's subscription provider (Pi is OpenAI API, not Codex OAuth).
-    query_aliases = {"omp": "claude", "pi": "openai"}
+    query_aliases = {"omp": "claudeplatform", "pi": "openai"}
     provider_list = list(dict.fromkeys(query_aliases.get(p, p) if p is not None else None for p in provider_list))
     # "enabled" / "all" discovers the catalog. An explicit provider list does not,
     # and must not gain a Bedrock Cost Explorer call it did not ask for.
@@ -421,16 +425,15 @@ def _collect_codexbar_impl(
         return catalog_box["payload"]
 
     def finish(found: list[AccountUsage], *, queried: bool) -> list[AccountUsage]:
-        return _with_disabled(
-            _attach_bedrock(
-                found,
-                queried=queried,
-                skip_providers=skip_providers,
-                enabled_collect=was_discovery or include_disabled,
-                timeout=timeout,
-                catalog=catalog,
-            )
+        attached = _attach_bedrock(
+            found,
+            queried=queried,
+            skip_providers=skip_providers,
+            enabled_collect=was_discovery or include_disabled,
+            timeout=timeout,
+            catalog=catalog,
         )
+        return _filter_omp_by_config_organization(_with_disabled(attached), config)
 
     def _with_disabled(found: list[AccountUsage]) -> list[AccountUsage]:
         if not include_disabled:
@@ -525,6 +528,31 @@ def _collect_codexbar_impl(
     return finish(accounts + _query_error_rows(errors), queried=bedrock_queried)
 
 
+def _filter_omp_by_config_organization(
+    accounts: list[AccountUsage], config: dict[str, Any] | None
+) -> list[AccountUsage]:
+    from aiuse.config import credit_organization_name, organization_names_match
+
+    want = credit_organization_name(config, "omp")
+    if not want:
+        return accounts
+    kept: list[AccountUsage] = []
+    for account in accounts:
+        if account.provider != "omp":
+            kept.append(account)
+            continue
+        label = account.account or ""
+        if organization_names_match(want, label):
+            kept.append(account)
+            continue
+        print(
+            f"aiuse: ignoring omp row for organization {label!r}; "
+            f"[credits.omp] organization = {want!r} (CodexBar used a different Console org)",
+            file=sys.stderr,
+        )
+    return kept
+
+
 def _query_error_rows(errors: list[str]) -> list[AccountUsage]:
     if not errors:
         return []
@@ -576,9 +604,9 @@ def _collect_live(
                 if provider_arg is not None and provider_arg in reuse_notes:
                     account.notes = list(account.notes) + [reuse_notes[provider_arg]]
                 accounts.append(account)
-                for sibling in (_opencode_zen_from_row(row), _omp_credits_from_row(row)):
-                    if sibling is not None:
-                        accounts.append(sibling)
+                zen = _opencode_zen_from_row(row)
+                if zen is not None:
+                    accounts.append(zen)
     return accounts, errors
 
 
@@ -592,20 +620,28 @@ def _live_omp_supplement(
 ) -> list[AccountUsage]:
     """The ``omp`` row for a cache-served run.
 
-    The widget snapshot carries no cloud-session credits, so when it serves a
-    Claude row the credits need one live ``codexbar usage --provider claude``
-    (through the usual query gate and hang backoff). Best-effort: a failure
-    leaves the run without an ``omp`` row rather than failing the cached rows.
+    Claude Platform API credits are not in the widget snapshot, so when the
+    cache is used and there is no ``omp`` row yet, issue one live
+    ``codexbar usage --provider claudeplatform`` (through the query gate).
+    Best-effort: failure leaves the run without ``omp`` rather than failing
+    cached rows.
     """
-    if "omp" in (skip_providers or ()) or not any(a.provider == "claude" for a in cached):
+    if "omp" in (skip_providers or ()) or any(a.provider == "omp" for a in cached):
+        return []
+    # Widget snapshots carry Claude plan rows, not omp; supplement only then.
+    if not any(a.provider == "claude" for a in cached):
         return []
     outcome = _query_providers(
-        ["claude"], timeout=timeout, min_intervals=min_intervals, reuse_notes={}, backoff=backoff
+        ["claudeplatform"],
+        timeout=timeout,
+        min_intervals=min_intervals,
+        reuse_notes={},
+        backoff=backoff,
     )[0][1]
     if isinstance(outcome, CollectorError):
         return []
     rows = outcome if isinstance(outcome, list) else [outcome]
-    found = (_omp_credits_from_row(row) for row in rows if isinstance(row, dict))
+    found = (_omp_from_claudeplatform_row(row) for row in rows if isinstance(row, dict))
     return [account for account in found if account is not None]
 
 
@@ -1136,6 +1172,10 @@ def _openai_api_from_row(row: dict[str, Any]) -> AccountUsage:
 
 def _from_row(row: dict[str, Any]) -> AccountUsage:
     provider = str(row.get("provider") or "unknown").lower()
+    if provider in ("claudeplatform", "claude-platform"):
+        omp = _omp_from_claudeplatform_row(row)
+        if omp is not None:
+            return omp
     if provider in ("openai", "pi"):
         return _openai_api_from_row(row)
     source_tag = str(row.get("source") or "unknown mechanism")
@@ -1420,89 +1460,163 @@ def _opencode_zen_from_row(row: dict[str, Any]) -> AccountUsage | None:
 
 
 _CLOUD_CREDITS_ROW_ID = "claude-cloud-credits"
+_SUBSCRIPTION_GRANT_RE = re.compile(
+    r"\$([0-9,]+(?:\.[0-9]+)?)\s+of\s+\$([0-9,]+(?:\.[0-9]+)?)\s+left",
+    re.IGNORECASE,
+)
+_CONSOLE_EXPIRY_RE = re.compile(
+    r"Expires\s+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,\s+\d{4})?)\s+\(UTC\)",
+    re.IGNORECASE,
+)
+_CONSOLE_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
 
 
-def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
-    """Extract Claude's promotional cloud-session credits as the ``omp`` service.
+def _money_token(text: str) -> float:
+    return float(text.replace(",", ""))
 
-    The Max plan deposits Claude Platform API credits each billing cycle
-    ($200 on Max 20x, $100 on Max 5x). omp spends that balance. It is separate
-    from the plan's 5-hour and weekly limits, so CodexBar's ``claude-cloud-credits``
-    row becomes its own provider. Unused dollars expire at ``resets_at``, and
-    the next cycle deposits a new grant. CodexBar lists that reset and the
-    dollars, not ``windowMinutes``, so the length is one nominal month ending
-    at the reset.
+
+def _parse_console_expiry_label(text: str, *, reference: datetime | None = None) -> datetime | None:
+    """Console grant expiry: UTC midnight on the labeled calendar date (CodexBar convention)."""
+    match = _CONSOLE_EXPIRY_RE.search(text)
+    if not match:
+        iso = re.search(r"\d{4}-\d{2}-\d{2}T[\d:.]+Z", text)
+        return parse_dt(iso.group(0)) if iso else None
+    label = match.group(1).strip()
+    parts = label.replace(",", "").split()
+    if len(parts) not in (2, 3):
+        return None
+    month = _CONSOLE_MONTHS.get(parts[0].casefold())
+    if month is None:
+        return None
+    try:
+        day = int(parts[1])
+    except ValueError:
+        return None
+    ref = reference or utcnow()
+    year = int(parts[2]) if len(parts) == 3 else ref.year
+    if len(parts) == 2 and (month, day) < (ref.month, ref.day):
+        year += 1
+    return datetime(year, month, day, tzinfo=UTC)
+
+
+def _subscription_grant_from_text(
+    text: str,
+    *,
+    reference: datetime | None = None,
+) -> tuple[float, float, datetime | None] | None:
+    pair = _SUBSCRIPTION_GRANT_RE.search(text)
+    if not pair:
+        return None
+    remaining = _money_token(pair.group(1))
+    total = _money_token(pair.group(2))
+    if total <= 0 or remaining < 0 or remaining > total:
+        return None
+    expires_at = _parse_console_expiry_label(text, reference=reference)
+    return remaining, total, expires_at
+
+
+def _subscription_grant_from_usage(usage: dict[str, Any]) -> tuple[float, float, datetime | None] | None:
+    """The linked Console organization's subscription API credit grant (Max/Ultra/Team)."""
+    updated = parse_dt(usage.get("updatedAt"))
+    primary = usage.get("primary")
+    if isinstance(primary, dict):
+        desc = str(primary.get("resetDescription") or "")
+        parsed = _subscription_grant_from_text(desc, reference=updated)
+        if parsed is not None:
+            return parsed
+        used_pct = _f(primary.get("usedPercent"))
+        if used_pct is not None:
+            # Some CodexBar builds only expose usedPercent on the primary lane.
+            return None
+    for section in usage.get("details") or []:
+        if not isinstance(section, dict):
+            continue
+        title = str(section.get("title") or "")
+        if title != "Other credit grants":
+            continue
+        for item in section.get("rows") or []:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "")
+            if "api credit" not in label.casefold():
+                continue
+            value = str(item.get("value") or "")
+            secondary = str(item.get("secondaryValue") or "")
+            parsed = _subscription_grant_from_text(f"{value} · {secondary}", reference=updated)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
+    """Claude Console subscription API credits (``subscription_api_credit``), not cloud-session credits.
+
+    CodexBar's Claude Platform provider reads ``/prepaid/credits`` and surfaces the
+    subscription grant in ``usage.primary``. Tier monthly spend caps (for example
+    Scale's $200,000 ceiling) and total prepaid balance are ignored here.
     """
-    if str(row.get("provider") or "").lower() != "claude":
+    if str(row.get("provider") or "").lower() not in ("claudeplatform", "claude-platform"):
         return None
-    usage = row.get("usage")
-    details = usage.get("details") if isinstance(usage, dict) else None
-    credit_row = next(
-        (
-            item
-            for section in details or []
-            if isinstance(section, dict)
-            for item in section.get("rows") or []
-            if isinstance(item, dict) and item.get("id") == _CLOUD_CREDITS_ROW_ID
-        ),
-        None,
+    usage_value = row.get("usage")
+    usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
+    grant = _subscription_grant_from_usage(usage)
+    if grant is None:
+        return None
+    remaining, total, expires_at = grant
+    spent = round(max(0.0, total - remaining), 6)
+    remaining_percent = max(0.0, min(100.0, remaining / total * 100.0))
+    window = QuotaWindow(
+        label="credits",
+        used_percent=100.0 - remaining_percent,
+        remaining_percent=remaining_percent,
+        resets_at=expires_at,
+        window_minutes=WINDOW_NOMINAL_MINUTES["monthly"],
+        reset_description=f"${remaining:.2f} of ${total:.2f} left, expires",
+        refill_capacity=total,
+        refill_capacity_unit="usd",
+        window_id=_CLOUD_CREDITS_ROW_ID,
     )
-    if credit_row is None:
-        return None
-    progress = credit_row.get("progress")
-    progress = progress if isinstance(progress, dict) else {}
-    total = _f(progress.get("total"))
-    remaining = _f(credit_row.get("usageValue"))
-    used = _f(progress.get("used"))
-    if remaining is None and total is not None and used is not None:
-        remaining = max(0.0, total - used)
-    if remaining is None:
-        return None
-    # Dollars spent so far.
-    spent = used if used is not None else (max(0.0, total - remaining) if total is not None else None)
-    spent = round(spent, 6) if spent is not None else None  # drop float noise from the subtraction
-    expiry = re.search(r"\d{4}-\d{2}-\d{2}T[\d:.]+Z", str(credit_row.get("secondaryValue") or ""))
-    expires_at = parse_dt(expiry.group(0)) if expiry else None
-    window: QuotaWindow | None = None
-    if total is not None and total > 0:
-        remaining_percent = max(0.0, min(100.0, remaining / total * 100.0))
-        window = QuotaWindow(
-            label="credits",
-            used_percent=100.0 - remaining_percent,
-            remaining_percent=remaining_percent,
-            resets_at=expires_at,
-            window_minutes=WINDOW_NOMINAL_MINUTES["monthly"],
-            reset_description=f"${remaining:.2f} of ${total:.2f} left, expires",
-            refill_capacity=total,
-            refill_capacity_unit="usd",
-            window_id=_CLOUD_CREDITS_ROW_ID,
-            raw=credit_row,
-        )
-    usage_dict = usage if isinstance(usage, dict) else {}
+    identity = usage.get("identity")
+    identity = identity if isinstance(identity, dict) else {}
+    account = _display_account(row.get("account") or identity.get("accountOrganization") or usage.get("accountEmail"))
     source_tag = str(row.get("source") or "auto")
     return AccountUsage(
         source="codexbar",
         provider="omp",
-        account=_display_account(row.get("account") or usage_dict.get("accountEmail")),
-        billing_kind=BillingKind.SUBSCRIPTION_WINDOW if window is not None else BillingKind.PREPAID_BALANCE,
-        windows=[window] if window is not None else [],
+        account=account,
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[window],
         balance_usd=remaining,
         spent_usd=spent,
         expires_at=expires_at,
-        # The Claude Max plan's monthly API credits (a promotional grant that expires): a normal
-        # tier since 2026-10-19 (operator), api-only work first, then code/bulk via omp, never
-        # left unspent. The per-run operator gate was lifted the same day; the row keeps the
-        # provider name "omp" because other tools look it up by that name.
         requires_operator_approval=False,
         credits_label="Claude API credits",
         notes=[
-            f"Live data fetched by CodexBar via {source_tag}.",
-            "Claude API credits: the Max plan's monthly promotional grant (expiring); spent by omp "
-            "or any ANTHROPIC_API_KEY path. Normal tier since 2026-10-19; use before expiry.",
+            f"Live data fetched by CodexBar Claude Platform via {source_tag}.",
+            "Claude API credits: monthly Console subscription grant (Ultra/Max/Team); "
+            "not claude.ai cloud-session credits or API tier spend caps.",
         ],
         raw={"provider": "omp", "source_row": row},
-        collected_at=parse_dt(usage_dict.get("updatedAt")),
+        collected_at=parse_dt(usage.get("updatedAt")),
     )
+
+
+def _omp_credits_from_row(row: dict[str, Any]) -> AccountUsage | None:
+    """Deprecated: cloud-session credits on the Claude OAuth row are not omp."""
+    return None
 
 
 def _window(label: str, block: dict[str, Any], *, window_id: str | None = None) -> QuotaWindow | None:

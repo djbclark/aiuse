@@ -45,7 +45,7 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
-from aiuse.config import plan_monthly_spend_limit
+from aiuse.config import credit_organization_name, organization_names_match, plan_monthly_spend_limit
 from aiuse.models import (
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
@@ -222,16 +222,21 @@ def load_file_entry(path: Path, source: str, provider: str = OVERRIDE_PROVIDER) 
     return _load_file(path, source).get(provider)
 
 
-def load_grant_params(provider: str = OVERRIDE_PROVIDER) -> tuple[float, datetime, datetime | None] | None:
-    """``(total_usd, granted_at, expires_at)`` from the operator override, or None.
+def load_grant_params(
+    provider: str = OVERRIDE_PROVIDER,
+    config: Mapping[str, Any] | None = None,
+) -> tuple[float, datetime, datetime | None] | None:
+    """``(total_usd, granted_at, expires_at)`` from operator override, else config.
 
     The grant's parameters do not age, so the override's 7-day limit is not applied.
     """
     entry = _load_file(overrides_path(), OVERRIDE_SOURCE).get(provider)
     granted = parse_dt(entry.get("granted_at")) if entry else None
-    if entry is None or granted is None:
-        return None
-    return float(entry["total_usd"]), granted, parse_dt(entry.get("expires_at"))
+    if entry is not None and granted is not None:
+        return float(entry["total_usd"]), granted, parse_dt(entry.get("expires_at"))
+    from aiuse.config import credit_grant_from_config
+
+    return credit_grant_from_config(config, provider)
 
 
 def _load_file(path: Path, source: str) -> dict[str, dict[str, Any]]:
@@ -514,6 +519,18 @@ def _apply_credit_override_for_provider(
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != provider:
             continue
+        want_org = credit_organization_name(config, provider) if provider == OVERRIDE_PROVIDER else None
+        if (
+            want_org
+            and account.get("source") == "codexbar"
+            and not organization_names_match(want_org, account.get("account"))
+        ):
+            wrong = f"organization {account.get('account')!r} does not match [credits.omp] organization = {want_org!r}"
+            if wrong not in (account.get("notes") or []):
+                account["notes"] = [*(account.get("notes") or []), wrong]
+            _expire_reading(account, wrong)
+            account["observed_at"] = None
+            continue
         if account.get("source") not in (OVERRIDE_SOURCE, "admin-api"):
             _normalize_credits_clock(account, override)
         if ignored:
@@ -636,6 +653,23 @@ def _apply_credit_override_for_provider(
             if not account.get("reading_expired"):
                 _expire_reading(account, f"is for a grant that expired {expiry.date().isoformat()}")
         account["observed_at"] = reading_at.isoformat() if reading_at else None
+        if provider == OVERRIDE_PROVIDER and account.get("expires_at") is None:
+            grant = load_grant_params(provider, config)
+            if grant is not None:
+                total, granted_at, expires = grant
+                if expires is not None:
+                    account["expires_at"] = expires.isoformat()
+                    for window in account.get("windows") or []:
+                        if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
+                            window["resets_at"] = expires.isoformat()
+                    _normalize_credits_clock(
+                        account,
+                        {
+                            "total_usd": total,
+                            "granted_at": granted_at.isoformat() if granted_at else None,
+                            "expires_at": expires.isoformat(),
+                        },
+                    )
 
         plans = config.get("plans") if isinstance(config, Mapping) else None
         spend_limit = plan_monthly_spend_limit(plans, provider, account.get("account")) if plans else None
