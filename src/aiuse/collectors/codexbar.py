@@ -1551,8 +1551,6 @@ def _parse_console_expiry_label(text: str, *, reference: datetime | None = None)
         return None
     ref = reference or utcnow()
     year = int(parts[2]) if len(parts) == 3 else ref.year
-    if len(parts) == 2 and (month, day) < (ref.month, ref.day):
-        year += 1
     return datetime(year, month, day, tzinfo=UTC)
 
 
@@ -1636,8 +1634,12 @@ def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
     identity = usage.get("identity")
     identity = identity if isinstance(identity, dict) else {}
     org_raw = identity.get("accountOrganization")
-    org_raw = org_raw if isinstance(org_raw, str) and org_raw.strip() else None
-    account = _display_account(row.get("account") or org_raw or usage.get("accountEmail"))
+    if not isinstance(org_raw, str) or not org_raw.strip():
+        row_account = row.get("account")
+        org_raw = row_account if isinstance(row_account, str) and row_account.strip() else None
+    else:
+        org_raw = org_raw.strip()
+    account = _display_account(org_raw or row.get("account") or usage.get("accountEmail"))
     source_tag = str(row.get("source") or "auto")
     return AccountUsage(
         source="codexbar",

@@ -143,6 +143,43 @@ def test_other_grants_ignore_unlabeled_promotional_api_credit():
     assert remaining == 0.0 and total == 200.0
 
 
+def test_yearless_expiry_in_other_grants_does_not_roll_to_next_year():
+    usage = {
+        "updatedAt": "2026-11-07T12:00:00Z",
+        "primary": None,
+        "details": [
+            {
+                "title": "Other credit grants",
+                "rows": [
+                    {
+                        "label": "API credit (Ultra)",
+                        "value": "$0.00 of $200.00 left",
+                        "secondaryValue": "Expires Nov 6 (UTC)",
+                    }
+                ],
+            }
+        ],
+    }
+    parsed = _subscription_grant_from_usage(usage)
+    assert parsed is not None
+    _, _, expires_at = parsed
+    assert expires_at == EXPIRY
+
+
+def test_console_organization_falls_back_to_row_account():
+    row = {
+        "provider": "claudeplatform",
+        "account": "Freedom Included",
+        "usage": {
+            "updatedAt": "2026-11-04T13:00:00Z",
+            "primary": {"resetDescription": "$0.00 of $200.00 left · Expires Nov 6 (UTC)"},
+        },
+    }
+    account = _omp_from_claudeplatform_row(row)
+    assert account is not None
+    assert account.console_organization == "Freedom Included"
+
+
 def test_exhausted_grant_in_other_credits_section():
     row = {
         "provider": "claudeplatform",

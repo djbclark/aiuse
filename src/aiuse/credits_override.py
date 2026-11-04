@@ -575,6 +575,7 @@ def _apply_credit_override_for_provider(
             account["observed_at"] = None
         if account.get("source") not in (OVERRIDE_SOURCE, "admin-api"):
             _normalize_credits_clock(account, override)
+        _attach_config_grant_clock(account, provider=provider, config=config)
         if ignored:
             ignored_note = f"credit override ignored: {ignored}"
             if ignored_note not in (account.get("notes") or []):
@@ -688,7 +689,6 @@ def _apply_credit_override_for_provider(
                 _expire_reading(account)
         elif reading_at is not None and now - reading_at > CODEXBAR_MAX_AGE:
             _expire_reading(account)
-        _attach_config_grant_clock(account, provider=provider, config=config)
         # The grant itself lapsing is independent of how fresh the reading is.
         expiry = _grant_expiry(account)
         if expiry is not None and now >= expiry:

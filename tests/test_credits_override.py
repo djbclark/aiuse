@@ -594,6 +594,42 @@ def test_config_grant_clock_expires_balance_before_routing():
     assert [p for p in available_pools(snap) if p["provider"] == "omp"] == []
 
 
+def test_config_grant_clock_expires_cached_operator_override():
+    account = AccountUsage(
+        source="operator-override",
+        provider="omp",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="credits",
+                used_percent=52.215,
+                remaining_percent=47.785,
+                refill_capacity=200.0,
+                refill_capacity_unit="usd",
+                window_id="claude-cloud-credits",
+            )
+        ],
+        balance_usd=95.57,
+        spent_usd=104.43,
+        credits_label="Claude API credits",
+        collected_at=NOW - timedelta(minutes=5),
+    )
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-10-18",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account])
+    apply_credit_overrides_to_snapshot(snap, config, overrides=_override(), now=NOW)
+    omp = next(a for a in snap.accounts if a.provider == "omp")
+    assert omp.balance_usd is None
+    assert any("grant" in note.casefold() and "expir" in note.casefold() for note in omp.notes)
+
+
 def test_set_credits_refuses_values_above_the_dollar_cap():
     save_override("omp", remaining=5.0, total=10.0, expires=None, note=None, now=datetime.now(UTC))
     assert run_set_credits(["omp", "--remaining", "2000000000", "--total", "3000000000"]) == 2
