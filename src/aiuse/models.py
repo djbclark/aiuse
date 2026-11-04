@@ -151,6 +151,8 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "chatgpt": "codex",
     "openai-codex": "codex",
     "openai": "pi",  # CodexBar's API costs, not its codex/OAuth subscription
+    "claudeplatform": "omp",  # CodexBar Claude Console subscription API credits
+    "claude-platform": "omp",
     "github-copilot": "copilot",
     "grok-build": "grok",
     "supergrok": "grok",

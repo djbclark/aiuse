@@ -143,6 +143,36 @@ def test_other_grants_ignore_unlabeled_promotional_api_credit():
     assert remaining == 0.0 and total == 200.0
 
 
+def test_claudeplatform_canonicalizes_to_omp():
+    from aiuse.models import canonical_provider
+
+    assert canonical_provider("claudeplatform") == "omp"
+    assert canonical_provider("claude-platform") == "omp"
+
+
+def test_yearless_december_expiry_after_january_reading_uses_previous_year():
+    usage = {
+        "updatedAt": "2027-01-02T12:00:00Z",
+        "primary": None,
+        "details": [
+            {
+                "title": "Other credit grants",
+                "rows": [
+                    {
+                        "label": "API credit (Ultra)",
+                        "value": "$0.00 of $200.00 left",
+                        "secondaryValue": "Expires Dec 6 (UTC)",
+                    }
+                ],
+            }
+        ],
+    }
+    parsed = _subscription_grant_from_usage(usage)
+    assert parsed is not None
+    _, _, expires_at = parsed
+    assert expires_at == datetime(2026, 12, 6, tzinfo=UTC)
+
+
 def test_yearless_january_expiry_after_december_reading_uses_next_year():
     usage = {
         "updatedAt": "2026-12-20T12:00:00Z",

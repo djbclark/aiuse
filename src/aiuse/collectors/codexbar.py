@@ -1554,12 +1554,15 @@ def _parse_console_expiry_label(text: str, *, reference: datetime | None = None)
         return None
     ref = reference or utcnow()
     year = int(parts[2]) if len(parts) == 3 else ref.year
-    expiry = datetime(year, month, day, tzinfo=UTC)
     if len(parts) == 2:
+        if month >= 10 and ref.month <= 3:
+            year = ref.year - 1
+        expiry = datetime(year, month, day, tzinfo=UTC)
         ref_day = ref.replace(hour=0, minute=0, second=0, microsecond=0)
         if expiry < ref_day and month <= 3 and ref.month >= 10:
-            expiry = datetime(year + 1, month, day, tzinfo=UTC)
-    return expiry
+            expiry = datetime(ref.year + 1, month, day, tzinfo=UTC)
+        return expiry
+    return datetime(year, month, day, tzinfo=UTC)
 
 
 def _subscription_grant_from_text(
