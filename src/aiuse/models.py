@@ -652,6 +652,8 @@ class AccountUsage:
     source: str  # cswap | codexbar | caut | caam | openusage_ai | openusage_sh | tokscale | clinepass | paseo | acp
     provider: str
     account: str | None = None
+    # Console organization for omp (before ``[account_aliases]`` display names).
+    console_organization: str | None = None
     plan: str | None = None
     billing_kind: BillingKind = BillingKind.UNKNOWN
     windows: list[QuotaWindow] = field(default_factory=list)
@@ -712,6 +714,8 @@ class AccountUsage:
         }
         if self.collected_at is not None:
             d["collected_at"] = self.collected_at.isoformat()
+        if self.console_organization:
+            d["console_organization"] = self.console_organization
         if self.usage_credits is not None:
             d["usage_credits"] = self.usage_credits.to_dict()
         if self.spent_usd is not None:

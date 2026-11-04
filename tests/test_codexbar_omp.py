@@ -35,6 +35,21 @@ def _claudeplatform_row(*, primary_desc: str, updated: str = "2026-11-04T13:00:0
     }
 
 
+def test_primary_resets_at_wins_over_yearless_expiry_label():
+    usage = {
+        "updatedAt": "2026-11-07T12:00:00Z",
+        "primary": {
+            "usedPercent": 100.0,
+            "resetDescription": "$0.00 of $200.00 left · Expires Nov 6 (UTC)",
+            "resetsAt": "2026-11-06T00:00:00Z",
+        },
+    }
+    parsed = _subscription_grant_from_usage(usage)
+    assert parsed is not None
+    _, _, expires_at = parsed
+    assert expires_at == EXPIRY
+
+
 def test_subscription_grant_from_primary():
     row = _claudeplatform_row(primary_desc="$0.00 of $200.00 left · Expires Nov 6 (UTC)")
     account = _omp_from_claudeplatform_row(row)

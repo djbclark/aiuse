@@ -12,6 +12,7 @@ from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_e
 from aiuse.collectors.codexbar import _omp_from_claudeplatform_row
 from aiuse.credits_override import (
     apply_credit_overrides,
+    apply_credit_overrides_to_snapshot,
     load_overrides,
     overrides_path,
     run_set_credits,
@@ -564,16 +565,12 @@ def test_unexpired_grant_is_untouched():
 def test_organization_check_uses_console_identity_not_display_alias():
     account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
     account.account = "Freedom (display alias)"
-    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
-    snap["accounts"][0]["raw"] = {
-        "account_organization": "Freedom Included",
-        "source_row": {"usage": {"identity": {"accountOrganization": "Freedom Included"}}},
-    }
+    account.console_organization = "Freedom Included"
+    snap = Snapshot(collected_at=NOW, accounts=[account])
     config = {"credits": {"omp": {"organization": "Freedom Included"}}}
-    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
-    omp = _omp(snap)
-    assert omp.get("reading_expired") is not True
-    assert omp["balance_usd"] == 200.0
+    apply_credit_overrides_to_snapshot(snap, config, overrides={}, now=NOW)
+    (omp,) = [a for a in snap.accounts if a.provider == "omp"]
+    assert omp.balance_usd == 200.0
 
 
 def test_config_grant_clock_expires_balance_before_routing():

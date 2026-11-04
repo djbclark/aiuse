@@ -512,6 +512,9 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 source=str(row.get("source") or "cache"),
                 provider=str(row.get("provider") or "unknown"),
                 account=row.get("account"),
+                console_organization=(
+                    row.get("console_organization") if isinstance(row.get("console_organization"), str) else None
+                ),
                 plan=row.get("plan"),
                 billing_kind=billing,
                 windows=windows,

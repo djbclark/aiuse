@@ -766,6 +766,11 @@ def omp_organization_label(account: Any) -> str | None:
     Uses the collector's organization identity, not a display alias applied later
     by ``[account_aliases]``.
     """
+    pinned = getattr(account, "console_organization", None)
+    if pinned is None and isinstance(account, dict):
+        pinned = account.get("console_organization")
+    if isinstance(pinned, str) and pinned.strip():
+        return pinned.strip()
     raw = getattr(account, "raw", None)
     if raw is None and isinstance(account, dict):
         raw = account.get("raw")

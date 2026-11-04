@@ -1580,7 +1580,11 @@ def _subscription_grant_from_usage(usage: dict[str, Any]) -> tuple[float, float,
         desc = str(primary.get("resetDescription") or "")
         parsed = _subscription_grant_from_text(desc, reference=updated)
         if parsed is not None:
-            return parsed
+            remaining, total, expires_at = parsed
+            structured = parse_dt(primary.get("resetsAt") or primary.get("resets_at"))
+            if structured is not None:
+                expires_at = structured
+            return remaining, total, expires_at
     for section in usage.get("details") or []:
         if not isinstance(section, dict):
             continue
@@ -1639,6 +1643,7 @@ def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
         source="codexbar",
         provider="omp",
         account=account,
+        console_organization=org_raw,
         billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
         windows=[window],
         balance_usd=remaining,
