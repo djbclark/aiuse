@@ -12,6 +12,8 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-03
+
 ### Added
 
 - **Bypass omp rate-gate for active API keys**: inspects `~/.omp/agent/agent.db`
@@ -265,7 +267,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v3.14.0...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/djbclark/aiuse/compare/v3.14.0...v4.0.0
 [3.14.0]: https://github.com/djbclark/aiuse/compare/v3.13.2...v3.14.0
 [3.13.2]: https://github.com/djbclark/aiuse/compare/v3.13.1...v3.13.2
 [3.13.1]: https://github.com/djbclark/aiuse/compare/v3.13.0...v3.13.1
