@@ -60,6 +60,20 @@ def test_subscription_grant_from_primary():
     assert account.windows[0].refill_capacity == 200.0
 
 
+def test_from_row_without_subscription_grant_returns_omp_error():
+    row = {
+        "provider": "claudeplatform",
+        "usage": {
+            "updatedAt": "2026-11-04T13:00:00Z",
+            "primary": {"usedPercent": 12.0, "resetDescription": "Resets in 3 hours"},
+        },
+    }
+    account = _from_row(row)
+    assert account.provider == "omp"
+    assert account.error
+    assert account.balance_usd is None
+
+
 def test_from_row_maps_claudeplatform_to_omp():
     row = _claudeplatform_row(primary_desc="$50.00 of $200.00 left · Expires Nov 6 (UTC)")
     account = _from_row(row)

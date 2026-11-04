@@ -485,7 +485,7 @@ def _collect_codexbar_impl(
             omp = _live_omp_supplement(
                 cached,
                 skip_providers=skip_providers,
-                timeout=provider_timeouts.get("claude", timeout) if provider_timeouts else timeout,
+                timeout=_claudeplatform_query_timeout(provider_timeouts, timeout),
                 min_intervals=min_intervals,
                 backoff=backoff,
                 config=config,
@@ -637,6 +637,16 @@ def _cached_omp_satisfies_organization(cached: list[AccountUsage], config: dict[
     if not want:
         return True
     return any(organization_names_match(want, omp_organization_label(row)) for row in omp_rows)
+
+
+def _claudeplatform_query_timeout(provider_timeouts: dict[str, float] | None, default: float) -> float:
+    if not provider_timeouts:
+        return default
+    for key in ("claudeplatform", "claude-platform", "omp"):
+        value = provider_timeouts.get(key)
+        if value is not None:
+            return value
+    return default
 
 
 def _live_omp_supplement(
@@ -1209,6 +1219,22 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         omp = _omp_from_claudeplatform_row(row)
         if omp is not None:
             return omp
+        usage_blob = row.get("usage")
+        usage_map: dict[str, Any] = usage_blob if isinstance(usage_blob, dict) else {}
+        identity_blob = usage_map.get("identity")
+        identity_map: dict[str, Any] = identity_blob if isinstance(identity_blob, dict) else {}
+        return AccountUsage(
+            source="codexbar",
+            provider="omp",
+            account=_display_account(
+                row.get("account") or identity_map.get("accountOrganization") or usage_map.get("accountEmail")
+            ),
+            error="Claude Platform usage did not include a recognizable subscription API credit grant",
+            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            credits_label="Claude API credits",
+            raw=row,
+            collected_at=parse_dt(usage_map.get("updatedAt")),
+        )
     if provider in ("openai", "pi"):
         return _openai_api_from_row(row)
     source_tag = str(row.get("source") or "unknown mechanism")
