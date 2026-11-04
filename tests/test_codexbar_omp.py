@@ -235,6 +235,30 @@ def test_console_organization_falls_back_to_row_account():
     assert account.console_organization == "Freedom Included"
 
 
+def test_exhausted_max_plan_grant_labels_in_other_credits():
+    for label in ("API credit (Max 20x)", "API credit (Max 5x)"):
+        usage = {
+            "updatedAt": "2026-11-04T13:00:00Z",
+            "primary": None,
+            "details": [
+                {
+                    "title": "Other credit grants",
+                    "rows": [
+                        {
+                            "label": label,
+                            "value": "$0.00 of $200.00 left",
+                            "secondaryValue": "Expires Nov 6 (UTC)",
+                        }
+                    ],
+                }
+            ],
+        }
+        parsed = _subscription_grant_from_usage(usage)
+        assert parsed is not None
+        remaining, total, expires_at = parsed
+        assert remaining == 0.0 and total == 200.0 and expires_at == EXPIRY
+
+
 def test_exhausted_grant_in_other_credits_section():
     row = {
         "provider": "claudeplatform",

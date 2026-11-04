@@ -1542,7 +1542,7 @@ def _opencode_zen_from_row(row: dict[str, Any]) -> AccountUsage | None:
 
 _CLOUD_CREDITS_ROW_ID = "claude-cloud-credits"
 _SUBSCRIPTION_API_CREDIT_LABEL = re.compile(
-    r"api credit\s*\((?:ultra|max|team|pro)\)",
+    r"api credit\s*\((?:ultra|max(?:\s+\d+x)?|team|pro)\)",
     re.IGNORECASE,
 )
 
