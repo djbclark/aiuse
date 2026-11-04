@@ -573,6 +573,27 @@ def test_organization_check_uses_console_identity_not_display_alias():
     assert omp.balance_usd == 200.0
 
 
+def test_config_grant_clock_skips_mismatched_grant_total():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5), total=100.0, balance=50.0)
+    account.expires_at = None
+    account.windows[0].resets_at = None
+    account.windows[0].refill_capacity = 100.0
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-10-18",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    assert omp.get("reading_expired") is not True
+    assert omp["balance_usd"] == 50.0
+
+
 def test_config_grant_clock_expires_balance_before_routing():
     account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
     account.expires_at = None

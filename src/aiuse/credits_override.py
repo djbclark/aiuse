@@ -470,6 +470,16 @@ def _attach_config_grant_clock(
     total, granted_at, expires = grant
     if expires is None:
         return
+    capacity = next(
+        (
+            w.get("refill_capacity")
+            for w in account.get("windows") or []
+            if isinstance(w, dict) and w.get("refill_capacity_unit") == "usd"
+        ),
+        None,
+    )
+    if capacity is not None and abs(float(capacity) - float(total)) > _EPSILON:
+        return
     account["expires_at"] = expires.isoformat()
     for window in account.get("windows") or []:
         if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
