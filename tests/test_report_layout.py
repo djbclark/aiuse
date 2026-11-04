@@ -16,7 +16,7 @@ from aiuse.report import (
     render_report,
     render_stderr_meta,
 )
-from aiuse.timefmt import format_as_of
+from aiuse.timefmt import format_stamp
 from aiuse.watch import render_watch_board
 
 
@@ -60,7 +60,7 @@ def test_fresh_widget_envelope_retains_old_pi_spend_age(tmp_path, age_hours, gat
     text = render_clock_matrix([], snapshot=snapshot, color=False, width=200)
     line = _row_line(text, "pi")
     assert "codex-api" in line
-    assert format_as_of(measured) in line
+    assert format_stamp(measured) in line
     if not gated:
         assert "↑ $2.80 PAYG" in line
         assert "↓" not in line
@@ -200,7 +200,7 @@ def test_other_column_absent_without_tail_notes():
 
 
 def test_stale_follows_other():
-    from aiuse.timefmt import format_as_of
+    from aiuse.timefmt import format_stamp
 
     snap = _snapshot(_omp, _grok)
     snap.accounts[0].collected_at = utcnow() - timedelta(days=2)
@@ -208,7 +208,7 @@ def test_stale_follows_other():
     omp = _row_line(text, "omp")
     measured = snap.accounts[0].collected_at
     assert measured is not None
-    assert omp.endswith("↓$249.27/$250.00 plan " + format_as_of(measured))
+    assert omp.endswith("↓$249.27/$250.00 plan " + format_stamp(measured))
     assert "STALE" not in text
     col = text.splitlines()[0].index("OTHER")
     assert omp[col:].startswith("↓$249.27/$250.00 plan")

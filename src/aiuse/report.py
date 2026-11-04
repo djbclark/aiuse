@@ -71,7 +71,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
-from aiuse.timefmt import format_as_of, format_clock, lead_phrase
+from aiuse.timefmt import format_as_of, format_clock, format_stamp, lead_phrase
 
 URGENCY_ICON = {
     Urgency.CRITICAL: "!!!",
@@ -1237,10 +1237,10 @@ def _clock_span(cell: _ClockCell, *, compact: bool) -> tuple[_ResetSpan | None, 
 
 
 def _row_as_of(row: _MatrixRow) -> str:
-    """``(as of 10/29 9:02pm)`` when this row's reading is past the freshness threshold."""
+    """``10/29 9:02pm`` when this row's reading is past the freshness threshold (yellow, no label)."""
     if not row.stale or row.measured_at is None:
         return ""
-    return format_as_of(row.measured_at)
+    return format_stamp(row.measured_at)
 
 
 def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
