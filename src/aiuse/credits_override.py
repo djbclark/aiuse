@@ -480,6 +480,14 @@ def _attach_config_grant_clock(
     )
     if capacity is not None and abs(float(capacity) - float(total)) > _EPSILON:
         return
+    if capacity is None:
+        balance = account.get("balance_usd")
+        spent = account.get("spent_usd")
+        if balance is not None and spent is not None:
+            if abs(float(balance) + float(spent) - float(total)) > _EPSILON:
+                return
+        elif account.get("source") in (OVERRIDE_SOURCE, "admin-api", "none"):
+            return
     account["expires_at"] = expires.isoformat()
     for window in account.get("windows") or []:
         if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
