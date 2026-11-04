@@ -146,7 +146,13 @@ def overrides_path() -> Path:
 
 def _config_hides_omp(config: Mapping[str, Any] | None, provider: str = OVERRIDE_PROVIDER) -> bool:
     """The operator hid or disabled this credit provider: no override output."""
+    from aiuse.provider_select import blocked_reason, reenabled_by_include
+
+    if blocked_reason(config, provider):
+        return True
     for section in ("hidden_pools", "disabled_services"):
+        if section == "disabled_services" and reenabled_by_include(config, provider):
+            continue
         mapping = (config or {}).get(section)
         if isinstance(mapping, Mapping) and any(parse_pool_rule_key(str(key))[0] == provider for key in mapping):
             return True

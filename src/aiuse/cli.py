@@ -22,6 +22,7 @@ from aiuse.collectors.base import which
 from aiuse.collectors.runner import run_collectors
 from aiuse.config import (
     DEFAULT_SUBPROCESS_TIMEOUT,
+    canonical_disabled_services,
     collector_health_url,
     default_config_dir,
     default_config_path,
@@ -33,6 +34,17 @@ from aiuse.config import (
     validate_config,
 )
 from aiuse.models import OPERATOR_APPROVAL_NOTICE, Snapshot, Urgency, UseOrLoseAlert, provider_display_name
+from aiuse.provider_select import (
+    blocked_reason,
+    reenabled_providers,
+    selection_active,
+    selection_warnings,
+    set_selection,
+    split_known,
+    split_patterns,
+    unmatched_patterns,
+    with_include,
+)
 from aiuse.report import render_report, render_status_line, render_stderr_meta
 from aiuse.tty import restore_stdin_tty, save_stdin_tty
 
@@ -377,6 +389,41 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--include",
+        action="append",
+        metavar="LIST",
+        help=(
+            "Only these providers (comma-separated ids, display names or globs such as 'oc-*'; repeatable), "
+            "overriding config.toml for this run: a match that [disabled_services] disables is re-enabled, "
+            "everything else is dropped. Operator-only for AI agents. A run narrowed by this or --exclude "
+            "is never saved as the latest snapshot"
+        ),
+    )
+    p.add_argument(
+        "--exclude",
+        action="append",
+        metavar="LIST",
+        help=(
+            "Drop these providers for this run, on top of [disabled_services] (same LIST syntax as --include; "
+            "wins when a provider matches both)"
+        ),
+    )
+    p.add_argument(
+        "--show-included",
+        nargs="?",
+        const="",
+        metavar="LIST",
+        help=(
+            "Print the providers this run would include (comma-separated), then exit. With LIST: which known "
+            "providers match it as an --include, after config.toml and --exclude"
+        ),
+    )
+    p.add_argument(
+        "--show-excluded",
+        action="store_true",
+        help="Print the providers this run would exclude (config.toml disables plus --exclude/--include), then exit",
+    )
+    p.add_argument(
         "--codexbar-live",
         action="store_true",
         help="Bypass CodexBar widget-snapshot cache and force live CLI queries",
@@ -511,6 +558,12 @@ def _main_inner(argv: list[str] | None = None) -> int:
         return _print_completion(args.print_completion)
     if args.doctor:
         return _run_doctor(config_path=args.config, timeout_override=args.timeout)
+    if (args.include or args.exclude) and (getattr(args, "serve", False) or getattr(args, "sample", False)):
+        print(
+            "error: --include/--exclude do not apply to serve or sample (they would record partial data)",
+            file=sys.stderr,
+        )
+        return 2
     if getattr(args, "serve", False):
         from aiuse.serve import run_serve
 
@@ -519,12 +572,16 @@ def _main_inner(argv: list[str] | None = None) -> int:
             config_path=args.config,
             max_age_seconds=float(args.max_age),
         )
+    if args.show_included is not None or args.show_excluded:
+        return _run_show_selection(args)
     if getattr(args, "available", False):
         return _run_available(args)
     if getattr(args, "usage_sources", False):
         return _run_usage_sources(args)
     config = load_config(args.config)
     _apply_cli_overrides(config, args)
+    for warning in selection_warnings(config):
+        print(warning, file=sys.stderr)
 
     if getattr(args, "watch", False):
         return _run_watch(args, config)
@@ -579,7 +636,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
                     collected_at=snapshot.collected_at,
                     retention_days=int(analysis_cfg.get("snapshot_retention_days") or 90),
                 )
-            partial = sorted(requested_providers(config) or []) if args.providers else None
+            partial = _partial_providers(config, requested_providers(config) if args.providers else None)
             snapshot_path = save_snapshot(
                 snapshot,
                 alerts,
@@ -1173,7 +1230,15 @@ def _run_available(args: argparse.Namespace) -> int:
 
     config = load_config(args.config)
     _apply_cli_overrides(config, args)
+    for warning in selection_warnings(config):
+        print(warning, file=sys.stderr)
     requested = requested_providers(config)
+    filtered = requested is not None or selection_active(config)
+
+    def _wanted(provider: str) -> bool:
+        key = canonical_provider(provider)
+        return (requested is None or key in requested) and blocked_reason(config, key) is None
+
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
     try:
         threshold = float(analysis_cfg.get("fresh_threshold_seconds") or FRESH_THRESHOLD_SECONDS_DEFAULT)
@@ -1184,7 +1249,9 @@ def _run_available(args: argparse.Namespace) -> int:
     source = "cache"
     snap_dict: dict[str, Any] | None = None
     latest = snapshot_dir() / "latest.json"
-    if not args.live and latest.is_file():
+    # The cache was collected without a provider [disabled_services] disables, so an
+    # --include that re-enables one cannot be answered from it.
+    if not args.live and not reenabled_providers(config) and latest.is_file():
         try:
             snap_dict = json.loads(latest.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -1200,11 +1267,11 @@ def _run_available(args: argparse.Namespace) -> int:
         if not args.quiet:
             print("Collecting usage from local tools…", file=sys.stderr)
         snapshot = run_collectors(config)
-        if requested is not None:
-            snapshot.accounts = [a for a in snapshot.accounts if canonical_provider(a.provider) in requested]
+        if filtered:
+            snapshot.accounts = [a for a in snapshot.accounts if _wanted(a.provider)]
         if should_persist_snapshots(analysis_cfg):
             try:
-                partial = sorted(requested) if requested is not None else None
+                partial = _partial_providers(config, requested)
                 save_snapshot(
                     snapshot,
                     [],
@@ -1222,11 +1289,9 @@ def _run_available(args: argparse.Namespace) -> int:
     # A shared cache can contain every provider, even for a restricted request.
     # Filter before enrichment so unrelated subscription capacity cannot enter
     # this routing view (Pi API spend is never Codex subscription allowance).
-    if requested is not None:
+    if filtered:
         snap_dict["accounts"] = [
-            a
-            for a in snap_dict.get("accounts", [])
-            if isinstance(a, dict) and canonical_provider(str(a.get("provider") or "")) in requested
+            a for a in snap_dict.get("accounts", []) if isinstance(a, dict) and _wanted(str(a.get("provider") or ""))
         ]
     apply_hidden_pools_dict(snap_dict, config)
     from aiuse.credits_override import load_overrides
@@ -1244,11 +1309,11 @@ def _run_available(args: argparse.Namespace) -> int:
     # filtered at collection, but a cache written by an older build (or with
     # the entry added after the snapshot) can still carry the pools — so the
     # view applies it on top of the routing-only excluded_pools rules.
-    exclusions = {**(config.get("disabled_services") or {}), **(analysis_cfg.get("excluded_pools") or {})}
+    exclusions = {**canonical_disabled_services(config), **(analysis_cfg.get("excluded_pools") or {})}
     show_total = bool(analysis_cfg.get("show_total_rows", False))
     candidates = filter_ceiling_pools(available_pools(snap_dict), show_total_rows=show_total)
-    if requested is not None:
-        candidates = [p for p in candidates if canonical_provider(str(p.get("provider") or "")) in requested]
+    if filtered:
+        candidates = [p for p in candidates if _wanted(str(p.get("provider") or ""))]
     pools, excluded = apply_exclusions(candidates, exclusions)
     hidden_pools = snap_dict.get("hidden_pools") or {}
 
@@ -1341,6 +1406,48 @@ def _run_doctor(*, config_path: str | None, timeout_override: float | None) -> i
     return code
 
 
+def _partial_providers(config: dict[str, Any], requested: frozenset[str] | None) -> list[str] | None:
+    """The providers a run was narrowed to, or ``None`` for a full collection.
+
+    A narrowed run (``--providers``, ``--include``, ``--exclude``) is filed as a
+    partial sample, so it never becomes ``latest.json``.
+    """
+    if not selection_active(config):
+        return sorted(requested) if requested is not None else None
+    chosen = set(split_known(config)[0])
+    if requested is not None:
+        chosen &= requested
+    return sorted(chosen)
+
+
+def _run_show_selection(args: argparse.Namespace) -> int:
+    """`aiuse --show-included [LIST] / --show-excluded`: print the provider selection and exit.
+
+    Collects nothing. The sets cover every known provider id after
+    ``[disabled_services]``, ``--include`` and ``--exclude``. A ``LIST`` on
+    ``--show-included`` previews that list as the ``--include`` (replacing any
+    given), still honouring ``--exclude`` and the config.
+    """
+    config = load_config(args.config)
+    _apply_cli_overrides(config, args)
+    for warning in selection_warnings(config):
+        print(warning, file=sys.stderr)
+    shown: list[tuple[str, list[str]]] = []
+    if args.show_included is not None:
+        view = config
+        preview = split_patterns([args.show_included])
+        if preview:
+            for pattern in unmatched_patterns(config, preview):
+                print(f"warning: --show-included {pattern!r} matches no known provider", file=sys.stderr)
+            view = with_include(config, preview)
+        shown.append(("included", split_known(view)[0]))
+    if args.show_excluded:
+        shown.append(("excluded", split_known(config)[1]))
+    for label, names in shown:
+        print((f"{label}: " if len(shown) > 1 else "") + ",".join(names))
+    return EXIT_OK
+
+
 def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> None:
     collectors = config.setdefault("collectors", {})
     if args.no_tokscale:
@@ -1365,6 +1472,10 @@ def _apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> No
         collectors["paseo"] = {"enabled": False}
     if args.providers:
         collectors.setdefault("codexbar", {})["providers"] = args.providers
+    for flag, given in (("--include", args.include), ("--exclude", args.exclude)):
+        if given is not None and not split_patterns(given):
+            raise SystemExit(f"{flag} needs at least one provider id or glob")
+    set_selection(config, split_patterns(args.include), split_patterns(args.exclude))
     if getattr(args, "codexbar_live", False):
         collectors.setdefault("codexbar", {})["use_cache"] = False
     analysis = config.setdefault("analysis", {})

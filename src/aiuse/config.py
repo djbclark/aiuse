@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.models import canonical_provider, provider_config_key
+from aiuse.provider_select import get_selection, reenabled_by_include
 
 # Default wall-clock budget for every external CLI subprocess. Tools either
 # return within tens of seconds or hang; long budgets only delay failure.
@@ -524,14 +525,18 @@ _POLICY_COLLECTOR_KEYS = (
 
 
 def canonical_disabled_services(config: dict[str, Any] | None) -> dict[str, str]:
-    """Canonical provider -> reason from top-level ``[disabled_services]``."""
+    """Canonical provider -> reason from top-level ``[disabled_services]``.
+
+    A provider the run's ``--include`` names is left out: the flag overrides the
+    config disable for this run (``aiuse.provider_select``).
+    """
     raw = (config or {}).get("disabled_services")
     if not isinstance(raw, dict):
         return {}
     disabled: dict[str, str] = {}
     for key, value in raw.items():
         provider = canonical_provider(str(key).strip())
-        if not provider:
+        if not provider or reenabled_by_include(config, provider):
             continue
         reason = value.strip() if isinstance(value, str) and value.strip() else "disabled by operator"
         disabled[provider] = reason
@@ -561,13 +566,17 @@ def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
     pins = {str(key): str(value) for key, value in pins_raw.items()} if isinstance(pins_raw, dict) else {}
     from aiuse.analysis.pool_keys import hidden_pool_rules
 
-    payload = {
+    payload: dict[str, Any] = {
         "bedrock_meter_version": 4,
         "disabled_services": canonical_disabled_services(cfg),
         "hidden_pools": {f"{p}/{f}" if f else p: r for p, f, r in hidden_pool_rules(cfg)},
         "collectors": collectors,
         "usage_sources": pins,
     }
+    include, exclude = get_selection(cfg)
+    if include or exclude:
+        # Only when a flag is given, so every fingerprint without one is unchanged.
+        payload["provider_selection"] = {"include": sorted(include), "exclude": sorted(exclude)}
     raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

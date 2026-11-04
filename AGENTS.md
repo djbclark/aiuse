@@ -204,6 +204,13 @@ Full path-by-path map with "read when" hints:
   rate limits, cost, and opt-outs. Output is screen-only (no snapshot, ledger,
   or sampler writes; the cross-process query throttle still applies). Document
   this restriction in any doc or integration that exposes the flag.
+- **`aiuse --include LIST` that overrides `[disabled_services]` is operator-only**
+  for AI agents, like `watch --all-providers`: never use it to bring back a
+  provider the config disables without the operator's explicit permission in
+  the current session. `--exclude`, `--show-included` and `--show-excluded` only
+  narrow or print, so agents may use them. The flags keep a run's partial
+  rows out of `latest.json` (they are filed as a partial sample); document the
+  restriction wherever `--include` is exposed.
 - **`omp` operator gate: LIFTED 2026-10-19** (commit 8a9dc43) — the Claude
   Max plan's API credits are a normal tier; no account carries
   `requires_operator_approval` today, and spending omp no longer needs prior

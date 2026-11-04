@@ -34,6 +34,7 @@ from aiuse.credits_override import apply_credit_overrides_to_snapshot, overrides
 from aiuse.homebrew_formula import reexec_target
 from aiuse.ledger import load_json_range, save_ledger
 from aiuse.models import Snapshot, UseOrLoseAlert, canonical_provider, utcnow
+from aiuse.provider_select import SELECTION_KEY, selection_active
 from aiuse.report import render_clock_matrix_parts, render_stderr_meta
 from aiuse.serve import _alerts_from_dicts, _disk_row_age_ok, _snapshot_from_accounts_dict
 from aiuse.timefmt import format_clock
@@ -146,6 +147,7 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     sweep = copy.deepcopy(config)
     sweep.pop("disabled_services", None)
+    sweep.pop(SELECTION_KEY, None)
     sweep.pop("hidden_pools", None)
     # A config with no [analysis] table still has to reveal ceiling rows.
     # The header says hidden+total; that was a no-op unless analysis existed.
@@ -189,12 +191,13 @@ def collect_watch_frame(
     state — so the scheduled job sees a fresh sample and skips its own.
     ``persist=False`` forces the screen-only mode of the all-providers sweep:
     no disk snapshot is reused or written, and the ledger and sampler state
-    are left untouched.
+    are left untouched. A run narrowed by ``--include`` / ``--exclude`` is
+    screen-only too: its partial rows must never become ``latest.json``.
     """
     raw_analysis = config.get("analysis")
     analysis_cfg: dict[str, Any] = raw_analysis if isinstance(raw_analysis, dict) else {}
     if persist is None:
-        persist = should_persist_snapshots(analysis_cfg)
+        persist = should_persist_snapshots(analysis_cfg) and not selection_active(config)
     if max_age and persist:
         cached = _frame_from_disk(max_age, config)
         if cached is not None:

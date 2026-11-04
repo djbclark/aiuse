@@ -30,6 +30,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
+from aiuse.provider_select import blocked_providers, blocked_reason, selection_active
 from aiuse.tty import restore_stdin_tty, save_stdin_tty
 from aiuse.usage_sources import ACP_SOURCE, pinned_usage_source
 
@@ -215,7 +216,9 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     snapshot = Snapshot(collected_at=utcnow())
     intervals = min_intervals(config)
     disabled_services = _disabled_services(config)
-    disabled_providers = set(disabled_services)
+    # This run's --include/--exclude also keep a collector from running, but are
+    # not reported as operator disables: the flags are the operator's, this run only.
+    disabled_providers = set(disabled_services) | blocked_providers(config)
     provider_filter = requested_providers(config)
     raw_analysis = config.get("analysis")
     analysis_cfg = raw_analysis if isinstance(raw_analysis, dict) else {}
@@ -382,12 +385,16 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 snapshot.collector_errors.append(f"{name}: {exc}")
 
     snapshot.disabled_services = disabled_services
-    if disabled_providers:
+    if disabled_providers or selection_active(config):
         # A disabled service is off-limits overall: drop every row for it so
         # no surface (report, ladder, matrix, JSON, history, cache) presents
         # its quota as usable. Canonical aliases (e.g. "grok-build") match too.
+        # The flag check also covers providers outside the known registry.
         snapshot.accounts = [
-            account for account in snapshot.accounts if canonical_provider(account.provider) not in disabled_providers
+            account
+            for account in snapshot.accounts
+            if canonical_provider(account.provider) not in disabled_providers
+            and blocked_reason(config, account.provider) is None
         ]
     if provider_filter is not None:
         snapshot.accounts = [

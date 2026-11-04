@@ -15,7 +15,8 @@ _aiuse_completions() {
     -t --timeout --port --max-age
     --format --json --no-color --no-tui -q --quiet --alerts-only --brief --full
     --no-tokscale --no-cswap --no-codexbar
-    --providers --min-remaining --max-days --save --traditional-summary
+    --providers --include --exclude --show-included --show-excluded
+    --min-remaining --max-days --save --traditional-summary
     -i --interval --once --all-providers
     doctor status prompt suggest serve watch
   "
@@ -33,7 +34,7 @@ _aiuse_completions() {
       COMPREPLY=($(compgen -f -- "${cur}"))
       return 0
       ;;
-    -t | --timeout | --min-remaining | --max-days | --providers)
+    -t | --timeout | --min-remaining | --max-days | --providers | --include | --exclude)
       return 0
       ;;
   esac
