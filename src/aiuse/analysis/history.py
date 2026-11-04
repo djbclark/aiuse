@@ -21,7 +21,24 @@ from aiuse.models import (
     parse_dt,
     utcnow,
 )
+from aiuse.provider_select import SELECTION_KEY, blocked_reason
 from aiuse.timefmt import format_clock
+
+
+def provider_in_scope(snapshot: Snapshot | None, provider: str) -> bool:
+    """Whether the run behind ``snapshot`` collects ``provider``.
+
+    History rows of a provider the run leaves out (``[disabled_services]``,
+    ``--exclude``, absent from ``--include``) must not resurface as chronic-underuse,
+    late-cycle or learned-burn entries beside live rows that are not there.
+    """
+    if snapshot is None:
+        return True
+    key = canonical_provider(provider)
+    if key in snapshot.disabled_services:
+        return False
+    return blocked_reason({SELECTION_KEY: snapshot.provider_selection}, key) is None
+
 
 _DEFAULT_SNAPSHOT_DIR = "~/.cache/aiuse/snapshots"
 _DEFAULT_RETENTION_DAYS = 90
@@ -644,6 +661,8 @@ def compute_learned_burn_rates(
 
         for prev_account in prev_data.get("accounts") or []:
             provider = canonical_provider(str(prev_account.get("provider") or ""))
+            if not provider_in_scope(current, provider):
+                continue
             for prev_window in prev_account.get("windows") or []:
                 prev_remaining = prev_window.get("remaining_percent")
                 if prev_remaining is None:
@@ -781,6 +800,8 @@ def chronic_waste_summary(
 
         for prev_account in prev_data.get("accounts") or []:
             provider = canonical_provider(str(prev_account.get("provider") or ""))
+            if not provider_in_scope(current, provider):
+                continue
             for prev_window in prev_account.get("windows") or []:
                 label = str(prev_window.get("label") or "")
                 window_minutes = effective_window_minutes(label, prev_window.get("window_minutes"))
@@ -1127,6 +1148,7 @@ def late_cycle_remaining_summary(
     retention_days: int = _DEFAULT_RETENTION_DAYS,
     late_elapsed_min: float = 0.70,
     min_samples: int = 2,
+    current: Snapshot | None = None,
 ) -> list[dict[str, Any]]:
     """Average remaining% when observed late in a cycle (proxy for waste at reset).
 
@@ -1151,6 +1173,8 @@ def late_cycle_remaining_summary(
 
         for prev_account in prev_data.get("accounts") or []:
             provider = canonical_provider(str(prev_account.get("provider") or ""))
+            if not provider_in_scope(current, provider):
+                continue
             for prev_window in prev_account.get("windows") or []:
                 remaining = prev_window.get("remaining_percent")
                 if remaining is None:
@@ -1244,7 +1268,7 @@ def history_insights(
         for key, (rate, n_samples) in sorted(rates.items())
     }
     out["chronic_underuse"] = chronic_waste_summary(current=snapshot, retention_days=retention)
-    late = late_cycle_remaining_summary(retention_days=retention)
+    late = late_cycle_remaining_summary(retention_days=retention, current=snapshot)
     out["usually_left_late_cycle"] = late
     # History-taught "burn soon" candidates: high remaining late in prior cycles.
     candidates = [
@@ -1340,7 +1364,7 @@ def history_section_lines(
     else:
         lines.append("  No learned burn rates yet (need enough same-window samples across time).")
 
-    late = late_cycle_remaining_summary(retention_days=retention)
+    late = late_cycle_remaining_summary(retention_days=retention, current=snapshot)
     if late:
         lines.append("  Usually left late in cycle (≥70% elapsed; proxy for waste at reset):")
         for item in late[:8]:

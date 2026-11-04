@@ -818,6 +818,10 @@ class Snapshot:
     disabled_services: dict[str, str] = field(default_factory=dict)
     # Operator-hidden pools applied at collection (provider[/pool_family] -> reason).
     hidden_pools: dict[str, str] = field(default_factory=dict)
+    # This run's --include/--exclude patterns ({"include": [...], "exclude": [...]}),
+    # empty when no flag was given. In memory only (not in to_dict): history
+    # summaries use it to leave out providers the run does not collect.
+    provider_selection: dict[str, list[str]] = field(default_factory=dict)
     # Policy that produced this collect. Watch and serve refuse to reuse a
     # snapshot whose fingerprint does not match the config they just loaded.
     config_fingerprint: str | None = None

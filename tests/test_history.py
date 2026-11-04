@@ -389,6 +389,35 @@ def test_chronic_waste_detection(tmp_path: Path):
         assert wasted[0]["avg_remaining_pct"] > 80
 
 
+@pytest.mark.parametrize(
+    "snapshot_kwargs",
+    [
+        {"provider_selection": {"include": ["codex"], "exclude": []}},
+        {"provider_selection": {"include": [], "exclude": ["cl*"]}},
+        {"disabled_services": {"claude": "shelved"}},
+    ],
+)
+def test_history_of_a_provider_the_run_leaves_out_does_not_resurface(tmp_path: Path, snapshot_kwargs):
+    """Chronic-underuse history skips a provider the run did not collect."""
+    with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
+        now = _now()
+        for i in range(1, 8):
+            data = {
+                "collected_at": (now - timedelta(days=i)).isoformat(),
+                "accounts": [
+                    {
+                        "provider": "claude",
+                        "windows": [{"label": "5-hour", "remaining_percent": 80 + i, "window_minutes": 300}],
+                    }
+                ],
+            }
+            (tmp_path / f"s{i}.json").write_text(json.dumps(data))
+        full = Snapshot(collected_at=now, accounts=[])
+        assert chronic_waste_summary(current=full, retention_days=90)
+        narrowed = Snapshot(collected_at=now, accounts=[], **snapshot_kwargs)
+        assert chronic_waste_summary(current=narrowed, retention_days=90) == []
+
+
 def test_short_interval_pair_has_negligible_weight_in_burn_rate(tmp_path: Path):
     with patch("aiuse.analysis.history.snapshot_dir", return_value=tmp_path):
         now = _now()

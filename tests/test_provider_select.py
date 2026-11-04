@@ -164,3 +164,30 @@ def test_serve_and_sample_reject_selection(monkeypatch, tmp_path, capsys):
     _write_config(tmp_path, monkeypatch, "")
     assert cli.main(["--include", "claude", "--sample"]) == 2
     assert "do not apply" in capsys.readouterr().err
+
+
+def test_watch_frame_with_a_selection_neither_reads_nor_writes_disk(monkeypatch):
+    from aiuse import watch
+    from aiuse.models import Snapshot, utcnow
+
+    def touched(*_a, **_kw):
+        raise AssertionError("a narrowed watch frame must stay screen-only")
+
+    monkeypatch.setattr(watch, "_frame_from_disk", touched)
+    monkeypatch.setattr(watch, "save_snapshot", touched)
+    monkeypatch.setattr(watch.sampler, "collect_with_ledger", touched)
+    monkeypatch.setattr(
+        watch, "run_collectors", lambda _cfg: Snapshot(collected_at=utcnow(), accounts=[_account("claude")])
+    )
+    config = _selected(include=["claude"], analysis={"persist_snapshots": True})
+    snapshot, _alerts = watch.collect_watch_frame(config, max_age=600)
+    assert [a.provider for a in snapshot.accounts] == ["claude"]
+
+
+def test_watch_all_providers_sweep_ignores_the_selection():
+    from aiuse.watch import all_providers_config
+
+    config = _selected(include=["claude"], exclude=["codex"], disabled_services={"grok": "shelved"})
+    sweep = all_providers_config(config)
+    assert "provider_selection" not in sweep and "disabled_services" not in sweep
+    assert config["provider_selection"]["include"] == ["claude"]  # the live config is untouched

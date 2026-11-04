@@ -21,7 +21,9 @@ Releases before 3.9.0 are in the
   `--include` is an allow-list that also re-enables a config-disabled
   provider; `--exclude` adds disables and wins when both match. A narrowed run
   is filed as a partial sample (never `latest.json`), watch shows it
-  screen-only, and `serve` / `sample` reject the flags.
+  screen-only (its `a` sweep ignores the flags), and `serve` / `sample` reject
+  the flags. History summaries (chronic underuse, learned burn, late-cycle)
+  skip providers the run leaves out, so they no longer resurface as alerts.
 - **`--show-included [LIST]` / `--show-excluded`**: print the resulting
   provider sets as comma-separated ids and exit; a `LIST` previews it as the
   `--include`.

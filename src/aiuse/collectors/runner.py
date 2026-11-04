@@ -30,7 +30,7 @@ from aiuse.models import (
     provider_display_name,
     utcnow,
 )
-from aiuse.provider_select import blocked_providers, blocked_reason, selection_active
+from aiuse.provider_select import blocked_providers, blocked_reason, get_selection, selection_active
 from aiuse.tty import restore_stdin_tty, save_stdin_tty
 from aiuse.usage_sources import ACP_SOURCE, pinned_usage_source
 
@@ -385,6 +385,9 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                 snapshot.collector_errors.append(f"{name}: {exc}")
 
     snapshot.disabled_services = disabled_services
+    if selection_active(config):
+        include, exclude = get_selection(config)
+        snapshot.provider_selection = {"include": include, "exclude": exclude}
     if disabled_providers or selection_active(config):
         # A disabled service is off-limits overall: drop every row for it so
         # no surface (report, ladder, matrix, JSON, history, cache) presents
