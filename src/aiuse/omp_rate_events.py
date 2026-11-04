@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ from pathlib import Path
 _MAX_LOG_AGE_DAYS = 35
 _MAX_FILES = 40
 _DEFAULT_LOG_DIR = "~/.omp/logs"
+_DEFAULT_AGENT_DB = "~/.omp/agent/agent.db"
 _REJECTED_MESSAGE = "cowork transport rejected"
 _ANTHROPIC_HOST = "api.anthropic.com"
 
@@ -47,6 +49,56 @@ def resolve_omp_log_dir(log_dir: str | Path | None = None) -> Path:
     if override:
         return Path(override)
     return Path(os.path.expanduser(_DEFAULT_LOG_DIR))
+
+
+def resolve_omp_agent_db(db_path: str | Path | None = None) -> Path:
+    if db_path is not None:
+        return Path(db_path)
+    override = os.environ.get("AIUSE_OMP_AGENT_DB")
+    if override:
+        return Path(override)
+    return Path(os.path.expanduser(_DEFAULT_AGENT_DB))
+
+
+def omp_has_active_api_key(
+    *,
+    db_path: str | Path | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """True when omp has an active, unblocked Anthropic API key credential.
+
+    Claude Code's weekly/monthly subscription windows only rate-limit Claude
+    OAuth sessions. An Anthropic Platform API key (``credential_type = 'api_key'``)
+    spends console credits under standard API tier limits, unaffected by the
+    subscription quota window.
+    """
+    path = resolve_omp_agent_db(db_path)
+    if not path.is_file():
+        return False
+    moment = now or datetime.now(timezone.utc)
+    now_ms = int(moment.timestamp() * 1000)
+    try:
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT c.id
+                FROM auth_credentials c
+                WHERE c.provider = 'anthropic'
+                  AND c.credential_type = 'api_key'
+                  AND c.disabled_cause IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM auth_credential_blocks b
+                    WHERE b.credential_id = c.id
+                      AND b.blocked_until_ms > ?
+                  )
+                LIMIT 1
+                """,
+                (now_ms,),
+            )
+            return cur.fetchone() is not None
+    except (sqlite3.Error, OSError):
+        return False
 
 
 def _parse_retry_after(value: object) -> float | None:

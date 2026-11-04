@@ -126,6 +126,11 @@ def record_evidence(
         return False
     if observed_at - moment > timedelta(minutes=5):
         return False
+    if provider == "omp" and source == "claude-shared-window":
+        from aiuse.omp_rate_events import omp_has_active_api_key
+
+        if omp_has_active_api_key(now=moment):
+            return False
     store = load_store(path)
     gate = store["gates"].setdefault(provider, {"cleared_through": None, "evidence": []})
     evidence = gate.setdefault("evidence", [])
@@ -180,6 +185,11 @@ def active_gate(
             continue
         if cleared_through is not None and observed_at <= cleared_through:
             continue
+        if provider == "omp" and entry.get("source") == "claude-shared-window":
+            from aiuse.omp_rate_events import omp_has_active_api_key
+
+            if omp_has_active_api_key(now=moment):
+                continue
         if best_reset is None or resets_at > best_reset:
             best = dict(entry)
             best_reset = resets_at

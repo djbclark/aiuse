@@ -148,6 +148,13 @@ aiuse fails closed for that state (`enrich_snapshot`,
    that cache file is what the sampler writes. `--available` already
    re-applied the reading at display time. A partial sample that did not ask
    for omp does not gain the row.
+5. **Active API key bypass** (2026-11-03): Claude Code's weekly quota window
+   only rate-limits Claude OAuth sessions (`anthropic:oauth`). When `omp` is
+   configured with an active, unblocked Anthropic API key (`anthropic:api_key` in
+   `~/.omp/agent/agent.db`), requests draw from platform credits under standard
+   API tier limits, unaffected by the subscription quota window. `aiuse` checks
+   `agent.db` and bypasses the inferred `claude-shared-window` gate when an
+   active API key is present.
 
 ## Durable latch (2026-10-22, after the fifth regression)
 

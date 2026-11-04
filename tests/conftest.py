@@ -40,6 +40,7 @@ def isolate_rate_gate_state(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("AIUSE_RATE_GATE_STORE", str(tmp_path / "rate-gates.json"))
     monkeypatch.setenv("AIUSE_OMP_LOG_DIR", str(tmp_path / "omp-logs"))
+    monkeypatch.setenv("AIUSE_OMP_AGENT_DB", str(tmp_path / "omp-agent.db"))
 
 
 # The width the suite renders at unless a test says otherwise. Wide enough that

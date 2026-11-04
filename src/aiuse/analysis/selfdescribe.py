@@ -454,46 +454,50 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
     omp_accounts = [a for a in accounts if str(a.get("provider") or "") == "omp"]
     if not omp_accounts:
         return
+    from aiuse.omp_rate_events import omp_has_active_api_key
+
+    omp_api_key = omp_has_active_api_key(now=now)
     gate_reset: datetime | None = None
     gate_label = ""
     gate_account = ""
     gate_observed: datetime | None = None
     headroom_seen = False
-    for account in accounts:
-        if str(account.get("provider") or "") != "claude":
-            continue
-        known = [
-            w
-            for w in account.get("windows") or []
-            if isinstance(w, dict)
-            and w.get("quota_scope") != "model_sublimit"
-            and str(w.get("state") or "unknown") != "unknown"
-        ]
-        if not known:
-            continue
-        worst: tuple[Mapping[str, Any], datetime] | None = None
-        for window in known:
-            if str(window.get("state")) != "exhausted":
+    if not omp_api_key:
+        for account in accounts:
+            if str(account.get("provider") or "") != "claude":
                 continue
-            duration = classify_window_minutes(window.get("window_minutes"))
-            reset = parse_dt(window.get("resets_at"))
-            if (
-                duration in ("weekly", "monthly")
-                and reset is not None
-                and reset > now
-                and (worst is None or reset > worst[1])
-            ):
-                worst = (window, reset)
-        if worst is None:
-            # A Claude account with observed shared headroom blocks further
-            # *derivation*; recorded evidence below still applies.
-            headroom_seen = True
-            break
-        if gate_reset is None or worst[1] < gate_reset:
-            gate_reset = worst[1]
-            gate_label = str(worst[0].get("label") or "weekly window")
-            gate_account = str(account.get("account") or "")
-            gate_observed = parse_dt(account.get("collected_at")) or now
+            known = [
+                w
+                for w in account.get("windows") or []
+                if isinstance(w, dict)
+                and w.get("quota_scope") != "model_sublimit"
+                and str(w.get("state") or "unknown") != "unknown"
+            ]
+            if not known:
+                continue
+            worst: tuple[Mapping[str, Any], datetime] | None = None
+            for window in known:
+                if str(window.get("state")) != "exhausted":
+                    continue
+                duration = classify_window_minutes(window.get("window_minutes"))
+                reset = parse_dt(window.get("resets_at"))
+                if (
+                    duration in ("weekly", "monthly")
+                    and reset is not None
+                    and reset > now
+                    and (worst is None or reset > worst[1])
+                ):
+                    worst = (window, reset)
+            if worst is None:
+                # A Claude account with observed shared headroom blocks further
+                # *derivation*; recorded evidence below still applies.
+                headroom_seen = True
+                break
+            if gate_reset is None or worst[1] < gate_reset:
+                gate_reset = worst[1]
+                gate_label = str(worst[0].get("label") or "weekly window")
+                gate_account = str(account.get("account") or "")
+                gate_observed = parse_dt(account.get("collected_at")) or now
     evidence_text = (
         "every observed Claude account's shared multi-day window is exhausted; "
         "Anthropic 429 retry-after matched this reset (2026-10-21)"
@@ -568,47 +572,52 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
             account.notes = [n for n in account.notes if not str(n).startswith(_GATE_NOTE_PREFIX)]
     if not omp_rows:
         return False
+    from aiuse.omp_rate_events import omp_has_active_api_key
+
+    omp_api_key = omp_has_active_api_key(now=now)
     gate_reset: datetime | None = None
     gate_label = ""
     gate_account = ""
     gate_observed: datetime | None = None
     headroom_seen = False
-    for account in snapshot.accounts:
-        if account.provider != "claude":
-            continue
-        known = [
-            w
-            for w in account.windows
-            if claude_model_scope(w.label) is None and (w.remaining_percent is not None or w.used_percent is not None)
-        ]
-        if not known:
-            continue
-        worst: tuple[QuotaWindow, datetime] | None = None
-        for window in known:
-            remaining = window.remaining_percent
-            if remaining is None and window.used_percent is not None:
-                remaining = max(0.0, 100.0 - window.used_percent)
-            if remaining is None or remaining > EXHAUSTED_BELOW:
+    if not omp_api_key:
+        for account in snapshot.accounts:
+            if account.provider != "claude":
                 continue
-            duration = classify_window_minutes(window.window_minutes)
-            reset = window.resets_at
-            if (
-                duration in ("weekly", "monthly")
-                and reset is not None
-                and reset > now
-                and (worst is None or reset > worst[1])
-            ):
-                worst = (window, reset)
-        if worst is None:
-            # Observed shared headroom blocks further derivation; a recorded
-            # latch (below) still applies until its own reset passes.
-            headroom_seen = True
-            break
-        if gate_reset is None or worst[1] < gate_reset:
-            gate_reset = worst[1]
-            gate_label = worst[0].label or "weekly window"
-            gate_account = account.account or ""
-            gate_observed = account.collected_at or now
+            known = [
+                w
+                for w in account.windows
+                if claude_model_scope(w.label) is None
+                and (w.remaining_percent is not None or w.used_percent is not None)
+            ]
+            if not known:
+                continue
+            worst: tuple[QuotaWindow, datetime] | None = None
+            for window in known:
+                remaining = window.remaining_percent
+                if remaining is None and window.used_percent is not None:
+                    remaining = max(0.0, 100.0 - window.used_percent)
+                if remaining is None or remaining > EXHAUSTED_BELOW:
+                    continue
+                duration = classify_window_minutes(window.window_minutes)
+                reset = window.resets_at
+                if (
+                    duration in ("weekly", "monthly")
+                    and reset is not None
+                    and reset > now
+                    and (worst is None or reset > worst[1])
+                ):
+                    worst = (window, reset)
+            if worst is None:
+                # Observed shared headroom blocks further derivation; a recorded
+                # latch (below) still applies until its own reset passes.
+                headroom_seen = True
+                break
+            if gate_reset is None or worst[1] < gate_reset:
+                gate_reset = worst[1]
+                gate_label = worst[0].label or "weekly window"
+                gate_account = account.account or ""
+                gate_observed = account.collected_at or now
     evidence_text = (
         "every observed Claude account's shared multi-day window is exhausted; "
         "Anthropic 429 retry-after matched this reset (2026-10-21)"

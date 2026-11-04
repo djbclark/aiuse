@@ -417,3 +417,31 @@ def test_chat_report_renders_the_gate_line():
     text = render_chat_report(snap, [])
     assert "Rate-gated: shared Claude Claude weekly exhausted until" in text
     assert "credits cannot be spent before it resets" in text
+
+
+def test_active_api_key_bypasses_claude_weekly_gate(tmp_path, monkeypatch):
+    import sqlite3
+
+    from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
+
+    db = tmp_path / "omp-agent.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE auth_credential_blocks (credential_id INTEGER, provider_key TEXT, block_scope TEXT, blocked_until_ms INTEGER, updated_at INTEGER)"
+        )
+        conn.execute("INSERT INTO auth_credentials VALUES (11, 'anthropic', 'api_key', '{}', NULL)")
+    monkeypatch.setenv("AIUSE_OMP_AGENT_DB", str(db))
+
+    snap = enrich_snapshot(_snap(_claude_account(100.0), _omp_account()))
+    omp = _omp_of(snap)
+    assert omp.get("rate_gated_by") is None
+    assert omp["usable_now"] is True
+
+    model_snap = _model_snapshot(100.0)
+    assert apply_shared_rate_gate_to_snapshot(model_snap) is False
+    omp_model = next(a for a in model_snap.accounts if a.provider == "omp")
+    assert omp_model.rate_gated_by is None
+    assert not any(str(n).startswith("Rate-gated") for n in omp_model.notes)

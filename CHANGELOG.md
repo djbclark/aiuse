@@ -14,6 +14,11 @@ Releases before 3.9.0 are in the
 
 ### Added
 
+- **Bypass omp rate-gate for active API keys**: inspects `~/.omp/agent/agent.db`
+  for active, unblocked `anthropic:api_key` credentials. Claude Code weekly quota
+  exhaustion (`claude-shared-window`) only limits Claude OAuth sessions; an API
+  key draws from platform credits under standard API tier limits. When an active
+  API key is present, `aiuse` bypasses the inferred shared-window gate.
 - **`monthly_spend_limit` in `[plans.<provider>]`**: supports declaring an
   organizational budget ceiling for pay-as-you-go providers (e.g. `[plans.pi]
 monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column

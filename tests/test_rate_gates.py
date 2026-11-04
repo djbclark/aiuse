@@ -233,3 +233,91 @@ def test_gate_status_ingests_omp_logs_first(capsys, tmp_path, monkeypatch):
     assert rate_gates.run_gate_command(["status", "--json"]) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["gates"]["omp"]["source"] == "omp-429-anthropic"
+
+
+def test_omp_has_active_api_key_scenarios(tmp_path):
+    import sqlite3
+    import time
+
+    from aiuse.omp_rate_events import omp_has_active_api_key
+
+    # 1. Missing db
+    assert omp_has_active_api_key(db_path=tmp_path / "missing.db") is False
+
+    # 2. Active api_key
+    db = tmp_path / "agent.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE auth_credential_blocks (credential_id INTEGER, provider_key TEXT, block_scope TEXT, blocked_until_ms INTEGER, updated_at INTEGER)"
+        )
+        conn.execute("INSERT INTO auth_credentials VALUES (11, 'anthropic', 'api_key', '{}', NULL)")
+    assert omp_has_active_api_key(db_path=db) is True
+
+    # 3. Disabled api_key
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE auth_credentials SET disabled_cause = 'user' WHERE id = 11")
+    assert omp_has_active_api_key(db_path=db) is False
+
+    # 4. Blocked api_key
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE auth_credentials SET disabled_cause = NULL WHERE id = 11")
+        future_ms = int((time.time() + 3600) * 1000)
+        conn.execute(
+            "INSERT INTO auth_credential_blocks VALUES (11, 'anthropic:api_key', '', ?, ?)",
+            (future_ms, int(time.time())),
+        )
+    assert omp_has_active_api_key(db_path=db) is False
+
+    # 5. Expired block
+    with sqlite3.connect(db) as conn:
+        past_ms = int((time.time() - 3600) * 1000)
+        conn.execute("UPDATE auth_credential_blocks SET blocked_until_ms = ? WHERE credential_id = 11", (past_ms,))
+    assert omp_has_active_api_key(db_path=db) is True
+
+
+def test_active_api_key_ignores_claude_shared_window_latch(tmp_path, monkeypatch):
+    import sqlite3
+
+    db = tmp_path / "agent.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT, disabled_cause TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE auth_credential_blocks (credential_id INTEGER, provider_key TEXT, block_scope TEXT, blocked_until_ms INTEGER, updated_at INTEGER)"
+        )
+        conn.execute("INSERT INTO auth_credentials VALUES (11, 'anthropic', 'api_key', '{}', NULL)")
+    monkeypatch.setenv("AIUSE_OMP_AGENT_DB", str(db))
+
+    # Record shared-window evidence: ignored when active api_key present
+    assert (
+        rate_gates.record_evidence(
+            "omp",
+            resets_at=utcnow() + timedelta(hours=5),
+            observed_at=utcnow(),
+            source="claude-shared-window",
+            event_id="ev-shared",
+            note="shared window",
+        )
+        is False
+    )
+    assert rate_gates.active_gate("omp") is None
+
+    # But direct 429 evidence is still recorded and honored
+    assert (
+        rate_gates.record_evidence(
+            "omp",
+            resets_at=utcnow() + timedelta(hours=5),
+            observed_at=utcnow(),
+            source="omp-429-anthropic",
+            event_id="ev-429",
+            note="429 refusal",
+        )
+        is True
+    )
+    active = rate_gates.active_gate("omp")
+    assert active is not None
+    assert active["source"] == "omp-429-anthropic"
