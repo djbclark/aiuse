@@ -483,17 +483,19 @@ def _collect_codexbar_impl(
             cached = [a for a in cached if a.provider != "bedrock"]
             cached = [a for a in cached if not (a.provider == "omp" and not _omp_row_has_usable_grant(a))]
             backoff = TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None
-            omp = _live_omp_supplement(
-                cached,
-                skip_providers=skip_providers,
-                timeout=_claudeplatform_query_timeout(provider_timeouts, timeout),
-                min_intervals=min_intervals,
-                backoff=backoff,
-                config=config,
-                provider_list=provider_list,
-                was_discovery=was_discovery,
-                all_accounts=all_accounts,
-            )
+            omp: list[AccountUsage] = []
+            if include_disabled or _claudeplatform_enabled_in_catalog(catalog()) or not was_discovery:
+                omp = _live_omp_supplement(
+                    cached,
+                    skip_providers=skip_providers,
+                    timeout=_claudeplatform_query_timeout(provider_timeouts, timeout),
+                    min_intervals=min_intervals,
+                    backoff=backoff,
+                    config=config,
+                    provider_list=provider_list,
+                    was_discovery=was_discovery,
+                    all_accounts=all_accounts,
+                )
             if provider_list == [None]:
                 live_list: list[str | None] = [query_aliases.get(p, p) for p in sorted(all_accounts)]
             else:
@@ -658,6 +660,12 @@ def _claudeplatform_query_timeout(provider_timeouts: dict[str, float] | None, de
         if value is not None:
             return value
     return default
+
+
+def _claudeplatform_enabled_in_catalog(catalog_payload: Any) -> bool:
+    enabled = _parse_enabled_providers(catalog_payload) or []
+    normalized = {str(provider).lower() for provider in enabled}
+    return bool(normalized & {"claudeplatform", "claude-platform"})
 
 
 def _omp_supplement_requested(provider_list: list[str | None], *, was_discovery: bool) -> bool:
