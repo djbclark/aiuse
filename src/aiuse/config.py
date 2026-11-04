@@ -760,6 +760,39 @@ def organization_names_match(expected: str, observed: str | None) -> bool:
     return norm(expected) == norm(str(observed))
 
 
+def omp_organization_label(account: Any) -> str | None:
+    """Console organization for ``[credits.omp] organization`` checks.
+
+    Uses the collector's organization identity, not a display alias applied later
+    by ``[account_aliases]``.
+    """
+    raw = getattr(account, "raw", None)
+    if raw is None and isinstance(account, dict):
+        raw = account.get("raw")
+    acct = getattr(account, "account", None)
+    if acct is None and isinstance(account, dict):
+        acct = account.get("account")
+    if isinstance(raw, dict):
+        pinned = raw.get("account_organization")
+        if isinstance(pinned, str) and pinned.strip():
+            return pinned.strip()
+        source_row = raw.get("source_row")
+        if isinstance(source_row, dict):
+            usage = source_row.get("usage")
+            if isinstance(usage, dict):
+                identity = usage.get("identity")
+                if isinstance(identity, dict):
+                    org = identity.get("accountOrganization")
+                    if isinstance(org, str) and org.strip():
+                        return org.strip()
+            row_account = source_row.get("account")
+            if isinstance(row_account, str) and row_account.strip():
+                return row_account.strip()
+    if isinstance(acct, str) and acct.strip():
+        return acct.strip()
+    return None
+
+
 def plan_monthly_spend_limit(plans: Any, provider: str, account: str | None = None) -> float | None:
     """Configured monthly spend limit / budget cap for a provider, optionally per account.
 

@@ -488,6 +488,7 @@ def _collect_codexbar_impl(
                 timeout=provider_timeouts.get("claude", timeout) if provider_timeouts else timeout,
                 min_intervals=min_intervals,
                 backoff=backoff,
+                config=config,
             )
             if provider_list == [None]:
                 live_list: list[str | None] = [query_aliases.get(p, p) for p in sorted(all_accounts)]
@@ -546,7 +547,7 @@ def _collect_codexbar_impl(
 def _filter_omp_by_config_organization(
     accounts: list[AccountUsage], config: dict[str, Any] | None
 ) -> list[AccountUsage]:
-    from aiuse.config import credit_organization_name, organization_names_match
+    from aiuse.config import credit_organization_name, omp_organization_label, organization_names_match
 
     want = credit_organization_name(config, "omp")
     if not want:
@@ -556,7 +557,7 @@ def _filter_omp_by_config_organization(
         if account.provider != "omp":
             kept.append(account)
             continue
-        label = account.account or ""
+        label = omp_organization_label(account) or ""
         if organization_names_match(want, label):
             kept.append(account)
             continue
@@ -625,6 +626,19 @@ def _collect_live(
     return accounts, errors
 
 
+def _cached_omp_satisfies_organization(cached: list[AccountUsage], config: dict[str, Any] | None) -> bool:
+    """True when a cached ``omp`` row is usable under ``[credits.omp] organization``."""
+    from aiuse.config import credit_organization_name, omp_organization_label, organization_names_match
+
+    omp_rows = [account for account in cached if account.provider == "omp"]
+    if not omp_rows:
+        return False
+    want = credit_organization_name(config, "omp")
+    if not want:
+        return True
+    return any(organization_names_match(want, omp_organization_label(row)) for row in omp_rows)
+
+
 def _live_omp_supplement(
     cached: list[AccountUsage],
     *,
@@ -632,6 +646,7 @@ def _live_omp_supplement(
     timeout: float,
     min_intervals: dict[str, float] | None,
     backoff: TimeoutBackoff | None,
+    config: dict[str, Any] | None = None,
 ) -> list[AccountUsage]:
     """The ``omp`` row for a cache-served run.
 
@@ -641,7 +656,7 @@ def _live_omp_supplement(
     Best-effort: failure leaves the run without ``omp`` rather than failing
     cached rows.
     """
-    if "omp" in (skip_providers or ()) or any(a.provider == "omp" for a in cached):
+    if "omp" in (skip_providers or ()) or _cached_omp_satisfies_organization(cached, config):
         return []
     # Widget snapshots carry Claude plan rows, not omp; supplement only then.
     if not any(a.provider == "claude" for a in cached):
@@ -1475,6 +1490,20 @@ def _opencode_zen_from_row(row: dict[str, Any]) -> AccountUsage | None:
 
 
 _CLOUD_CREDITS_ROW_ID = "claude-cloud-credits"
+_SUBSCRIPTION_API_CREDIT_LABEL = re.compile(
+    r"api credit\s*\((?:ultra|max|team|pro)\)",
+    re.IGNORECASE,
+)
+
+
+def _subscription_api_credit_row_label(label: str) -> bool:
+    """True when a CodexBar detail row is the Console subscription grant, not a promo."""
+    if _SUBSCRIPTION_API_CREDIT_LABEL.search(label):
+        return True
+    low = label.casefold()
+    return "subscription" in low and "api credit" in low
+
+
 _SUBSCRIPTION_GRANT_RE = re.compile(
     r"\$([0-9,]+(?:\.[0-9]+)?)\s+of\s+\$([0-9,]+(?:\.[0-9]+)?)\s+left",
     re.IGNORECASE,
@@ -1562,7 +1591,7 @@ def _subscription_grant_from_usage(usage: dict[str, Any]) -> tuple[float, float,
             if not isinstance(item, dict):
                 continue
             label = str(item.get("label") or "")
-            if "api credit" not in label.casefold():
+            if not _subscription_api_credit_row_label(label):
                 continue
             value = str(item.get("value") or "")
             secondary = str(item.get("secondaryValue") or "")
@@ -1602,7 +1631,9 @@ def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
     )
     identity = usage.get("identity")
     identity = identity if isinstance(identity, dict) else {}
-    account = _display_account(row.get("account") or identity.get("accountOrganization") or usage.get("accountEmail"))
+    org_raw = identity.get("accountOrganization")
+    org_raw = org_raw if isinstance(org_raw, str) and org_raw.strip() else None
+    account = _display_account(row.get("account") or org_raw or usage.get("accountEmail"))
     source_tag = str(row.get("source") or "auto")
     return AccountUsage(
         source="codexbar",
@@ -1620,7 +1651,7 @@ def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
             "Claude API credits: monthly Console subscription grant (Ultra/Max/Team); "
             "not claude.ai cloud-session credits or API tier spend caps.",
         ],
-        raw={"provider": "omp", "source_row": row},
+        raw={"provider": "omp", "source_row": row, "account_organization": org_raw},
         collected_at=parse_dt(usage.get("updatedAt")),
     )
 

@@ -561,6 +561,21 @@ def test_unexpired_grant_is_untouched():
     assert "grant_expired" not in _omp(snap) and _omp(snap)["balance_usd"] == 200.0
 
 
+def test_organization_check_uses_console_identity_not_display_alias():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.account = "Freedom (display alias)"
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    snap["accounts"][0]["raw"] = {
+        "account_organization": "Freedom Included",
+        "source_row": {"usage": {"identity": {"accountOrganization": "Freedom Included"}}},
+    }
+    config = {"credits": {"omp": {"organization": "Freedom Included"}}}
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    assert omp.get("reading_expired") is not True
+    assert omp["balance_usd"] == 200.0
+
+
 def test_config_grant_clock_expires_balance_before_routing():
     account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
     account.expires_at = None

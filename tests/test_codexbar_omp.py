@@ -100,6 +100,34 @@ def test_primary_used_percent_alone_still_searches_other_grants():
     assert remaining == 0.0 and total == 200.0 and expires_at == EXPIRY
 
 
+def test_other_grants_ignore_unlabeled_promotional_api_credit():
+    usage = {
+        "updatedAt": "2026-11-04T13:00:00Z",
+        "primary": None,
+        "details": [
+            {
+                "title": "Other credit grants",
+                "rows": [
+                    {
+                        "label": "API credit",
+                        "value": "$25.00 of $25.00 left",
+                        "secondaryValue": "Expires Nov 1 (UTC)",
+                    },
+                    {
+                        "label": "API credit (Ultra)",
+                        "value": "$0.00 of $200.00 left",
+                        "secondaryValue": "Expires Nov 6 (UTC)",
+                    },
+                ],
+            }
+        ],
+    }
+    parsed = _subscription_grant_from_usage(usage)
+    assert parsed is not None
+    remaining, total, _ = parsed
+    assert remaining == 0.0 and total == 200.0
+
+
 def test_exhausted_grant_in_other_credits_section():
     row = {
         "provider": "claudeplatform",

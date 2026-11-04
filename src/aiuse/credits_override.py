@@ -45,7 +45,12 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
-from aiuse.config import credit_organization_name, organization_names_match, plan_monthly_spend_limit
+from aiuse.config import (
+    credit_organization_name,
+    omp_organization_label,
+    organization_names_match,
+    plan_monthly_spend_limit,
+)
 from aiuse.models import (
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
@@ -558,9 +563,12 @@ def _apply_credit_override_for_provider(
         if (
             want_org
             and account.get("source") == "codexbar"
-            and not organization_names_match(want_org, account.get("account"))
+            and not organization_names_match(want_org, omp_organization_label(account))
         ):
-            wrong = f"organization {account.get('account')!r} does not match [credits.omp] organization = {want_org!r}"
+            wrong = (
+                f"organization {omp_organization_label(account)!r} does not match "
+                f"[credits.omp] organization = {want_org!r}"
+            )
             if wrong not in (account.get("notes") or []):
                 account["notes"] = [*(account.get("notes") or []), wrong]
             _expire_reading(account, wrong)
