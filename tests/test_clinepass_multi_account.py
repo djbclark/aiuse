@@ -146,7 +146,7 @@ def test_widget_cache_does_not_collapse_all_accounts_provider(fake_codexbar: _Fa
     # The catalog read (`config providers`) has no --provider and must not add a usage query.
     assert [a.provider for a in accounts if a.provider == "codex"] == ["codex"]
     usage = [call for call in fake_codexbar.calls if "--provider" in call]
-    assert [call[call.index("--provider") + 1] for call in usage] == ["clinepass"]
+    assert [call[call.index("--provider") + 1] for call in usage] == ["claudeplatform", "clinepass"]
     assert any(call[1:3] == ["config", "providers"] for call in fake_codexbar.calls)
     clinepass_rows = [a for a in accounts if a.provider == "clinepass"]
     assert sorted(a.account or "" for a in clinepass_rows) == ["dc", "technoeuphora"]

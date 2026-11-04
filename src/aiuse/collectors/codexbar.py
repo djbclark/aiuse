@@ -660,19 +660,12 @@ def _claudeplatform_query_timeout(provider_timeouts: dict[str, float] | None, de
     return default
 
 
-def _omp_supplement_requested(
-    provider_list: list[str | None],
-    *,
-    was_discovery: bool,
-    all_accounts: frozenset[str],
-) -> bool:
+def _omp_supplement_requested(provider_list: list[str | None], *, was_discovery: bool) -> bool:
     if provider_list != [None]:
         return any(
             p is not None and (canonical_provider(p) == "omp" or p in ("claudeplatform", "claude-platform"))
             for p in provider_list
         )
-    if all_accounts and "omp" not in all_accounts:
-        return False
     return was_discovery
 
 
@@ -698,9 +691,7 @@ def _live_omp_supplement(
     """
     if "omp" in (skip_providers or ()) or _cached_omp_satisfies_organization(cached, config):
         return []
-    if provider_list is not None and not _omp_supplement_requested(
-        provider_list, was_discovery=was_discovery, all_accounts=all_accounts or frozenset()
-    ):
+    if provider_list is not None and not _omp_supplement_requested(provider_list, was_discovery=was_discovery):
         return []
     outcome = _query_providers(
         ["claudeplatform"],
