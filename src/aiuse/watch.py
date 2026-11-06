@@ -213,7 +213,7 @@ def collect_watch_frame(
     if persist:
         retention = int(analysis_cfg.get("snapshot_retention_days") or 90)
         try:
-            save_snapshot(snapshot, alerts, retention_days=retention)
+            save_snapshot(snapshot, alerts, retention_days=retention, config=config)
             if ledger_sample is not None:
                 save_ledger(ledger_sample, collected_at=snapshot.collected_at, retention_days=retention)
             settings = sampler.sampling_settings(config)

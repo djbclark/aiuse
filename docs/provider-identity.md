@@ -46,11 +46,11 @@ keyed `gemini:5h` and therefore never matched.
 A provider can come from a sibling vendor's row instead of its own collector.
 It is still its own canonical id, never an alias of the parent:
 
-| Canonical id | Display   | CLI binary | Derived from                                               | Board SCOPE / pool key       |
-| ------------ | --------- | ---------- | ---------------------------------------------------------- | ---------------------------- |
-| `omp`        | `omp`     | `omp`      | CodexBar's Claude row, its `claude-cloud-credits` detail   | `claude-api` / `omp_claude`  |
-| `pi`         | `pi`      | `pi`       | Verified OpenAI API console grant / organization Costs API | `codex-api` / `pi_codex_api` |
-| `bedrock`    | `bedrock` | —          | AWS Cost Explorer total account spend (not CodexBar's row) | no clock; `↑ $` PAYG         |
+| Canonical id | Display   | CLI binary | Derived from                                                   | Board SCOPE / pool key       |
+| ------------ | --------- | ---------- | -------------------------------------------------------------- | ---------------------------- |
+| `omp`        | `omp`     | `omp`      | CodexBar Claude Platform (`claudeplatform`) subscription grant | `claude-api` / `omp_claude`  |
+| `pi`         | `pi`      | `pi`       | Verified OpenAI API console grant / organization Costs API     | `codex-api` / `pi_codex_api` |
+| `bedrock`    | `bedrock` | —          | AWS Cost Explorer total account spend (not CodexBar's row)     | no clock; `↑ $` PAYG         |
 
 `omp` is claude.ai's expiring cloud-session dollar grant, spent by the omp
 (oh-my-pi) TUI through the Claude API; it is not a Claude plan window, so it

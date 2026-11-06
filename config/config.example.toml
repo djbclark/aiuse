@@ -235,6 +235,14 @@
 # [plans.pi]
 # monthly_spend_limit = 100
 
+# Claude API promotional grant (omp): fallback clock when Console/CodexBar omit
+# expiry. Dates use UTC midnight on that calendar day (Console convention).
+# [credits.omp]
+# organization = "Freedom Included"  # Console org linked on claude.ai Billing → API credits
+# grant_total_usd = 200
+# granted_at = "2026-10-13"
+# next_credit_at = "2026-11-06"  # claude.ai Billing → API credits → Next credit
+
 # Optional macOS codesign identity for `aiuse trust sign-caut`.
 # [macos]
 # codesign_identity = "aiuse-local-codesign"

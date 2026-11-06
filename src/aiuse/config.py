@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from aiuse.models import canonical_provider, provider_config_key
+from aiuse.models import canonical_provider, parse_dt, provider_config_key
 from aiuse.provider_select import get_selection, reenabled_by_include
 
 # Default wall-clock budget for every external CLI subprocess. Tools either
@@ -359,6 +359,7 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "timeouts",
         "analysis",
         "plans",
+        "credits",
         "collectors",
         "query_min_interval",
         "account_aliases",
@@ -698,6 +699,103 @@ def plan_monthly_price(plans: Any, provider: str, account: str | None = None) ->
                 if price is not None:
                     return price
     return _positive_number(meta.get("monthly_price"))
+
+
+def credit_grant_from_config(config: Any, provider: str) -> tuple[float, Any, Any] | None:
+    """Configured promotional grant for ``omp`` / ``pi`` when the console/API omits dates.
+
+    ``[credits.omp] grant_total_usd``, ``granted_at``, and ``expires_at`` or
+    ``next_credit_at`` (ISO date or datetime). These mark when the **next** monthly
+    API credit arrives (claude.ai **Settings → Billing → API credits → Next credit**).
+    Date-only values use UTC midnight on that calendar day (CodexBar Console convention).
+    """
+    if not isinstance(config, dict):
+        return None
+    credits = config.get("credits")
+    if not isinstance(credits, dict):
+        return None
+    meta = credits.get(provider)
+    if not isinstance(meta, dict):
+        return None
+    total = _positive_number(meta.get("grant_total_usd") or meta.get("total_usd"))
+    granted = parse_dt(meta.get("granted_at"))
+    expires_raw = meta.get("expires_at") if meta.get("expires_at") is not None else meta.get("next_credit_at")
+    expires = parse_dt(expires_raw) if expires_raw is not None else None
+    if total is None or granted is None:
+        return None
+    return total, granted, expires
+
+
+def credit_organization_name(config: Any, provider: str = "omp") -> str | None:
+    """Console organization label for ``omp`` when several API orgs exist.
+
+    ``[credits.omp] organization = "Freedom Included"`` (aliases: ``organization_name``,
+    ``org``, ``org_name``). CodexBar Claude Platform uses the first readable org until
+    upstream supports multi-org selection; aiuse drops ``omp`` rows whose
+    ``account`` / ``accountOrganization`` does not match this name.
+    """
+    if not isinstance(config, dict):
+        return None
+    credits = config.get("credits")
+    if not isinstance(credits, dict):
+        return None
+    meta = credits.get(provider)
+    if not isinstance(meta, dict):
+        return None
+    for key in ("organization", "organization_name", "org", "org_name"):
+        raw = meta.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    return None
+
+
+def organization_names_match(expected: str, observed: str | None) -> bool:
+    """Case-insensitive match after collapsing whitespace."""
+
+    def norm(text: str) -> str:
+        return " ".join(text.casefold().split())
+
+    if not observed or not str(observed).strip():
+        return False
+    return norm(expected) == norm(str(observed))
+
+
+def omp_organization_label(account: Any) -> str | None:
+    """Console organization for ``[credits.omp] organization`` checks.
+
+    Uses the collector's organization identity, not a display alias applied later
+    by ``[account_aliases]``.
+    """
+    pinned = getattr(account, "console_organization", None)
+    if pinned is None and isinstance(account, dict):
+        pinned = account.get("console_organization")
+    if isinstance(pinned, str) and pinned.strip():
+        return pinned.strip()
+    raw = getattr(account, "raw", None)
+    if raw is None and isinstance(account, dict):
+        raw = account.get("raw")
+    acct = getattr(account, "account", None)
+    if acct is None and isinstance(account, dict):
+        acct = account.get("account")
+    if isinstance(raw, dict):
+        pinned = raw.get("account_organization")
+        if isinstance(pinned, str) and pinned.strip():
+            return pinned.strip()
+        source_row = raw.get("source_row")
+        if isinstance(source_row, dict):
+            usage = source_row.get("usage")
+            if isinstance(usage, dict):
+                identity = usage.get("identity")
+                if isinstance(identity, dict):
+                    org = identity.get("accountOrganization")
+                    if isinstance(org, str) and org.strip():
+                        return org.strip()
+            row_account = source_row.get("account")
+            if isinstance(row_account, str) and row_account.strip():
+                return row_account.strip()
+    if isinstance(acct, str) and acct.strip():
+        return acct.strip()
+    return None
 
 
 def plan_monthly_spend_limit(plans: Any, provider: str, account: str | None = None) -> float | None:

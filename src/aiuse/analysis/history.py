@@ -136,6 +136,7 @@ def save_snapshot(
     *,
     retention_days: int = _DEFAULT_RETENTION_DAYS,
     partial_providers: list[str] | None = None,
+    config: Any | None = None,
 ) -> Path:
     """Persist one collection. ``partial_providers`` marks a burst-tier sample
     of only those providers, which is filed under :func:`partial_sample_dir`
@@ -161,8 +162,12 @@ def save_snapshot(
     # collector error, and this file is what a cache reader sees (2026-10-22).
     # A partial sample that did not ask for omp stays without that row.
     from aiuse.client_limits import load_client_limits
+    from aiuse.config import load_config
     from aiuse.credits_override import load_overrides
     from aiuse.rate_gates import ingest_omp_log_evidence
+
+    if config is None:
+        config = load_config()
 
     # Anthropic 429s omp already hit (retry-after in omp's own logs) are the
     # strongest rate-gate evidence; refresh the durable latch every collection
@@ -171,14 +176,15 @@ def save_snapshot(
 
     credit_overrides = None
     if not partial or "omp" in (partial_providers or []):
-        credit_overrides = load_overrides()
+        credit_overrides = load_overrides(config)
 
     snap_dict = enrich_snapshot(
         snapshot.to_dict(),
         notes=load_active_notes(),
-        client_limits=load_client_limits(),
+        client_limits=load_client_limits(config),
         check_frozen=True,
         credit_overrides=credit_overrides,
+        config=config,
     )
     payload = {
         "schema_version": SCHEMA_VERSION,

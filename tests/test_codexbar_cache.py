@@ -240,6 +240,43 @@ def test_collect_codexbar_with_cache(tmp_path: Path):
     assert accounts[0].provider == "codex"
 
 
+def test_explicit_cache_provider_list_skips_catalog_discovery(monkeypatch, tmp_path: Path):
+    """``codexbar config providers`` must not run for a narrow cache-only request."""
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    snap = {
+        "generatedAt": now_iso,
+        "entries": [
+            {
+                "provider": "codex",
+                "updatedAt": now_iso,
+                "primary": {
+                    "usedPercent": 10.0,
+                    "windowMinutes": 300,
+                    "resetsAt": "2099-01-01T00:00:00Z",
+                },
+            }
+        ],
+    }
+    file_path = tmp_path / "widget-snapshot.json"
+    file_path.write_text(json.dumps(snap), encoding="utf-8")
+
+    def refuse_catalog(argv, **_kwargs):
+        if "config" in argv and "providers" in argv:
+            raise AssertionError("catalog should not load for explicit providers=codex cache path")
+        return []
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.run_json", refuse_catalog)
+    accounts = collect_codexbar(
+        cache_path=file_path,
+        use_cache=True,
+        max_cache_age=300.0,
+        providers=["codex"],
+        timeout_backoff=None,
+    )
+    assert len(accounts) == 1
+    assert accounts[0].provider == "codex"
+
+
 def test_include_disabled_live_queries_opencodego_missing_from_the_cache(tmp_path: Path, monkeypatch):
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     snap = {
@@ -287,7 +324,7 @@ def test_include_disabled_live_queries_opencodego_missing_from_the_cache(tmp_pat
         include_disabled=True,
         timeout_backoff=None,
     )
-    assert queried == ["opencodego"]
+    assert queried == ["claudeplatform", "opencodego"]
     assert {account.provider for account in accounts} == {"codex", "opencodego"}
 
 

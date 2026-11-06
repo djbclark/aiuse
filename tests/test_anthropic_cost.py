@@ -17,7 +17,7 @@ from aiuse.models import Snapshot
 
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 GRANTED = datetime(2026, 10, 13, tzinfo=UTC)
-EXPIRES = datetime(2026, 11, 8, tzinfo=UTC)
+EXPIRES = datetime(2026, 11, 6, tzinfo=UTC)
 FAKE_KEY = "sk-ant-admin-TESTONLY"
 ENV = {ac.KEY_ENV: FAKE_KEY}
 
@@ -142,6 +142,22 @@ def test_no_grant_parameters_means_not_run():
     assert ac.refresh(env=ENV, fetch=fetch, now=NOW)[0] == 2
 
 
+def test_refresh_uses_config_grant_when_override_lacks_granted_at():
+    fetch = Canned((200, _page(["10443"])))
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-11-06",
+            }
+        }
+    }
+    code, line = ac.refresh(env=ENV, fetch=fetch, now=NOW, config=config)
+    assert code == 0 and "$95.57 of $200.00" in line
+    assert fetch.calls
+
+
 def test_spend_over_total_clamps_remaining_to_zero():
     _seed_grant()
     code, _ = ac.refresh(env=ENV, fetch=Canned((200, _page(["99999"]))), now=NOW)
@@ -150,9 +166,9 @@ def test_spend_over_total_clamps_remaining_to_zero():
 
 def test_admin_api_reading_decorates_the_row_and_may_make_it():
     _seed_grant()
-    ac.refresh(env=ENV, fetch=Canned((200, _page(["10443"]))), now=datetime.now(UTC))
-    snap = Snapshot(collected_at=datetime.now(UTC), accounts=[]).to_dict()
-    enrich_snapshot(snap, credit_overrides=co.load_overrides())
+    ac.refresh(env=ENV, fetch=Canned((200, _page(["10443"]))), now=NOW)
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides=co.load_overrides(now=NOW))
     (omp,) = snap["accounts"]
     assert omp["source"] == "admin-api" and omp["balance_usd"] == pytest.approx(95.57)
 
@@ -212,7 +228,7 @@ def test_empty_report_cannot_refill_the_grant_it_is_capped_at_the_override():
     assert code == 0 and "capped" in line and "$95.57 of $200.00" in line
     entry = co.load_overrides(now=NOW)["omp"]
     assert entry["remaining_usd"] == pytest.approx(95.57) and "capped" in entry["note"]
-    assert "lower bound" in entry["note"]
+    assert "not promotional-only" in entry["note"]
 
 
 def test_reading_is_capped_at_the_previous_reading():

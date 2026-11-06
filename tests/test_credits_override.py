@@ -9,9 +9,10 @@ import pytest
 
 from aiuse import cli
 from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_entries, summary_line
-from aiuse.collectors.codexbar import _omp_credits_from_row
+from aiuse.collectors.codexbar import _omp_from_claudeplatform_row
 from aiuse.credits_override import (
     apply_credit_overrides,
+    apply_credit_overrides_to_snapshot,
     load_overrides,
     overrides_path,
     run_set_credits,
@@ -20,7 +21,7 @@ from aiuse.credits_override import (
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
-EXPIRY = datetime(2026, 11, 8, tzinfo=UTC)
+EXPIRY = datetime(2026, 11, 6, tzinfo=UTC)
 
 
 def _codexbar_omp(*, updated: datetime, balance: float = 200.0, total: float = 200.0) -> AccountUsage:
@@ -69,24 +70,16 @@ def _omp(snap: dict) -> dict:
 
 def test_expires_at_in_account_json_and_from_codexbar_row():
     row = {
-        "provider": "claude",
+        "provider": "claudeplatform",
         "usage": {
             "updatedAt": "2026-10-19T10:00:00Z",
-            "details": [
-                {
-                    "rows": [
-                        {
-                            "id": "claude-cloud-credits",
-                            "usageValue": 95.57,
-                            "secondaryValue": "Expires 2026-11-08T00:00:00Z",
-                            "progress": {"used": 104.43, "total": 200},
-                        }
-                    ]
-                }
-            ],
+            "primary": {
+                "usedPercent": 47.785,
+                "resetDescription": "$95.57 of $200.00 left · Expires Nov 6 (UTC)",
+            },
         },
     }
-    account = _omp_credits_from_row(row)
+    account = _omp_from_claudeplatform_row(row)
     assert account is not None and account.expires_at == EXPIRY
     assert account.to_dict()["expires_at"] == EXPIRY.isoformat()
 
@@ -105,10 +98,12 @@ def test_override_beats_older_codexbar_100_percent():
     assert round(window["remaining_percent"], 2) == 47.78
 
 
-def test_operator_override_alone_never_makes_a_row():
+def test_operator_override_alone_makes_omp_row_when_collectors_omitted_it():
     snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
     enrich_snapshot(snap, now=NOW, credit_overrides=_override())
-    assert snap["accounts"] == []
+    (omp,) = snap["accounts"]
+    assert omp["provider"] == "omp" and omp["source"] == "operator-override"
+    assert omp["balance_usd"] == 95.57
 
 
 def test_admin_api_reading_may_make_the_row_when_none_exists():
@@ -192,7 +187,7 @@ def test_burn_before_reset_fires_within_21_days_above_50_percent():
     enrich_snapshot(snap, now=NOW, credit_overrides={})
     (pool,) = pool_entries(snap, now=NOW)
     nudge = pool["burn_before_reset"]
-    assert nudge["days_left"] == 19.5
+    assert nudge["days_left"] == 17.5
     assert nudge["remaining_usd"] == 150.0
     assert nudge["remaining_percent"] == 75.0
     assert "use it before it lapses" in nudge["suggestion"]
@@ -216,16 +211,19 @@ def test_remaining_percent_semantics_unchanged():
     assert window["remaining_percent"] == 75.0 and window["used_percent"] == 25.0
 
 
-def test_set_credits_cli_round_trip(capsys):
+def test_set_credits_cli_round_trip(capsys, monkeypatch):
+    from aiuse import credits_override as co_mod
+
+    monkeypatch.setattr(co_mod, "utcnow", lambda: NOW)
     rc = run_set_credits(
-        ["omp", "--remaining", "95.57", "--total", "200", "--expires", "2026-11-08", "--note", "console 2026-10-19"]
+        ["omp", "--remaining", "95.57", "--total", "200", "--expires", "2026-11-06", "--note", "claude.ai billing"]
     )
     assert rc == 0
-    assert "recorded: omp $95.57 of $200.00 left, expires 2026-11-08" in capsys.readouterr().out
-    entry = load_overrides()["omp"]
+    assert "recorded: omp $95.57 of $200.00 left, expires 2026-11-06" in capsys.readouterr().out
+    entry = load_overrides(now=NOW)["omp"]
     assert entry["remaining_usd"] == 95.57 and entry["total_usd"] == 200.0
-    assert entry["expires_at"] == "2026-11-08T00:00:00+00:00"
-    assert entry["note"] == "console 2026-10-19"
+    assert entry["expires_at"] == "2026-11-06T00:00:00+00:00"
+    assert entry["note"] == "claude.ai billing"
     assert datetime.fromisoformat(entry["observed_at"]).tzinfo is not None
     assert {k: v for k, v in json.loads(overrides_path().read_text())["omp"].items() if k != "source"} == {
         k: v for k, v in entry.items() if k != "source"
@@ -509,12 +507,12 @@ def test_oversized_override_file_is_not_read(capsys):
 
 
 def test_config_hiding_omp_means_no_override_at_all():
-    save_override("omp", remaining=95.57, total=200.0, expires=EXPIRY, note=None, now=datetime.now(UTC))
-    assert "omp" in load_overrides()
+    save_override("omp", remaining=95.57, total=200.0, expires=EXPIRY, note=None, now=NOW)
+    assert "omp" in load_overrides(now=NOW)
     for section in ("hidden_pools", "disabled_services"):
         for key in ("omp", "omp/claude"):
-            assert load_overrides({section: {key: "operator"}}) == {}
-    assert "omp" in load_overrides({"hidden_pools": {"codex": "x"}})
+            assert load_overrides({section: {key: "operator"}}, now=NOW) == {}
+    assert "omp" in load_overrides({"hidden_pools": {"codex": "x"}}, now=NOW)
 
 
 def test_mismatched_total_lets_the_fresher_codexbar_reading_win_and_flags_the_override():
@@ -565,6 +563,171 @@ def test_override_without_expires_inherits_a_past_codexbar_expiry():
 def test_unexpired_grant_is_untouched():
     snap = _applied({}, snap=_snap(_codexbar_omp(updated=NOW - timedelta(minutes=5))))
     assert "grant_expired" not in _omp(snap) and _omp(snap)["balance_usd"] == 200.0
+
+
+def test_organization_check_uses_console_identity_not_display_alias():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.account = "Freedom (display alias)"
+    account.console_organization = "Freedom Included"
+    snap = Snapshot(collected_at=NOW, accounts=[account])
+    config = {"credits": {"omp": {"organization": "Freedom Included"}}}
+    apply_credit_overrides_to_snapshot(snap, config, overrides={}, now=NOW)
+    (omp,) = [a for a in snap.accounts if a.provider == "omp"]
+    assert omp.balance_usd == 200.0
+
+
+def test_config_grant_clock_applies_on_first_override_only_row():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(
+        snap,
+        now=NOW,
+        credit_overrides={
+            "omp": {
+                "remaining_usd": 0.0,
+                "total_usd": 200.0,
+                "observed_at": NOW.isoformat(),
+            }
+        },
+        config={
+            "credits": {
+                "omp": {
+                    "grant_total_usd": 200.0,
+                    "granted_at": "2026-10-13",
+                    "next_credit_at": "2026-10-18",
+                }
+            }
+        },
+    )
+    omp = _omp(snap)
+    assert omp["balance_usd"] is None
+    assert omp.get("reading_expired") is True
+
+
+def test_config_grant_clock_skips_mismatched_operator_override_total():
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(
+        snap,
+        now=NOW,
+        credit_overrides={
+            "omp": {
+                "remaining_usd": 50.0,
+                "total_usd": 100.0,
+                "observed_at": NOW.isoformat(),
+            }
+        },
+        config={
+            "credits": {
+                "omp": {
+                    "grant_total_usd": 200.0,
+                    "granted_at": "2026-10-13",
+                    "next_credit_at": "2026-10-18",
+                }
+            }
+        },
+    )
+    omp = _omp(snap)
+    assert omp["balance_usd"] == 50.0
+    assert omp.get("reading_expired") is not True
+
+
+def test_config_grant_withholds_granted_at_when_live_expiry_differs():
+    """Renewed grant (later expiry): do not borrow config ``granted_at`` for pace."""
+    live_expiry = datetime(2026, 12, 6, tzinfo=UTC)
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.expires_at = live_expiry
+    account.windows[0].resets_at = live_expiry
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-11-06",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    (window,) = omp["windows"]
+    assert window["window_minutes"] == 43800
+
+
+def test_config_grant_clock_skips_mismatched_grant_total():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5), total=100.0, balance=50.0)
+    account.expires_at = None
+    account.windows[0].resets_at = None
+    account.windows[0].refill_capacity = 100.0
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-10-18",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    assert omp.get("reading_expired") is not True
+    assert omp["balance_usd"] == 50.0
+
+
+def test_config_grant_clock_expires_balance_before_routing():
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.expires_at = None
+    account.windows[0].resets_at = None
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-10-18",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    assert omp.get("grant_expired") is True and omp.get("reading_expired") is True
+    assert omp["balance_usd"] is None
+    assert [p for p in available_pools(snap) if p["provider"] == "omp"] == []
+
+
+def test_config_grant_clock_expires_cached_operator_override():
+    account = AccountUsage(
+        source="operator-override",
+        provider="omp",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="credits",
+                used_percent=52.215,
+                remaining_percent=47.785,
+                refill_capacity=200.0,
+                refill_capacity_unit="usd",
+                window_id="claude-cloud-credits",
+            )
+        ],
+        balance_usd=95.57,
+        spent_usd=104.43,
+        credits_label="Claude API credits",
+        collected_at=NOW - timedelta(minutes=5),
+    )
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-10-18",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account])
+    apply_credit_overrides_to_snapshot(snap, config, overrides=_override(), now=NOW)
+    omp = next(a for a in snap.accounts if a.provider == "omp")
+    assert omp.balance_usd is None
+    assert any("grant" in note.casefold() and "expir" in note.casefold() for note in omp.notes)
 
 
 def test_set_credits_refuses_values_above_the_dollar_cap():

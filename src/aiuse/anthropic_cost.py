@@ -137,6 +137,7 @@ def refresh(
     env: Mapping[str, str] | None = None,
     fetch: Fetch | None = None,
     now: datetime | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> tuple[int, str]:
     """One refresh. Returns ``(exit code, one status line)``: 0 ok, 1 failed, 2 not run."""
     fetch = fetch or _http_get
@@ -149,11 +150,16 @@ def refresh(
             f"{KEY_ENV} is not set; run under: sudo-secretspec run --reason 'aiuse cost report' -- aiuse refresh-credits omp",
         )
     now = now or utcnow()
-    grant = co.load_grant_params()
+    if config is None:
+        from aiuse.config import load_config
+
+        config = load_config()
+    grant = co.load_grant_params(config=config)
     if grant is None:
         return (
             2,
-            "no grant parameters: run `aiuse set-credits omp --remaining N --total N --granted DATE --expires DATE` once",
+            "no grant parameters: set [credits.omp] grant_total_usd/granted_at/expires_at in config, "
+            "or run `aiuse set-credits omp --remaining N --total N --granted DATE --expires DATE` once",
         )
     total, granted_at, expires_at = grant
     if expires_at is not None and now >= expires_at:
@@ -216,7 +222,10 @@ def refresh(
         "total_usd": total,
         "granted_at": granted_at.isoformat(),
         "expires_at": expires_at.isoformat() if expires_at else None,
-        "note": f"admin api cost_report, a lower bound (counts all org spend since {granted_at.date().isoformat()}): ${spent:.2f}"
+        "note": (
+            f"admin api cost_report (all org API spend since {granted_at.date().isoformat()}, "
+            f"not promotional-only; ignores tier spend caps): ${spent:.2f}"
+        )
         + (f"; reading rose, capped at the {capped_by}'s figure" if capped_by else ""),
         "observed_at": now.isoformat(),
         "source": "admin-api",
@@ -252,6 +261,8 @@ def run_refresh_credits(argv: list[str]) -> int:
         from aiuse.openai_cost import run_refresh_credits as refresh_pi
 
         return refresh_pi()
-    code, line = refresh()
+    from aiuse.config import load_config
+
+    code, line = refresh(config=load_config())
     print(line, file=sys.stdout if code == 0 else sys.stderr)
     return code

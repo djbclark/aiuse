@@ -318,6 +318,7 @@ class _ServeState:
                     snapshot,
                     alerts,
                     retention_days=int((analysis_cfg or {}).get("snapshot_retention_days") or 90),
+                    config=self.config,
                 )
             except OSError:
                 pass
@@ -329,6 +330,7 @@ class _ServeState:
                 client_limits=load_client_limits(self.config),
                 check_frozen=True,
                 credit_overrides=load_overrides(self.config),
+                config=self.config,
             ),
             "alerts": [a.to_dict() for a in alerts],
             "suggestion": suggestion,
@@ -364,6 +366,7 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
         client_limits=load_client_limits(config),
         check_frozen=True,
         credit_overrides=load_overrides(config),
+        config=config,
     )
     # Minimal history object without reloading learning (cheap path).
     analysis_cfg = config.get("analysis") if isinstance(config.get("analysis"), dict) else {}
@@ -512,6 +515,9 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                 source=str(row.get("source") or "cache"),
                 provider=str(row.get("provider") or "unknown"),
                 account=row.get("account"),
+                console_organization=(
+                    row.get("console_organization") if isinstance(row.get("console_organization"), str) else None
+                ),
                 plan=row.get("plan"),
                 billing_kind=billing,
                 windows=windows,

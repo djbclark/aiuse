@@ -542,7 +542,7 @@ credit-balance endpoint (its `GET /v1/organizations/cost_report` returns cost-to
 record the console figures yourself:
 
 ```
-aiuse set-credits omp --remaining 95.57 --total 200 --expires 2026-11-08 --note "console 2026-10-19"
+aiuse set-credits omp --remaining 95.57 --total 200 --expires 2026-11-06 --note "claude.ai billing next credit"
 ```
 
 The figures go to `~/.cache/aiuse/credit-overrides.json` with a timestamp and are applied at read
@@ -577,7 +577,7 @@ the balance is derived: grant total minus spend since the grant date, clamped to
 parameters once, on the override:
 
 ```
-aiuse set-credits omp --remaining 95.57 --total 200 --granted 2026-10-13 --expires 2026-11-08 --note "console 2026-10-19"
+aiuse set-credits omp --remaining 95.57 --total 200 --granted 2026-10-13 --expires 2026-11-06 --note "claude.ai billing next credit"
 sudo-secretspec run --reason "aiuse cost report" -- aiuse refresh-credits omp
 ```
 

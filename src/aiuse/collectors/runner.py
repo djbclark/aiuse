@@ -271,6 +271,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
                     include_disabled=include_disabled,
                     http_url=http_url if isinstance(http_url, str) else None,
                     http_token=http_token if isinstance(http_token, str) else None,
+                    config=config,
                 ),
             )
         )

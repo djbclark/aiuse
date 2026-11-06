@@ -45,7 +45,12 @@ from typing import Any
 
 from aiuse.analysis import history
 from aiuse.analysis.pool_keys import parse_pool_rule_key
-from aiuse.config import plan_monthly_spend_limit
+from aiuse.config import (
+    credit_organization_name,
+    omp_organization_label,
+    organization_names_match,
+    plan_monthly_spend_limit,
+)
 from aiuse.models import (
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
@@ -156,13 +161,24 @@ def _config_hides_omp(config: Mapping[str, Any] | None, provider: str = OVERRIDE
         mapping = (config or {}).get(section)
         if isinstance(mapping, Mapping) and any(parse_pool_rule_key(str(key))[0] == provider for key in mapping):
             return True
-    if isinstance(config, dict):
-        from aiuse.config import requested_providers
-
-        req = requested_providers(config)
-        if req is not None and provider not in req:
-            return True
     return False
+
+
+def _collector_scope_excludes_credit_provider(config: Mapping[str, Any] | None, provider: str) -> bool:
+    """When ``[collectors.codexbar] providers`` is an explicit list, omit other pools.
+
+    Credit overrides (omp/pi) are not CodexBar subscription rows, but applying them while
+    the run intentionally excludes that collector's identity would inject a balance the
+    operator did not ask this pass to surface (see
+    ``test_apply_credit_overrides_to_snapshot_adds_admin_api_omp_and_respects_provider_filter``).
+    ``load_overrides`` does not use this — only snapshot application paths.
+    """
+    if not isinstance(config, dict):
+        return False
+    from aiuse.config import requested_providers
+
+    req = requested_providers(config)
+    return req is not None and provider not in req
 
 
 def readings_file() -> Path:
@@ -222,16 +238,21 @@ def load_file_entry(path: Path, source: str, provider: str = OVERRIDE_PROVIDER) 
     return _load_file(path, source).get(provider)
 
 
-def load_grant_params(provider: str = OVERRIDE_PROVIDER) -> tuple[float, datetime, datetime | None] | None:
-    """``(total_usd, granted_at, expires_at)`` from the operator override, or None.
+def load_grant_params(
+    provider: str = OVERRIDE_PROVIDER,
+    config: Mapping[str, Any] | None = None,
+) -> tuple[float, datetime, datetime | None] | None:
+    """``(total_usd, granted_at, expires_at)`` from operator override, else config.
 
     The grant's parameters do not age, so the override's 7-day limit is not applied.
     """
     entry = _load_file(overrides_path(), OVERRIDE_SOURCE).get(provider)
     granted = parse_dt(entry.get("granted_at")) if entry else None
-    if entry is None or granted is None:
-        return None
-    return float(entry["total_usd"]), granted, parse_dt(entry.get("expires_at"))
+    if entry is not None and granted is not None:
+        return float(entry["total_usd"]), granted, parse_dt(entry.get("expires_at"))
+    from aiuse.config import credit_grant_from_config
+
+    return credit_grant_from_config(config, provider)
 
 
 def _load_file(path: Path, source: str) -> dict[str, dict[str, Any]]:
@@ -445,6 +466,66 @@ def _grant_expiry(account: Mapping[str, Any]) -> datetime | None:
     return expiry
 
 
+def _attach_config_grant_clock(
+    account: dict[str, Any],
+    *,
+    provider: str,
+    config: Mapping[str, Any] | None,
+) -> None:
+    """Fill ``expires_at`` from ``[credits.omp]`` when CodexBar did not supply one."""
+    if provider != OVERRIDE_PROVIDER:
+        return
+    grant = load_grant_params(provider, config)
+    if grant is None:
+        return
+    total, granted_at, expires = grant
+    if expires is None and account.get("expires_at") is None:
+        return
+    capacity = next(
+        (
+            w.get("refill_capacity")
+            for w in account.get("windows") or []
+            if isinstance(w, dict) and w.get("refill_capacity_unit") == "usd"
+        ),
+        None,
+    )
+    if capacity is not None and abs(float(capacity) - float(total)) > _EPSILON:
+        return
+    if capacity is None:
+        balance = account.get("balance_usd")
+        spent = account.get("spent_usd")
+        if balance is not None and spent is not None:
+            if abs(float(balance) + float(spent) - float(total)) > _EPSILON:
+                return
+        elif account.get("source") in (OVERRIDE_SOURCE, "admin-api", "none"):
+            return
+    expiry_iso = account.get("expires_at") or (expires.isoformat() if expires is not None else None)
+    if account.get("expires_at") is None and expires is not None:
+        account["expires_at"] = expires.isoformat()
+        for window in account.get("windows") or []:
+            if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
+                window["resets_at"] = expires.isoformat()
+    if expiry_iso is not None:
+        live_expiry = parse_dt(expiry_iso)
+        config_expiry = expires
+        grant_start_for_clock = (
+            granted_at.isoformat()
+            if granted_at is not None
+            and config_expiry is not None
+            and live_expiry is not None
+            and live_expiry == config_expiry
+            else None
+        )
+        _normalize_credits_clock(
+            account,
+            {
+                "total_usd": total,
+                "granted_at": grant_start_for_clock,
+                "expires_at": expiry_iso,
+            },
+        )
+
+
 def _expire_reading(account: dict[str, Any], why: str = "older than 24h") -> None:
     for window in account.get("windows") or []:
         if isinstance(window, dict):
@@ -491,14 +572,21 @@ def _apply_credit_override_for_provider(
                 if note not in (account.get("notes") or []):
                     account["notes"] = [*(account.get("notes") or []), note]
         return
+    want_org = credit_organization_name(config, provider) if provider == OVERRIDE_PROVIDER else None
     if (
         override
-        and (provider == "pi" or override.get("source") == "admin-api" or override.get("has_admin_reading"))
+        and (
+            provider == "pi"
+            or override.get("source") == "admin-api"
+            or override.get("has_admin_reading")
+            or (provider == OVERRIDE_PROVIDER and override.get("source") == OVERRIDE_SOURCE)
+        )
         and isinstance(accounts, list)
         and not any(isinstance(a, dict) and a.get("provider") == provider for a in accounts)
     ):
         # An Admin API reading is collector output, so it may make the row when the snapshot
-        # has none. An operator override only decorates a row the collectors produced.
+        # has none. Operator ``set-credits`` may do the same for omp when collectors omitted it
+        # (for example after a config organization filter dropped the CodexBar row).
         accounts.append(
             {
                 "source": "none",
@@ -514,8 +602,22 @@ def _apply_credit_override_for_provider(
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != provider:
             continue
+        if (
+            want_org
+            and account.get("source") == "codexbar"
+            and not organization_names_match(want_org, omp_organization_label(account))
+        ):
+            wrong = (
+                f"organization {omp_organization_label(account)!r} does not match "
+                f"[credits.omp] organization = {want_org!r}"
+            )
+            if wrong not in (account.get("notes") or []):
+                account["notes"] = [*(account.get("notes") or []), wrong]
+            _expire_reading(account, wrong)
+            account["observed_at"] = None
         if account.get("source") not in (OVERRIDE_SOURCE, "admin-api"):
             _normalize_credits_clock(account, override)
+        _attach_config_grant_clock(account, provider=provider, config=config)
         if ignored:
             ignored_note = f"credit override ignored: {ignored}"
             if ignored_note not in (account.get("notes") or []):
@@ -544,6 +646,7 @@ def _apply_credit_override_for_provider(
                 if missing:
                     _normalize_credits_clock({**account, "windows": missing}, override)
             max_age = OVERRIDE_MAX_AGE if account.get("source") == OVERRIDE_SOURCE else CODEXBAR_MAX_AGE
+            _attach_config_grant_clock(account, provider=provider, config=config)
             expiry = _grant_expiry(account)
             if expiry is not None and now >= expiry:
                 _expire_reading(account, "grant expired")
@@ -629,6 +732,7 @@ def _apply_credit_override_for_provider(
                 _expire_reading(account)
         elif reading_at is not None and now - reading_at > CODEXBAR_MAX_AGE:
             _expire_reading(account)
+        _attach_config_grant_clock(account, provider=provider, config=config)
         # The grant itself lapsing is independent of how fresh the reading is.
         expiry = _grant_expiry(account)
         if expiry is not None and now >= expiry:
@@ -688,6 +792,8 @@ def apply_credit_overrides(
         if isinstance(account, dict) and canonical_provider(str(account.get("provider") or "")) == "pi":
             account["provider"] = "pi"
     for provider in CREDIT_PROVIDERS:
+        if _collector_scope_excludes_credit_provider(config, provider):
+            continue
         _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now, config=config)
 
 
@@ -707,7 +813,9 @@ def apply_credit_overrides_to_snapshot(
     providers = {
         provider
         for provider in CREDIT_PROVIDERS
-        if not _config_hides_omp(config, provider) and not _omp_hidden(visibility, provider)
+        if not _config_hides_omp(config, provider)
+        and not _collector_scope_excludes_credit_provider(config, provider)
+        and not _omp_hidden(visibility, provider)
     }
     if not providers:
         return False
