@@ -161,13 +161,24 @@ def _config_hides_omp(config: Mapping[str, Any] | None, provider: str = OVERRIDE
         mapping = (config or {}).get(section)
         if isinstance(mapping, Mapping) and any(parse_pool_rule_key(str(key))[0] == provider for key in mapping):
             return True
-    if isinstance(config, dict):
-        from aiuse.config import requested_providers
-
-        req = requested_providers(config)
-        if req is not None and provider not in req:
-            return True
     return False
+
+
+def _collector_scope_excludes_credit_provider(config: Mapping[str, Any] | None, provider: str) -> bool:
+    """When ``[collectors.codexbar] providers`` is an explicit list, omit other pools.
+
+    Credit overrides (omp/pi) are not CodexBar subscription rows, but applying them while
+    the run intentionally excludes that collector's identity would inject a balance the
+    operator did not ask this pass to surface (see
+    ``test_apply_credit_overrides_to_snapshot_adds_admin_api_omp_and_respects_provider_filter``).
+    ``load_overrides`` does not use this — only snapshot application paths.
+    """
+    if not isinstance(config, dict):
+        return False
+    from aiuse.config import requested_providers
+
+    req = requested_providers(config)
+    return req is not None and provider not in req
 
 
 def readings_file() -> Path:
@@ -495,11 +506,21 @@ def _attach_config_grant_clock(
             if isinstance(window, dict) and window.get("refill_capacity_unit") == "usd":
                 window["resets_at"] = expires.isoformat()
     if expiry_iso is not None:
+        live_expiry = parse_dt(expiry_iso)
+        config_expiry = expires
+        grant_start_for_clock = (
+            granted_at.isoformat()
+            if granted_at is not None
+            and config_expiry is not None
+            and live_expiry is not None
+            and live_expiry == config_expiry
+            else None
+        )
         _normalize_credits_clock(
             account,
             {
                 "total_usd": total,
-                "granted_at": granted_at.isoformat() if granted_at else None,
+                "granted_at": grant_start_for_clock,
                 "expires_at": expiry_iso,
             },
         )
@@ -771,6 +792,8 @@ def apply_credit_overrides(
         if isinstance(account, dict) and canonical_provider(str(account.get("provider") or "")) == "pi":
             account["provider"] = "pi"
     for provider in CREDIT_PROVIDERS:
+        if _collector_scope_excludes_credit_provider(config, provider):
+            continue
         _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now, config=config)
 
 
@@ -790,7 +813,9 @@ def apply_credit_overrides_to_snapshot(
     providers = {
         provider
         for provider in CREDIT_PROVIDERS
-        if not _config_hides_omp(config, provider) and not _omp_hidden(visibility, provider)
+        if not _config_hides_omp(config, provider)
+        and not _collector_scope_excludes_credit_provider(config, provider)
+        and not _omp_hidden(visibility, provider)
     }
     if not providers:
         return False

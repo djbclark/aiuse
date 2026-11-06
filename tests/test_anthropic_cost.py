@@ -166,9 +166,9 @@ def test_spend_over_total_clamps_remaining_to_zero():
 
 def test_admin_api_reading_decorates_the_row_and_may_make_it():
     _seed_grant()
-    ac.refresh(env=ENV, fetch=Canned((200, _page(["10443"]))), now=datetime.now(UTC))
-    snap = Snapshot(collected_at=datetime.now(UTC), accounts=[]).to_dict()
-    enrich_snapshot(snap, credit_overrides=co.load_overrides())
+    ac.refresh(env=ENV, fetch=Canned((200, _page(["10443"]))), now=NOW)
+    snap = Snapshot(collected_at=NOW, accounts=[]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides=co.load_overrides(now=NOW))
     (omp,) = snap["accounts"]
     assert omp["source"] == "admin-api" and omp["balance_usd"] == pytest.approx(95.57)
 

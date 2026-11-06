@@ -211,13 +211,16 @@ def test_remaining_percent_semantics_unchanged():
     assert window["remaining_percent"] == 75.0 and window["used_percent"] == 25.0
 
 
-def test_set_credits_cli_round_trip(capsys):
+def test_set_credits_cli_round_trip(capsys, monkeypatch):
+    from aiuse import credits_override as co_mod
+
+    monkeypatch.setattr(co_mod, "utcnow", lambda: NOW)
     rc = run_set_credits(
         ["omp", "--remaining", "95.57", "--total", "200", "--expires", "2026-11-06", "--note", "claude.ai billing"]
     )
     assert rc == 0
     assert "recorded: omp $95.57 of $200.00 left, expires 2026-11-06" in capsys.readouterr().out
-    entry = load_overrides()["omp"]
+    entry = load_overrides(now=NOW)["omp"]
     assert entry["remaining_usd"] == 95.57 and entry["total_usd"] == 200.0
     assert entry["expires_at"] == "2026-11-06T00:00:00+00:00"
     assert entry["note"] == "claude.ai billing"
@@ -504,12 +507,12 @@ def test_oversized_override_file_is_not_read(capsys):
 
 
 def test_config_hiding_omp_means_no_override_at_all():
-    save_override("omp", remaining=95.57, total=200.0, expires=EXPIRY, note=None, now=datetime.now(UTC))
-    assert "omp" in load_overrides()
+    save_override("omp", remaining=95.57, total=200.0, expires=EXPIRY, note=None, now=NOW)
+    assert "omp" in load_overrides(now=NOW)
     for section in ("hidden_pools", "disabled_services"):
         for key in ("omp", "omp/claude"):
-            assert load_overrides({section: {key: "operator"}}) == {}
-    assert "omp" in load_overrides({"hidden_pools": {"codex": "x"}})
+            assert load_overrides({section: {key: "operator"}}, now=NOW) == {}
+    assert "omp" in load_overrides({"hidden_pools": {"codex": "x"}}, now=NOW)
 
 
 def test_mismatched_total_lets_the_fresher_codexbar_reading_win_and_flags_the_override():
@@ -625,6 +628,28 @@ def test_config_grant_clock_skips_mismatched_operator_override_total():
     omp = _omp(snap)
     assert omp["balance_usd"] == 50.0
     assert omp.get("reading_expired") is not True
+
+
+def test_config_grant_withholds_granted_at_when_live_expiry_differs():
+    """Renewed grant (later expiry): do not borrow config ``granted_at`` for pace."""
+    live_expiry = datetime(2026, 12, 6, tzinfo=UTC)
+    account = _codexbar_omp(updated=NOW - timedelta(minutes=5))
+    account.expires_at = live_expiry
+    account.windows[0].resets_at = live_expiry
+    config = {
+        "credits": {
+            "omp": {
+                "grant_total_usd": 200.0,
+                "granted_at": "2026-10-13",
+                "next_credit_at": "2026-11-06",
+            }
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[account]).to_dict()
+    enrich_snapshot(snap, now=NOW, credit_overrides={}, config=config)
+    omp = _omp(snap)
+    (window,) = omp["windows"]
+    assert window["window_minutes"] == 43800
 
 
 def test_config_grant_clock_skips_mismatched_grant_total():

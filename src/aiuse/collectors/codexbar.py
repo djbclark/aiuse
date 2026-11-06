@@ -484,7 +484,14 @@ def _collect_codexbar_impl(
             cached = [a for a in cached if not (a.provider == "omp" and not _omp_row_has_usable_grant(a))]
             backoff = TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None
             omp: list[AccountUsage] = []
-            if include_disabled or _claudeplatform_enabled_in_catalog(catalog()) or not was_discovery:
+            # Avoid ``codexbar config providers`` on explicit cache-only requests; only
+            # the discovery path needs the catalog to see whether Claude Platform is on.
+            can_supplement_omp = bool(
+                include_disabled
+                or not was_discovery
+                or (was_discovery and _claudeplatform_enabled_in_catalog(catalog()))
+            )
+            if can_supplement_omp:
                 omp = _live_omp_supplement(
                     cached,
                     skip_providers=skip_providers,
