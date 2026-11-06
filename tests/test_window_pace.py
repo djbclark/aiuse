@@ -231,7 +231,7 @@ def test_matrix_cell_shows_tilde_and_columns_aligned():
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     lines = text.splitlines()
-    oc_line = next(line for line in lines if "oc-go" in line)
+    oc_line = next(line for line in lines if "opencode" in line)
     codex_line = next(line for line in lines if "codex" in line)
     assert "+1360%~" in oc_line
     assert "+50%" in codex_line

@@ -1097,15 +1097,15 @@ class TestNoDataAccounts:
         """The usage table shows ``no usage data``; chat used to show nothing."""
         snap = Snapshot(collected_at=NOW, accounts=[_empty_account()])
         output = render_chat_report(snap, [])
-        assert "oc-go" in output
+        assert "opencode" in output
         assert "no usage data" in output
 
     def test_present_in_both_formats(self):
         from aiuse.report import render_clock_matrix
 
         snap = Snapshot(collected_at=NOW, accounts=[_empty_account()])
-        assert "oc-go" in render_chat_report(snap, [])
-        assert "oc-go" in render_clock_matrix([], snapshot=snap, color=False, width=120)
+        assert "opencode" in render_chat_report(snap, [])
+        assert "opencode" in render_clock_matrix([], snapshot=snap, color=False, width=120)
 
     def test_an_account_with_a_balance_is_not_treated_as_empty(self):
         """Only a genuinely empty collection lands in the no-data bucket."""

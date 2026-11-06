@@ -223,7 +223,7 @@ def test_render_watch_board_includes_header_and_matrix():
     assert "aiuse watch" in text
     assert "q/esc quit" in text
     assert "next in 2:05" in text
-    assert "codex" in text.lower() or "SERVICE" in text
+    assert "codex" in text.lower() or "TUI" in text
 
 
 def test_render_watch_board_shows_collecting():
@@ -749,7 +749,7 @@ def test_board_footer_is_centered_over_the_table():
     from aiuse.watch import render_watch_board
 
     rows = render_watch_board(_snap(), [], color=False).splitlines()
-    header = next(i for i, r in enumerate(rows) if r.split()[:2] == ["##", "SERVICE"])
+    header = next(i for i, r in enumerate(rows) if r.split()[:2] == ["##", "TUI"])
     width = max(len(r) for r in rows[header:])
     meta = next(r for r in rows if "Collected at" in r)
     left = len(meta) - len(meta.lstrip())

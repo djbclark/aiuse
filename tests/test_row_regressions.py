@@ -286,7 +286,7 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert fable.tail_note == "Fable-cap"
     assert not any("Fable" in note for note in shared.sublimit_notes)
 
-    oc = _rows("oc-go")
+    oc = _rows("opencode")
     assert len(oc) == 1
     assert oc[0].scope == "—"
     assert set(oc[0].clocks) == {"5h", "weekly", "monthly"}
@@ -318,7 +318,7 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
         if " claude " in f" {line} " and " fable " not in f" {line} " and not line.startswith("        ")
     )
     fable = next(line for line in text.splitlines() if " fable " in f" {line} ")
-    oc = _line(text, "oc-go")
+    oc = _line(text, "opencode")
     grok_bot = _line(text, "cursor", "grok-bot")
     auto = _line(text, "cursor", "auto")
 

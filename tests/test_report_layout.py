@@ -246,7 +246,7 @@ def test_watch_board_puts_ai_legend_and_footer_above_the_table():
     assert "sampler " in board[0]
     assert board[1].strip() == AI_JSON_NOTE
     assert sum(AI_JSON_NOTE in line for line in board) == 1
-    header = next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "SERVICE"])
+    header = next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "TUI"])
     collected = next(i for i, line in enumerate(board) if "Collected at" in line)
     detail = next(i for i, line in enumerate(board) if line.strip() == "Detail: ai --full")
     legend = next(i for i, line in enumerate(board) if "u/l = percent used" in line)

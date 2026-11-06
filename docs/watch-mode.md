@@ -103,10 +103,10 @@ stdout report.
   then `Collected at …` and `Detail: ai --full` with any collector errors),
   and the table last. Nothing is printed below the table, so its bottom rows (the
   ones most worth using) stay on screen.
-- Columns: `## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER`. `OTHER` appears
+- Columns: `## TUI ACCT SCOPE PACE 5H WEEK MONTH OTHER`. `OTHER` appears
   only when a row has a note for it: omp's `$left` grant, a wallet
   (`$1.64`), `Fable-cap`. A reading older than the freshness threshold follows
-  it as `(as of 10/29 9:02pm)`.
+  it as a yellow stamp such as `10/29 9:02pm`.
 - Claude's main WEEK cell is overall shared usage. Fable is its own scored
   row (`scope` `fable`) with the cap in the WEEK column and Fable-cap pace.
   The score is Fable's own and is not added into a cross-vendor total, and
@@ -216,7 +216,7 @@ The board stays read-only except for three one-shot keys (header shows
    at `all` of its providers (`all_providers_config()`). CodexBar's own
    disabled list is not the enabled widget cache: the sweep also live-queries
    a CodexBar provider aiuse knows when CodexBar has it turned off, so a
-   service hidden by default (oc-go) still appears here and stays hidden on
+   service hidden by default (opencode) still appears here and stays hidden on
    the normal board. The sweep runs in a second worker
    process beside the regular cycle. The result replaces the board with a
    header marker `ALL · hidden+total · screen only` until the next regular frame

@@ -12,6 +12,17 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Changed
+
+- **The matrix's first column is headed `TUI`, not `SERVICE`**, and the OpenCode
+  Go row is named `opencode` instead of `oc-go` (`oc-zen` is unchanged). The old
+  name still works wherever a provider is named: `--include oc-go`,
+  `[disabled_services]`, `[plans]`.
+- **DeepSeek is `deepseek/codewhale`**: its row is named for CodeWhale (formerly
+  DeepSeek-TUI), the TUI that spends the DeepSeek balance, as `zai/zcode` and
+  `clinepass/cline` are. JSON `cli_binary` for `deepseek` is now `codewhale`
+  (previously `null`); `codewhale` and `codew` are accepted as provider names.
+
 ### Added
 
 - **`--include LIST` / `--exclude LIST`**: per-run adjustment of the provider

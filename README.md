@@ -51,18 +51,18 @@ pools most worth using right now sort to the bottom.
 
 ```diff
   AI: Use `aiuse --json` for machine-readable output
-        ## SERVICE    SCOPE      PACE      5H              WEEK              MONTH
-- error ?? oc-zen     * [No available fetch strategy for opencode-zen.]
-- empty  0 oc-go      —             —      ->           100u/0l/4d12h         <-
-  n/a   -- deepseek   * [↓ $4.15 prepaid]
-  n/a   -- openrouter * [↓ $18.55 prepaid]
-  slow  38 agy        claude/gpt    —      ->           78u/22l/1d5h          <-
-  mid   50 claude     —          +38% 12u/88l/3h7m -68% 77u/23l/3d2h +38%     <-
-  mid   50 grok       —             —      ->            6u/94l/6d14h         <-
-  mid   63 codex      —          -20%      ->           54u/46l/2d7h -20%     <-
-  mid   66 cursor     total      -20%      ->               ->             71u/29l/3d7h -20%
-  mid   66 agy        gemini     -63%  4u/96l/4h5m -78% 16u/84l/4d -63%       <-
-+ use   91 copilot    —          -39%      ->               ->             58u/42l/~1d -39%
+        ## TUI                SCOPE      PACE      5H              WEEK              MONTH
+- error ?? oc-zen             —          * [No available fetch strategy for opencode-zen.]
+- empty  0 opencode           —             —      ->           100u/0l/4d12h         <-
+  n/a   -- deepseek/codewhale —          * [↓ $4.15 prepaid]
+  n/a   -- openrouter         —          * [↓ $18.55 prepaid]
+  slow  38 agy                claude/gpt    —      ->           78u/22l/1d5h          <-
+  mid   50 claude             —          +38% 12u/88l/3h7m -68% 77u/23l/3d2h +38%     <-
+  mid   50 grok               —             —      ->            6u/94l/6d14h         <-
+  mid   63 codex              —          -20%      ->           54u/46l/2d7h -20%     <-
+  mid   66 cursor             total      -20%      ->               ->             71u/29l/3d7h -20%
+  mid   66 agy                gemini     -63%  4u/96l/4h5m -78% 16u/84l/4d -63%       <-
++ use   91 copilot            —          -39%      ->               ->             58u/42l/~1d -39%
   u/l = percent used / percent left · span = until this clock resets · dim = inferred · -> / <- points at this row's clock · + ahead / - behind · PACE = highest · ~ = early · ↑$ PAYG counts up · ↓$ plan or prepaid counts down
 ```
 
@@ -160,9 +160,10 @@ that failed to fetch (`error`); everything else is informational (`n/a`
 positive prepaid balances that never expire, `slow`
 windows you should pace yourself on, `mid` windows on track — nothing to do).
 
-Services are named for the CLI you actually type, so the name doubles as
-something to grep for. The two OpenCode services are the exception — they
-abbreviate to an `oc-` family prefix (`oc-go`, `oc-zen`) to stay narrow.
+The TUI column names the CLI you actually type, so the name doubles as
+something to grep for. Services whose default client has its own name show it
+after the service (`deepseek/codewhale`, `zai/zcode`, `clinepass/cline`).
+OpenCode Zen is the exception: it abbreviates to `oc-zen` to stay narrow.
 
 ## Try it in 60 seconds
 

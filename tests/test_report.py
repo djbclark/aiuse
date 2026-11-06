@@ -177,7 +177,7 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     text = render_priority_ladder([alert], snapshot=snapshot, color=False)
 
     lines = text.splitlines()
-    go_line = next(line for line in lines if "oc-go" in line)
+    go_line = next(line for line in lines if "opencode" in line)
     assert go_line.startswith("empty")
     assert "100u/0l" in go_line
     assert "resets" in go_line
@@ -806,7 +806,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["##", "SERVICE", "PACE", "5H", "WEEK", "MONTH"]
+    assert lines[0].split() == ["##", "TUI", "PACE", "5H", "WEEK", "MONTH"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -1907,7 +1907,7 @@ def test_clock_matrix_labels_expired_opencode_go_subscription():
         ],
     )
     matrix = render_clock_matrix([], snapshot=snap, color=False)
-    go_line = next(line for line in matrix.splitlines() if "oc-go" in line)
+    go_line = next(line for line in matrix.splitlines() if "opencode" in line)
     assert go_line.startswith("empty")
     assert "subscription expired" in go_line
     assert "98%" not in go_line
@@ -2339,6 +2339,8 @@ def test_clock_column_stays_aligned_when_marker_and_countdown_share_it():
     [
         ("zai", "zai/zcode"),
         ("clinepass", "clinepass/cline"),
+        ("deepseek", "deepseek/codewhale"),
+        ("opencode-go", "opencode"),
     ],
 )
 def test_provider_display_names_preserve_service_and_default_client(provider, display):
@@ -2461,7 +2463,7 @@ def test_clock_matrix_shortens_then_folds_colliding_identity():
     assert "c/gpt" in short
     assert "gem" in short
     assert "claude/gpt" not in short
-    # Last resort folds the leftover disambiguator into SERVICE.
+    # Last resort folds the leftover disambiguator into TUI.
     assert "agy/gem" in folded or "agy/c/gpt" in folded
     assert "claude/mit" in folded or "claude/gmail" in folded
     header = folded.splitlines()[0]

@@ -15,8 +15,8 @@ Default `aiuse` prints **one row per account/pool** and **one column per reset
 clock**, so a column reads top to bottom as a like-for-like comparison:
 
 ```text
-      ## SERVICE    ACCT     SCOPE           5H       WEEK      MONTH $ UNUSED
-error ?? oc-go      —        —            no usage data
+      ## TUI        ACCT     SCOPE           5H       WEEK      MONTH $ UNUSED
+error ?? opencode   —        —            no usage data
 empty  0 codex      gmail    —                —   100%/5d         —    $0.00
 slow  48 agy        gmail    gemini      0%/2h27m   23%/22h        —    $5.31
 mid   54 cursor     gmail    other models     —        —     0%/19d   $20.00
@@ -128,7 +128,7 @@ in half, in this order:
    `other models` → `oth`) — not a blind character slice
 4. Drop `SCOPE` only if no service still needs it to tell two rows apart
 5. Drop `ACCT` only if no service still needs it
-6. Fold the leftover disambiguator into `SERVICE` (`agy/gem`, `claude/mit`)
+6. Fold the leftover disambiguator into `TUI` (`agy/gem`, `claude/mit`)
 
 The clock columns themselves never drop — they are the reason the table
 exists. `SCOPE` is also omitted entirely when no account has independent

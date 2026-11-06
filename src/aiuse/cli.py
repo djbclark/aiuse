@@ -95,7 +95,7 @@ config & setup:
   aiuse --no-tui              classic plain-text report (skip Rich styling)
   aiuse --print-completion bash|zsh   shell completion script to stdout
 
-matrix: ## SERVICE ACCT SCOPE PACE 5H WEEK MONTH OTHER. One legend line:
+matrix: ## TUI ACCT SCOPE PACE 5H WEEK MONTH OTHER. One legend line:
   u/l = percent used / percent left · + ahead / - behind · PACE = highest ·
   ~ = early · ↑$ PAYG counts up · ↓$ plan or prepaid counts down (omp plan
   grant, grok prepaid wallet, Fable cap). A row gated for AI (omp) shows

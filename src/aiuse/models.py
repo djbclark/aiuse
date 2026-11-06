@@ -110,15 +110,15 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     # ("Google AI / Antigravity (agy)" was 29 columns) that crowded the usage
     # table off the right edge of the terminal.
     #
-    # Deliberate exception: the two OpenCode services abbreviate to an `oc-`
-    # family prefix rather than their CLI names, so they sort together and stay
-    # narrow. `grep -i opencode` will NOT match them — grep `oc-` instead.
+    # Deliberate exception: the OpenCode Zen wallet abbreviates to `oc-zen`, not
+    # its CLI name, to stay narrow. `grep -i opencode` finds the Go row (display
+    # name `opencode`) but not Zen: grep `oc-` for that one.
     "antigravity": "agy",
     "claude": "claude",
     "codex": "codex",
     "copilot": "copilot",
     "cursor": "cursor",
-    "deepseek": "deepseek",
+    "deepseek": "deepseek/codewhale",
     "grok": "grok",
     # Name the default local client for each independent service without
     # collapsing their provider identities.
@@ -126,7 +126,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "zai": "zai/zcode",
     "bedrock": "bedrock",
     "devin": "devin",
-    "opencode-go": "oc-go",
+    "opencode-go": "opencode",
     "opencode-zen": "oc-zen",
     "omp": "omp",
     "pi": "pi",
@@ -158,6 +158,9 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "supergrok": "grok",
     "opencodego": "opencode-go",
     "opencode": "opencode-go",
+    "oc-go": "opencode-go",  # the display name before it became `opencode`
+    "codewhale": "deepseek",  # CodeWhale, formerly DeepSeek-TUI: the TUI that spends DeepSeek's balance
+    "codew": "deepseek",
     "gemini": "antigravity",
     "meta": "muse",
     "muse-spark": "muse",
@@ -193,7 +196,7 @@ EXTERNAL_PROVIDER_ALIASES: dict[str, str] = {
 # `caut`, `tokscale`, `openusage`, `cswap` and `codexbar` report quota but do
 # not consume it (`qwencloud → qwen` is the load-bearing example — `qwen` is
 # the Qwen Code TUI; `qwencloud` is the quota CLI this repo measures with).
-# Canonical ids left unmapped (openrouter, deepseek) have no local CLI —
+# Canonical ids left unmapped (openrouter) have no local CLI —
 # API-only or cloud-run — and stay `null` in JSON rather than guessing a
 # binary that merely pattern-matches the provider name.
 PROVIDER_CLI_BINARIES: dict[str, str] = {
@@ -207,6 +210,7 @@ PROVIDER_CLI_BINARIES: dict[str, str] = {
     "clinepass": "cline",  # Cline CLI
     "devin": "devin",  # Cognition CLI; runs in the terminal and the cloud
     "muse": "muse",  # Meta Muse Code CLI (`muse login`)
+    "deepseek": "codewhale",  # CodeWhale (formerly DeepSeek-TUI), DeepSeek's default provider; alias `codew`
     "opencode-go": "opencode",
     "opencode-zen": "opencode",
     "omp": "omp",  # oh-my-pi TUI; spends the Claude cloud-session credits via the API

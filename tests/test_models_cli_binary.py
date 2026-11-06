@@ -23,6 +23,7 @@ from aiuse.models import AccountUsage, provider_cli_binary
         ("clinepass", "cline"),
         ("qwencloud", "qwen"),
         ("alibaba", "qwen"),
+        ("deepseek", "codewhale"),  # CodeWhale, formerly DeepSeek-TUI
     ],
 )
 def test_known_cli_binaries(provider: str, binary: str):
@@ -31,7 +32,7 @@ def test_known_cli_binaries(provider: str, binary: str):
 
 @pytest.mark.parametrize(
     "provider",
-    ["openrouter", "deepseek", "some-future-provider", ""],
+    ["openrouter", "some-future-provider", ""],
 )
 def test_providers_without_local_cli_are_none(provider: str):
     assert provider_cli_binary(provider) is None
@@ -46,6 +47,9 @@ def test_providers_without_local_cli_are_none(provider: str):
         ("grok-build", "grok"),  # tokscale spelling
         ("chatgpt", "codex"),
         ("qwen", "qwen"),  # alias collapses onto qwencloud, whose TUI is qwen
+        ("codewhale", "codewhale"),
+        ("codew", "codewhale"),  # CodeWhale's short alias
+        ("oc-go", "opencode"),  # the display name before it became `opencode`
     ],
 )
 def test_alias_spellings_resolve_to_the_same_binary(spelling: str, binary: str):

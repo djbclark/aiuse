@@ -178,12 +178,12 @@ When monthly is exhausted, expect:
 
 When the subscription has expired / not renewed, expect:
 
-- Brief table: `empty oc-go … subscription expired`
+- Brief table: `empty opencode … subscription expired`
 - JSON: `plan` is `expired`, monthly/5h/weekly clocks are absent, `remaining_percent` is 0
 - CodexBar local leftover % may still appear in a cross-check; trust the native console API
 
 After a renew (operator, 2026-08-19), expect:
 
-- Brief table: `mid oc-go … 0% 0% 0%` (fresh allotment; next reset is the 5h bar)
+- Brief table: `mid opencode … 0% 0% 0%` (fresh allotment; next reset is the 5h bar)
 - Live proof is the returned `access.meters` object from `/console/api/go/status`
 - Native and CodexBar percentages should agree; do not keep the expired label

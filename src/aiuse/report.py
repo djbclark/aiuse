@@ -1253,7 +1253,7 @@ def _matrix_needed_width(rows: list[_MatrixRow], layout: _MatrixLayout) -> int:
         )
         for row in rows
     ]
-    w_service = max([len("SERVICE")] + [len(service) for service, _acct, _scope in identities])
+    w_service = max([len("TUI")] + [len(service) for service, _acct, _scope in identities])
     total = 5 + 1 + 2 + 1 + w_service  # band + ## + service
     if layout.show_account:
         w_account = max([len("ACCT")] + [len(account) for _svc, account, _scope in identities])
@@ -2309,7 +2309,7 @@ def render_clock_matrix_parts(
     scope_needed = _services_needing_scope(rows)
     account_needed = _services_needing_account(rows)
     identities = [_row_identity(row, layout, scope_needed=scope_needed, account_needed=account_needed) for row in rows]
-    w_service = max([len("SERVICE")] + [len(service) for service, _acct, _scope in identities])
+    w_service = max([len("TUI")] + [len(service) for service, _acct, _scope in identities])
     w_account = max([len("ACCT")] + [len(account) for _svc, account, _scope in identities])
     w_scope = max([len("SCOPE")] + [len(scope) for _svc, _acct, scope in identities])
     w_pct, w_spans = _clock_column_widths(rows, layout)
@@ -2339,7 +2339,7 @@ def render_clock_matrix_parts(
             _line(
                 f"{'':<5}",
                 "##",
-                f"{'SERVICE':<{w_service}}",
+                f"{'TUI':<{w_service}}",
                 f"{'ACCT':<{w_account}}",
                 f"{'SCOPE':<{w_scope}}",
                 f"{'PACE':>{w_value}}",
