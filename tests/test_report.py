@@ -2371,8 +2371,8 @@ def test_clock_matrix_compacts_deadline_before_dropping_identity():
     )
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
     # One account, so ACCT is omitted at every width. Deadline compaction
-    # still happens before the service name is lost; that boundary is 45.
-    mid = render_clock_matrix([], snapshot=snap, color=False, width=45)
+    # still happens before the service name is lost; that boundary is 44.
+    mid = render_clock_matrix([], snapshot=snap, color=False, width=44)
     assert "10u/90l/3h43m" in wide
     assert "10u/90l/3h" in mid
     assert "3h43m" not in mid
