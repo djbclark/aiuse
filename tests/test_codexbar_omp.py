@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from aiuse.collectors.codexbar import (
     _codexbar_query_skipped,
     _filter_omp_by_config_organization,
     _from_row,
+    _live_omp_supplement,
     _omp_from_claudeplatform_row,
     _subscription_grant_from_usage,
 )
@@ -104,6 +107,30 @@ def test_skip_providers_disable_claudeplatform_when_omp_is_off():
     assert _codexbar_query_skipped("claudeplatform", skip)
     assert _codexbar_query_skipped("omp", skip)
     assert not _codexbar_query_skipped("claude", skip)
+
+
+def test_live_omp_supplement_skips_when_omp_in_skip_providers(monkeypatch):
+    """``skip_providers`` lists canonical ids; the supplement queries ``claudeplatform``."""
+    called: list[bool] = []
+
+    def boom(*_a, **_k):
+        called.append(True)
+        pytest.fail("claudeplatform query must not run when omp is skipped")
+
+    monkeypatch.setattr("aiuse.collectors.codexbar._query_providers", boom)
+    assert (
+        _live_omp_supplement(
+            [],
+            skip_providers=frozenset({"omp"}),
+            timeout=1.0,
+            min_intervals=None,
+            backoff=None,
+            provider_list=["claude"],
+            was_discovery=False,
+        )
+        == []
+    )
+    assert called == []
 
 
 def test_primary_used_percent_alone_still_searches_other_grants():

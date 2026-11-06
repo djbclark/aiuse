@@ -704,7 +704,11 @@ def _live_omp_supplement(
     Best-effort: failure leaves the run without ``omp`` rather than failing
     cached rows.
     """
-    if "omp" in (skip_providers or ()) or _cached_omp_satisfies_organization(cached, config):
+    # Query name is ``claudeplatform`` but skip_providers uses canonical ``omp``
+    # (see ``_codexbar_query_skipped``). Respect the operator disable path here too.
+    if _codexbar_query_skipped("claudeplatform", skip_providers or frozenset()) or _cached_omp_satisfies_organization(
+        cached, config
+    ):
         return []
     if all_accounts and "omp" in all_accounts:
         return []
