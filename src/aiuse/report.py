@@ -1824,7 +1824,10 @@ def _build_matrix_rows(
             continue
         service = provider_display_name(account.provider)
         short = _short_account(account.account)
-        deferred_scope = matrix_pool_scope("", provider=account.provider)
+        deferred_pool_id = (
+            _pool_id_for_windows(account.windows, provider=account.provider) if account.provider == "omp" else ""
+        )
+        deferred_scope = matrix_pool_scope(deferred_pool_id, provider=account.provider)
         gate_note = _matrix_rate_gate_note(account, now)
         if gate_note is not None:
             rows.append(

@@ -71,24 +71,18 @@ def _models(tmp_path: Path, text: str) -> Path:
     return path
 
 
-def _config(tmp_path: Path, text: str) -> Path:
-    path = tmp_path / "config.yml"
-    path.write_text(text)
-    return path
-
-
 def _collect_all(
     tmp_path: Path,
     *,
     db_path: Path | None = None,
     models_yml_path: Path | None = None,
     binary: str | None = "/usr/bin/omp",
-    config_yml_path: Path | None = None,
+    catalog_runner=None,
 ) -> list[AccountUsage]:
     return collect_omp_agent_db(
         db_path=db_path or tmp_path / "missing-agent.db",
         models_yml_path=models_yml_path or tmp_path / "missing-models.yml",
-        config_yml_path=config_yml_path,
+        catalog_runner=catalog_runner or (lambda binary: b'{"models": [{"provider": "openai"}]}'),
         now=NOW,
         omp_binary=binary,
     )
@@ -185,69 +179,6 @@ def test_openai_models_yml_route_is_usable_without_agent_db(tmp_path):
     assert pool["api_key_pool"]["provider"] == "openai"
 
 
-def test_openai_route_disabled_by_omp_config_is_not_available(tmp_path):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders:\n  - openai\n")
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-    pool = _pool(row)
-    assert pool["usable_now"] is False
-    assert pool["api_key_pool"]["reason"] == "openai disabled in omp disabledProviders"
-    assert available_pools(enrich_snapshot(Snapshot(collected_at=NOW, accounts=[row]).to_dict(), now=NOW)) == []
-
-
-def test_openai_route_kept_when_disabled_providers_omits_openai(tmp_path):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders:\n  - anthropic\n  - google\n")
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-    assert _pool(row)["usable_now"] is True
-
-
-def test_openai_route_kept_when_disabled_providers_has_wrong_type(tmp_path):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders: openai\n")
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-    assert _pool(row)["usable_now"] is True
-
-
-def test_openai_route_fails_closed_on_malformed_omp_config(tmp_path):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders: [openai\n")
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-    pool = _pool(row)
-    assert pool["usable_now"] is False
-    assert "malformed" in pool["api_key_pool"]["reason"]
-
-
-def test_openai_route_fails_closed_on_oversized_omp_config(tmp_path):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders: []\n" + ("# pad\n" * 50000))
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-    pool = _pool(row)
-    assert pool["usable_now"] is False
-    assert "256 KiB" in pool["api_key_pool"]["reason"]
-
-
-def test_openai_route_uses_config_path_override(tmp_path, monkeypatch):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders:\n  - openai\n")
-    monkeypatch.setenv("AIUSE_OMP_CONFIG_YML", str(config))
-    (row,) = _collect_all(tmp_path, models_yml_path=models)
-    assert _pool(row)["usable_now"] is False
-
-
-def test_openai_route_honors_path_scoped_disabled_provider(tmp_path, monkeypatch):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    project = tmp_path / "repo"
-    project.mkdir()
-    config = _config(
-        tmp_path,
-        f'disabledProviders:\n  - path: "{project}"\n    providers:\n      - openai\n',
-    )
-    monkeypatch.chdir(project)
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-    assert _pool(row)["usable_now"] is False
-
-
 @pytest.mark.parametrize(
     "text",
     [
@@ -300,25 +231,6 @@ def test_unreadable_models_yml_is_no_openai_route(tmp_path):
         models.chmod(0o600)
 
 
-def test_unreadable_omp_config_fails_closed(tmp_path):
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    config = _config(tmp_path, "disabledProviders: []\n")
-    config.chmod(0)
-    try:
-        try:
-            config.read_bytes()
-        except OSError:
-            pass
-        else:
-            pytest.skip("chmod did not make config.yml unreadable on this platform")
-        (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=config)
-        pool = _pool(row)
-        assert pool["usable_now"] is False
-        assert "unreadable" in pool["api_key_pool"]["reason"]
-    finally:
-        config.chmod(0o600)
-
-
 @pytest.mark.parametrize("env_value", [None, "", "sk-test-fixture"])
 def test_openai_api_key_env_var_reference_counts_as_configured_without_resolving(tmp_path, monkeypatch, env_value):
     if env_value is None:
@@ -339,89 +251,6 @@ def test_openai_base_url_override_stays_openai_api_route(tmp_path):
     )
     (row,) = _collect_all(tmp_path, models_yml_path=models)
     assert _pool(row)["pool_family"] == "openai_api"
-
-
-def test_project_config_replaces_global_disabled_providers(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    agent = home / ".omp" / "agent"
-    agent.mkdir(parents=True)
-    (agent / "config.yml").write_text("disabledProviders:\n  - openai\n")
-    project = tmp_path / "repo"
-    project_config_dir = project / ".omp"
-    project_config_dir.mkdir(parents=True)
-    (project_config_dir / "config.yml").write_text("disabledProviders:\n  - groq\n")
-    monkeypatch.delenv("AIUSE_OMP_CONFIG_YML", raising=False)
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.chdir(project)
-    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
-    (row,) = _collect_all(tmp_path, models_yml_path=models)
-    assert _pool(row)["usable_now"] is True
-
-
-@pytest.mark.parametrize("filename", ["config.yml", "config.yaml", "settings.json"])
-def test_openai_global_config_locations(tmp_path, monkeypatch, filename):
-    agent = tmp_path / "home" / ".omp" / "agent"
-    agent.mkdir(parents=True)
-    (agent / filename).write_text('{"disabledProviders": ["openai"]}')
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("AIUSE_OMP_CONFIG_YML")
-    monkeypatch.delenv("PI_CODING_AGENT_DIR", raising=False)
-    monkeypatch.delenv("OMP_PROFILE", raising=False)
-    monkeypatch.delenv("PI_PROFILE", raising=False)
-    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
-    (row,) = _collect_all(tmp_path, models_yml_path=models)
-    assert _pool(row)["usable_now"] is False
-
-
-@pytest.mark.parametrize("filename", ["settings.json", "config.yml"])
-def test_openai_project_config_locations(tmp_path, monkeypatch, filename):
-    project = tmp_path / ".omp"
-    project.mkdir()
-    (project / filename).write_text('{"disabledProviders": ["openai"]}')
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("AIUSE_OMP_CONFIG_YML")
-    monkeypatch.setenv("HOME", str(tmp_path))
-    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
-    (row,) = _collect_all(tmp_path, models_yml_path=models)
-    assert _pool(row)["usable_now"] is False
-
-
-@pytest.mark.parametrize("value", ["disabledProviders: [openai]", "disabledProviders: []", "missing"])
-def test_openai_config_overlays_override_project(tmp_path, monkeypatch, value):
-    project = tmp_path / ".omp"
-    project.mkdir()
-    (project / "config.yml").write_text("disabledProviders: [openai]")
-    overlay = tmp_path / "overlay.yml"
-    if value != "missing":
-        overlay.write_text(value)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("AIUSE_OMP_CONFIG_YML")
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("PI_CONFIG_FILES", str(overlay))
-    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
-    (row,) = _collect_all(tmp_path, models_yml_path=models)
-    assert _pool(row)["usable_now"] is (value == "disabledProviders: []")
-
-
-@pytest.mark.parametrize("profile_env", ["OMP_PROFILE", "PI_PROFILE", "PI_CODING_AGENT_DIR"])
-def test_openai_config_relocated_agent_dir(tmp_path, monkeypatch, profile_env):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("AIUSE_OMP_CONFIG_YML")
-    monkeypatch.delenv("OMP_PROFILE", raising=False)
-    monkeypatch.delenv("PI_PROFILE", raising=False)
-    agent = tmp_path / ".omp" / "profiles" / "work" / "agent"
-    agent.mkdir(parents=True)
-    (agent / "config.yml").write_text("disabledProviders: [openai]")
-    monkeypatch.setenv(profile_env, str(agent) if profile_env == "PI_CODING_AGENT_DIR" else "work")
-    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
-    (row,) = _collect_all(tmp_path, models_yml_path=models)
-    assert _pool(row)["usable_now"] is False
-
-
-def test_openai_missing_config_is_usable(tmp_path):
-    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
-    (row,) = _collect_all(tmp_path, models_yml_path=models, config_yml_path=tmp_path / "absent.yml")
-    assert _pool(row)["usable_now"] is True
 
 
 def test_openai_alias_bomb_is_bounded_before_parsing(tmp_path, monkeypatch):
@@ -643,3 +472,156 @@ def test_key_material_never_reaches_the_json(tmp_path):
     enriched = enrich_snapshot(snap, now=NOW)
     assert "REDACTED-FIXTURE" not in json.dumps(snap)
     assert "REDACTED-FIXTURE" not in json.dumps(enriched, default=str)
+
+
+@pytest.mark.parametrize(
+    "payload,reason",
+    [
+        (b'{"models": []}', "not selectable"),
+        (b'{"models": [{"provider": "anthropic"}]}', "not selectable"),
+        (b"bad JSON SECRET_MARKER", "invalid"),
+        (b"{}", "invalid shape"),
+        (b"[]", "invalid shape"),
+        (b'{"models": [null]}', "invalid shape"),
+        (b"x" * (8 * 1024 * 1024 + 1), "exceeds 8 MiB"),
+    ],
+)
+def test_openai_catalog_fails_closed(tmp_path, payload, reason):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (row,) = _collect_all(tmp_path, models_yml_path=models, catalog_runner=lambda _: payload)
+    assert _pool(row)["usable_now"] is False
+    assert reason in row.api_key_pool["reason"]
+    assert "SECRET_MARKER" not in json.dumps(row.to_dict(), default=str)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "exit", "missing", "permission", "nested"])
+def test_openai_catalog_errors_fail_closed(tmp_path, failure):
+    import subprocess
+
+    errors = {
+        "timeout": subprocess.TimeoutExpired("omp", 15),
+        "exit": subprocess.CalledProcessError(1, "omp", stderr=b"SECRET_MARKER"),
+        "missing": FileNotFoundError("SECRET_MARKER"),
+        "permission": PermissionError("SECRET_MARKER"),
+        "nested": RecursionError("SECRET_MARKER"),
+    }
+
+    def runner(_):
+        raise errors[failure]
+
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (row,) = _collect_all(tmp_path, models_yml_path=models, catalog_runner=runner)
+    assert _pool(row)["usable_now"] is False
+    assert row.api_key_pool["reason"]
+    assert "SECRET_MARKER" not in json.dumps(row.to_dict(), default=str)
+
+
+def test_openai_catalog_once_per_collection(tmp_path):
+    calls = []
+
+    def runner(binary):
+        calls.append(binary)
+        return b'{"models": [{"provider": "openai"}]}'
+
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    rows = _collect_all(
+        tmp_path,
+        db_path=_db(tmp_path, [(1, "anthropic", "api_key", None)]),
+        models_yml_path=models,
+        catalog_runner=runner,
+    )
+    for row in rows:
+        _pool(row)
+    assert calls == ["/usr/bin/omp"]
+
+
+@pytest.mark.parametrize("variable", ["OMP_PROFILE", "PI_PROFILE", "PI_CODING_AGENT_DIR"])
+def test_openai_default_models_path_relocates(tmp_path, monkeypatch, variable):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    agent = tmp_path / ".omp" / "profiles" / "work" / "agent"
+    agent.mkdir(parents=True)
+    monkeypatch.setenv(variable, str(agent) if variable == "PI_CODING_AGENT_DIR" else "work")
+    # A key in the old default dir must not count under the relocated agent dir.
+    default = tmp_path / ".omp" / "agent"
+    default.mkdir()
+    _models(default, "providers: {openai: {apiKey: configured}}")
+    kwargs = dict(
+        db_path=tmp_path / "missing.db",
+        omp_binary="/usr/bin/omp",
+        catalog_runner=lambda _: b'{"models": [{"provider": "openai"}]}',
+    )
+    with pytest.raises(CollectorNotInstalled):
+        collect_omp_agent_db(**kwargs)
+    _models(agent, "providers: {openai: {apiKey: configured}}")
+    (row,) = collect_omp_agent_db(**kwargs)
+    assert row.raw["models_yml"] == str(agent / "models.yml")
+    assert _pool(row)["usable_now"] is True
+
+
+def test_openai_pool_key_and_matrix_scope(tmp_path):
+    from aiuse.analysis.pace import independent_pool_key
+    from aiuse.report import _build_matrix_rows
+
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    rows = _collect_all(tmp_path, db_path=_db(tmp_path, [(1, "anthropic", "api_key", None)]), models_yml_path=models)
+    assert [
+        independent_pool_key(r.windows[0].label, window_id=r.windows[0].window_id, provider=r.provider) for r in rows
+    ] == ["omp_claude", "omp_openai"]
+    matrix = _build_matrix_rows([], Snapshot(collected_at=NOW, accounts=rows), {})
+    assert {(r.account_full, r.scope) for r in matrix} == {
+        ("anthropic api key", "claude-api"),
+        ("openai api key", "openai-api"),
+    }
+
+
+def test_catalog_subprocess_exact_safe_argv(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+
+    import aiuse.collectors.omp_agent_db as collector
+
+    real_popen = subprocess.Popen
+    calls = []
+
+    def popen(argv, **kwargs):
+        calls.append(argv)
+        assert argv == ["/fixture/omp", "models", "--json", "--no-extensions"]
+        assert kwargs["shell"] is False
+        assert kwargs["stderr"] == subprocess.DEVNULL
+        assert "env" not in kwargs and "cwd" not in kwargs
+        return real_popen([sys.executable, "-c", 'print(\'{"models": [{"provider": "openai"}]}\')'], **kwargs)
+
+    monkeypatch.setattr(collector.subprocess, "Popen", popen)
+    sentinel = tmp_path / "executed"
+    models = _models(tmp_path, f'providers: {{openai: {{apiKey: "!touch {sentinel}"}}}}')
+    (row,) = collect_omp_agent_db(db_path=tmp_path / "absent.db", models_yml_path=models, omp_binary="/fixture/omp")
+    assert row.api_key_pool["usable"] is True
+    assert len(calls) == 1
+    assert not sentinel.exists()
+
+
+@pytest.mark.parametrize("case", ["size", "timeout", "exit"])
+def test_catalog_subprocess_bounds_and_reaps(monkeypatch, case):
+    import subprocess
+    import sys
+
+    import aiuse.collectors.omp_agent_db as collector
+
+    real_popen = subprocess.Popen
+    processes = []
+    program = {"size": 'print("x" * 4096)', "timeout": "import time; time.sleep(10)", "exit": "raise SystemExit(1)"}[
+        case
+    ]
+
+    def popen(argv, **kwargs):
+        proc = real_popen([sys.executable, "-c", program], **kwargs)
+        processes.append(proc)
+        return proc
+
+    monkeypatch.setattr(collector.subprocess, "Popen", popen)
+    monkeypatch.setattr(collector, "_CATALOG_LIMIT_BYTES", 1024)
+    monkeypatch.setattr(collector, "_CATALOG_TIMEOUT", 0.2)
+    assert collector._openai_catalog_reason("/fixture/omp", collector._run_catalog) is not None
+    assert len(processes) == 1
+    assert processes[0].poll() is not None

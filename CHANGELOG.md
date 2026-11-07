@@ -30,10 +30,12 @@ Releases before 3.9.0 are in the
   It keeps the existing Anthropic API-key pool from `~/.omp/agent/agent.db`
   (credential metadata, never the key) and adds an OpenAI API-key route from
   `~/.omp/agent/models.yml` when `providers.openai.apiKey` is a non-empty string,
-  the `omp` binary is on PATH, and omp's effective `disabledProviders` does not
-  disable `openai`. Disabled OpenAI and malformed/unreadable/oversized omp
-  config produce an unusable row with `api_key_pool.reason`, while missing config
-  and wrong-typed `disabledProviders` follow omp's default empty list. The OpenAI
+  the `omp` binary is on PATH, and one bounded
+  `omp models --json --no-extensions` oracle lists provider `openai` (aiuse's
+  environment/cwd, no extensions; 15-second timeout, 8 MiB stdout cap).
+  Oracle failures or an omitted provider make the row unusable with a short
+  reason. Models follow omp's profile/agent directory. The OpenAI matrix scope
+  is `openai-api` with independent pool key `omp_openai`. The OpenAI
   row uses source `omp_models_yml`, `pool_family` `openai_api`,
   `headroom_percent: null`, `state: "unknown"` and models hint `omp TUI - OpenAI
 API key (platform credits): openai/gpt-* models`; aiuse never executes or

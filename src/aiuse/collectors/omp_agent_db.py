@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import json
 import os
+import selectors
 import sqlite3
+import subprocess
+import time
+from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,9 +42,9 @@ OPENAI_SOURCE = "omp_models_yml"
 OPENAI_WINDOW_LABEL = "OpenAI api key"
 OPENAI_WINDOW_ID = "omp-openai-api-key"
 OPENAI_ACCOUNT_LABEL = "openai api key"
-_DEFAULT_MODELS_YML = "~/.omp/agent/models.yml"
 _CONFIG_READ_LIMIT_BYTES = 256 * 1024
-_OPENAI_DISABLED_REASON = "openai disabled in omp disabledProviders"
+_CATALOG_LIMIT_BYTES = 8 * 1024 * 1024
+_CATALOG_TIMEOUT = 15
 
 
 def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
@@ -69,28 +73,14 @@ def resolve_omp_models_yml(models_yml_path: str | Path | None = None) -> Path:
     override = os.environ.get("AIUSE_OMP_MODELS_YML")
     if override:
         return Path(override)
-    return Path(os.path.expanduser(_DEFAULT_MODELS_YML))
+    return _omp_agent_dir() / "models.yml"
 
 
-def resolve_omp_config_yml(config_yml_path: str | Path | None = None) -> Path:
-    if config_yml_path is not None:
-        return Path(config_yml_path)
-    override = os.environ.get("AIUSE_OMP_CONFIG_YML")
-    if override:
-        return Path(override)
-    profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "default"))
+def _omp_agent_dir() -> Path:
+    profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "default")).strip()
     if profile and profile != "default":
-        agent_dir = Path.home() / ".omp" / "profiles" / profile / "agent"
-    else:
-        agent_dir = Path(os.path.expanduser(os.environ.get("PI_CODING_AGENT_DIR", "~/.omp/agent")))
-    primary = agent_dir / "config.yml"
-    if primary.exists():
-        return primary
-    legacy = agent_dir / "config.yaml"
-    if legacy.exists():
-        return legacy
-    settings = agent_dir / "settings.json"
-    return settings if settings.exists() else primary
+        return Path.home() / ".omp" / "profiles" / profile / "agent"
+    return Path(os.path.expanduser(os.environ.get("PI_CODING_AGENT_DIR") or "~/.omp/agent"))
 
 
 def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
@@ -115,87 +105,58 @@ def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
     return loaded, None
 
 
-def _scope_paths(entry: dict) -> list[Path]:
-    paths: list[Path] = []
-    for key in ("path", "pathPrefix"):
-        raw = entry.get(key)
-        if isinstance(raw, str) and raw.strip():
-            paths.append(Path(os.path.expanduser(raw)).resolve(strict=False))
-    for key in ("paths", "pathPrefixes"):
-        raw_values = entry.get(key)
-        if isinstance(raw_values, list):
-            paths.extend(
-                Path(os.path.expanduser(raw)).resolve(strict=False) for raw in raw_values if isinstance(raw, str)
-            )
-    return paths
+def _run_catalog(binary: str) -> bytes:
+    """Bound runtime and bytes without loading extensions or resolving apiKey commands."""
+    deadline = time.monotonic() + _CATALOG_TIMEOUT
+    with subprocess.Popen(
+        [binary, "models", "--json", "--no-extensions"],
+        shell=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ) as proc:
+        assert proc.stdout is not None
+        output = bytearray()
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(proc.stdout, selectors.EVENT_READ)
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not selector.select(remaining):
+                        raise subprocess.TimeoutExpired("omp models", _CATALOG_TIMEOUT)
+                    chunk = os.read(proc.stdout.fileno(), min(65536, _CATALOG_LIMIT_BYTES + 1 - len(output)))
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                    if len(output) > _CATALOG_LIMIT_BYTES:
+                        raise ValueError("catalog exceeds 8 MiB")
+            rc = proc.wait(timeout=max(0, deadline - time.monotonic()))
+            if rc:
+                raise subprocess.CalledProcessError(rc, "omp models")
+            return bytes(output)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
 
 
-def _scope_values(entry: dict) -> list[str]:
-    for key in ("providers", "values", "items"):
-        raw = entry.get(key)
-        if isinstance(raw, list):
-            return [value for value in raw if isinstance(value, str)]
-    return []
-
-
-def _path_matches_scope(cwd: Path, scope: Path) -> bool:
-    return cwd == scope or scope in cwd.parents
-
-
-def _disabled_providers_contains(raw: object, provider: str, *, cwd: Path) -> bool:
-    if not isinstance(raw, list):
-        return False
-    for item in raw:
-        if item == provider:
-            return True
-        if not isinstance(item, dict):
-            continue
-        if provider not in _scope_values(item):
-            continue
-        if any(_path_matches_scope(cwd, scope) for scope in _scope_paths(item)):
-            return True
-    return False
-
-
-def _config_layers(config_yml_path: str | Path | None) -> tuple[list[dict], str | None]:
-    if config_yml_path is not None or os.environ.get("AIUSE_OMP_CONFIG_YML"):
-        path = resolve_omp_config_yml(config_yml_path)
-        layer, error = _read_mapping(path, label="omp config")
-        return ([] if layer is None else [layer]), error
-
-    paths = [resolve_omp_config_yml()]
-    project_dir = Path.cwd() / ".omp"
-    if project_dir.exists():
-        paths.extend([project_dir / "settings.json", project_dir / "config.yml"])
-    overlay_paths = [
-        Path(os.path.expanduser(path)) for path in os.environ.get("PI_CONFIG_FILES", "").split(os.pathsep) if path
-    ]
-    paths.extend(overlay_paths)
-
-    layers: list[dict] = []
-    for path in paths:
-        layer, error = _read_mapping(path, label="omp config")
-        if error:
-            return [], error
-        if layer is None and path in overlay_paths:
-            return [], "omp config overlay missing"
-        if layer is not None:
-            layers.append(layer)
-    return layers, None
-
-
-def _openai_disabled_reason(config_yml_path: str | Path | None = None) -> str | None:
-    layers, error = _config_layers(config_yml_path)
-    if error:
-        return error
-    disabled_providers: object = []
-    for layer in layers:
-        if layer.get("disabledProviders") is not None:
-            disabled_providers = layer["disabledProviders"]
-    cwd = Path.cwd().resolve(strict=False)
-    if _disabled_providers_contains(disabled_providers, "openai", cwd=cwd):
-        return _OPENAI_DISABLED_REASON
-    return None
+def _openai_catalog_reason(binary: str, runner: Callable[[str], bytes]) -> str | None:
+    try:
+        raw = runner(binary)
+        if len(raw) > _CATALOG_LIMIT_BYTES:
+            return "omp catalog exceeds 8 MiB"
+        catalog = json.loads(raw)
+        models = catalog.get("models") if isinstance(catalog, dict) else None
+        if not isinstance(models, list) or any(not isinstance(model, dict) for model in models):
+            return "omp catalog invalid shape"
+        if any(model.get("provider") == "openai" for model in models):
+            return None
+        return "openai not selectable in omp catalog"
+    except subprocess.TimeoutExpired:
+        return "omp catalog timed out"
+    except subprocess.CalledProcessError:
+        return "omp catalog command failed"
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        return "omp catalog unavailable or invalid"
 
 
 def _has_openai_api_key(path: Path) -> bool:
@@ -216,7 +177,7 @@ def collect_omp_agent_db(
     *,
     db_path: str | Path | None = None,
     models_yml_path: str | Path | None = None,
-    config_yml_path: str | Path | None = None,
+    catalog_runner: Callable[[str], bytes] | None = None,
     now: datetime | None = None,
     omp_binary: str | None = None,
 ) -> list[AccountUsage]:
@@ -231,7 +192,11 @@ def collect_omp_agent_db(
 
     models_path = resolve_omp_models_yml(models_yml_path)
     if binary and _has_openai_api_key(models_path):
-        rows.append(_openai_row(models_path, now=moment, disabled_reason=_openai_disabled_reason(config_yml_path)))
+        rows.append(
+            _openai_row(
+                models_path, now=moment, disabled_reason=_openai_catalog_reason(binary, catalog_runner or _run_catalog)
+            )
+        )
 
     if not rows:
         raise CollectorNotInstalled("omp has no local API-key route")
