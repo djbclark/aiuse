@@ -8,7 +8,7 @@ enabled key, no active rate-limit block) and leaves headroom unknown.
 
 omp also reads OpenAI API-key configuration from ``~/.omp/agent/models.yml``.
 Only presence of a non-blank ``providers.openai.apiKey`` string and the sibling
-``config.yml`` disabledProviders are inspected; no omp process is started and
+``config.yml`` (``config.yaml`` only if absent) disabledProviders are inspected; no omp process is started and
 the value is never resolved, executed, logged or returned. This advertises
 configuration, not authentication; project and runtime overlays are unobserved.
 
@@ -78,7 +78,18 @@ def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
     return len(rows), unblocked, min(blocked_ends) if blocked_ends else None
 
 
+def _valid_omp_profile(profile: str) -> bool:
+    return profile in ("", "default") or (
+        re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", profile) is not None
+        and not profile.endswith(".")
+        and re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?", profile, re.IGNORECASE) is None
+    )
+
+
 def resolve_omp_models_yml(models_yml_path: str | Path | None = None) -> Path:
+    profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "default")).strip()
+    if not _valid_omp_profile(profile):
+        raise ValueError("Invalid omp profile")
     if models_yml_path is not None:
         return Path(models_yml_path)
     override = os.environ.get("AIUSE_OMP_MODELS_YML")
@@ -96,12 +107,7 @@ def _omp_agent_dir() -> Path:
     legacy = os.environ.get("PI_PROFILE", "").strip()
     # omp discards a parent's profile-derived override when OMP_PROFILE explicitly
     # chooses default. Invalid legacy profiles do not supply a derived directory.
-    legacy_named = (
-        legacy != "default"
-        and re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", legacy) is not None
-        and not legacy.endswith(".")
-        and re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?", legacy, re.IGNORECASE) is None
-    )
+    legacy_named = legacy not in ("", "default") and _valid_omp_profile(legacy)
     if legacy_named and override == str(root / "profiles" / legacy / "agent"):
         override = None
     # Node path.resolve resolves against cwd without expanding a literal '~'.
@@ -143,16 +149,20 @@ def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
 
 
 def _openai_config_reason(path: Path) -> str | None:
-    """Inspect only agent-level config.yml; never resolve settings or credentials."""
-    loaded, reason = _read_mapping(path, label="omp config.yml")
+    """Inspect agent config.yml, then config.yaml only if absent; never resolve credentials."""
+    label = "omp config.yml"
+    loaded, reason = _read_mapping(path, label=label)
+    if loaded is None and reason is None:
+        label = "omp config.yaml"
+        loaded, reason = _read_mapping(path.with_suffix(".yaml"), label=label)
     if reason:
         return reason
-    if loaded is None:  # Missing config is the default (no disabled providers).
+    if loaded is None:  # Neither filename exists: default to no disabled providers.
         return None
     disabled = loaded.get("disabledProviders", [])
     if not isinstance(disabled, list) or any(not isinstance(item, str) for item in disabled):
-        return "omp config.yml disabledProviders is not a flat list of strings"
-    return "openai disabled in omp config.yml" if "openai" in disabled else None
+        return f"{label} disabledProviders is not a flat list of strings"
+    return f"openai disabled in {label}" if "openai" in disabled else None
 
 
 def _has_openai_api_key(path: Path) -> bool:
@@ -185,8 +195,11 @@ def collect_omp_agent_db(
     if path.is_file():
         rows.append(_anthropic_row(path, now=moment, omp_binary=binary))
 
-    models_path = resolve_omp_models_yml(models_yml_path)
-    if binary and _has_openai_api_key(models_path):
+    try:
+        models_path: Path | None = resolve_omp_models_yml(models_yml_path)
+    except ValueError:  # omp rejects this active profile; never inspect its derived/override path.
+        models_path = None
+    if binary and models_path is not None and _has_openai_api_key(models_path):
         rows.append(
             _openai_row(
                 models_path, now=moment, disabled_reason=_openai_config_reason(models_path.parent / "config.yml")
@@ -269,7 +282,9 @@ def _openai_row(path: Path, *, now: datetime, disabled_reason: str | None = None
         },
         notes=[
             "omp OpenAI advertisement: non-blank providers.openai.apiKey in models.yml and "
-            "disabledProviders in the same directory's config.yml only; omp is never invoked, "
+            "disabledProviders in the same directory's config.yml (config.yaml only if absent); "
+            "a present empty config.yml takes precedence. Invalid active profiles suppress this row. "
+            "Automatic models.yaml fallback and models.json migration are not observed. omp is never invoked, "
             "the apiKey value is not resolved, executed or emitted, and headroom is unknown. "
             "Only regular files (including symlink targets) are read, capped at 256 KiB; "
             "YAML aliases and merge keys are unsupported and fail closed. "

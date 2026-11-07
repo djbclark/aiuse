@@ -35,6 +35,7 @@ publishes the model-to-family map, and reports omp's OpenAI API-key route as
 gate; 1.3 added ceiling/hidden-pool fields and per-pool learned burn rates;
 1.2 added per-window pace and the matrix PACE column,
 early readings marked `~`); 21 registered collectors (including passive `acp`
+context logs and the opt-in `sipb` MIT status probe; `aiuse usage-sources`);
 scheduled sampling +
 `aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →
 [`docs/next-options.md`](docs/next-options.md) +

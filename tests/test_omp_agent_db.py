@@ -755,3 +755,73 @@ def test_symlink_to_regular_config_is_supported(tmp_path):
     target.write_text("disabledProviders: []")
     row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
     assert _pool(row)["usable_now"] is True
+
+
+@pytest.mark.parametrize("disabled,usable", [("[openai]", False), ("[]", True)])
+def test_missing_primary_config_uses_legacy_yaml(tmp_path, disabled, usable):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / "config.yaml").write_text(f"disabledProviders: {disabled}")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is usable
+    if not usable:
+        assert "config.yaml" in row.api_key_pool["reason"]
+        assert not [
+            p
+            for p in available_pools(enrich_snapshot(Snapshot(collected_at=NOW, accounts=[row]).to_dict(), now=NOW))
+            if p["provider"] == "omp"
+        ]
+
+
+@pytest.mark.parametrize("primary", ["", "# empty document", "null", "{}", "disabledProviders: []"])
+def test_present_primary_config_even_empty_precedes_legacy_yaml(tmp_path, primary):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / "config.yml").write_text(primary)
+    (tmp_path / "config.yaml").write_text("disabledProviders: [openai]")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is True
+
+
+@pytest.mark.parametrize("name", ["config.yml", "config.yaml"])
+@pytest.mark.parametrize("invalid", ["[]", "disabledProviders: [SENTINEL", "a: &a {}\nb: *a", "#" * (256 * 1024 + 1)])
+def test_invalid_selected_config_never_falls_back_or_advertises(tmp_path, name, invalid):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / name).write_text(invalid)
+    if name == "config.yml":
+        (tmp_path / "config.yaml").write_text("disabledProviders: []")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is False
+    assert name in row.api_key_pool["reason"]
+    assert "SENTINEL" not in json.dumps(row.to_dict(), default=str)
+
+
+@pytest.mark.parametrize("profile_env", ["OMP_PROFILE", "PI_PROFILE"])
+@pytest.mark.parametrize(
+    "profile", ["Work", "../../escape", "Bad Name", "CON", "com0.txt", "trailing.", ".", "..", "a" * 65]
+)
+def test_invalid_active_profile_never_advertises_configured_directory(tmp_path, monkeypatch, profile_env, profile):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.delenv("OMP_PROFILE", raising=False)
+    monkeypatch.delenv("PI_PROFILE", raising=False)
+    monkeypatch.setenv(profile_env, profile)
+    agent = tmp_path / ".omp/profiles" / profile / "agent"
+    agent.mkdir(parents=True, exist_ok=True)
+    _models(agent, "providers: {openai: {apiKey: configured}}")
+    with pytest.raises(CollectorNotInstalled):
+        collect_omp_agent_db(db_path=tmp_path / "absent.db", omp_binary="/fixture/omp", now=NOW)
+
+
+@pytest.mark.parametrize("override", ["argument", "environment"])
+def test_invalid_active_profile_blocks_explicit_models_override_and_preserves_anthropic(
+    tmp_path, monkeypatch, override
+):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    db = _db(tmp_path, [(1, "anthropic", "api_key", None)])
+    monkeypatch.setenv("OMP_PROFILE", "INVALID_SENTINEL")
+    if override == "environment":
+        monkeypatch.setenv("AIUSE_OMP_MODELS_YML", str(models))
+    rows = collect_omp_agent_db(
+        db_path=db, models_yml_path=models if override == "argument" else None, omp_binary="/fixture/omp", now=NOW
+    )
+    assert [row.source for row in rows] == ["omp_agent_db"]
+    assert "INVALID_SENTINEL" not in json.dumps([row.to_dict() for row in rows], default=str)

@@ -31,11 +31,15 @@ Releases before 3.9.0 are in the
   (credential metadata, never the key) and adds an OpenAI API-key route from
   `~/.omp/agent/models.yml` when `providers.openai.apiKey` is a non-empty string,
   the `omp` binary is on PATH, and the same agent directory's `config.yml`
-  does not disable OpenAI. Invalid config fails closed; missing config uses
-  defaults. Both YAML reads accept regular files only (including symlinks),
+  (or `config.yaml` only when it is absent) does not disable OpenAI. An empty
+  primary config still takes precedence. Invalid config fails closed; missing
+  both config filenames uses defaults. Each YAML read accepts regular files only (including symlinks),
   open without waiting on FIFOs, and cap reads at 256 KiB. YAML aliases and
   merge keys are rejected before expansion. Explicit default selection ignores
   an inherited legacy-profile directory while preserving custom overrides.
+  Invalid active profiles suppress the OpenAI row, including explicit models
+  overrides. Automatic `models.yaml` fallback and `models.json` migration remain
+  unobserved; an existing models file can be selected explicitly.
   No omp subprocess or key
   resolution occurs. Profile/config-root/agent-directory relocation is honored.
   Project, CLI/runtime and `PI_CONFIG_FILES` overlays are not observed; failing

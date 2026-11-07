@@ -83,12 +83,13 @@ only.
    fallback whatever its age; the rate-window gate below still applies to it.
 2. **OpenAI**: The OpenAI route advertises configuration only: a non-blank string
    `providers.openai.apiKey` in `models.yml`, the `omp` binary on PATH, and no
-   `openai` entry in `disabledProviders` in the same directory's `config.yml`.
-   Both YAML reads are capped at 256 KiB and accept only regular files, including
+   `openai` entry in `disabledProviders` in the same directory's `config.yml`
+   (or `config.yaml` only when `config.yml` is absent).
+   Each YAML read is capped at 256 KiB and accept only regular files, including
    symlinks to regular files. Special files fail closed without waiting for a
    FIFO writer. YAML aliases and merge keys are unsupported and rejected before
    expansion; unused anchors and quoted literal text remain supported.
-   Missing config means default
+   A present empty `config.yml` takes precedence over `config.yaml`. Missing both config filenames means default
    settings; unreadable, malformed, oversized or non-mapping config, or a
    `disabledProviders` value other than a flat list of strings, makes the row
    unusable with a sanitized reason. Missing, unreadable, malformed or oversized
@@ -101,9 +102,12 @@ only.
    relative to cwd without expanding a literal `~`, like Node `path.resolve`.
    An explicitly empty or `default` `OMP_PROFILE` discards an inherited agent
    directory exactly equal to the valid legacy `PI_PROFILE` directory; a genuinely
-   custom override remains honored.
+   custom override remains honored. Invalid active profile names produce no OpenAI row,
+   including when an explicit models override is set.
    `AIUSE_OMP_MODELS_YML` overrides the models path; its parent also supplies
-   `config.yml`, keeping both reads in one directory.
+   `config.yml` / `config.yaml`, keeping reads in one directory. Automatic `models.yaml`
+   fallback and `models.json` migration are unobserved; use `AIUSE_OMP_MODELS_YML`
+   to select an existing models file explicitly.
    Directory behavior was checked against omp v18.18.0 `packages/utils/src/dirs.ts`
    on 2026-11-07.
 
