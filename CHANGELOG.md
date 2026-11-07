@@ -25,6 +25,17 @@ Releases before 3.9.0 are in the
 
 ### Added
 
+- **`omp` row from omp's own credentials**: new collector `omp_agent_db`
+  (`[collectors.omp_agent_db]`) reads `~/.omp/agent/agent.db` read-only
+  (credential metadata, never the key) and reports the Anthropic API-key pool
+  when CodexBar reads no Claude API grant, so `aiuse --available --json` carries
+  an `omp` row again. `usable_now` is true with the `omp` binary present, an
+  enabled `api_key` credential and at least one such key not rate-limit blocked
+  (`available_at` = the earliest block end once all are blocked; the shared-window
+  rate gate still applies); `headroom_percent` is null (no balance known),
+  `pool_family` `anthropic_api`, new `api_key_pool` field. A CodexBar grant row
+  outranks it whatever its age. Schema stays 1.5
+  ([`docs/json-contract.md`](docs/json-contract.md#changelog)).
 - **`--include LIST` / `--exclude LIST`**: per-run adjustment of the provider
   set without editing `config.toml`. Lists are comma-separated and repeatable;
   entries are provider ids, aliases, display names or globs (`oc-*`) matched

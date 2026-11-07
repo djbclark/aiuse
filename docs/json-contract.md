@@ -212,6 +212,28 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-11-07, schema stays 1.5)
+
+- New collector `omp_agent_db` reads omp's credential database
+  (`~/.omp/agent/agent.db`, read-only, credential metadata only, never the key)
+  and emits the `omp` row when CodexBar reads no Claude API grant. Its pool has
+  `pool_family: "anthropic_api"`, `models_hint` naming the `anthropic/claude-*`
+  models, `headroom_percent: null` (omp records no balance: unknown, not 0) and
+  a new `api_key_pool` object `{usable, reason, enabled_credentials}` on the
+  account and the pool entry. `usable_now` is true when the `omp` binary exists,
+  an enabled Anthropic `api_key` credential exists and at least one such key has
+  no active rate-limit block; once every key is blocked `available_at` is the
+  earliest block end. `usable_now: false` (reason in `api_key_pool.reason`)
+  when the `omp` binary is not on PATH, the database holds no enabled
+  Anthropic `api_key` credential (OAuth logins only, or all disabled), every
+  such key is blocked, or the database is unreadable; the durable
+  `rate_gated_by` latch still forces it false while a shared-Claude-window
+  gate holds, so the pool is spent apart from the plan windows but not exempt
+  from that gate. No database at all means no row (omp not installed). A
+  CodexBar grant row outranks this one whatever its age; an operator override
+  or Admin API reading that replaces the row drops `api_key_pool`. The row has
+  no quota figures, so it takes no part in the cross-source checks.
+
 #### Additive (2026-11-03, schema stays 1.5)
 
 - New provider `pi` (display `pi`, `cli_binary` `pi`): OpenAI API accounting from
@@ -775,7 +797,9 @@ the Claude Platform API credit that ships with Max. The omp TUI spends it
 through the Claude API. It is separate from the Claude 5h/weekly plan. Max
 20x deposits $200 and Max 5x deposits $100 each billing cycle; unused dollars
 expire at that reset. Source: CodexBar's Claude row
-([`omp-cloud-credits.md`](omp-cloud-credits.md)). Display counts spent dollars
+([`omp-cloud-credits.md`](omp-cloud-credits.md)); with no readable grant the
+row comes from omp's own credential database instead (`api_key_pool`, no
+balance; see the 2026-11-07 changelog entry). Display counts spent dollars
 up (`↑ $`) and the remainder down (`↓ $… plan`). It is a plan grant, not
 pay-as-you-go.
 
@@ -804,15 +828,15 @@ pay-as-you-go.
 }
 ```
 
-| Field                        | Meaning                                                                                                                                                                       |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `balance_usd`                | dollars left of the plan grant (counts down)                                                                                                                                  |
-| `spent_usd`                  | dollars of that grant already used (counts up)                                                                                                                                |
-| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)                                                                                                                         |
-| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                                                                                                                          |
-| `windows[0].window_minutes`  | 43800: one nominal month ending at the reset, so pace is ahead or behind even spend of that month                                                                             |
-| `windows[0].pool_family`     | `claude` (JSON value; the board's SCOPE column shows `claude-api`; internal pool key `omp_claude`)                                                                            |
-| `rate_gated_by`              | present while every observed Claude account's shared weekly/monthly window is exhausted with a future reset: credits cannot be spent until `resets_at` (see schema 1.4 above) |
+| Field                        | Meaning                                                                                                                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balance_usd`                | dollars left of the plan grant (counts down)                                                                                                                                                                                |
+| `spent_usd`                  | dollars of that grant already used (counts up)                                                                                                                                                                              |
+| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)                                                                                                                                                                       |
+| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                                                                                                                                                                        |
+| `windows[0].window_minutes`  | 43800: one nominal month ending at the reset, so pace is ahead or behind even spend of that month                                                                                                                           |
+| `windows[0].pool_family`     | `claude` (JSON value; the board's SCOPE column shows `claude-api`; internal pool key `omp_claude`); `anthropic_api` on the key-pool row from `omp_agent_db`, which has no grant fields (see the 2026-11-07 changelog entry) |
+| `rate_gated_by`              | present while every observed Claude account's shared weekly/monthly window is exhausted with a future reset: credits cannot be spent until `resets_at` (see schema 1.4 above)                                               |
 
 Without a grant total the row falls back to `billing_kind: "prepaid_balance"`
 with no window, still carrying `balance_usd` (and `spent_usd` when CodexBar

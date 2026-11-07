@@ -47,6 +47,7 @@ from .deepseek import collect_deepseek
 from .grok import collect_grok
 from .hermes import collect_hermes
 from .muse import collect_muse
+from .omp_agent_db import collect_omp_agent_db
 from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
@@ -77,8 +78,14 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "muse",
     "qwencloud",
     "bailian",
+    "omp_agent_db",
     "acp",
 )
+
+# Sources whose row is a presence/usability verdict with no quota figures. They
+# never count as a known-fresh reading in `_prefer_fresh_source` (a CodexBar
+# grant row must outrank them whatever its age) and take no part in cross-checks.
+PRESENCE_ONLY_SOURCES: frozenset[str] = frozenset({"omp_agent_db"})
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
@@ -116,6 +123,9 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     "qwencloud": ("qwencloud", "codexbar", "acp"),
     # Native bl CLI is the authority; CodexBar alibaba-*-plan (cookies) cross-checks.
     "alibaba": ("bailian", "codexbar", "acp"),
+    # CodexBar's Claude Platform grant row (dollars left) outranks the key-pool
+    # presence row; omp_agent_db is the fallback when no grant is readable.
+    "omp": ("codexbar", "omp_agent_db", "acp"),
     # Native /user/balance is DeepSeek's own number; CodexBar cross-checks (#16).
     "deepseek": ("deepseek", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "acp"),
     # Native /go page sees an expired plan; CodexBar local $caps cannot.
@@ -140,6 +150,7 @@ SOURCE_LABELS: dict[str, str] = {
     "muse": "Muse (native)",
     "qwencloud": "QwenCloud (native)",
     "bailian": "Bailian (native)",
+    "omp_agent_db": "omp agent.db",
     "grok_billing": "Grok Billing (native)",
     "acp": "ACP logs",
 }
@@ -358,6 +369,8 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("qwencloud", partial(collect_qwencloud, timeout=timeout_for(config, "qwencloud"))))
     if _enabled(collectors_cfg, "bailian"):
         jobs.append(("bailian", partial(collect_bailian, timeout=timeout_for(config, "bailian"))))
+    if _enabled(collectors_cfg, "omp_agent_db"):
+        jobs.append(("omp_agent_db", collect_omp_agent_db))
     if _enabled(collectors_cfg, "acp"):
         acp_cfg = collectors_cfg.get("acp") if isinstance(collectors_cfg.get("acp"), dict) else {}
         log_dir = (acp_cfg or {}).get("log_dir") or None
@@ -694,7 +707,11 @@ def _select_and_cross_check(
                 chosen[0].account = named[0]
         selected.extend(chosen)
 
-        quota_by_source = {source: source_rows for source, source_rows in by_source.items() if source != ACP_SOURCE}
+        quota_by_source = {
+            source: source_rows
+            for source, source_rows in by_source.items()
+            if source != ACP_SOURCE and source not in PRESENCE_ONLY_SOURCES
+        }
         checks.extend(
             _provider_multi_source_cross_checks(
                 provider,
@@ -868,6 +885,8 @@ def _prefer_fresh_source(
     known_fresh: list[str] = []
     any_stale = False
     for source in candidates:
+        if source in PRESENCE_ONLY_SOURCES:
+            continue
         age = ages[source]
         if age is None:
             continue

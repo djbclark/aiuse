@@ -31,7 +31,7 @@ per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
 tracks only what a fresh session must know. **21 registered collectors**
 (cswap, CodexBar, caut, caam, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale,
 hermes, muse, qwencloud, bailian, openrouter, deepseek, clinepass,
-grok_billing, `paseo` — the Paseo daemon's cached usage report, mapped for claude/codex/copilot/grok/antigravity, quiet when the binary is absent — and `acp` — passive context fill from acp-run logs, not plan
+grok_billing, `omp_agent_db` — omp's Anthropic API-key pool from `~/.omp/agent/agent.db`, a presence row when CodexBar reads no grant, `paseo` — the Paseo daemon's cached usage report, mapped for claude/codex/copilot/grok/antigravity, quiet when the binary is absent — and `acp` — passive context fill from acp-run logs, not plan
 quota; `aiuse
 usage-sources` lists what is active per vendor and `[usage_sources]` can pin
 one source. Native collectors are default-on and quiet when their

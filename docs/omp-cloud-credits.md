@@ -69,6 +69,16 @@ row to provider `omp` (pool `claude-api` / `omp_claude`):
 2. `balance_usd` / `spent_usd` are dollars left and spent **from that grant**.
 3. `usage_credits` is intentionally unset (not the Usage-credits wallet).
 
+## Fallback: omp's own API-key pool
+
+When CodexBar reads no grant (cookies expired, grant lapsed), the `omp_agent_db`
+collector reports the pool from `~/.omp/agent/agent.db` (read-only; only
+`provider`, `credential_type`, `disabled_cause` and the rate-limit block table are
+read, never the key). The row says whether omp can spend now (binary present,
+an enabled Anthropic `api_key`, at least one such key not blocked) and has no
+balance, so `headroom_percent` is null. A CodexBar grant row outranks it
+whatever its age; the rate-window gate below still applies to it.
+
 ## Rate-window gate, cache, disabling
 
 Unchanged from prior docs: shared Claude quota can rate-gate omp; durable latch
