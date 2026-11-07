@@ -397,6 +397,7 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_acp", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_sipb", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_paseo", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_grok", lambda **_k: [])
 
     start = time.monotonic()
     snapshot = run_collectors({})
@@ -437,6 +438,7 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_acp", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_sipb", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_paseo", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_grok", lambda **_k: [])
     snapshot = run_collectors({})
 
     assert {account.provider for account in snapshot.accounts} == {"codex", "grok"}

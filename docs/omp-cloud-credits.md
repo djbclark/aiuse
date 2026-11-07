@@ -84,7 +84,11 @@ only.
 2. **OpenAI**: The OpenAI route advertises configuration only: a non-blank string
    `providers.openai.apiKey` in `models.yml`, the `omp` binary on PATH, and no
    `openai` entry in `disabledProviders` in the same directory's `config.yml`.
-   Both YAML reads are safe and capped at 256 KiB. Missing config means default
+   Both YAML reads are capped at 256 KiB and accept only regular files, including
+   symlinks to regular files. Special files fail closed without waiting for a
+   FIFO writer. YAML aliases and merge keys are unsupported and rejected before
+   expansion; unused anchors and quoted literal text remain supported.
+   Missing config means default
    settings; unreadable, malformed, oversized or non-mapping config, or a
    `disabledProviders` value other than a flat list of strings, makes the row
    unusable with a sanitized reason. Missing, unreadable, malformed or oversized
@@ -95,8 +99,11 @@ only.
    `~/<config-root>/profiles/<name>/agent` for a non-default profile and takes
    precedence over `PI_CODING_AGENT_DIR`. Otherwise `PI_CODING_AGENT_DIR` resolves
    relative to cwd without expanding a literal `~`, like Node `path.resolve`.
+   An explicitly empty or `default` `OMP_PROFILE` discards an inherited agent
+   directory exactly equal to the valid legacy `PI_PROFILE` directory; a genuinely
+   custom override remains honored.
    `AIUSE_OMP_MODELS_YML` overrides the models path; its parent also supplies
-   `config.yml`, keeping both reads in one directory. Symlinks are supported.
+   `config.yml`, keeping both reads in one directory.
    Directory behavior was checked against omp v18.18.0 `packages/utils/src/dirs.ts`
    on 2026-11-07.
 

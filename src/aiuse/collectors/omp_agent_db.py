@@ -20,7 +20,9 @@ selected: the queries name only ``provider``, ``credential_type``,
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
+import stat
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +42,20 @@ OPENAI_WINDOW_LABEL = "OpenAI api key"
 OPENAI_WINDOW_ID = "omp-openai-api-key"
 OPENAI_ACCOUNT_LABEL = "openai api key"
 _CONFIG_READ_LIMIT_BYTES = 256 * 1024
+
+
+class _MetadataLoader(yaml.SafeLoader):
+    """Safe metadata parsing without alias graphs or merge-key expansion."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("YAML aliases are not supported in metadata")
+        return super().compose_node(parent, index)
+
+    def flatten_mapping(self, node):
+        if any(key.tag == "tag:yaml.org,2002:merge" for key, _ in node.value):
+            raise yaml.YAMLError("YAML merge keys are not supported in metadata")
+        return super().flatten_mapping(node)
 
 
 def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
@@ -77,14 +93,33 @@ def _omp_agent_dir() -> Path:
     if profile and profile != "default":
         return root / "profiles" / profile / "agent"
     override = os.environ.get("PI_CODING_AGENT_DIR")
+    legacy = os.environ.get("PI_PROFILE", "").strip()
+    # omp discards a parent's profile-derived override when OMP_PROFILE explicitly
+    # chooses default. Invalid legacy profiles do not supply a derived directory.
+    legacy_named = (
+        legacy != "default"
+        and re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", legacy) is not None
+        and not legacy.endswith(".")
+        and re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?", legacy, re.IGNORECASE) is None
+    )
+    if legacy_named and override == str(root / "profiles" / legacy / "agent"):
+        override = None
     # Node path.resolve resolves against cwd without expanding a literal '~'.
     return Path(os.path.abspath(override)) if override else root / "agent"
 
 
 def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
     try:
-        with path.open("rb") as stream:
-            raw = stream.read(_CONFIG_READ_LIMIT_BYTES + 1)
+        # Open without waiting on a FIFO, then validate the descriptor to avoid a
+        # pre-open is_file()/open() swap race. Regular-file symlinks remain valid.
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return None, f"{label} is not a regular file"
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                raw = stream.read(_CONFIG_READ_LIMIT_BYTES + 1)
+        finally:
+            os.close(fd)
     except FileNotFoundError:
         return None, None
     except OSError as exc:
@@ -93,7 +128,11 @@ def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
         return None, f"{label} exceeds 256 KiB read cap"
     try:
         text = raw.decode("utf-8")
-        loaded = yaml.safe_load(text)
+        loader = _MetadataLoader(text)
+        try:
+            loaded = loader.get_single_data()
+        finally:
+            loader.dispose()
     except (UnicodeError, yaml.YAMLError, RecursionError, ValueError) as exc:
         return None, f"{label} malformed: {type(exc).__name__}"
     if loaded is None:
@@ -232,6 +271,8 @@ def _openai_row(path: Path, *, now: datetime, disabled_reason: str | None = None
             "omp OpenAI advertisement: non-blank providers.openai.apiKey in models.yml and "
             "disabledProviders in the same directory's config.yml only; omp is never invoked, "
             "the apiKey value is not resolved, executed or emitted, and headroom is unknown. "
+            "Only regular files (including symlink targets) are read, capped at 256 KiB; "
+            "YAML aliases and merge keys are unsupported and fail closed. "
             "Project overlays, CLI/runtime flags and PI_CONFIG_FILES overlays are not observed. "
             "Configured and not disabled does not mean authenticated: failing key commands, "
             "unset environment references and insufficient credits are not detected. "

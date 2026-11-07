@@ -32,7 +32,11 @@ Releases before 3.9.0 are in the
   `~/.omp/agent/models.yml` when `providers.openai.apiKey` is a non-empty string,
   the `omp` binary is on PATH, and the same agent directory's `config.yml`
   does not disable OpenAI. Invalid config fails closed; missing config uses
-  defaults. Both YAML reads are capped at 256 KiB. No omp subprocess or key
+  defaults. Both YAML reads accept regular files only (including symlinks),
+  open without waiting on FIFOs, and cap reads at 256 KiB. YAML aliases and
+  merge keys are rejected before expansion. Explicit default selection ignores
+  an inherited legacy-profile directory while preserving custom overrides.
+  No omp subprocess or key
   resolution occurs. Profile/config-root/agent-directory relocation is honored.
   Project, CLI/runtime and `PI_CONFIG_FILES` overlays are not observed; failing
   key commands and insufficient credits are not detected. Explicit omp source
