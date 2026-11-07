@@ -69,15 +69,26 @@ row to provider `omp` (pool `claude-api` / `omp_claude`):
 2. `balance_usd` / `spent_usd` are dollars left and spent **from that grant**.
 3. `usage_credits` is intentionally unset (not the Usage-credits wallet).
 
-## Fallback: omp's own API-key pool
+## Fallback: omp's own API-key pools
 
-When CodexBar reads no grant (cookies expired, grant lapsed), the `omp_agent_db`
-collector reports the pool from `~/.omp/agent/agent.db` (read-only; only
-`provider`, `credential_type`, `disabled_cause` and the rate-limit block table are
-read, never the key). The row says whether omp can spend now (binary present,
-an enabled Anthropic `api_key`, at least one such key not blocked) and has no
-balance, so `headroom_percent` is null. A CodexBar grant row outranks it
-whatever its age; the rate-window gate below still applies to it.
+When CodexBar reads no Claude grant (cookies expired, grant lapsed), the
+`omp_agent_db` collector can still report local omp API-key routes by presence
+only.
+
+1. **Anthropic**: reads `~/.omp/agent/agent.db` read-only; only `provider`,
+   `credential_type`, `disabled_cause` and the rate-limit block table are read,
+   never the key. The row says whether omp can spend now (binary present, an
+   enabled Anthropic `api_key`, at least one such key not blocked) and has no
+   balance, so `headroom_percent` is null. A CodexBar grant row outranks this
+   fallback whatever its age; the rate-window gate below still applies to it.
+2. **OpenAI**: reads only whether `~/.omp/agent/models.yml` has a non-empty
+   `providers.openai.apiKey` string and the `omp` binary is on PATH. aiuse never
+   executes that command/value and never emits the configured text. This is its
+   own `omp` pool row (`source: "omp_models_yml"`, `pool_family:
+"openai_api"`, models hint `omp TUI - OpenAI API key (platform credits):
+openai/gpt-* models`), independent of the Claude grant and Anthropic key
+   row; Claude shared-window gates and operator Claude-credit overrides do not
+   change it.
 
 ## Rate-window gate, cache, disabling
 

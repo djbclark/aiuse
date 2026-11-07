@@ -47,6 +47,7 @@ from .deepseek import collect_deepseek
 from .grok import collect_grok
 from .hermes import collect_hermes
 from .muse import collect_muse
+from .omp_agent_db import OPENAI_SOURCE as OMP_OPENAI_SOURCE
 from .omp_agent_db import collect_omp_agent_db
 from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
@@ -79,13 +80,14 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "qwencloud",
     "bailian",
     "omp_agent_db",
+    OMP_OPENAI_SOURCE,
     "acp",
 )
 
 # Sources whose row is a presence/usability verdict with no quota figures. They
 # never count as a known-fresh reading in `_prefer_fresh_source` (a CodexBar
 # grant row must outrank them whatever its age) and take no part in cross-checks.
-PRESENCE_ONLY_SOURCES: frozenset[str] = frozenset({"omp_agent_db"})
+PRESENCE_ONLY_SOURCES: frozenset[str] = frozenset({"omp_agent_db", OMP_OPENAI_SOURCE})
 
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
@@ -697,6 +699,11 @@ def _select_and_cross_check(
             )
             chosen = _rows_from_primary(provider, primary, by_source, rows)
 
+        if provider == "omp" and primary != OMP_OPENAI_SOURCE and not pin:
+            # OpenAI is an independent omp API-key route from models.yml. Keep
+            # it beside the Claude grant / Anthropic key row, while preserving
+            # CodexBar's precedence over the Anthropic key fallback.
+            chosen.extend(by_source.get(OMP_OPENAI_SOURCE, []))
         if not chosen and acp_rows:
             chosen = list(acp_rows)
         elif chosen and acp_rows and primary != ACP_SOURCE:
@@ -975,6 +982,10 @@ def _normalize_account_names(accounts: list[AccountUsage], aliases: dict[str, An
                 account.account = mapped.strip()
 
     for provider in {account.provider for account in accounts}:
+        if provider == "omp":
+            # omp account labels distinguish independent local pools (Claude
+            # grant, Anthropic key, OpenAI key), not aliases for one account.
+            continue
         live = [account for account in accounts if account.provider == provider and _has_live_data(account)]
         by_source: dict[str, set[str]] = defaultdict(set)
         for account in live:

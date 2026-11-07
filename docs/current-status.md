@@ -25,13 +25,27 @@ replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contrac
 "How to read this".
 **Schema 1.2 (2026-10-12):** per-window pace (`pace_percent`, `pace_ratio`), per-account `overall_pace_percent`, PACE column replaces `$ UNUSED` in clock matrix with cell-level signed pace percentages and lined-up notes; pace in `summary_lines` and `aiuse --available`. Early readings (under 10% of the window elapsed) are marked `~` (JSON `pace_early`, `overall_pace_early`; released 3.4.1).
 
-**Schema 1.5 (2026-10-31, unreleased):** additive `pool_family: "gemini_argon"` — the antigravity "Gemini 4 Argon weekly" window (id `antigravity-quota-summary-gemini-argon-wtu-weekly`) is its own pool row, separate from Flash `gemini`, in `--available`, the matrix and exhaustion notes; `gemini-4-argon*` models map to it. Whether an Argon call also draws the Gemini 5-hour window is unmeasured (kept in `gemini`). See [`json-contract.md`](json-contract.md).
+**Schema 1.5 (2026-10-31, extended 2026-11-07):** additive `pool_family:
+"gemini_argon"` — the antigravity "Gemini 4 Argon weekly" window (id
+`antigravity-quota-summary-gemini-argon-wtu-weekly`) is its own pool row,
+separate from Flash `gemini`, in `--available`, the matrix and exhaustion notes;
+`gemini-4-argon*` models map to it. Whether an Argon call also draws the Gemini
+5-hour window is unmeasured (kept in `gemini`). Schema 1.5 also adds omp's
+OpenAI API-key route: `source: "omp_models_yml"`, `pool_family: "openai_api"`,
+unknown headroom, usable when `~/.omp/agent/models.yml` contains a non-empty
+`providers.openai.apiKey` and `omp` is on PATH; the apiKey command/value is
+never executed or emitted. See [`json-contract.md`](json-contract.md).
 The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
 tracks only what a fresh session must know. **21 registered collectors**
 (cswap, CodexBar, caut, caam, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale,
 hermes, muse, qwencloud, bailian, openrouter, deepseek, clinepass,
-grok_billing, `omp_agent_db` — omp's Anthropic API-key pool from `~/.omp/agent/agent.db`, a presence row when CodexBar reads no grant, `paseo` — the Paseo daemon's cached usage report, mapped for claude/codex/copilot/grok/antigravity, quiet when the binary is absent — and `acp` — passive context fill from acp-run logs, not plan
+grok_billing, `omp_agent_db` — omp's Anthropic API-key pool from
+`~/.omp/agent/agent.db` plus OpenAI API-key route from
+`~/.omp/agent/models.yml`, presence rows that coexist with a CodexBar grant
+where applicable, `paseo` — the Paseo daemon's cached usage report, mapped for
+claude/codex/copilot/grok/antigravity, quiet when the binary is absent — and
+`acp` — passive context fill from acp-run logs, not plan
 quota; `aiuse
 usage-sources` lists what is active per vendor and `[usage_sources]` can pin
 one source. Native collectors are default-on and quiet when their

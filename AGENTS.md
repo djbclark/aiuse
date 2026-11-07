@@ -29,12 +29,12 @@ reviewed 2026-10-22; 3.7.0 added the `omp` row, OTHER column, and
 PACE-after-SCOPE layout; 3.7.1 reworded the gate's JSON semantics). Fix-plan
 Steps **1–34** and product issues **#1–#9**
 done; JSON schema **1.5** (self-describing output, `aiuse --available`,
-`aiuse note-exhausted`; 1.5 gives Gemini 4 Argon its own `gemini_argon` pool family and
-publishes the model-to-family map; 1.4 added the omp `rate_gated_by` shared-Claude-window
+`aiuse note-exhausted`; 1.5 gives Gemini 4 Argon its own `gemini_argon` pool family,
+publishes the model-to-family map, and reports omp's OpenAI API-key route as
+`pool_family: openai_api`; 1.4 added the omp `rate_gated_by` shared-Claude-window
 gate; 1.3 added ceiling/hidden-pool fields and per-pool learned burn rates;
 1.2 added per-window pace and the matrix PACE column,
 early readings marked `~`); 21 registered collectors (including passive `acp`
-context logs and the opt-in `sipb` MIT status probe; `aiuse usage-sources`);
 scheduled sampling +
 `aiuse attribute`. **No mandatory numbered step.** Open-ended "what next?" →
 [`docs/next-options.md`](docs/next-options.md) +

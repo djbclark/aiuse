@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_entries
+from aiuse.analysis.selfdescribe import (
+    apply_shared_rate_gate_to_snapshot,
+    available_pools,
+    enrich_snapshot,
+    pool_entries,
+)
 from aiuse.collectors.base import CollectorNotInstalled
 from aiuse.collectors.omp_agent_db import collect_omp_agent_db
 from aiuse.collectors.runner import _select_and_cross_check
@@ -54,8 +59,35 @@ def _pool(row: AccountUsage) -> dict:
 
 
 def _collect(path: Path, binary: str | None = "/usr/bin/omp") -> AccountUsage:
-    (row,) = collect_omp_agent_db(db_path=path, now=NOW, omp_binary=binary)
+    (row,) = collect_omp_agent_db(
+        db_path=path, models_yml_path=path.parent / "missing-models.yml", now=NOW, omp_binary=binary
+    )
     return row
+
+
+def _models(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "models.yml"
+    path.write_text(text)
+    return path
+
+
+def _collect_all(
+    tmp_path: Path,
+    *,
+    db_path: Path | None = None,
+    models_yml_path: Path | None = None,
+    binary: str | None = "/usr/bin/omp",
+) -> list[AccountUsage]:
+    return collect_omp_agent_db(
+        db_path=db_path or tmp_path / "missing-agent.db",
+        models_yml_path=models_yml_path or tmp_path / "missing-models.yml",
+        now=NOW,
+        omp_binary=binary,
+    )
+
+
+def _openai_row(rows: list[AccountUsage]) -> AccountUsage:
+    return next(row for row in rows if row.source == "omp_models_yml")
 
 
 def test_enabled_api_key_is_usable_with_unknown_headroom(tmp_path):
@@ -126,6 +158,162 @@ def test_unreadable_database_gives_an_unusable_row(tmp_path):
     pool = _pool(_collect(bad))
     assert pool["usable_now"] is False
     assert "unreadable" in pool["api_key_pool"]["reason"]
+
+
+def test_openai_models_yml_route_is_usable_without_agent_db(tmp_path):
+    models = _models(
+        tmp_path,
+        'providers:\n  openai:\n    apiKey: "!sudo-secretspec get OPENAI_API_KEY --reason test"\n',
+    )
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    assert row.source == "omp_models_yml"
+    assert row.account == "openai api key"
+    assert row.raw == {"models_yml": str(models), "openai_api_key_configured": True}
+    pool = _pool(row)
+    assert pool["pool_family"] == "openai_api"
+    assert pool["models_hint"] == "omp TUI - OpenAI API key (platform credits): openai/gpt-* models"
+    assert pool["usable_now"] is True
+    assert pool["headroom_percent"] is None
+    assert pool["api_key_pool"]["provider"] == "openai"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "providers:\n  openai:\n    apiKey: ''\n",
+        "providers:\n  openai:\n    apiKey: null\n",
+        "providers: [not, a, mapping\n",
+    ],
+)
+def test_missing_empty_or_malformed_models_yml_is_no_openai_route(tmp_path, text):
+    models = _models(tmp_path, text)
+    with pytest.raises(CollectorNotInstalled):
+        _collect_all(tmp_path, models_yml_path=models)
+
+
+def test_openai_route_requires_omp_binary(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    with pytest.raises(CollectorNotInstalled):
+        _collect_all(tmp_path, models_yml_path=models, binary="")
+
+
+def test_openai_api_key_command_is_never_executed(tmp_path):
+    sentinel = tmp_path / "executed"
+    models = _models(
+        tmp_path,
+        f'providers:\n  openai:\n    apiKey: "!/bin/sh -c \\"touch {sentinel}\\""\n',
+    )
+    _collect_all(tmp_path, models_yml_path=models)
+    assert not sentinel.exists()
+
+
+def test_openai_models_yml_text_never_reaches_json(tmp_path):
+    secret_marker = "TEST_OPENAI_ROUTE_SECRET_MARKER"
+    models = _models(tmp_path, f'providers:\n  openai:\n    apiKey: "{secret_marker}"\n')
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    snap = Snapshot(collected_at=NOW, accounts=[row]).to_dict()
+    enriched = enrich_snapshot(snap, now=NOW)
+    assert secret_marker not in json.dumps(row.to_dict(), default=str)
+    assert secret_marker not in json.dumps(enriched, default=str)
+    assert "providers:" not in json.dumps(enriched, default=str)
+
+
+def test_anthropic_and_openai_routes_are_separate_pools(tmp_path):
+    db = _db(tmp_path, [(11, "anthropic", "api_key", None)])
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    rows = _collect_all(tmp_path, db_path=db, models_yml_path=models)
+    snap = enrich_snapshot(Snapshot(collected_at=NOW, accounts=rows).to_dict(), now=NOW)
+    assert [account["account"] for account in snap["accounts"]] == ["anthropic api key", "openai api key"]
+    pools = {(p["source"], p["pool_family"]): p for p in pool_entries(snap, now=NOW)}
+    assert ("omp_agent_db", "anthropic_api") in pools
+    assert ("omp_models_yml", "openai_api") in pools
+    assert [p["pool_family"] for p in available_pools(snap)] == ["anthropic_api", "openai_api"]
+
+
+def test_codexbar_grant_precedence_keeps_openai_route_separate(tmp_path):
+    db = _db(tmp_path, [(11, "anthropic", "api_key", None)])
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    key_row, openai = _collect_all(tmp_path, db_path=db, models_yml_path=models)
+    grant = AccountUsage(
+        source="codexbar",
+        provider="omp",
+        account="Org",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="credits", used_percent=10.0, remaining_percent=90.0)],
+        collected_at=NOW,
+    )
+    selected, checks = _select_and_cross_check([key_row, openai, grant], cswap_authoritative=False)
+    assert [a.source for a in selected] == ["codexbar", "omp_models_yml"]
+    assert [c for c in checks if c.provider == "omp" and c.status == "warning"] == []
+
+
+def test_pi_openai_spend_meter_does_not_cross_check_against_omp_openai_route(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    (openai,) = _collect_all(tmp_path, models_yml_path=models)
+    pi = AccountUsage(
+        source="codexbar",
+        provider="pi",
+        account="OpenAI org",
+        billing_kind=BillingKind.PAYG_API,
+        spent_usd=12.0,
+        windows=[QuotaWindow(label="monthly-spend", used_percent=12.0, remaining_percent=88.0)],
+        collected_at=NOW,
+    )
+    selected, checks = _select_and_cross_check([openai, pi], cswap_authoritative=False)
+    assert [(a.provider, a.source) for a in selected] == [("omp", "omp_models_yml"), ("pi", "codexbar")]
+    assert [c for c in checks if c.provider == "omp"] == []
+    assert [c.provider for c in checks] == ["pi"]
+
+
+def test_operator_override_replaces_anthropic_route_but_not_openai_route(tmp_path):
+    db = _db(tmp_path, [(11, "anthropic", "api_key", None)])
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    rows = _collect_all(tmp_path, db_path=db, models_yml_path=models)
+    override = {
+        "omp": {
+            "remaining_usd": 0.0,
+            "total_usd": 200.0,
+            "observed_at": (NOW - timedelta(hours=1)).isoformat(),
+            "expires_at": (NOW + timedelta(days=10)).isoformat(),
+        }
+    }
+    enriched = enrich_snapshot(Snapshot(collected_at=NOW, accounts=rows).to_dict(), now=NOW, credit_overrides=override)
+    sources = [account["source"] for account in enriched["accounts"]]
+    assert sources == ["operator-override", "omp_models_yml"]
+    pools = {(pool["source"], pool["pool_family"]): pool for pool in pool_entries(enriched, now=NOW)}
+    assert ("operator-override", "claude") in pools
+    assert ("omp_models_yml", "openai_api") in pools
+
+
+def test_claude_rate_gate_does_not_gate_openai_route(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    (openai,) = _collect_all(tmp_path, models_yml_path=models)
+    claude = AccountUsage(
+        source="codexbar",
+        provider="claude",
+        account="Claude",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Claude Code weekly",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                resets_at=NOW + timedelta(days=3),
+                window_minutes=10080,
+            )
+        ],
+        collected_at=NOW,
+    )
+    enriched = enrich_snapshot(Snapshot(collected_at=NOW, accounts=[claude, openai]).to_dict(), now=NOW)
+    (pool,) = [p for p in pool_entries(enriched, now=NOW) if p["provider"] == "omp"]
+    assert pool["pool_family"] == "openai_api"
+    assert pool["usable_now"] is True
+    assert "rate_gated_by" not in pool
+
+    model_snap = Snapshot(collected_at=NOW, accounts=[claude, openai])
+    assert apply_shared_rate_gate_to_snapshot(model_snap, now=NOW) is False
+    assert model_snap.accounts[1].rate_gated_by is None
 
 
 def test_grant_row_from_codexbar_outranks_key_pool_row(tmp_path):

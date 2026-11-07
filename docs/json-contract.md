@@ -214,25 +214,30 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 #### Additive (2026-11-07, schema stays 1.5)
 
-- New collector `omp_agent_db` reads omp's credential database
-  (`~/.omp/agent/agent.db`, read-only, credential metadata only, never the key)
-  and emits the `omp` row when CodexBar reads no Claude API grant. Its pool has
-  `pool_family: "anthropic_api"`, `models_hint` naming the `anthropic/claude-*`
-  models, `headroom_percent: null` (omp records no balance: unknown, not 0) and
-  a new `api_key_pool` object `{usable, reason, enabled_credentials}` on the
-  account and the pool entry. `usable_now` is true when the `omp` binary exists,
-  an enabled Anthropic `api_key` credential exists and at least one such key has
-  no active rate-limit block; once every key is blocked `available_at` is the
-  earliest block end. `usable_now: false` (reason in `api_key_pool.reason`)
-  when the `omp` binary is not on PATH, the database holds no enabled
-  Anthropic `api_key` credential (OAuth logins only, or all disabled), every
-  such key is blocked, or the database is unreadable; the durable
-  `rate_gated_by` latch still forces it false while a shared-Claude-window
-  gate holds, so the pool is spent apart from the plan windows but not exempt
-  from that gate. No database at all means no row (omp not installed). A
-  CodexBar grant row outranks this one whatever its age; an operator override
-  or Admin API reading that replaces the row drops `api_key_pool`. The row has
-  no quota figures, so it takes no part in the cross-source checks.
+- Collector `omp_agent_db` reads omp's local credential metadata and can emit
+  two independent `omp` API-key routes. The existing Anthropic route reads
+  `~/.omp/agent/agent.db` read-only (credential metadata only, never the key)
+  and has `source: "omp_agent_db"`, `pool_family: "anthropic_api"` and a
+  `models_hint` naming `anthropic/claude-*` models. The OpenAI route reads only
+  the presence of a non-empty `providers.openai.apiKey` string in
+  `~/.omp/agent/models.yml`, requires the `omp` binary on PATH, never executes
+  or emits the `apiKey` value, and has `source: "omp_models_yml"`,
+  `pool_family: "openai_api"` and `models_hint:
+"omp TUI - OpenAI API key (platform credits): openai/gpt-* models"`.
+  Both local routes have `headroom_percent: null` (omp records no balance:
+  unknown, not 0), window `state: "unknown"` and an `api_key_pool` object
+  `{usable, reason, enabled_credentials}` plus optional provider/source fields.
+  Anthropic `usable_now` is true when the `omp` binary exists, an enabled
+  Anthropic `api_key` credential exists and at least one such key has no active
+  rate-limit block; once every key is blocked `available_at` is the earliest
+  block end. The OpenAI route `usable_now` is true when configured; missing,
+  unreadable, malformed or empty `models.yml`, or a missing `omp` binary, means
+  no OpenAI route rather than an error. A CodexBar Claude grant row still
+  outranks the Anthropic key fallback whatever its age; operator overrides and
+  Admin API readings replace only Claude/Anthropic credit rows and drop their
+  `api_key_pool`; the OpenAI route remains a separate row. These presence-only
+  rows take no part in cross-source checks, and the Claude shared-window
+  `rate_gated_by` latch never applies to the OpenAI route.
 
 #### Additive (2026-11-03, schema stays 1.5)
 
