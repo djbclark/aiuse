@@ -14,6 +14,7 @@ table's timestamps.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,7 +30,7 @@ ACCOUNT_LABEL = "anthropic api key"
 
 def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
     """(enabled api_key count, unblocked count, earliest block end among blocked keys)."""
-    with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as conn:
+    with closing(sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)) as conn:
         rows = conn.execute(
             """
             SELECT c.id,
@@ -49,7 +50,6 @@ def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
 
 def collect_omp_agent_db(
     *,
-    timeout: float = 45.0,
     db_path: str | Path | None = None,
     now: datetime | None = None,
     omp_binary: str | None = None,

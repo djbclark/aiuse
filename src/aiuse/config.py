@@ -392,7 +392,6 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "muse",
         "qwencloud",
         "bailian",
-        "omp_agent_db",
         "openrouter",
         "deepseek",
         "clinepass",

@@ -82,6 +82,11 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "acp",
 )
 
+# Sources whose row is a presence/usability verdict with no quota figures. They
+# never count as a known-fresh reading in `_prefer_fresh_source` (a CodexBar
+# grant row must outrank them whatever its age) and take no part in cross-checks.
+PRESENCE_ONLY_SOURCES: frozenset[str] = frozenset({"omp_agent_db"})
+
 PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     # cswap is the multi-account Claude authority when enabled.
     "claude": (
@@ -702,7 +707,11 @@ def _select_and_cross_check(
                 chosen[0].account = named[0]
         selected.extend(chosen)
 
-        quota_by_source = {source: source_rows for source, source_rows in by_source.items() if source != ACP_SOURCE}
+        quota_by_source = {
+            source: source_rows
+            for source, source_rows in by_source.items()
+            if source != ACP_SOURCE and source not in PRESENCE_ONLY_SOURCES
+        }
         checks.extend(
             _provider_multi_source_cross_checks(
                 provider,
@@ -876,6 +885,8 @@ def _prefer_fresh_source(
     known_fresh: list[str] = []
     any_stale = False
     for source in candidates:
+        if source in PRESENCE_ONLY_SOURCES:
+            continue
         age = ages[source]
         if age is None:
             continue

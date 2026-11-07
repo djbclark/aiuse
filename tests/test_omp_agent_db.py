@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,7 +13,7 @@ from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_e
 from aiuse.collectors.base import CollectorNotInstalled
 from aiuse.collectors.omp_agent_db import collect_omp_agent_db
 from aiuse.collectors.runner import _select_and_cross_check
-from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
+from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot, utcnow
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
 
@@ -141,3 +142,48 @@ def test_grant_row_from_codexbar_outranks_key_pool_row(tmp_path):
     assert [a.source for a in selected] == ["codexbar"]
     selected, _ = _select_and_cross_check([key_row], cswap_authoritative=False)
     assert [a.source for a in selected] == ["omp_agent_db"]
+
+
+def test_stale_codexbar_grant_still_outranks_key_pool_row(tmp_path):
+    now = utcnow()
+    key_row = _collect(_db(tmp_path, [(11, "anthropic", "api_key", None)]))
+    key_row.collected_at = now
+    grant = AccountUsage(
+        source="codexbar",
+        provider="omp",
+        account="Org",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        balance_usd=120.0,
+        windows=[QuotaWindow(label="credits", used_percent=10.0, remaining_percent=90.0)],
+        collected_at=now - timedelta(hours=1),
+    )
+    selected, checks = _select_and_cross_check([key_row, grant], cswap_authoritative=False)
+    assert [a.source for a in selected] == ["codexbar"]
+    assert [c for c in checks if c.provider == "omp" and c.status == "warning"] == []
+
+
+def test_override_replacing_the_key_pool_row_decides_usability(tmp_path):
+    row = _collect(_db(tmp_path, [(11, "anthropic", "api_key", None)]))
+    override = {
+        "omp": {
+            "remaining_usd": 0.0,
+            "total_usd": 200.0,
+            "observed_at": (NOW - timedelta(hours=1)).isoformat(),
+            "expires_at": (NOW + timedelta(days=10)).isoformat(),
+        }
+    }
+    snap = Snapshot(collected_at=NOW, accounts=[row]).to_dict()
+    enriched = enrich_snapshot(snap, now=NOW, credit_overrides=override)
+    (account,) = enriched["accounts"]
+    assert account["source"] == "operator-override"
+    assert account["usable_now"] is False
+    assert "api_key_pool" not in account
+    assert available_pools(enriched) == []
+
+
+def test_key_material_never_reaches_the_json(tmp_path):
+    row = _collect(_db(tmp_path, [(11, "anthropic", "api_key", None)]))
+    snap = Snapshot(collected_at=NOW, accounts=[row]).to_dict()
+    enriched = enrich_snapshot(snap, now=NOW)
+    assert "REDACTED-FIXTURE" not in json.dumps(snap)
+    assert "REDACTED-FIXTURE" not in json.dumps(enriched, default=str)

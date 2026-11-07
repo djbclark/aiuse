@@ -713,6 +713,8 @@ def _apply_credit_override_for_provider(
             account["credits_label"] = CREDIT_LABELS[provider]
             account["usage_credits"] = None  # Costs are not an additional wallet beside the grant.
             account.pop("reading_expired", None)
+            # The key-pool verdict described the replaced row; a measured balance now decides usability.
+            account.pop("api_key_pool", None)
             account.pop("grant_expired", None)
             _normalize_credits_clock(account, override)
             note = f"{'Admin API reading' if override.get('source') == 'admin-api' else 'Operator override (aiuse set-credits)'} at {ov_at.isoformat()}"
