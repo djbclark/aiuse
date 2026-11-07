@@ -393,9 +393,13 @@ def independent_pool_key(
     cursor_family = cursor_pool_family(label, window_id=window_id, provider=provider)
     if cursor_family is not None:
         return f"cursor_{cursor_family}"
-    # omp spends Claude cloud-session credits: one pool, scoped to the model family.
+    # omp OpenAI credits are independent of Claude/Anthropic credits.
     if provider is not None and canonical_provider(provider) == "omp":
-        return "omp_claude"
+        return (
+            "omp_openai"
+            if window_id == "omp-openai-api-key" or (label or "").casefold() == "openai api key"
+            else "omp_claude"
+        )
     if provider is not None and canonical_provider(provider) == "pi":
         return "pi_codex_api"
     text = (label or "").casefold()
@@ -454,6 +458,7 @@ POOL_SCOPE_LABELS = {
     "gemini_argon": "gemini-argon",
     "claude_gpt": "claude/gpt",
     "omp_claude": "claude-api",
+    "omp_openai": "openai-api",
     "pi_codex_api": "codex-api",
     "cursor_total": "total",
     "cursor_third_party": "3rd-party",

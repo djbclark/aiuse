@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_entries
+from aiuse.analysis.selfdescribe import (
+    apply_shared_rate_gate_to_snapshot,
+    available_pools,
+    enrich_snapshot,
+    pool_entries,
+)
 from aiuse.collectors.base import CollectorNotInstalled
 from aiuse.collectors.omp_agent_db import collect_omp_agent_db
 from aiuse.collectors.runner import _select_and_cross_check
@@ -54,8 +59,35 @@ def _pool(row: AccountUsage) -> dict:
 
 
 def _collect(path: Path, binary: str | None = "/usr/bin/omp") -> AccountUsage:
-    (row,) = collect_omp_agent_db(db_path=path, now=NOW, omp_binary=binary)
+    (row,) = collect_omp_agent_db(
+        db_path=path, models_yml_path=path.parent / "missing-models.yml", now=NOW, omp_binary=binary
+    )
     return row
+
+
+def _models(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "models.yml"
+    path.write_text(text)
+    return path
+
+
+def _collect_all(
+    tmp_path: Path,
+    *,
+    db_path: Path | None = None,
+    models_yml_path: Path | None = None,
+    binary: str | None = "/usr/bin/omp",
+) -> list[AccountUsage]:
+    return collect_omp_agent_db(
+        db_path=db_path or tmp_path / "missing-agent.db",
+        models_yml_path=models_yml_path or tmp_path / "missing-models.yml",
+        now=NOW,
+        omp_binary=binary,
+    )
+
+
+def _openai_row(rows: list[AccountUsage]) -> AccountUsage:
+    return next(row for row in rows if row.source == "omp_models_yml")
 
 
 def test_enabled_api_key_is_usable_with_unknown_headroom(tmp_path):
@@ -128,6 +160,259 @@ def test_unreadable_database_gives_an_unusable_row(tmp_path):
     assert "unreadable" in pool["api_key_pool"]["reason"]
 
 
+def test_openai_models_yml_route_is_usable_without_agent_db(tmp_path):
+    models = _models(
+        tmp_path,
+        'providers:\n  openai:\n    apiKey: "!sudo-secretspec get OPENAI_API_KEY --reason test"\n',
+    )
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    assert row.source == "omp_models_yml"
+    assert row.account == "openai api key"
+    assert row.raw == {"models_yml": str(models), "openai_api_key_configured": True}
+    pool = _pool(row)
+    assert pool["pool_family"] == "openai_api"
+    assert pool["models_hint"] == "omp TUI - OpenAI API key (platform credits): openai/gpt-* models"
+    assert pool["usable_now"] is True
+    assert pool["headroom_percent"] is None
+    assert pool["api_key_pool"]["provider"] == "openai"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "[]\n",
+        "providers: []\n",
+        "providers:\n  openai: []\n",
+        "providers:\n  openai:\n    apiKey: ''\n",
+        "providers:\n  openai:\n    apiKey: '   '\n",
+        "providers:\n  openai:\n    apiKey: null\n",
+        "providers:\n  openai:\n    apiKey: [not, a, string]\n",
+        "providers:\n  openai:\n    apiKey: 123\n",
+        "providers:\n  openai:\n    apiKey: true\n",
+        "providers: [not, a, mapping\n",
+    ],
+)
+def test_missing_empty_or_malformed_models_yml_is_no_openai_route(tmp_path, text):
+    models = _models(tmp_path, text)
+    with pytest.raises(CollectorNotInstalled):
+        _collect_all(tmp_path, models_yml_path=models)
+
+
+def test_oversized_models_yml_is_no_openai_route(tmp_path):
+    models = _models(tmp_path, "providers:\n  openai:\n    apiKey: configured\n" + ("# pad\n" * 50000))
+    with pytest.raises(CollectorNotInstalled):
+        _collect_all(tmp_path, models_yml_path=models)
+
+
+def test_symlinked_models_yml_is_supported(tmp_path):
+    target = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    link = tmp_path / "linked-models.yml"
+    link.symlink_to(target)
+    (row,) = _collect_all(tmp_path, models_yml_path=link)
+    assert _pool(row)["usable_now"] is True
+
+
+def test_unreadable_models_yml_is_no_openai_route(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    models.chmod(0)
+    try:
+        try:
+            models.read_bytes()
+        except OSError:
+            pass
+        else:
+            pytest.skip("chmod did not make models.yml unreadable on this platform")
+        with pytest.raises(CollectorNotInstalled):
+            _collect_all(tmp_path, models_yml_path=models)
+    finally:
+        models.chmod(0o600)
+
+
+@pytest.mark.parametrize("env_value", [None, "", "sk-test-fixture"])
+def test_openai_api_key_env_var_reference_counts_as_configured_without_resolving(tmp_path, monkeypatch, env_value):
+    if env_value is None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("OPENAI_API_KEY", env_value)
+    models = _models(tmp_path, "providers:\n  openai:\n    apiKey: OPENAI_API_KEY\n")
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    assert _pool(row)["usable_now"] is True
+    assert "OPENAI_API_KEY" not in json.dumps(row.to_dict(), default=str)
+    assert "sk-test-fixture" not in json.dumps(row.to_dict(), default=str)
+
+
+def test_openai_base_url_override_stays_openai_api_route(tmp_path):
+    models = _models(
+        tmp_path,
+        'providers:\n  openai:\n    baseUrl: "https://gateway.example/v1"\n    apiKey: "configured"\n',
+    )
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    assert _pool(row)["pool_family"] == "openai_api"
+
+
+def test_openai_alias_bomb_is_bounded_before_parsing(tmp_path, monkeypatch):
+    import aiuse.collectors.omp_agent_db as collector
+
+    # A large alias document must be rejected before invoking the YAML parser.
+    models = _models(tmp_path, "a: &a [one]\nb: [" + ",".join(["*a"] * 100000) + "]")
+
+    def reject_parse(_text):
+        pytest.fail("oversized YAML reached parser")
+
+    monkeypatch.setattr(collector, "_MetadataLoader", reject_parse)
+    with pytest.raises(CollectorNotInstalled):
+        _collect_all(tmp_path, models_yml_path=models)
+
+
+def test_openai_read_is_capped(tmp_path, monkeypatch):
+    import io
+
+    import aiuse.collectors.omp_agent_db as collector
+
+    class BoundedStream(io.BytesIO):
+        def read(self, size=-1):
+            assert size == 256 * 1024 + 1
+            return super().read(size)
+
+    path = tmp_path / "models.yml"
+    path.write_bytes(b"fixture")
+    monkeypatch.setattr(collector.os, "fdopen", lambda *args, **kwargs: BoundedStream(b"x" * (256 * 1024 + 2)))
+    mapping, error = collector._read_mapping(path, label="omp models.yml")
+    assert mapping is None
+    assert "256 KiB" in error
+
+
+def test_openai_route_requires_omp_binary(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    with pytest.raises(CollectorNotInstalled):
+        _collect_all(tmp_path, models_yml_path=models, binary="")
+
+
+def test_openai_api_key_command_is_never_executed(tmp_path, capsys):
+    sentinel = tmp_path / "executed"
+    models = _models(
+        tmp_path,
+        f'providers:\n  openai:\n    apiKey: "!/bin/sh -c \\"touch {sentinel}\\""\n',
+    )
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    assert not sentinel.exists()
+    enriched = enrich_snapshot(Snapshot(collected_at=NOW, accounts=[row]).to_dict(), now=NOW)
+    captured = capsys.readouterr()
+    output = json.dumps(enriched, default=str) + captured.out + captured.err
+    assert "!/bin/sh" not in output
+    assert str(sentinel) not in output
+    assert models.read_text() not in output
+
+
+def test_openai_models_yml_text_never_reaches_json(tmp_path):
+    secret_marker = "TEST_OPENAI_ROUTE_SECRET_MARKER"
+    models = _models(tmp_path, f'providers:\n  openai:\n    apiKey: "{secret_marker}"\n')
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    snap = Snapshot(collected_at=NOW, accounts=[row]).to_dict()
+    enriched = enrich_snapshot(snap, now=NOW)
+    assert secret_marker not in json.dumps(row.to_dict(), default=str)
+    assert secret_marker not in json.dumps(enriched, default=str)
+    assert "providers:" not in json.dumps(enriched, default=str)
+
+
+def test_anthropic_and_openai_routes_are_separate_pools(tmp_path):
+    db = _db(tmp_path, [(11, "anthropic", "api_key", None)])
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    rows = _collect_all(tmp_path, db_path=db, models_yml_path=models)
+    snap = enrich_snapshot(Snapshot(collected_at=NOW, accounts=rows).to_dict(), now=NOW)
+    assert [account["account"] for account in snap["accounts"]] == ["anthropic api key", "openai api key"]
+    pools = {(p["source"], p["pool_family"]): p for p in pool_entries(snap, now=NOW)}
+    assert ("omp_agent_db", "anthropic_api") in pools
+    assert ("omp_models_yml", "openai_api") in pools
+    assert [p["pool_family"] for p in available_pools(snap)] == ["anthropic_api", "openai_api"]
+
+
+def test_codexbar_grant_precedence_keeps_openai_route_separate(tmp_path):
+    db = _db(tmp_path, [(11, "anthropic", "api_key", None)])
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    key_row, openai = _collect_all(tmp_path, db_path=db, models_yml_path=models)
+    grant = AccountUsage(
+        source="codexbar",
+        provider="omp",
+        account="Org",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="credits", used_percent=10.0, remaining_percent=90.0)],
+        collected_at=NOW,
+    )
+    selected, checks = _select_and_cross_check([key_row, openai, grant], cswap_authoritative=False)
+    assert [a.source for a in selected] == ["codexbar", "omp_models_yml"]
+    assert [c for c in checks if c.provider == "omp" and c.status == "warning"] == []
+
+
+def test_pi_openai_spend_meter_does_not_cross_check_against_omp_openai_route(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    (openai,) = _collect_all(tmp_path, models_yml_path=models)
+    pi = AccountUsage(
+        source="codexbar",
+        provider="pi",
+        account="OpenAI org",
+        billing_kind=BillingKind.PAYG_API,
+        spent_usd=12.0,
+        windows=[QuotaWindow(label="monthly-spend", used_percent=12.0, remaining_percent=88.0)],
+        collected_at=NOW,
+    )
+    selected, checks = _select_and_cross_check([openai, pi], cswap_authoritative=False)
+    assert [(a.provider, a.source) for a in selected] == [("omp", "omp_models_yml"), ("pi", "codexbar")]
+    assert [c for c in checks if c.provider == "omp"] == []
+    assert [c.provider for c in checks] == ["pi"]
+
+
+def test_operator_override_replaces_anthropic_route_but_not_openai_route(tmp_path):
+    db = _db(tmp_path, [(11, "anthropic", "api_key", None)])
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    rows = _collect_all(tmp_path, db_path=db, models_yml_path=models)
+    override = {
+        "omp": {
+            "remaining_usd": 0.0,
+            "total_usd": 200.0,
+            "observed_at": (NOW - timedelta(hours=1)).isoformat(),
+            "expires_at": (NOW + timedelta(days=10)).isoformat(),
+        }
+    }
+    enriched = enrich_snapshot(Snapshot(collected_at=NOW, accounts=rows).to_dict(), now=NOW, credit_overrides=override)
+    sources = [account["source"] for account in enriched["accounts"]]
+    assert sources == ["operator-override", "omp_models_yml"]
+    pools = {(pool["source"], pool["pool_family"]): pool for pool in pool_entries(enriched, now=NOW)}
+    assert ("operator-override", "claude") in pools
+    assert ("omp_models_yml", "openai_api") in pools
+
+
+def test_claude_rate_gate_does_not_gate_openai_route(tmp_path):
+    models = _models(tmp_path, 'providers:\n  openai:\n    apiKey: "configured"\n')
+    (openai,) = _collect_all(tmp_path, models_yml_path=models)
+    claude = AccountUsage(
+        source="codexbar",
+        provider="claude",
+        account="Claude",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(
+                label="Claude Code weekly",
+                used_percent=100.0,
+                remaining_percent=0.0,
+                resets_at=NOW + timedelta(days=3),
+                window_minutes=10080,
+            )
+        ],
+        collected_at=NOW,
+    )
+    enriched = enrich_snapshot(Snapshot(collected_at=NOW, accounts=[claude, openai]).to_dict(), now=NOW)
+    (pool,) = [p for p in pool_entries(enriched, now=NOW) if p["provider"] == "omp"]
+    assert pool["pool_family"] == "openai_api"
+    assert pool["usable_now"] is True
+    assert "rate_gated_by" not in pool
+
+    model_snap = Snapshot(collected_at=NOW, accounts=[claude, openai])
+    assert apply_shared_rate_gate_to_snapshot(model_snap, now=NOW) is False
+    assert model_snap.accounts[1].rate_gated_by is None
+
+
 def test_grant_row_from_codexbar_outranks_key_pool_row(tmp_path):
     key_row = _collect(_db(tmp_path, [(11, "anthropic", "api_key", None)]))
     grant = AccountUsage(
@@ -187,3 +472,356 @@ def test_key_material_never_reaches_the_json(tmp_path):
     enriched = enrich_snapshot(snap, now=NOW)
     assert "REDACTED-FIXTURE" not in json.dumps(snap)
     assert "REDACTED-FIXTURE" not in json.dumps(enriched, default=str)
+
+
+@pytest.mark.parametrize("variable", ["OMP_PROFILE", "PI_PROFILE", "PI_CODING_AGENT_DIR"])
+def test_openai_default_models_path_relocates(tmp_path, monkeypatch, variable):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    agent = tmp_path / ".omp" / "profiles" / "work" / "agent"
+    agent.mkdir(parents=True)
+    monkeypatch.setenv(variable, str(agent) if variable == "PI_CODING_AGENT_DIR" else "work")
+    # A key in the old default dir must not count under the relocated agent dir.
+    default = tmp_path / ".omp" / "agent"
+    default.mkdir()
+    _models(default, "providers: {openai: {apiKey: configured}}")
+    kwargs = dict(
+        db_path=tmp_path / "missing.db",
+        omp_binary="/usr/bin/omp",
+    )
+    with pytest.raises(CollectorNotInstalled):
+        collect_omp_agent_db(**kwargs)
+    _models(agent, "providers: {openai: {apiKey: configured}}")
+    (row,) = collect_omp_agent_db(**kwargs)
+    assert row.raw["models_yml"] == str(agent / "models.yml")
+    assert _pool(row)["usable_now"] is True
+
+
+def test_openai_pool_key_and_matrix_scope(tmp_path):
+    from aiuse.analysis.pace import independent_pool_key
+    from aiuse.report import _build_matrix_rows
+
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    rows = _collect_all(tmp_path, db_path=_db(tmp_path, [(1, "anthropic", "api_key", None)]), models_yml_path=models)
+    assert [
+        independent_pool_key(r.windows[0].label, window_id=r.windows[0].window_id, provider=r.provider) for r in rows
+    ] == ["omp_claude", "omp_openai"]
+    matrix = _build_matrix_rows([], Snapshot(collected_at=NOW, accounts=rows), {})
+    assert {(r.account_full, r.scope) for r in matrix} == {
+        ("anthropic api key", "claude-api"),
+        ("openai api key", "openai-api"),
+    }
+
+
+@pytest.mark.parametrize("key", ["!false", "OPENAI_API_KEY", "!touch SENTINEL"])
+def test_collector_never_starts_a_process(tmp_path, monkeypatch, key):
+    import os
+    import subprocess
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("collector attempted process execution")
+
+    for name in ("Popen", "run", "call", "check_call", "check_output"):
+        monkeypatch.setattr(subprocess, name, forbidden)
+    monkeypatch.setattr(os, "system", forbidden)
+    sentinel = tmp_path / "executed"
+    key = key.replace("SENTINEL", str(sentinel))
+    models = _models(tmp_path, json.dumps({"providers": {"openai": {"apiKey": key}}}))
+    rows = _collect_all(tmp_path, models_yml_path=models, db_path=_db(tmp_path, [(1, "anthropic", "api_key", None)]))
+    assert _pool(_openai_row(rows))["usable_now"] is True
+    assert not sentinel.exists()
+    encoded = json.dumps(enrich_snapshot(Snapshot(collected_at=NOW, accounts=rows).to_dict(), now=NOW), default=str)
+    assert key not in encoded
+    assert str(sentinel) not in encoded
+
+
+@pytest.mark.parametrize(
+    "text,usable",
+    [
+        ("", True),
+        ("{}", True),
+        ("disabledProviders: []", True),
+        ("disabledProviders: [anthropic]", True),
+        ("disabledProviders: [openai]", False),
+        ("disabledProviders: null", False),
+        ("disabledProviders: openai", False),
+        ("disabledProviders: [[openai]]", False),
+        ("disabledProviders: [1]", False),
+        ("disabledProviders: [true]", False),
+        ("[]", False),
+        ("disabledProviders: [SECRET_MARKER", False),
+        ("#" * (256 * 1024 + 1), False),
+    ],
+)
+def test_agent_config_only_fails_closed(tmp_path, text, usable):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / "config.yml").write_text(text)
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is usable
+    assert bool(row.api_key_pool["reason"]) is not usable
+    assert "SECRET_MARKER" not in json.dumps(row.to_dict(), default=str)
+
+
+def test_unreadable_config_fails_closed_without_exposing_error(tmp_path, monkeypatch):
+    import aiuse.collectors.omp_agent_db as collector
+
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    original = collector.os.open
+
+    def read(path, *args, **kwargs):
+        if path == tmp_path / "config.yml":
+            raise PermissionError("SECRET_MARKER")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(collector.os, "open", read)
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is False
+    assert "SECRET_MARKER" not in json.dumps(row.to_dict(), default=str)
+
+
+def test_models_override_uses_sibling_config_only(tmp_path, monkeypatch):
+    agent = tmp_path / "agent"
+    agent.mkdir()
+    (agent / "config.yml").write_text("disabledProviders: [openai]")
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(agent))
+    monkeypatch.setenv("PI_CONFIG_FILES", str(agent / "config.yml"))
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    assert _pool(_openai_row(_collect_all(tmp_path, models_yml_path=models)))["usable_now"] is True
+    (tmp_path / "config.yml").write_text("disabledProviders: [openai]")
+    assert _pool(_openai_row(_collect_all(tmp_path, models_yml_path=models)))["usable_now"] is False
+
+
+@pytest.mark.parametrize("profile", ["default", "work"])
+def test_config_root_and_profile_share_agent_dir(tmp_path, monkeypatch, profile):
+    from aiuse.collectors.omp_agent_db import resolve_omp_models_yml
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.setenv("PI_CONFIG_DIR", ".other")
+    monkeypatch.setenv("OMP_PROFILE", profile)
+    agent = tmp_path / ".other"
+    agent = agent / "agent" if profile == "default" else agent / "profiles" / profile / "agent"
+    assert resolve_omp_models_yml() == agent / "models.yml"
+
+
+@pytest.mark.parametrize("override", ["relative/agent", "~/literal/agent"])
+def test_agent_override_matches_node_resolve_without_tilde_expansion(tmp_path, monkeypatch, override):
+    from aiuse.collectors.omp_agent_db import resolve_omp_models_yml
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.setenv("OMP_PROFILE", "")
+    monkeypatch.setenv("PI_PROFILE", "ignored")
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", override)
+    assert resolve_omp_models_yml() == tmp_path / override / "models.yml"
+
+
+def test_explicit_source_pin_suppresses_independent_openai_row(tmp_path):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    rows = _collect_all(tmp_path, models_yml_path=models)
+    grant = AccountUsage(source="codexbar", provider="omp", account="grant", collected_at=NOW)
+    selected, _ = _select_and_cross_check([grant, *rows], cswap_authoritative=False, usage_sources={"omp": "codexbar"})
+    assert [row.source for row in selected] == ["codexbar"]
+
+
+def test_invalid_utf8_config_fails_closed(tmp_path):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / "config.yml").write_bytes(b"\xff")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is False
+
+
+def test_named_profile_wins_over_agent_override(tmp_path, monkeypatch):
+    from aiuse.collectors.omp_agent_db import resolve_omp_models_yml
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.setenv("OMP_PROFILE", "work")
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", "/ignored")
+    assert resolve_omp_models_yml() == tmp_path / ".omp/profiles/work/agent/models.yml"
+
+
+@pytest.mark.parametrize("canonical", ["", "default"])
+@pytest.mark.parametrize("config_root", [".omp", ".other"])
+def test_explicit_default_discards_inherited_profile_directory(tmp_path, monkeypatch, canonical, config_root):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.setenv("PI_CONFIG_DIR", config_root)
+    monkeypatch.setenv("OMP_PROFILE", canonical)
+    monkeypatch.setenv("PI_PROFILE", "legacy")
+    inherited = tmp_path / config_root / "profiles/legacy/agent"
+    inherited.mkdir(parents=True)
+    _models(inherited, "providers: {openai: {apiKey: configured}}")
+    (inherited / "config.yml").write_text("disabledProviders: [openai]")
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(inherited))
+    default = tmp_path / config_root / "agent"
+    default.mkdir()
+    _models(default, "providers: {openai: {apiKey: configured}}")
+    (row,) = collect_omp_agent_db(db_path=tmp_path / "absent.db", omp_binary="/fixture/omp", now=NOW)
+    assert row.raw["models_yml"] == str(default / "models.yml")
+    assert _pool(row)["usable_now"] is True
+
+
+@pytest.mark.parametrize("canonical", ["", "default"])
+@pytest.mark.parametrize("legacy", ["legacy", "default", "bad/name", "CON", "trailing."])
+def test_explicit_default_preserves_genuinely_custom_directory(tmp_path, monkeypatch, canonical, legacy):
+    from aiuse.collectors.omp_agent_db import resolve_omp_models_yml
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.setenv("OMP_PROFILE", canonical)
+    monkeypatch.setenv("PI_PROFILE", legacy)
+    custom = tmp_path / "custom-agent" if legacy == "legacy" else tmp_path / ".omp/profiles" / legacy / "agent"
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(custom))
+    assert resolve_omp_models_yml() == custom / "models.yml"
+
+
+@pytest.mark.parametrize("name", ["models.yml", "config.yml"])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "anchor: &a {x: 1}\nreference: *a\n",
+        "entry: {<<: {x: 1}}\n",
+        "a0: &a0 {x: 1}\n"
+        + "".join(f"a{i}: &a{i} {{<<: [" + ", ".join([f"*a{i - 1}"] * 6) + "]}\n" for i in range(1, 8)),
+    ],
+)
+def test_below_cap_yaml_aliases_and_merges_fail_closed(tmp_path, name, payload):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    content = payload + ("providers: {openai: {apiKey: configured}}\n" if name == "models.yml" else "")
+    assert len(content.encode()) < 256 * 1024
+    (tmp_path / name).write_text(content)
+    if name == "models.yml":
+        with pytest.raises(CollectorNotInstalled):
+            _collect_all(tmp_path, models_yml_path=models)
+    else:
+        row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+        assert _pool(row)["usable_now"] is False
+        assert row.api_key_pool["reason"]
+
+
+def test_unused_yaml_anchor_and_literal_alias_text_are_supported(tmp_path):
+    models = _models(tmp_path, 'providers: {openai: {apiKey: &key "!*literal << text"}}')
+    (row,) = _collect_all(tmp_path, models_yml_path=models)
+    assert _pool(row)["usable_now"] is True
+    assert "!*literal << text" not in json.dumps(row.to_dict(), default=str)
+
+
+@pytest.mark.parametrize("name", ["models.yml", "config.yml"])
+@pytest.mark.parametrize("case", ["direct", "symlink", "swap"])
+def test_fifo_config_fails_closed_without_waiting_for_a_writer(tmp_path, name, case):
+    import os
+    import subprocess
+    import sys
+
+    fifo = tmp_path / "fifo"
+    os.mkfifo(fifo)
+    path = tmp_path / name
+    if case == "symlink":
+        path.symlink_to(fifo)
+    elif case == "swap":
+        path.write_text("initially a regular file")
+    else:
+        fifo.rename(path)
+    # A child deadline makes a regression fail instead of hanging the whole test run.
+    script = """
+import os
+import sys
+from pathlib import Path
+from aiuse.collectors.omp_agent_db import _read_mapping
+if sys.argv[2] == 'swap':
+    original_open = os.open
+    def swap_before_open(path, flags, *args, **kwargs):
+        if Path(path) == Path(sys.argv[1]):
+            Path(path).unlink()
+            os.mkfifo(path)
+        return original_open(path, flags, *args, **kwargs)
+    os.open = swap_before_open
+mapping, reason = _read_mapping(Path(sys.argv[1]), label='omp metadata')
+assert mapping is None and reason and 'regular file' in reason
+"""
+    subprocess.run(
+        [sys.executable, "-c", script, str(path), case], capture_output=True, text=True, check=True, timeout=3
+    )
+
+
+def test_symlink_to_regular_config_is_supported(tmp_path):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    target = tmp_path / "actual-config.yml"
+    target.write_text("disabledProviders: [openai]")
+    (tmp_path / "config.yml").symlink_to(target)
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is False
+    target.write_text("disabledProviders: []")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is True
+
+
+@pytest.mark.parametrize("disabled,usable", [("[openai]", False), ("[]", True)])
+def test_missing_primary_config_uses_legacy_yaml(tmp_path, disabled, usable):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / "config.yaml").write_text(f"disabledProviders: {disabled}")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is usable
+    if not usable:
+        assert "config.yaml" in row.api_key_pool["reason"]
+        assert not [
+            p
+            for p in available_pools(enrich_snapshot(Snapshot(collected_at=NOW, accounts=[row]).to_dict(), now=NOW))
+            if p["provider"] == "omp"
+        ]
+
+
+@pytest.mark.parametrize("primary", ["", "# empty document", "null", "{}", "disabledProviders: []"])
+def test_present_primary_config_even_empty_precedes_legacy_yaml(tmp_path, primary):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / "config.yml").write_text(primary)
+    (tmp_path / "config.yaml").write_text("disabledProviders: [openai]")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is True
+
+
+@pytest.mark.parametrize("name", ["config.yml", "config.yaml"])
+@pytest.mark.parametrize("invalid", ["[]", "disabledProviders: [SENTINEL", "a: &a {}\nb: *a", "#" * (256 * 1024 + 1)])
+def test_invalid_selected_config_never_falls_back_or_advertises(tmp_path, name, invalid):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    (tmp_path / name).write_text(invalid)
+    if name == "config.yml":
+        (tmp_path / "config.yaml").write_text("disabledProviders: []")
+    row = _openai_row(_collect_all(tmp_path, models_yml_path=models))
+    assert _pool(row)["usable_now"] is False
+    assert name in row.api_key_pool["reason"]
+    assert "SENTINEL" not in json.dumps(row.to_dict(), default=str)
+
+
+@pytest.mark.parametrize("profile_env", ["OMP_PROFILE", "PI_PROFILE"])
+@pytest.mark.parametrize(
+    "profile", ["Work", "../../escape", "Bad Name", "CON", "com0.txt", "trailing.", ".", "..", "a" * 65]
+)
+def test_invalid_active_profile_never_advertises_configured_directory(tmp_path, monkeypatch, profile_env, profile):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("AIUSE_OMP_MODELS_YML")
+    monkeypatch.delenv("OMP_PROFILE", raising=False)
+    monkeypatch.delenv("PI_PROFILE", raising=False)
+    monkeypatch.setenv(profile_env, profile)
+    agent = tmp_path / ".omp/profiles" / profile / "agent"
+    agent.mkdir(parents=True, exist_ok=True)
+    _models(agent, "providers: {openai: {apiKey: configured}}")
+    with pytest.raises(CollectorNotInstalled):
+        collect_omp_agent_db(db_path=tmp_path / "absent.db", omp_binary="/fixture/omp", now=NOW)
+
+
+@pytest.mark.parametrize("override", ["argument", "environment"])
+def test_invalid_active_profile_blocks_explicit_models_override_and_preserves_anthropic(
+    tmp_path, monkeypatch, override
+):
+    models = _models(tmp_path, "providers: {openai: {apiKey: configured}}")
+    db = _db(tmp_path, [(1, "anthropic", "api_key", None)])
+    monkeypatch.setenv("OMP_PROFILE", "INVALID_SENTINEL")
+    if override == "environment":
+        monkeypatch.setenv("AIUSE_OMP_MODELS_YML", str(models))
+    rows = collect_omp_agent_db(
+        db_path=db, models_yml_path=models if override == "argument" else None, omp_binary="/fixture/omp", now=NOW
+    )
+    assert [row.source for row in rows] == ["omp_agent_db"]
+    assert "INVALID_SENTINEL" not in json.dumps([row.to_dict() for row in rows], default=str)

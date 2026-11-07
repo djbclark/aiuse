@@ -69,15 +69,65 @@ row to provider `omp` (pool `claude-api` / `omp_claude`):
 2. `balance_usd` / `spent_usd` are dollars left and spent **from that grant**.
 3. `usage_credits` is intentionally unset (not the Usage-credits wallet).
 
-## Fallback: omp's own API-key pool
+## Fallback: omp's own API-key pools
 
-When CodexBar reads no grant (cookies expired, grant lapsed), the `omp_agent_db`
-collector reports the pool from `~/.omp/agent/agent.db` (read-only; only
-`provider`, `credential_type`, `disabled_cause` and the rate-limit block table are
-read, never the key). The row says whether omp can spend now (binary present,
-an enabled Anthropic `api_key`, at least one such key not blocked) and has no
-balance, so `headroom_percent` is null. A CodexBar grant row outranks it
-whatever its age; the rate-window gate below still applies to it.
+When CodexBar reads no Claude grant (cookies expired, grant lapsed), the
+`omp_agent_db` collector can still report local omp API-key routes by presence
+only.
+
+1. **Anthropic**: reads `~/.omp/agent/agent.db` read-only; only `provider`,
+   `credential_type`, `disabled_cause` and the rate-limit block table are read,
+   never the key. The row says whether omp can spend now (binary present, an
+   enabled Anthropic `api_key`, at least one such key not blocked) and has no
+   balance, so `headroom_percent` is null. A CodexBar grant row outranks this
+   fallback whatever its age; the rate-window gate below still applies to it.
+2. **OpenAI**: The OpenAI route advertises configuration only: a non-blank string
+   `providers.openai.apiKey` in `models.yml`, the `omp` binary on PATH, and no
+   `openai` entry in `disabledProviders` in the same directory's `config.yml`
+   (or `config.yaml` only when `config.yml` is absent).
+   Each YAML read is capped at 256 KiB and accept only regular files, including
+   symlinks to regular files. Special files fail closed without waiting for a
+   FIFO writer. YAML aliases and merge keys are unsupported and rejected before
+   expansion; unused anchors and quoted literal text remain supported.
+   A present empty `config.yml` takes precedence over `config.yaml`. Missing both config filenames means default
+   settings; unreadable, malformed, oversized or non-mapping config, or a
+   `disabledProviders` value other than a flat list of strings, makes the row
+   unusable with a sanitized reason. Missing, unreadable, malformed or oversized
+   models produce no OpenAI row. Missing omp also produces no OpenAI row.
+
+   The default agent directory is `~/.omp/agent`; `PI_CONFIG_DIR` changes `.omp`.
+   `OMP_PROFILE` (`PI_PROFILE` fallback only when unset) selects
+   `~/<config-root>/profiles/<name>/agent` for a non-default profile and takes
+   precedence over `PI_CODING_AGENT_DIR`. Otherwise `PI_CODING_AGENT_DIR` resolves
+   relative to cwd without expanding a literal `~`, like Node `path.resolve`.
+   An explicitly empty or `default` `OMP_PROFILE` discards an inherited agent
+   directory exactly equal to the valid legacy `PI_PROFILE` directory; a genuinely
+   custom override remains honored. Invalid active profile names produce no OpenAI row,
+   including when an explicit models override is set.
+   `AIUSE_OMP_MODELS_YML` overrides the models path; its parent also supplies
+   `config.yml` / `config.yaml`, keeping reads in one directory. Automatic `models.yaml`
+   fallback and `models.json` migration are unobserved; use `AIUSE_OMP_MODELS_YML`
+   to select an existing models file explicitly.
+   Directory behavior was checked against omp v18.18.0 `packages/utils/src/dirs.ts`
+   on 2026-11-07.
+
+   omp is never invoked and no credential is resolved, executed or emitted.
+   This is an advertisement signal, not enforcement or authentication: project
+   overlays, CLI/runtime flags, extensions and `PI_CONFIG_FILES` overlays are
+   not observed. Failing key commands and unset environment references still
+   count by presence; credit balance and inference success are unverified.
+   Custom `baseUrl` retains `openai_api` and may spend at a proxy.
+   Explicit `[usage_sources] omp` pins suppress the independent OpenAI row,
+   preserving source-pin behavior. Without a pin the OpenAI row coexists with
+   the selected Claude/Anthropic row. Its pool key remains `omp_openai` and its
+   matrix scope `openai-api`.
+
+   This is its own `omp` row (`source: "omp_models_yml"`,
+   `pool_family: "openai_api"`, internal key `omp_openai`, matrix scope
+   `openai-api`), independent of the Claude grant and Anthropic key row.
+   Claude shared-window gates and operator Claude-credit overrides do not
+   change it. Headroom stays unknown; models hint is `omp TUI - OpenAI API key
+(platform credits): openai/gpt-* models`.
 
 ## Rate-window gate, cache, disabling
 

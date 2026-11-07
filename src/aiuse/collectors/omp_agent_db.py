@@ -1,31 +1,61 @@
-"""omp's Anthropic API-key pool, read from omp's own credential database.
+"""omp API-key pools, read from omp's local credential metadata.
 
-omp (oh-my-pi) keeps its logins in ``~/.omp/agent/agent.db``. An enabled
+omp (oh-my-pi) keeps Anthropic logins in ``~/.omp/agent/agent.db``. An enabled
 ``anthropic`` credential of type ``api_key`` spends Console API credits, a pool
 separate from the Claude subscription windows. The database holds no balance,
 so this row says only whether the pool is *usable now* (binary present, an
 enabled key, no active rate-limit block) and leaves headroom unknown.
 
-The ``data`` column holds the key itself. It is never selected: the queries
-name only ``provider``, ``credential_type``, ``disabled_cause`` and the block
-table's timestamps.
+omp also reads OpenAI API-key configuration from ``~/.omp/agent/models.yml``.
+Only presence of a non-blank ``providers.openai.apiKey`` string and the sibling
+``config.yml`` (``config.yaml`` only if absent) disabledProviders are inspected; no omp process is started and
+the value is never resolved, executed, logged or returned. This advertises
+configuration, not authentication; project and runtime overlays are unobserved.
+
+The Anthropic database ``data`` column holds the key itself. It is never
+selected: the queries name only ``provider``, ``credential_type``,
+``disabled_cause`` and the block table's timestamps.
 """
 
 from __future__ import annotations
 
+import os
+import re
 import sqlite3
+import stat
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+
+import yaml
 
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, utcnow
 from aiuse.omp_rate_events import resolve_omp_agent_db
 
 from .base import CollectorNotInstalled, which
 
-WINDOW_LABEL = "api key"
-WINDOW_ID = "omp-api-key"
-ACCOUNT_LABEL = "anthropic api key"
+ANTHROPIC_WINDOW_LABEL = "api key"
+ANTHROPIC_WINDOW_ID = "omp-api-key"
+ANTHROPIC_ACCOUNT_LABEL = "anthropic api key"
+OPENAI_SOURCE = "omp_models_yml"
+OPENAI_WINDOW_LABEL = "OpenAI api key"
+OPENAI_WINDOW_ID = "omp-openai-api-key"
+OPENAI_ACCOUNT_LABEL = "openai api key"
+_CONFIG_READ_LIMIT_BYTES = 256 * 1024
+
+
+class _MetadataLoader(yaml.SafeLoader):
+    """Safe metadata parsing without alias graphs or merge-key expansion."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("YAML aliases are not supported in metadata")
+        return super().compose_node(parent, index)
+
+    def flatten_mapping(self, node):
+        if any(key.tag == "tag:yaml.org,2002:merge" for key, _ in node.value):
+            raise yaml.YAMLError("YAML merge keys are not supported in metadata")
+        return super().flatten_mapping(node)
 
 
 def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
@@ -48,20 +78,141 @@ def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
     return len(rows), unblocked, min(blocked_ends) if blocked_ends else None
 
 
+def _valid_omp_profile(profile: str) -> bool:
+    return profile in ("", "default") or (
+        re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", profile) is not None
+        and not profile.endswith(".")
+        and re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?", profile, re.IGNORECASE) is None
+    )
+
+
+def resolve_omp_models_yml(models_yml_path: str | Path | None = None) -> Path:
+    profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "default")).strip()
+    if not _valid_omp_profile(profile):
+        raise ValueError("Invalid omp profile")
+    if models_yml_path is not None:
+        return Path(models_yml_path)
+    override = os.environ.get("AIUSE_OMP_MODELS_YML")
+    if override:
+        return Path(override)
+    return _omp_agent_dir() / "models.yml"
+
+
+def _omp_agent_dir() -> Path:
+    profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "default")).strip()
+    root = Path(os.path.normpath(str(Path.home()) + "/" + (os.environ.get("PI_CONFIG_DIR") or ".omp")))
+    if profile and profile != "default":
+        return root / "profiles" / profile / "agent"
+    override = os.environ.get("PI_CODING_AGENT_DIR")
+    legacy = os.environ.get("PI_PROFILE", "").strip()
+    # omp discards a parent's profile-derived override when OMP_PROFILE explicitly
+    # chooses default. Invalid legacy profiles do not supply a derived directory.
+    legacy_named = legacy not in ("", "default") and _valid_omp_profile(legacy)
+    if legacy_named and override == str(root / "profiles" / legacy / "agent"):
+        override = None
+    # Node path.resolve resolves against cwd without expanding a literal '~'.
+    return Path(os.path.abspath(override)) if override else root / "agent"
+
+
+def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
+    try:
+        # Open without waiting on a FIFO, then validate the descriptor to avoid a
+        # pre-open is_file()/open() swap race. Regular-file symlinks remain valid.
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return None, f"{label} is not a regular file"
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                raw = stream.read(_CONFIG_READ_LIMIT_BYTES + 1)
+        finally:
+            os.close(fd)
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, f"{label} unreadable: {type(exc).__name__}"
+    if len(raw) > _CONFIG_READ_LIMIT_BYTES:
+        return None, f"{label} exceeds 256 KiB read cap"
+    try:
+        text = raw.decode("utf-8")
+        loader = _MetadataLoader(text)
+        try:
+            loaded = loader.get_single_data()
+        finally:
+            loader.dispose()
+    except (UnicodeError, yaml.YAMLError, RecursionError, ValueError) as exc:
+        return None, f"{label} malformed: {type(exc).__name__}"
+    if loaded is None:
+        return {}, None
+    if not isinstance(loaded, dict):
+        return None, f"{label} root is not a mapping"
+    return loaded, None
+
+
+def _openai_config_reason(path: Path) -> str | None:
+    """Inspect agent config.yml, then config.yaml only if absent; never resolve credentials."""
+    label = "omp config.yml"
+    loaded, reason = _read_mapping(path, label=label)
+    if loaded is None and reason is None:
+        label = "omp config.yaml"
+        loaded, reason = _read_mapping(path.with_suffix(".yaml"), label=label)
+    if reason:
+        return reason
+    if loaded is None:  # Neither filename exists: default to no disabled providers.
+        return None
+    disabled = loaded.get("disabledProviders", [])
+    if not isinstance(disabled, list) or any(not isinstance(item, str) for item in disabled):
+        return f"{label} disabledProviders is not a flat list of strings"
+    return f"openai disabled in {label}" if "openai" in disabled else None
+
+
+def _has_openai_api_key(path: Path) -> bool:
+    loaded, _ = _read_mapping(path, label="omp models.yml")
+    if loaded is None:
+        return False
+    providers = loaded.get("providers")
+    if not isinstance(providers, dict):
+        return False
+    openai = providers.get("openai")
+    if not isinstance(openai, dict):
+        return False
+    api_key = openai.get("apiKey")
+    return isinstance(api_key, str) and bool(api_key.strip())
+
+
 def collect_omp_agent_db(
     *,
     db_path: str | Path | None = None,
+    models_yml_path: str | Path | None = None,
     now: datetime | None = None,
     omp_binary: str | None = None,
 ) -> list[AccountUsage]:
-    """One ``omp`` row for the Anthropic API-key pool; nothing when omp has no database."""
-    path = resolve_omp_agent_db(db_path)
-    if not path.is_file():
-        raise CollectorNotInstalled("omp has no agent database")
+    """One ``omp`` row per configured API-key route; nothing when omp has no local route."""
     moment = now or utcnow()
-    now_ms = int(moment.timestamp() * 1000)
     binary = omp_binary if omp_binary is not None else which("omp")
+    rows: list[AccountUsage] = []
 
+    path = resolve_omp_agent_db(db_path)
+    if path.is_file():
+        rows.append(_anthropic_row(path, now=moment, omp_binary=binary))
+
+    try:
+        models_path: Path | None = resolve_omp_models_yml(models_yml_path)
+    except ValueError:  # omp rejects this active profile; never inspect its derived/override path.
+        models_path = None
+    if binary and models_path is not None and _has_openai_api_key(models_path):
+        rows.append(
+            _openai_row(
+                models_path, now=moment, disabled_reason=_openai_config_reason(models_path.parent / "config.yml")
+            )
+        )
+
+    if not rows:
+        raise CollectorNotInstalled("omp has no local API-key route")
+    return rows
+
+
+def _anthropic_row(path: Path, *, now: datetime, omp_binary: str | None) -> AccountUsage:
+    now_ms = int(now.timestamp() * 1000)
     available_at: datetime | None = None
     try:
         enabled, unblocked, first_block_end = _inspect(path, now_ms)
@@ -77,34 +228,72 @@ def collect_omp_agent_db(
             reason = "every enabled Anthropic api_key credential is rate-limit blocked"
         else:
             reason = ""
-    if not reason and not binary:
+    if not reason and not omp_binary:
         reason = "omp binary not on PATH"
 
     usable = not reason
     window = QuotaWindow(
-        label=WINDOW_LABEL,
-        window_id=WINDOW_ID,
+        label=ANTHROPIC_WINDOW_LABEL,
+        window_id=ANTHROPIC_WINDOW_ID,
         reset_description="Anthropic API credits; no balance known (omp's database records none)",
     )
-    return [
-        AccountUsage(
-            source="omp_agent_db",
-            provider="omp",
-            account=ACCOUNT_LABEL,
-            billing_kind=BillingKind.PAYG_API,
-            windows=[window],
-            api_key_pool={
-                "usable": usable,
-                "available_at": available_at.isoformat() if available_at is not None else None,
-                "reason": reason or None,
-                "enabled_credentials": enabled,
-            },
-            notes=[
-                "omp Anthropic api_key pool read from ~/.omp/agent/agent.db (credential metadata only); "
-                "headroom is unknown: omp records no balance."
-            ]
-            + ([f"Not usable: {reason}."] if reason else []),
-            raw={"db": str(path)},
-            collected_at=moment,
-        )
-    ]
+    return AccountUsage(
+        source="omp_agent_db",
+        provider="omp",
+        account=ANTHROPIC_ACCOUNT_LABEL,
+        billing_kind=BillingKind.PAYG_API,
+        windows=[window],
+        api_key_pool={
+            "usable": usable,
+            "available_at": available_at.isoformat() if available_at is not None else None,
+            "reason": reason or None,
+            "enabled_credentials": enabled,
+        },
+        notes=[
+            "omp Anthropic api_key pool read from ~/.omp/agent/agent.db (credential metadata only); "
+            "headroom is unknown: omp records no balance."
+        ]
+        + ([f"Not usable: {reason}."] if reason else []),
+        raw={"db": str(path)},
+        collected_at=now,
+    )
+
+
+def _openai_row(path: Path, *, now: datetime, disabled_reason: str | None = None) -> AccountUsage:
+    usable = disabled_reason is None
+    window = QuotaWindow(
+        label=OPENAI_WINDOW_LABEL,
+        window_id=OPENAI_WINDOW_ID,
+        reset_description="OpenAI API credits configured for omp; balance unknown (omp models.yml records no spend)",
+    )
+    return AccountUsage(
+        source=OPENAI_SOURCE,
+        provider="omp",
+        account=OPENAI_ACCOUNT_LABEL,
+        billing_kind=BillingKind.PAYG_API,
+        windows=[window],
+        api_key_pool={
+            "usable": usable,
+            "available_at": None,
+            "reason": disabled_reason,
+            "enabled_credentials": 1,
+            "provider": "openai",
+            "credential_source": "models_yml",
+        },
+        notes=[
+            "omp OpenAI advertisement: non-blank providers.openai.apiKey in models.yml and "
+            "disabledProviders in the same directory's config.yml (config.yaml only if absent); "
+            "a present empty config.yml takes precedence. Invalid active profiles suppress this row. "
+            "Automatic models.yaml fallback and models.json migration are not observed. omp is never invoked, "
+            "the apiKey value is not resolved, executed or emitted, and headroom is unknown. "
+            "Only regular files (including symlink targets) are read, capped at 256 KiB; "
+            "YAML aliases and merge keys are unsupported and fail closed. "
+            "Project overlays, CLI/runtime flags and PI_CONFIG_FILES overlays are not observed. "
+            "Configured and not disabled does not mean authenticated: failing key commands, "
+            "unset environment references and insufficient credits are not detected. "
+            "Explicit omp source pins suppress this independent row."
+        ]
+        + ([f"Not usable: {disabled_reason}."] if disabled_reason else []),
+        raw={"models_yml": str(path), "openai_api_key_configured": True},
+        collected_at=now,
+    )
