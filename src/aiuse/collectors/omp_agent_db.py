@@ -7,8 +7,10 @@ so this row says only whether the pool is *usable now* (binary present, an
 enabled key, no active rate-limit block) and leaves headroom unknown.
 
 omp also reads OpenAI API-key configuration from ``~/.omp/agent/models.yml``.
-Only the presence of a non-empty ``providers.openai.apiKey`` string is reported:
-the value is never executed, selected from storage, logged or returned.
+Only presence of a non-blank ``providers.openai.apiKey`` string and the sibling
+``config.yml`` disabledProviders are inspected; no omp process is started and
+the value is never resolved, executed, logged or returned. This advertises
+configuration, not authentication; project and runtime overlays are unobserved.
 
 The Anthropic database ``data`` column holds the key itself. It is never
 selected: the queries name only ``provider``, ``credential_type``,
@@ -17,13 +19,8 @@ selected: the queries name only ``provider``, ``credential_type``,
 
 from __future__ import annotations
 
-import json
 import os
-import selectors
 import sqlite3
-import subprocess
-import time
-from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,8 +40,6 @@ OPENAI_WINDOW_LABEL = "OpenAI api key"
 OPENAI_WINDOW_ID = "omp-openai-api-key"
 OPENAI_ACCOUNT_LABEL = "openai api key"
 _CONFIG_READ_LIMIT_BYTES = 256 * 1024
-_CATALOG_LIMIT_BYTES = 8 * 1024 * 1024
-_CATALOG_TIMEOUT = 15
 
 
 def _inspect(path: Path, now_ms: int) -> tuple[int, int, int | None]:
@@ -78,9 +73,12 @@ def resolve_omp_models_yml(models_yml_path: str | Path | None = None) -> Path:
 
 def _omp_agent_dir() -> Path:
     profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "default")).strip()
+    root = Path(os.path.normpath(str(Path.home()) + "/" + (os.environ.get("PI_CONFIG_DIR") or ".omp")))
     if profile and profile != "default":
-        return Path.home() / ".omp" / "profiles" / profile / "agent"
-    return Path(os.path.expanduser(os.environ.get("PI_CODING_AGENT_DIR") or "~/.omp/agent"))
+        return root / "profiles" / profile / "agent"
+    override = os.environ.get("PI_CODING_AGENT_DIR")
+    # Node path.resolve resolves against cwd without expanding a literal '~'.
+    return Path(os.path.abspath(override)) if override else root / "agent"
 
 
 def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
@@ -95,8 +93,8 @@ def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
         return None, f"{label} exceeds 256 KiB read cap"
     try:
         text = raw.decode("utf-8")
-        loaded = json.loads(text) if path.suffix in {".json", ".jsonc"} else yaml.safe_load(text)
-    except (UnicodeError, json.JSONDecodeError, yaml.YAMLError, RecursionError, ValueError) as exc:
+        loaded = yaml.safe_load(text)
+    except (UnicodeError, yaml.YAMLError, RecursionError, ValueError) as exc:
         return None, f"{label} malformed: {type(exc).__name__}"
     if loaded is None:
         return {}, None
@@ -105,58 +103,17 @@ def _read_mapping(path: Path, *, label: str) -> tuple[dict | None, str | None]:
     return loaded, None
 
 
-def _run_catalog(binary: str) -> bytes:
-    """Bound runtime and bytes without loading extensions or resolving apiKey commands."""
-    deadline = time.monotonic() + _CATALOG_TIMEOUT
-    with subprocess.Popen(
-        [binary, "models", "--json", "--no-extensions"],
-        shell=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    ) as proc:
-        assert proc.stdout is not None
-        output = bytearray()
-        try:
-            with selectors.DefaultSelector() as selector:
-                selector.register(proc.stdout, selectors.EVENT_READ)
-                while True:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0 or not selector.select(remaining):
-                        raise subprocess.TimeoutExpired("omp models", _CATALOG_TIMEOUT)
-                    chunk = os.read(proc.stdout.fileno(), min(65536, _CATALOG_LIMIT_BYTES + 1 - len(output)))
-                    if not chunk:
-                        break
-                    output.extend(chunk)
-                    if len(output) > _CATALOG_LIMIT_BYTES:
-                        raise ValueError("catalog exceeds 8 MiB")
-            rc = proc.wait(timeout=max(0, deadline - time.monotonic()))
-            if rc:
-                raise subprocess.CalledProcessError(rc, "omp models")
-            return bytes(output)
-        finally:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
-
-
-def _openai_catalog_reason(binary: str, runner: Callable[[str], bytes]) -> str | None:
-    try:
-        raw = runner(binary)
-        if len(raw) > _CATALOG_LIMIT_BYTES:
-            return "omp catalog exceeds 8 MiB"
-        catalog = json.loads(raw)
-        models = catalog.get("models") if isinstance(catalog, dict) else None
-        if not isinstance(models, list) or any(not isinstance(model, dict) for model in models):
-            return "omp catalog invalid shape"
-        if any(model.get("provider") == "openai" for model in models):
-            return None
-        return "openai not selectable in omp catalog"
-    except subprocess.TimeoutExpired:
-        return "omp catalog timed out"
-    except subprocess.CalledProcessError:
-        return "omp catalog command failed"
-    except (OSError, ValueError, UnicodeError, RecursionError):
-        return "omp catalog unavailable or invalid"
+def _openai_config_reason(path: Path) -> str | None:
+    """Inspect only agent-level config.yml; never resolve settings or credentials."""
+    loaded, reason = _read_mapping(path, label="omp config.yml")
+    if reason:
+        return reason
+    if loaded is None:  # Missing config is the default (no disabled providers).
+        return None
+    disabled = loaded.get("disabledProviders", [])
+    if not isinstance(disabled, list) or any(not isinstance(item, str) for item in disabled):
+        return "omp config.yml disabledProviders is not a flat list of strings"
+    return "openai disabled in omp config.yml" if "openai" in disabled else None
 
 
 def _has_openai_api_key(path: Path) -> bool:
@@ -177,7 +134,6 @@ def collect_omp_agent_db(
     *,
     db_path: str | Path | None = None,
     models_yml_path: str | Path | None = None,
-    catalog_runner: Callable[[str], bytes] | None = None,
     now: datetime | None = None,
     omp_binary: str | None = None,
 ) -> list[AccountUsage]:
@@ -194,7 +150,7 @@ def collect_omp_agent_db(
     if binary and _has_openai_api_key(models_path):
         rows.append(
             _openai_row(
-                models_path, now=moment, disabled_reason=_openai_catalog_reason(binary, catalog_runner or _run_catalog)
+                models_path, now=moment, disabled_reason=_openai_config_reason(models_path.parent / "config.yml")
             )
         )
 
@@ -273,8 +229,13 @@ def _openai_row(path: Path, *, now: datetime, disabled_reason: str | None = None
             "credential_source": "models_yml",
         },
         notes=[
-            "omp OpenAI apiKey route configured in ~/.omp/agent/models.yml (presence only); "
-            "the apiKey value is not executed or emitted, and headroom is unknown."
+            "omp OpenAI advertisement: non-blank providers.openai.apiKey in models.yml and "
+            "disabledProviders in the same directory's config.yml only; omp is never invoked, "
+            "the apiKey value is not resolved, executed or emitted, and headroom is unknown. "
+            "Project overlays, CLI/runtime flags and PI_CONFIG_FILES overlays are not observed. "
+            "Configured and not disabled does not mean authenticated: failing key commands, "
+            "unset environment references and insufficient credits are not detected. "
+            "Explicit omp source pins suppress this independent row."
         ]
         + ([f"Not usable: {disabled_reason}."] if disabled_reason else []),
         raw={"models_yml": str(path), "openai_api_key_configured": True},

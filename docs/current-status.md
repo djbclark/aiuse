@@ -32,11 +32,13 @@ separate from Flash `gemini`, in `--available`, the matrix and exhaustion notes;
 `gemini-4-argon*` models map to it. Whether an Argon call also draws the Gemini
 5-hour window is unmeasured (kept in `gemini`). Schema 1.5 also adds omp's
 OpenAI API-key route: `source: "omp_models_yml"`, `pool_family: "openai_api"`,
-unknown headroom, usable when the profile/agent directory's `models.yml`
-contains a non-empty `providers.openai.apiKey`, `omp` is on PATH, and one bounded
-`omp models --json --no-extensions` call lists `openai` (2026-11-07).
-The oracle inherits aiuse's environment/cwd and fails closed; the apiKey
-command/value is never executed or emitted. Matrix scope: `openai-api`.
+unknown headroom, advertised as usable when `models.yml` has a non-blank
+`providers.openai.apiKey`, `omp` is on PATH, and the same agent directory's
+`config.yml` does not disable OpenAI (2026-11-07). Invalid config fails closed.
+No subprocess or credential resolution occurs. Project overlays, CLI/runtime
+flags and `PI_CONFIG_FILES` overlays are not observed; failing key commands
+are not detected. Explicit omp source pins suppress this row.
+Matrix scope: `openai-api`; pool key: `omp_openai`.
 See [`json-contract.md`](json-contract.md).
 The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line

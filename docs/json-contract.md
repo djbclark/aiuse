@@ -230,30 +230,36 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
   Anthropic `usable_now` is true when the `omp` binary exists, an enabled
   Anthropic `api_key` credential exists and at least one such key has no active
   rate-limit block; once every key is blocked `available_at` is the earliest
-  block end. The OpenAI route requires a non-empty `providers.openai.apiKey` string in
-  the agent directory's `models.yml` (`AIUSE_OMP_MODELS_YML` overrides the
-  path) and the `omp` binary on PATH. The default agent directory is
-  `~/.omp/agent`; `OMP_PROFILE` (`PI_PROFILE` fallback) selects
-  `~/.omp/profiles/<name>/agent` for a non-default profile, otherwise
-  `PI_CODING_AGENT_DIR` can relocate it. aiuse reads at most 256 KiB before
-  safe YAML parsing; missing, unreadable, malformed or oversized models mean
-  no OpenAI row. Symlinks are supported. The apiKey string counts by presence,
-  including exact-case environment-variable names whether unset or empty;
-  aiuse never executes or emits the value. A custom `baseUrl` retains the
-  `openai_api` provider route and may spend at a proxy.
+  block end. The OpenAI route advertises configuration only: a non-blank string
+  `providers.openai.apiKey` in `models.yml`, the `omp` binary on PATH, and no
+  `openai` entry in `disabledProviders` in the same directory's `config.yml`.
+  Both YAML reads are safe and capped at 256 KiB. Missing config means default
+  settings; unreadable, malformed, oversized or non-mapping config, or a
+  `disabledProviders` value other than a flat list of strings, makes the row
+  unusable with a sanitized reason. Missing, unreadable, malformed or oversized
+  models produce no OpenAI row. Missing omp also produces no OpenAI row.
 
-  Selectability is delegated to one `omp models --json --no-extensions` call
-  per collection with an OpenAI key present (typically about 2 seconds;
-  15-second timeout, stdout capped at 8 MiB, stderr discarded). Its JSON must
-  contain a `models` array with an entry whose `provider` is `openai`.
-  aiuse does not replicate omp settings merging. The subprocess inherits the
-  aiuse process environment and cwd, so omp resolves profiles, config overlays
-  and project scopes itself; extensions are not loaded. A missing binary
-  produces no OpenAI row. An omitted provider or any oracle failure (timeout,
-  nonzero exit, invalid JSON/shape, output too large or launch error) leaves
-  a configured row unusable with a short `api_key_pool.reason`, excluded from
-  `--available`. This does not validate the key or guarantee inference success;
-  another omp process's CLI/runtime or extension overrides may differ. A CodexBar Claude grant row still outranks the
+  The default agent directory is `~/.omp/agent`; `PI_CONFIG_DIR` changes `.omp`.
+  `OMP_PROFILE` (`PI_PROFILE` fallback only when unset) selects
+  `~/<config-root>/profiles/<name>/agent` for a non-default profile and takes
+  precedence over `PI_CODING_AGENT_DIR`. Otherwise `PI_CODING_AGENT_DIR` resolves
+  relative to cwd without expanding a literal `~`, like Node `path.resolve`.
+  `AIUSE_OMP_MODELS_YML` overrides the models path; its parent also supplies
+  `config.yml`, keeping both reads in one directory. Symlinks are supported.
+  Directory behavior was checked against omp v18.18.0 `packages/utils/src/dirs.ts`
+  on 2026-11-07.
+
+  omp is never invoked and no credential is resolved, executed or emitted.
+  This is an advertisement signal, not enforcement or authentication: project
+  overlays, CLI/runtime flags, extensions and `PI_CONFIG_FILES` overlays are
+  not observed. Failing key commands and unset environment references still
+  count by presence; credit balance and inference success are unverified.
+  Custom `baseUrl` retains `openai_api` and may spend at a proxy.
+  Explicit `[usage_sources] omp` pins suppress the independent OpenAI row,
+  preserving source-pin behavior. Without a pin the OpenAI row coexists with
+  the selected Claude/Anthropic row. Its pool key remains `omp_openai` and its
+  matrix scope `openai-api`.
+  A CodexBar Claude grant row still outranks the
   Anthropic key fallback whatever its age; operator overrides and Admin API
   readings replace only Claude/Anthropic credit rows and drop their
   `api_key_pool`; the OpenAI route remains a separate row. These presence-only
