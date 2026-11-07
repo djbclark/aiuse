@@ -99,6 +99,7 @@ SEMANTICS: dict[str, str] = {
     "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
     "superseded_override": "present on an omp account when a fresher CodexBar reading won over an operator override or Admin API reading: {source, observed_at, remaining_usd} of the figure it passed over",
     "reading_expired": "true on an omp account whose CodexBar reading is older than 24h and no override supersedes it: balance and percentages are dropped, so the pool is state unknown and not in --available",
+    "api_key_pool": "present on the omp account/pool when its row comes from omp's own credential database (source omp_agent_db), i.e. when CodexBar reads no Claude API grant: {usable, reason, enabled_credentials} (the pool entry omits available_at; read it at the top level). usable is true when the omp binary exists, an enabled Anthropic api_key credential exists and none of those keys has an active rate-limit block; usable_now equals it. The pool is Anthropic API credits (pool_family anthropic_api), independent of the Claude plan windows; omp records no balance, so headroom_percent is null (unknown, not 0) and the window state is unknown. available_at is the block's end while every key is blocked. No spend figure: omp's usage_cost_history is not read",
     "rate_gated_by": "present on an omp account/pool when every Claude account with observed shared-window data shows a multi-day (weekly/monthly) shared window exhausted with a future reset: omp spends through the same Claude API account, so its credits cannot be used until that window resets regardless of dollars left. Carries {provider, account, window_label, resets_at, evidence}; sets usable_now false and available_at to the gate reset. Durable since 2026-10-22: observed evidence (exhausted shared window, or an Anthropic 429 retry-after parsed from omp's logs) is latched in ~/.local/state/aiuse/rate-gates.json and keeps gating until its own reset passes — missing/stale Claude data and headroom blinks no longer ungate omp; window_label is 'shared Claude window (latched)' while a latch holds. See `aiuse gate status`. Short (5h) windows never gate omp — the observed 429 pins the block to the weekly reset (2026-10-21)",
     "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more is left than a bar that is 50% at 10+ days out and slides toward 0 at expiry: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
     "requires_operator_approval": "true on an account, --available routing entry or alert the operator gated: an agent must not spend it, route work to it, or recommend burning it without first asking the operator. aiuse only reports it; the agent toolchain's dispatchers refuse such a slice unless the operator approved that run. No account is gated since 2026-10-19 (omp's grant, the Claude API credits, became a normal tier). Omitted when false",
@@ -138,6 +139,11 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("other", "third_party", "Cursor third-party models (legacy label)"),
     ],
     "omp": [
+        (
+            "api key",
+            "anthropic_api",
+            "omp TUI — Anthropic API key (Console credits): anthropic/claude-* models; independent of the Claude plan windows; balance unknown",
+        ),
         (
             "credits",
             "claude",
@@ -330,6 +336,10 @@ def enrich_account(
     else:
         # no windows at all, or every window unknown: no evidence of headroom
         usable_now = False
+    key_pool = account.get("api_key_pool")
+    if isinstance(key_pool, dict):
+        # A pool with no measurable balance: the collector's verdict, not window percentages.
+        usable_now = bool(key_pool.get("usable"))
     account["usable_now"] = usable_now
 
     numbered = [w for w in applicable if w.get("headroom_percent") is not None]
@@ -345,7 +355,9 @@ def enrich_account(
         parse_dt(w.get("resets_at")) for w in applicable if w.get("state") == "exhausted" and w.get("resets_at")
     ]
     reset_times = [t for t in reset_times if t is not None]
-    if reset_times:
+    if isinstance(key_pool, dict):
+        account["available_at"] = key_pool.get("available_at")
+    elif reset_times:
         account["available_at"] = min(reset_times).isoformat()
     else:
         account["available_at"] = None
@@ -866,8 +878,11 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 not _independent_families(provider, by_family) and bool(account.get("measurement_frozen"))
             )
             gate = account.get("rate_gated_by")
+            key_pool = account.get("api_key_pool")
             if any(s == "exhausted" for s in states) or frozen or gate:
                 usable: bool | None = False
+            elif isinstance(key_pool, dict):
+                usable = bool(key_pool.get("usable"))
             elif family_has_data and any(str(w.get("state") or "unknown") != "unknown" for w in shared):
                 usable = True
             else:
@@ -881,6 +896,8 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 pool_available: datetime | None = gate_reset
             elif resets:
                 pool_available = min(resets)
+            elif isinstance(key_pool, dict) and not key_pool.get("usable"):
+                pool_available = parse_dt(key_pool.get("available_at"))
             else:
                 pool_available = None
 
@@ -918,6 +935,11 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     ),
                     "available_at": pool_available.isoformat() if pool_available is not None else None,
                     **({"rate_gated_by": dict(gate)} if gate else {}),
+                    **(
+                        {"api_key_pool": {k: v for k, v in key_pool.items() if k != "available_at"}}
+                        if isinstance(key_pool, dict)
+                        else {}
+                    ),
                     "models_hint": hints.get(family),
                     **(
                         {"spent_usd": account["spent_usd"], "balance_usd": account.get("balance_usd")}

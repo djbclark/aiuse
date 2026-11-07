@@ -298,6 +298,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "muse": {"enabled": True},
         "qwencloud": {"enabled": True},
         "bailian": {"enabled": True},
+        # omp's Anthropic API-key pool from ~/.omp/agent/agent.db (read-only, no secrets).
+        "omp_agent_db": {"enabled": True},
         # SIPB LLMs (MIT): Opt-in only; unlimited but very slow.
         "sipb": {"enabled": False, "ignore_expired_certificates": False},
         # Passive ACP context fill from acp-run JSONL. Not a plan-quota source.
@@ -390,6 +392,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "muse",
         "qwencloud",
         "bailian",
+        "omp_agent_db",
         "openrouter",
         "deepseek",
         "clinepass",
@@ -411,6 +414,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "muse",
         "qwencloud",
         "bailian",
+        "omp_agent_db",
         "openrouter",
         "sipb",
         "deepseek",
@@ -467,6 +471,7 @@ SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
     "clinepass": "clinepass",
     "openrouter": "openrouter",
     "deepseek": "deepseek",
+    "omp_agent_db": "omp",
 }
 
 

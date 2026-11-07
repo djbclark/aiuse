@@ -684,6 +684,11 @@ class AccountUsage:
     # {provider, account, window_label, resets_at, evidence}. Cleared at reset.
     bedrock_billing: dict[str, Any] | None = None
     rate_gated_by: dict[str, Any] | None = None
+    # Usability of a pool that has no measurable balance (omp's Anthropic API
+    # key, collectors/omp_agent_db.py): {usable, available_at, reason,
+    # enabled_credentials}. Overrides the window-derived usable_now/available_at
+    # because its window carries no percentage. Emitted in --json as ``api_key_pool``.
+    api_key_pool: dict[str, Any] | None = None
     error: str | None = None
     notes: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
@@ -737,6 +742,8 @@ class AccountUsage:
             d["bedrock_billing"] = dict(self.bedrock_billing)
         if self.rate_gated_by is not None:
             d["rate_gated_by"] = dict(self.rate_gated_by)
+        if self.api_key_pool is not None:
+            d["api_key_pool"] = dict(self.api_key_pool)
         if self.context_usage is not None:
             d["context_usage"] = self.context_usage.to_dict()
         return d

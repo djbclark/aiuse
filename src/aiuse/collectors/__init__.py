@@ -9,6 +9,7 @@ from .cswap import collect_cswap
 from .deepseek import collect_deepseek
 from .hermes import collect_hermes
 from .muse import collect_muse
+from .omp_agent_db import collect_omp_agent_db
 from .opencode_go import collect_opencode_go
 from .opencode_zen import collect_opencode_zen
 from .openrouter import collect_openrouter
@@ -30,6 +31,7 @@ __all__ = [
     "collect_openusage_ai",
     "collect_openusage_sh",
     "collect_paseo",
+    "collect_omp_agent_db",
     "collect_opencode_go",
     "collect_opencode_zen",
     "collect_deepseek",

@@ -212,6 +212,22 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-11-07, schema stays 1.5)
+
+- New collector `omp_agent_db` reads omp's credential database
+  (`~/.omp/agent/agent.db`, read-only, credential metadata only, never the key)
+  and emits the `omp` row when CodexBar reads no Claude API grant. Its pool has
+  `pool_family: "anthropic_api"`, `models_hint` naming the `anthropic/claude-*`
+  models, `headroom_percent: null` (omp records no balance: unknown, not 0) and
+  a new `api_key_pool` object `{usable, reason, enabled_credentials}` on the
+  account and the pool entry. `usable_now` is true when the `omp` binary exists,
+  an enabled Anthropic `api_key` credential exists and no such key is rate-limit
+  blocked; while every key is blocked `available_at` is the block's end. Only
+  OAuth logins, no database content or an unreadable database give
+  `usable_now: false` with the reason in `api_key_pool.reason`; no database at
+  all means no row (omp not installed). A CodexBar grant row, when present,
+  outranks this one.
+
 #### Additive (2026-11-03, schema stays 1.5)
 
 - New provider `pi` (display `pi`, `cli_binary` `pi`): OpenAI API accounting from
@@ -775,7 +791,9 @@ the Claude Platform API credit that ships with Max. The omp TUI spends it
 through the Claude API. It is separate from the Claude 5h/weekly plan. Max
 20x deposits $200 and Max 5x deposits $100 each billing cycle; unused dollars
 expire at that reset. Source: CodexBar's Claude row
-([`omp-cloud-credits.md`](omp-cloud-credits.md)). Display counts spent dollars
+([`omp-cloud-credits.md`](omp-cloud-credits.md)); with no readable grant the
+row comes from omp's own credential database instead (`api_key_pool`, no
+balance; see the 2026-11-07 changelog entry). Display counts spent dollars
 up (`↑ $`) and the remainder down (`↓ $… plan`). It is a plan grant, not
 pay-as-you-go.
 
