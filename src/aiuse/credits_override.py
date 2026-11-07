@@ -66,6 +66,7 @@ CREDIT_PROVIDERS = ("omp", "pi")
 CREDIT_LABELS = {"omp": "Claude API credits", "pi": "OpenAI API credits"}
 CREDIT_WINDOW_IDS = {"omp": "claude-cloud-credits", "pi": "openai-api-credits"}
 OVERRIDE_SOURCE = "operator-override"
+OMP_OPENAI_SOURCE = "omp_models_yml"
 CODEXBAR_MAX_AGE = timedelta(hours=24)
 OVERRIDE_MAX_AGE = timedelta(days=7)
 _CLOCK_SKEW = timedelta(minutes=5)
@@ -76,6 +77,10 @@ _KEYS = ("remaining_usd", "total_usd", "expires_at", "note", "observed_at")
 
 MAX_DOLLARS = 1e9
 MAX_FILE_BYTES = 64 * 1024
+
+
+def _is_omp_openai_route(account: Mapping[str, Any], provider: str) -> bool:
+    return provider == "omp" and account.get("source") == OMP_OPENAI_SOURCE
 
 
 def _number(value: Any) -> float | None:
@@ -582,7 +587,10 @@ def _apply_credit_override_for_provider(
             or (provider == OVERRIDE_PROVIDER and override.get("source") == OVERRIDE_SOURCE)
         )
         and isinstance(accounts, list)
-        and not any(isinstance(a, dict) and a.get("provider") == provider for a in accounts)
+        and not any(
+            isinstance(a, dict) and a.get("provider") == provider and not _is_omp_openai_route(a, provider)
+            for a in accounts
+        )
     ):
         # An Admin API reading is collector output, so it may make the row when the snapshot
         # has none. Operator ``set-credits`` may do the same for omp when collectors omitted it
@@ -601,6 +609,8 @@ def _apply_credit_override_for_provider(
         )
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != provider:
+            continue
+        if _is_omp_openai_route(account, provider):
             continue
         if (
             want_org

@@ -64,16 +64,17 @@ PATH-aggregator selection priority, or credential stores. Share **meaning**, not
 
 ### Keep private (product / architecture)
 
-| Concept                             | Why not a shared project                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Five-source collector orchestration | `aiuse`-specific trust model                                                                   |
-| cswap authority / source priority   | Policy choice, not universal truth                                                             |
-| LaunchAgent + snapshot learning     | Operator workflow                                                                              |
-| Priority-ladder **pretty** UX       | Presentation                                                                                   |
-| MCP / `suggest` CLI / agent API     | Product surface (shipped: suggest + `serve`; MCP stdio optional)                               |
-| Local runtime probes (Ollama, …)    | Host-specific; optional INFO note only ([#7](https://github.com/djbclark/aiuse/issues/7) done) |
-| Ambient menubar companion stack     | Compose with CodexBar/OpenUsage ([#4](https://github.com/djbclark/aiuse/issues/4) done)        |
-| Deep history BI dashboard           | onWatch-class product (aiuse History is operational, not full BI)                              |
+| Concept                             | Why not a shared project                                                                                                                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Five-source collector orchestration | `aiuse`-specific trust model                                                                                                                                     |
+| cswap authority / source priority   | Policy choice, not universal truth                                                                                                                               |
+| LaunchAgent + snapshot learning     | Operator workflow                                                                                                                                                |
+| Priority-ladder **pretty** UX       | Presentation                                                                                                                                                     |
+| MCP / `suggest` CLI / agent API     | Product surface (shipped: suggest + `serve`; MCP stdio optional)                                                                                                 |
+| Local runtime probes (Ollama, …)    | Host-specific; optional INFO note only ([#7](https://github.com/djbclark/aiuse/issues/7) done)                                                                   |
+| Local tool config presence routes   | Host-specific; e.g. aiuse's `omp_models_yml` OpenAI route only reports that omp would select `openai` from local `models.yml` plus effective `disabledProviders` |
+| Ambient menubar companion stack     | Compose with CodexBar/OpenUsage ([#4](https://github.com/djbclark/aiuse/issues/4) done)                                                                          |
+| Deep history BI dashboard           | onWatch-class product (aiuse History is operational, not full BI)                                                                                                |
 
 ### Ideas to **push outward** to Layer 1 tools (issues/docs, not code merge)
 

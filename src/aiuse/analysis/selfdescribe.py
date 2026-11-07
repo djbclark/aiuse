@@ -55,6 +55,8 @@ TIGHT_BELOW = 15.0  # remaining < 15 -> tight
 
 # age threshold for the read-time `fresh` flag (config: analysis.fresh_threshold_seconds)
 FRESH_THRESHOLD_SECONDS_DEFAULT = 1500.0  # 25 min
+OMP_OPENAI_SOURCE = "omp_models_yml"
+
 
 SEMANTICS: dict[str, str] = {
     "pace_percent": "round((pace_ratio - 1) * 100); positive ahead, negative behind even spend; null when exhausted or unclocked",
@@ -99,8 +101,8 @@ SEMANTICS: dict[str, str] = {
     "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
     "superseded_override": "present on an omp account when a fresher CodexBar reading won over an operator override or Admin API reading: {source, observed_at, remaining_usd} of the figure it passed over",
     "reading_expired": "true on an omp account whose CodexBar reading is older than 24h and no override supersedes it: balance and percentages are dropped, so the pool is state unknown and not in --available",
-    "api_key_pool": "present on the omp account/pool when its row comes from omp's own credential database (source omp_agent_db), i.e. when CodexBar reads no Claude API grant (dropped when an operator override or Admin API reading replaces the row): {usable, reason, enabled_credentials} (the pool entry omits available_at; read it at the top level). usable is true when the omp binary exists, an enabled Anthropic api_key credential exists and at least one such key has no active rate-limit block; usable_now equals it unless the shared-Claude-window rate gate (rate_gated_by) forces it false. The pool is Anthropic API credits (pool_family anthropic_api), spent apart from the Claude plan windows but still subject to that rate gate; omp records no balance, so headroom_percent is null (unknown, not 0) and the window state is unknown. available_at is the earliest block end once every key is blocked. No spend figure: omp's usage_cost_history is not read",
-    "rate_gated_by": "present on an omp account/pool when every Claude account with observed shared-window data shows a multi-day (weekly/monthly) shared window exhausted with a future reset: omp spends through the same Claude API account, so its credits cannot be used until that window resets regardless of dollars left. Carries {provider, account, window_label, resets_at, evidence}; sets usable_now false and available_at to the gate reset. Durable since 2026-10-22: observed evidence (exhausted shared window, or an Anthropic 429 retry-after parsed from omp's logs) is latched in ~/.local/state/aiuse/rate-gates.json and keeps gating until its own reset passes — missing/stale Claude data and headroom blinks no longer ungate omp; window_label is 'shared Claude window (latched)' while a latch holds. See `aiuse gate status`. Short (5h) windows never gate omp — the observed 429 pins the block to the weekly reset (2026-10-21)",
+    "api_key_pool": "present on omp API-key route accounts/pools from local credential metadata: source omp_agent_db for Anthropic API keys in agent.db, source omp_models_yml for the OpenAI apiKey route in models.yml. Shape is additive: {usable, reason, enabled_credentials} plus optional provider/credential_source; the pool entry omits available_at, so read it at the top level. Anthropic usable is true when the omp binary exists, an enabled Anthropic api_key credential exists and at least one such key has no active rate-limit block; the shared-Claude-window rate gate can force only that route false. OpenAI usable requires the omp binary, a non-empty providers.openai.apiKey string, and openai absent from effective disabledProviders in global/project config and PI_CONFIG_FILES overlays. Disabled or malformed/unreadable/oversized config gives usable false with reason; missing ordinary config and wrong-typed disabledProviders use the default empty list. Models/config reads cap at 256 KiB; invalid models mean no OpenAI row. Exact-case env-var references count by presence (omp falls back to the literal); custom baseUrl keeps the openai_api provider route. aiuse never executes or emits apiKey, and cannot observe another process's CLI/runtime overrides. The Claude rate gate does not apply to OpenAI. These pools record no balance, so headroom_percent is null (unknown, not 0) and the window state is unknown. Anthropic available_at is the earliest block end once every key is blocked. No spend figure: omp's usage_cost_history is not read",
+    "rate_gated_by": "present on omp Claude/Anthropic accounts/pools when every Claude account with observed shared-window data shows a multi-day (weekly/monthly) shared window exhausted with a future reset: those routes spend through the same Claude API account, so credits cannot be used until that window resets regardless of dollars left. It never applies to source omp_models_yml / pool_family openai_api. Carries {provider, account, window_label, resets_at, evidence}; sets usable_now false and available_at to the gate reset. Durable since 2026-10-22: observed evidence (exhausted shared window, or an Anthropic 429 retry-after parsed from omp's logs) is latched in ~/.local/state/aiuse/rate-gates.json and keeps gating until its own reset passes — missing/stale Claude data and headroom blinks no longer ungate omp; window_label is 'shared Claude window (latched)' while a latch holds. See `aiuse gate status`. Short (5h) windows never gate omp — the observed 429 pins the block to the weekly reset (2026-10-21)",
     "burn_before_reset": "on a pool entry whose expiring grant lapses within 21 days while more is left than a bar that is 50% at 10+ days out and slides toward 0 at expiry: {expires_at, days_left, remaining_percent, remaining_usd, suggestion}; spend it before it lapses. Omitted otherwise; remaining_percent semantics are unchanged",
     "requires_operator_approval": "true on an account, --available routing entry or alert the operator gated: an agent must not spend it, route work to it, or recommend burning it without first asking the operator. aiuse only reports it; the agent toolchain's dispatchers refuse such a slice unless the operator approved that run. No account is gated since 2026-10-19 (omp's grant, the Claude API credits, became a normal tier). Omitted when false",
     "credits_label": 'human label of a credits pool whose provider name is a tool name: omp carries "Claude API credits" (the Claude Max plan\'s monthly promotional API grant); pi carries "OpenAI API costs" (organization API spend, not a balance). Omitted when unset',
@@ -139,6 +141,11 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("other", "third_party", "Cursor third-party models (legacy label)"),
     ],
     "omp": [
+        (
+            "openai api key",
+            "openai_api",
+            "omp TUI - OpenAI API key (platform credits): openai/gpt-* models",
+        ),
         (
             "api key",
             "anthropic_api",
@@ -337,7 +344,7 @@ def enrich_account(
         # no windows at all, or every window unknown: no evidence of headroom
         usable_now = False
     key_pool = account.get("api_key_pool")
-    if isinstance(key_pool, dict) and account.get("source") == "omp_agent_db":
+    if isinstance(key_pool, dict) and account.get("source") in {"omp_agent_db", OMP_OPENAI_SOURCE}:
         # A pool with no measurable balance: the collector's verdict, not window percentages.
         usable_now = bool(key_pool.get("usable"))
     account["usable_now"] = usable_now
@@ -464,7 +471,8 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
         if isinstance(notes, list):
             account["notes"] = [n for n in notes if not str(n).startswith(_GATE_NOTE_PREFIX)]
     omp_accounts = [a for a in accounts if str(a.get("provider") or "") == "omp"]
-    if not omp_accounts:
+    gate_targets = [a for a in omp_accounts if a.get("source") != OMP_OPENAI_SOURCE]
+    if not gate_targets:
         return
     from aiuse.omp_rate_events import omp_has_active_api_key
 
@@ -541,7 +549,7 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
         return
     reset_iso = gate_reset.isoformat()
     until = format_clock(gate_reset, date=gate_reset - now > timedelta(hours=24))
-    for account in omp_accounts:
+    for account in gate_targets:
         account["rate_gated_by"] = {
             "provider": "claude",
             "account": gate_account or None,
@@ -549,13 +557,6 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
             "resets_at": reset_iso,
             "evidence": evidence_text,
         }
-        account["usable_now"] = False
-        account["available_at"] = reset_iso
-        account.setdefault("notes", []).insert(
-            0,
-            f"{_GATE_NOTE_PREFIX}: the shared Claude account window ({gate_label}) is exhausted until {until} — "
-            "omp spends through the same Claude API account, so credits cannot be used before it resets.",
-        )
         account["usable_now"] = False
         account["available_at"] = reset_iso
         account.setdefault("notes", []).insert(
@@ -577,12 +578,13 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
 
     now = now or utcnow()
     omp_rows = [a for a in snapshot.accounts if a.provider == "omp"]
+    gate_targets = [a for a in omp_rows if a.source != OMP_OPENAI_SOURCE]
     for account in snapshot.accounts:
         if account.rate_gated_by is not None:
             account.rate_gated_by = None
         if account.notes:
             account.notes = [n for n in account.notes if not str(n).startswith(_GATE_NOTE_PREFIX)]
-    if not omp_rows:
+    if not gate_targets:
         return False
     from aiuse.omp_rate_events import omp_has_active_api_key
 
@@ -661,7 +663,7 @@ def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | No
         return False
     reset_iso = gate_reset.isoformat()
     until = format_clock(gate_reset, date=gate_reset - now > timedelta(hours=24))
-    for account in omp_rows:
+    for account in gate_targets:
         account.rate_gated_by = {
             "provider": "claude",
             "account": gate_account or None,
@@ -951,7 +953,11 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                         if account.get("requires_operator_approval")
                         else {}
                     ),
-                    **({"source": account["source"]} if account.get("observed_at") else {}),
+                    **(
+                        {"source": account["source"]}
+                        if account.get("observed_at") or isinstance(key_pool, dict)
+                        else {}
+                    ),
                     **({"observed_at": account["observed_at"]} if account.get("observed_at") else {}),
                     **({"expires_at": grant_expiry.isoformat()} if grant_expiry is not None else {}),
                     **({"burn_before_reset": nudge} if nudge else {}),
