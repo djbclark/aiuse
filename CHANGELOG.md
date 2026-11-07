@@ -29,14 +29,18 @@ Releases before 3.9.0 are in the
   (`[collectors.omp_agent_db]`) now reads two local routes by presence only.
   It keeps the existing Anthropic API-key pool from `~/.omp/agent/agent.db`
   (credential metadata, never the key) and adds an OpenAI API-key route from
-  `~/.omp/agent/models.yml` when `providers.openai.apiKey` is a non-empty string
-  and the `omp` binary is on PATH. The OpenAI row uses source `omp_models_yml`,
-  `pool_family` `openai_api`, `headroom_percent: null`, `state: "unknown"` and
-  models hint `omp TUI - OpenAI API key (platform credits): openai/gpt-* models`;
-  aiuse never executes or emits the configured `apiKey`. A CodexBar grant row
-  still outranks the Anthropic key fallback, operator credit overrides replace
-  only Claude/Anthropic credit rows, and the Claude shared-window rate gate does
-  not apply to the OpenAI route. Schema stays 1.5
+  `~/.omp/agent/models.yml` when `providers.openai.apiKey` is a non-empty string,
+  the `omp` binary is on PATH, and omp's effective `disabledProviders` does not
+  disable `openai`. Disabled OpenAI and malformed/unreadable/oversized omp
+  config produce an unusable row with `api_key_pool.reason`, while missing config
+  and wrong-typed `disabledProviders` follow omp's default empty list. The OpenAI
+  row uses source `omp_models_yml`, `pool_family` `openai_api`,
+  `headroom_percent: null`, `state: "unknown"` and models hint `omp TUI - OpenAI
+API key (platform credits): openai/gpt-* models`; aiuse never executes or
+  emits the configured `apiKey`. A CodexBar grant row still outranks the
+  Anthropic key fallback, operator credit overrides replace only
+  Claude/Anthropic credit rows, and the Claude shared-window rate gate does not
+  apply to the OpenAI route. Schema stays 1.5
   ([`docs/json-contract.md`](docs/json-contract.md#changelog)).
 - **`--include LIST` / `--exclude LIST`**: per-run adjustment of the provider
   set without editing `config.toml`. Lists are comma-separated and repeatable;
