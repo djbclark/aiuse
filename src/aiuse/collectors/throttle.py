@@ -34,10 +34,14 @@ from .base import CollectorError
 # (a logged-out or dead client) is backed off further. From the
 # EMPTY_STREAK_LIMIT-th consecutive empty answer the interval is multiplied by
 # EMPTY_BACKOFF_FACTOR per further empty answer, capped at EMPTY_BACKOFF_CAP
-# (never below the configured interval). One usable answer resets it.
+# (never below the configured interval). One usable answer resets it. The cap
+# also bounds how long a recovered source stays hidden: 6h kept an offline
+# antigravity placeholder on the board ~5h after CodexBar started answering
+# again (2026-11-10), so the cap is 1h — still 4x the 15m base interval, so a
+# dead client is probed at most hourly.
 EMPTY_STREAK_LIMIT = 3
 EMPTY_BACKOFF_FACTOR = 4.0
-EMPTY_BACKOFF_CAP = 6 * 3600.0
+EMPTY_BACKOFF_CAP = 3600.0
 
 
 def throttle_dir() -> Path:

@@ -164,10 +164,15 @@ How it works (`src/aiuse/collectors/throttle.py`):
 6. **Empty-answer backoff** (#34). The gate counts consecutive live answers
    with no usable data (`empty_streak` in `antigravity.json`). From the third
    in a row the interval is multiplied by 4 per further empty answer (15m →
-   1h → 4h), capped at 6h, and the reuse note says so ("stretched to 1h00m
+   1h), capped at 1h, and the reuse note says so ("stretched to 1h00m
    after 3 answers in a row with no usable data"). One usable answer resets
    it. OpenUsage's forced refresh does not touch the streak. This stops a
-   logged-out agy from being launched every 15 minutes indefinitely.
+   logged-out agy from being launched every 15 minutes indefinitely. The cap
+   was 6h until 2026-11-10: an offline placeholder stayed on the board ~5h
+   after CodExBar recovered (the operator re-enabled antigravity in CodExBar,
+   so its app polls on its own clock and had fresh data), and the row showed
+   nothing until the latch expired — 1h bounds that blindness while still
+   probing a dead client at most hourly.
 
 Not covered, and why:
 
