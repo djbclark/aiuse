@@ -12,6 +12,13 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Fixed
+
+- Client-limit messages now require fresh quota and client-availability checks
+  for the configured native provider instead of recommending a retired ACP
+  client. Agent guidance distinguishes historical delegation enforcement from
+  current launch admission. Passive ACP log accounting is unchanged.
+
 ## [4.0.3] - 2026-11-10
 
 ### Fixed

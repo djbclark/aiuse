@@ -53,7 +53,10 @@ def test_recent_429_attempts_mark_the_cli_limited(tmp_path):
     assert limit["failed_attempts"] == 2 and limit["runs"] == 1
     assert limit["error"] == "RESOURCE_EXHAUSTED (code 429)"
     assert limit["last_limited_at"] == (started + timedelta(seconds=9)).isoformat()
-    assert "acp-run agy" in limit["message"] and "last 9m ago" in limit["message"]
+    assert "last 9m ago" in limit["message"]
+    assert "clients share subscription quota" in limit["message"]
+    assert "configured native provider only after fresh quota and client-availability checks" in limit["message"]
+    assert "acp-run" not in limit["message"]
 
 
 def test_old_429s_and_usage_only_logs_are_ignored(tmp_path):
@@ -115,12 +118,14 @@ def test_enrichment_attaches_limits_but_keeps_the_pool_usable():
     snap = enrich_snapshot(_agy_snapshot(), client_limits={"antigravity": [LIMIT]})
     agy = snap["accounts"][0]
     assert agy["client_limits"] == [LIMIT]
-    assert agy["usable_now"] is True  # quota is real; ACP may still serve it
+    assert agy["usable_now"] is True  # client availability is checked separately from quota
     assert "client_limits" not in snap["accounts"][1]
     pools = [p for p in available_pools(snap) if p["provider"] == "antigravity"]
     assert pools and all(p["client_limits"] == [LIMIT] for p in pools)
     line = summary_line(pools[0])
-    assert "[agy cli rate-limited: 429 x8" in line and "ACP may still work]" in line
+    assert "[agy cli rate-limited: 429 x8" in line
+    assert "native provider requires fresh quota and client checks]" in line
+    assert "ACP may still work" not in line
     assert "client_limits" in snap["semantics"]
 
 

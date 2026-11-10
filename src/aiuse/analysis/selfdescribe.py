@@ -1168,7 +1168,7 @@ def summary_line(pool: Mapping[str, Any]) -> str:
             when = parse_dt(limit.get("last_limited_at"))
             if when is not None:
                 line += f", last {max(0, int((utcnow() - when).total_seconds() // 60))}m ago"
-            line += "; ACP may still work]"
+            line += "; native provider requires fresh quota and client checks]"
     if pool.get("usable_now") is False:
         line += " -> NOT usable now"
     elif all(str(w.get("state")) == "unknown" for w in pool.get("windows") or []):

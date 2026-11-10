@@ -701,12 +701,14 @@ each of its routing entries (`--available`, `snapshot.accounts[]`) may carry:
 It is read **passively** at report time from the client's own logs (today:
 the agy CLI's `Run: attempt N failed (RESOURCE_EXHAUSTED (code 429) …` retry
 lines within `analysis.agy_cli_lockout_minutes`, default 60, 0 disables). No
-request is sent. `usable_now` stays quota-based, because the other client
-(`acp-run agy`) may still serve the same quota. Route agy work through ACP, or
-wait, while the CLI entry is `limited`. The summary line gains `[agy cli
-rate-limited: 429 xN, last Mm ago; ACP may still work]`, and the board's
-antigravity row gets the message as a note. The CLI logs have no positive
-success marker, so the entry clears only when the 429s age out of the window.
+request is sent. `usable_now` stays quota-based; a client lockout is separate
+from the shared subscription quota. Use the configured native provider only
+after fresh quota and client-availability checks, or wait while the CLI entry
+is `limited`. No client path bypasses the subscription quota. The summary line
+gains `[agy cli rate-limited: 429 xN, last Mm ago; native provider requires
+fresh quota and client checks]`, and the board's antigravity row gets the
+message as a note. The CLI logs have no positive success marker, so the entry
+clears only when the 429s age out of the window.
 
 ## `aiuse attribute --json` — quota burned beside tokens spent
 
@@ -912,8 +914,9 @@ on the account, its `--available` routing entry, and its alerts, and the
 agent toolchain refused an omp slice unless `ACP_OPERATOR_APPROVED=omp` was
 set for that call. The operator lifted the gate on 2026-10-19 (commit
 8a9dc43): the Claude Max plan's API credits are a normal tier, and no account
-carries the flag today. The dispatch-side approval mechanism still exists for
-providers the operator may gate in the future.
+carries the flag today. Current delegation approval and launch admission are
+the configured toolchain's responsibility; aiuse reports requirements and
+quota, and does not grant permission to launch.
 
 ### `usage_credits` (optional)
 
