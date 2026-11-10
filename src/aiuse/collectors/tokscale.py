@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+from aiuse.analysis import history
 from aiuse.models import (
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
@@ -13,25 +19,107 @@ from aiuse.models import (
     coerce_float,
     keep_copilot_report_window,
     parse_dt,
+    utcnow,
 )
 
-from .base import CollectorNotInstalled, run_json, which
+from .base import CollectorError, CollectorNotInstalled, run_json, which
+from .throttle import QueryGate
 
 
-def collect_tokscale(*, timeout: float = 45.0) -> list[AccountUsage]:
-    if not which("tokscale"):
-        raise CollectorNotInstalled("tokscale not found on PATH")
+def default_tokscale_cache_path() -> Path:
+    return history.snapshot_dir().parent / "tokscale-usage-cache.json"
 
-    payload = run_json(["tokscale", "usage", "--json"], timeout=timeout)
+
+def _read_tokscale_cache(
+    cache_path: Path | str | None,
+    max_age: float,
+) -> tuple[Any, datetime] | None:
+    path = Path(cache_path).expanduser() if cache_path else default_tokscale_cache_path()
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    fetched_at = parse_dt(data.get("fetched_at"))
+    if not fetched_at:
+        return None
+    age = (utcnow() - fetched_at).total_seconds()
+    if age < 0 or age > max_age:
+        return None
+    payload = data.get("payload")
+    if payload is None:
+        return None
+    return payload, fetched_at
+
+
+def _write_tokscale_cache(
+    cache_path: Path | str | None,
+    payload: Any,
+    fetched_at: datetime,
+) -> None:
+    path = Path(cache_path).expanduser() if cache_path else default_tokscale_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".tmp.{os.getpid()}")
+        data = {
+            "schema_version": "1.0",
+            "fetched_at": fetched_at.isoformat(),
+            "payload": payload,
+        }
+        tmp.write_text(json.dumps(data, default=str), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def _parse_payload(payload: Any, *, cached_at: datetime | None = None) -> list[AccountUsage]:
     rows = payload if isinstance(payload, list) else [payload]
     accounts: list[AccountUsage] = []
     for row in rows:
         if isinstance(row, dict):
-            accounts.append(_from_row(row))
+            accounts.append(_from_row(row, cached_at=cached_at))
     return accounts
 
 
-def _from_row(row: dict[str, Any]) -> AccountUsage:
+def collect_tokscale(
+    *,
+    timeout: float = 45.0,
+    use_cache: bool = True,
+    max_cache_age: float = 600.0,
+    cache_path: Path | str | None = None,
+    min_interval: float = 600.0,
+    run: Callable[..., Any] = run_json,
+) -> list[AccountUsage]:
+    if not which("tokscale"):
+        raise CollectorNotInstalled("tokscale not found on PATH")
+
+    now = utcnow()
+    if use_cache and max_cache_age > 0:
+        cached = _read_tokscale_cache(cache_path, max_cache_age)
+        if cached is not None:
+            payload, fetched_at = cached
+            return _parse_payload(payload, cached_at=fetched_at)
+
+    gate_interval = max(0.0, min_interval)
+    with QueryGate("tokscale", min_interval=gate_interval, wait=min(timeout, 15.0)) as gate:
+        if gate.allowed:
+            payload = run(["tokscale", "usage", "--json"], timeout=timeout)
+            gate.record("tokscale", payload)
+            _write_tokscale_cache(cache_path, payload, now)
+            return _parse_payload(payload, cached_at=None)
+
+        reused = gate.reuse("tokscale")
+        if not isinstance(reused, BaseException) and reused is not None:
+            return _parse_payload(reused, cached_at=gate.reused_from("tokscale") or now)
+        if isinstance(reused, BaseException):
+            raise reused
+        raise CollectorError(gate.describe())
+
+
+def _from_row(row: dict[str, Any], *, cached_at: datetime | None = None) -> AccountUsage:
     provider = str(row.get("provider") or "unknown")
     # Normalize for merge/dedupe with codexbar
     provider_key = provider.lower().replace(" ", "-")
@@ -59,7 +147,11 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             )
         )
 
-    notes: list[str] = ["Live data fetched by tokscale for selection and cross-checking."]
+    notes: list[str] = [
+        f"Data cached from tokscale ({cached_at.isoformat()})."
+        if cached_at is not None
+        else "Live data fetched by tokscale for selection and cross-checking."
+    ]
     credit_status = row.get("credit_status")
     if isinstance(credit_status, dict):
         if credit_status.get("balance") is not None:

@@ -30,6 +30,8 @@
 [collectors.codexbar]
 # "enabled" honors CodexBar's own provider list; use "all" or a CSV to override.
 # providers = "enabled"
+# use_cache = true
+# max_cache_age_seconds = 600
 # Per-provider query timeout (seconds) instead of timeouts.codexbar; a CLI
 # --timeout still wins. Use for a provider that is slow or known to hang.
 # The built-in default is provider_timeouts.opencodego = 60 (CodexBar's own
@@ -51,9 +53,16 @@
 # http_url = "http://127.0.0.1:10546"
 # http_token = ""
 
+[collectors.tokscale]
+# tokscale usage collector caching (respects use_cache and max_cache_age_seconds).
+# enabled = true
+# use_cache = true
+# max_cache_age_seconds = 600
+
 [collectors.openusage_ai]
 # OpenUsage.ai — the macOS menu-bar app's CLI / loopback API.
 # enabled = true
+# force_refresh = false
 
 [collectors.openusage_sh]
 # OpenUsage.sh — terminal dashboard, invoked through `openusage-sh`.
@@ -169,7 +178,7 @@
 # Persist hourly/manual snapshots for History learning.
 # persist_snapshots = true
 # learn_from_history = "auto" # true | false | auto
-# fresh_threshold_seconds = 1500 # cached snapshot counts as fresh under this age (seconds)
+# fresh_threshold_seconds = 1800 # cached snapshot counts as fresh under this age (seconds)
 # agy_cli_lockout_minutes = 60  # scan agy CLI logs this far back for 429s (client_limits); 0 off
 
 # Operator-declared dead subscriptions: "provider/account" = reason (or true).

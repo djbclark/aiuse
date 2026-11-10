@@ -15,7 +15,7 @@ from aiuse.config import DEFAULT_CONFIG, validate_config
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 
 T0 = datetime(2026, 9, 25, 14, 0, tzinfo=timezone.utc)
-SETTINGS = sampler.sampling_settings(None)
+SETTINGS = sampler.sampling_settings({"sampling": {"active_interval": 900, "burst_interval": 180}})
 
 
 def _snapshot(when: datetime, used: dict[str, float], *, provider: str = "clinepass", source: str = "codexbar"):
@@ -309,7 +309,7 @@ def test_run_sample_skips_then_collects_and_records_the_ledger(monkeypatch):
     assert sampler.run_sample(config, now=T0 + timedelta(minutes=3), collect=collect, stdout=out) == 0
     assert len(calls) == 1 and out.lines[-1].startswith("skip: idle tier")
     assert sampler.run_sample(config, now=T0 + timedelta(hours=1), collect=collect, stdout=out) == 0
-    assert "tier=burst" in out.lines[-1] and "next=180s" in out.lines[-1]
+    assert "tier=burst" in out.lines[-1] and "next=300s" in out.lines[-1]
     assert len(list(ledger.ledger_dir().glob("*.json"))) == 2
     assert sampler.load_state()["hot"] == [{"provider": "clinepass", "source": "codexbar"}]
 

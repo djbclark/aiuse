@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 
 from aiuse.analysis import history
 from aiuse.collectors.base import CollectorError, run_json, which
-from aiuse.models import canonical_provider, utcnow
+from aiuse.models import canonical_provider, parse_dt, utcnow
 
 LEDGER_SCHEMA_VERSION = "1.0"
 # A sample taken after midnight also re-reads the day the previous sample was
@@ -130,6 +130,7 @@ def capture_tokscale_ledger(
     now: datetime | None = None,
     previous: dict[str, Any] | None = None,
     timeout: float = 45.0,
+    max_cache_age: float = 300.0,
     run: Callable[..., Any] = run_json,
 ) -> dict[str, Any]:
     """One cumulative per-client reading from tokscale, keyed by local day.
@@ -147,9 +148,30 @@ def capture_tokscale_ledger(
         start = max(prev_day, today - timedelta(days=_MAX_BACKFILL_DAYS))
         days = [start + timedelta(days=i) for i in range((today - start).days + 1)]
 
+    # If previous sample was captured recently, reuse its days if available
+    prev_captured_at = parse_dt((previous or {}).get("captured_at"))
+    raw_days = (previous or {}).get("days")
+    prev_days: dict[str, Any] | None = raw_days if isinstance(raw_days, dict) else None
+    can_reuse_previous = (
+        max_cache_age > 0
+        and prev_captured_at is not None
+        and prev_days is not None
+        and 0 <= (now - prev_captured_at).total_seconds() < max_cache_age
+    )
+    if can_reuse_previous and prev_days is not None and all(d.isoformat() in prev_days for d in days):
+        return {
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "source": "tokscale",
+            "captured_at": now.isoformat(),
+            "days": {d.isoformat(): list(prev_days[d.isoformat()]) for d in days},
+        }
+
     by_day: dict[str, list[dict[str, Any]]] = {}
     for day in days:
         iso = day.isoformat()
+        if can_reuse_previous and prev_days is not None and iso in prev_days:
+            by_day[iso] = list(prev_days[iso])
+            continue
         payload = run(
             ["tokscale", "models", "--json", "--no-spinner", "--since", iso, "--until", iso],
             timeout=timeout,

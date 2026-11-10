@@ -176,6 +176,12 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
         # when aiuse knows them, so a service hidden by default (oc-go) still
         # appears on this screen-only sweep.
         codexbar["include_disabled"] = True
+        tokscale = collectors.get("tokscale")
+        if not isinstance(tokscale, dict):
+            tokscale = {}
+            collectors["tokscale"] = tokscale
+        tokscale["enabled"] = True
+        tokscale.setdefault("use_cache", True)
     return sweep
 
 
@@ -673,7 +679,7 @@ def run_watch(
 
     def default_collect() -> tuple[Snapshot, list[UseOrLoseAlert]]:
         if all_providers:
-            return collect_watch_frame(frame_config(), persist=False)
+            return collect_watch_frame(frame_config(), max_age=interval, persist=False)
         return collect_watch_frame(live_config(), max_age=interval)
 
     collect_fn = collect or default_collect
@@ -736,7 +742,7 @@ def run_watch(
     process_worker = (
         _WatchCollectionProcess(
             config,
-            max_age=None if all_providers else interval,
+            max_age=interval,
             persist=False if all_providers else None,
         )
         if collect is None
@@ -744,8 +750,10 @@ def run_watch(
     )
     # The ``a``-key sweep: its own worker so it can run beside the regular
     # cycle, collecting every provider once with nothing written to disk.
-    sweep_worker = _WatchCollectionProcess(persist=False) if collect is None else None
-    collect_all_fn = collect_all or (lambda: collect_watch_frame(all_providers_config(live_config()), persist=False))
+    sweep_worker = _WatchCollectionProcess(max_age=interval, persist=False) if collect is None else None
+    collect_all_fn = collect_all or (
+        lambda: collect_watch_frame(all_providers_config(live_config()), max_age=interval, persist=False)
+    )
     sweep = WatchRuntime(interval=float("inf"), collect=collect_all_fn, now=now or time.monotonic)
     sweep.next_due = float("inf")  # only ever started by the ``a`` key
     sweep_config_held: dict[str, Any] = {"cfg": None}

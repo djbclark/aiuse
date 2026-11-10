@@ -73,9 +73,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "learn_from_history": "auto",
         "snapshot_retention_days": 90,
         # Age (seconds) at or below which a cached snapshot counts as `fresh`
-        # in --json/--available/serve output. 25 min covers the watch refresh
+        # in --json/--available/serve output. 30 min covers the watch refresh
         # cadence (10-20 min) plus the hourly LaunchAgent with margin.
-        "fresh_threshold_seconds": 1500.0,
+        "fresh_threshold_seconds": 1800.0,
         # Minutes of agy CLI log history scanned (passively, no requests) for
         # RESOURCE_EXHAUSTED 429 retries; a hit marks the CLI client limited
         # in client_limits (issue #33). 0 disables.
@@ -267,7 +267,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             # than a cached usage snapshot.
             "provider_timeouts": {"opencodego": 60},
             "use_cache": True,
-            "max_cache_age_seconds": 300.0,
+            "max_cache_age_seconds": 600.0,
             "cache_path": None,
         },
         # caut: disabled by default due to disruptive macOS Keychain prompts
@@ -279,7 +279,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "caam": {"enabled": True},
         "openusage_ai": {
             "enabled": True,
-            "force_refresh": True,
+            "force_refresh": False,
             "try_launch_app": True,
             "base_url": "http://127.0.0.1:6736",
             # Doctor / preflight probe (payload collect still uses /v1/limits via base_url).
@@ -290,7 +290,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "opencode_zen": {"enabled": True},
         # Same console cookie as Zen; detects a lapsed Go plan the local $cap path cannot.
         "opencode_go": {"enabled": True},
-        "tokscale": {"enabled": True},
+        "tokscale": {
+            "enabled": True,
+            "use_cache": True,
+            "max_cache_age_seconds": 600.0,
+            "cache_path": None,
+        },
         # Paseo agent daemon usage reports (`paseo usage ls`; five-minute
         # daemon cache, no vendor API traffic). See docs/paseo.md.
         "paseo": {"enabled": True},
@@ -325,8 +330,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # scheduler fires every ``burst_interval``; most firings return immediately.
     "sampling": {
         "idle_interval": 3600,  # nothing moved since the previous sample
-        "active_interval": 900,  # some window moved
-        "burst_interval": 180,  # a window is burning fast (hot providers only)
+        "active_interval": 1800,  # some window moved
+        "burst_interval": 300,  # a window is burning fast (hot providers only)
         "min_move_percent": 0.5,  # smallest rise that counts as "moved"
         # Burst needs both: an absolute rate, and a multiple of the pace that
         # would exactly exhaust the window (so a 5-hour window's normal 20

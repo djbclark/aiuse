@@ -682,7 +682,7 @@ def test_board_header_shows_now_data_time_and_the_sampler_schedule():
     now = snap.collected_at + timedelta(minutes=7)
     state = {"tier": "active", "last_sample_at": snap.collected_at.isoformat()}
     schedule = sampler.schedule(state, sampler.sampling_settings(None))
-    assert schedule is not None and schedule[1] == snap.collected_at + timedelta(minutes=15)
+    assert schedule is not None and schedule[1] == snap.collected_at + timedelta(minutes=30)
     board = render_watch_board(snap, [], color=False, quiet=True, now=now, sample_schedule=schedule)
     header = board.splitlines()[0]
 

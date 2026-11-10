@@ -283,11 +283,23 @@ def collect_with_ledger(
     pool: ThreadPoolExecutor | None = None
     if ledger.ledger_enabled(config):
         pool = ThreadPoolExecutor(max_workers=1)
-        pending = pool.submit(
-            capture or ledger.capture_tokscale_ledger,
-            previous=ledger.load_latest_ledger(),
-            timeout=timeout_for(config, "tokscale"),
+        tokscale_cfg = (config.get("collectors") or {}).get("tokscale")
+        max_cache_age = (
+            float((tokscale_cfg or {}).get("max_cache_age_seconds", 300.0)) if isinstance(tokscale_cfg, dict) else 300.0
         )
+        if capture is not None:
+            pending = pool.submit(
+                capture,
+                previous=ledger.load_latest_ledger(),
+                timeout=timeout_for(config, "tokscale"),
+            )
+        else:
+            pending = pool.submit(
+                ledger.capture_tokscale_ledger,
+                previous=ledger.load_latest_ledger(),
+                timeout=timeout_for(config, "tokscale"),
+                max_cache_age=max_cache_age,
+            )
     try:
         snapshot = collect(config)
         sample: dict[str, Any] | None = None

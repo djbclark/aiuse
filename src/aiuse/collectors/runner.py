@@ -347,8 +347,25 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
             )
         )
     if _enabled(collectors_cfg, "tokscale"):
+        tokscale_cfg = collectors_cfg.get("tokscale") if isinstance(collectors_cfg.get("tokscale"), dict) else {}
         tokscale_timeout = timeout_for(config, "tokscale")
-        jobs.append(("tokscale", partial(collect_tokscale, timeout=tokscale_timeout)))
+        tok_use_cache = bool((tokscale_cfg or {}).get("use_cache", True))
+        tok_max_cache_age = float((tokscale_cfg or {}).get("max_cache_age_seconds", 600.0))
+        tok_cache_path = (tokscale_cfg or {}).get("cache_path")
+        tok_min_interval = float(intervals.get("tokscale", 600.0))
+        jobs.append(
+            (
+                "tokscale",
+                partial(
+                    collect_tokscale,
+                    timeout=tokscale_timeout,
+                    use_cache=tok_use_cache,
+                    max_cache_age=tok_max_cache_age,
+                    cache_path=tok_cache_path,
+                    min_interval=tok_min_interval,
+                ),
+            )
+        )
     if _enabled(collectors_cfg, "paseo"):
         jobs.append(("paseo", partial(collect_paseo, timeout=timeout_for(config, "paseo"))))
     if _enabled(collectors_cfg, "clinepass"):

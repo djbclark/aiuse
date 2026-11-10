@@ -55,7 +55,7 @@ EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
 TIGHT_BELOW = 15.0  # remaining < 15 -> tight
 
 # age threshold for the read-time `fresh` flag (config: analysis.fresh_threshold_seconds)
-FRESH_THRESHOLD_SECONDS_DEFAULT = 1500.0  # 25 min
+FRESH_THRESHOLD_SECONDS_DEFAULT = 1800.0  # 30 min
 OMP_OPENAI_SOURCE = "omp_models_yml"
 
 
