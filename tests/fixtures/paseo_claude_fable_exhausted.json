@@ -1,0 +1,38 @@
+{
+  "id": "claude:fixture-account",
+  "sourceId": "claude",
+  "sourceLabel": "Claude",
+  "icon": "<svg/>",
+  "account": { "label": "user@example.invalid" },
+  "fetchedAt": "2026-11-10T12:46:59.784Z",
+  "successfulAt": "2026-11-10T12:47:00.101Z",
+  "report": {
+    "status": "available",
+    "planLabel": "Max 20x",
+    "windows": [
+      {
+        "id": "weekly",
+        "label": "Weekly",
+        "shortLabel": "wk",
+        "summary": true,
+        "usedPct": 74,
+        "remainingPct": 26,
+        "resetsAt": "2026-11-13T10:00:00.055755+00:00",
+        "tone": "warning"
+      },
+      {
+        "id": "weekly_model_fable",
+        "label": "Weekly · Fable",
+        "shortLabel": "wk Fable",
+        "usedPct": 100,
+        "remainingPct": 0,
+        "resetsAt": "2026-11-13T10:00:00.055917+00:00",
+        "tone": "danger"
+      }
+    ],
+    "balances": [],
+    "details": [
+      { "id": "extra_usage", "label": "Extra usage", "value": "Disabled" }
+    ]
+  }
+}

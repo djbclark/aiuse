@@ -212,6 +212,26 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-11-10, schema stays 1.5)
+
+- Claude shared (`pool_family: "default"`) entries gain `model_sublimits`: one
+  item per model cap the account reports, whatever its state:
+  `{pool_family, label, state, usable_now, reason, headroom_percent,
+available_at, max_share_of_parent_percent}`. `--available` lists only usable
+  pools, so an exhausted cap (Fable's own weekly window at 0% left) had no entry
+  and the shared entry read as plain usable with the hint "without a reported
+  model cap" (a Fable dispatch then failed with the vendor's 429, 2026-11-10).
+  **`usable_now: false` alone means do not route that model** until that cap's
+  own `available_at`, whatever its `state`; `reason` (only then) is `cap
+exhausted`, `reading frozen`, `no reading` or `not usable`. The other Claude
+  models and the shared entry's `usable_now` are unchanged. The shared entry's
+  `models_hint` names every such model with its own reset and reason. The field
+  is omitted when the account reports no model cap (older or partial data). A
+  model name that is not a plain name (`[a-z0-9._-]`, at most 32 characters) is
+  dropped by the paseo collector and never listed. `aiuse --available` text
+  prints one `claude fable: NOT usable now until ... (cap exhausted)` line under
+  the pool.
+
 #### Additive (2026-11-07, schema stays 1.5)
 
 - Collector `omp_agent_db` reads omp's local credential metadata and can emit

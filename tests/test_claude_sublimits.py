@@ -1,7 +1,9 @@
 """Claude has shared quota with model caps, not additive model pools."""
 
+import json
 import re
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +13,7 @@ from aiuse.analysis.selfdescribe import available_pools, enrich_snapshot, pool_e
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.chat_format import render_chat_report
 from aiuse.collectors.cswap import _account_from_item
+from aiuse.collectors.paseo import _from_entry as _paseo_from_entry
 from aiuse.models import RoutingContext, Snapshot, claude_model_scope, utcnow
 from aiuse.report import render_clock_matrix
 
@@ -256,3 +259,174 @@ def test_chat_primary_routing_does_not_treat_fable_cap_as_other_models_quota():
     text = render_chat_report(_snapshot(weekly_used=60.0), [], routing_context=context)
     assert "Keep claude as primary" in text
     assert "Switch primary to codex" not in text
+
+
+# --- `--available` must say plainly when a model cap is out (2026-11-10) ------
+# A Claude Code sub-agent on Fable hit "out of usage credits" while
+# `aiuse --available` showed claude usable with 26% headroom and no mention of
+# Fable: the exhausted cap's own pool entry is filtered out as not usable, and
+# the shared entry's hint said "without a reported model cap". The real shape
+# is `paseo usage ls --json` (tests/fixtures/paseo_claude_fable_exhausted.json).
+
+_FIXTURE = Path(__file__).parent / "fixtures" / "paseo_claude_fable_exhausted.json"
+
+
+def _paseo_available(*, fable_used=100.0, keep_fable=True):
+    entry = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    windows = entry["report"]["windows"]
+    if not keep_fable:
+        entry["report"]["windows"] = [w for w in windows if w["id"] != "weekly_model_fable"]
+    else:
+        windows[1]["usedPct"], windows[1]["remainingPct"] = fable_used, 100.0 - fable_used
+    account = _paseo_from_entry(entry)
+    assert account is not None
+    snap = enrich_snapshot(Snapshot(collected_at=utcnow(), accounts=[account]).to_dict())
+    return snap, available_pools(snap)
+
+
+def test_fixture_fable_window_reaches_the_snapshot_as_a_model_sublimit():
+    snap, _ = _paseo_available()
+    cap = next(w for w in snap["accounts"][0]["windows"] if "Fable" in w["label"])
+    assert cap["quota_scope"] == "model_sublimit"
+    assert cap["state"] == "exhausted"
+    assert cap["max_share_of_parent_percent"] == 50.0
+
+
+def test_exhausted_fable_cap_is_named_on_the_usable_shared_entry():
+    _, pools = _paseo_available()
+    assert [p["pool_family"] for p in pools] == ["default"]
+    shared = pools[0]
+    assert shared["usable_now"] is True
+    assert shared["headroom_percent"] == 26.0
+    (cap,) = shared["model_sublimits"]
+    assert cap["pool_family"] == "fable"
+    assert cap["state"] == "exhausted"
+    assert cap["usable_now"] is False
+    assert cap["headroom_percent"] == 0.0
+    assert cap["available_at"] == "2026-11-13T10:00:00.055917+00:00"
+    assert cap["max_share_of_parent_percent"] == 50.0
+    assert "without a reported model cap" not in shared["models_hint"]
+    assert "Fable until 2026-11-13T10:00:00.055917+00:00 (cap exhausted)" in shared["models_hint"]
+    assert cap["reason"] == "cap exhausted"
+
+
+def test_fable_cap_with_room_is_listed_usable_and_the_hint_stays_plain():
+    _, pools = _paseo_available(fable_used=20.0)
+    assert [p["pool_family"] for p in pools] == ["default", "fable"]
+    shared = next(p for p in pools if p["pool_family"] == "default")
+    (cap,) = shared["model_sublimits"]
+    assert (cap["pool_family"], cap["state"], cap["usable_now"]) == ("fable", "ok", True)
+    assert cap["headroom_percent"] == 26.0  # min(26, 0.5 * 80)
+    assert "not usable now" not in shared["models_hint"]
+    assert "reason" not in cap
+
+
+def test_older_data_without_a_fable_window_adds_nothing():
+    _, pools = _paseo_available(keep_fable=False)
+    assert [p["pool_family"] for p in pools] == ["default"]
+    assert "model_sublimits" not in pools[0]
+    assert "without a reported model cap" in pools[0]["models_hint"]
+
+
+def _write_latest(snap_obj):
+    from aiuse.analysis import history
+
+    latest = history.snapshot_dir() / "latest.json"
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.write_text(json.dumps(snap_obj.to_dict()))
+
+
+def _fixture_snapshot(*, fable_used):
+    entry = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    entry["report"]["windows"][1]["usedPct"] = fable_used
+    entry["report"]["windows"][1]["remainingPct"] = 100.0 - fable_used
+    account = _paseo_from_entry(entry)
+    assert account is not None
+    return Snapshot(collected_at=utcnow(), accounts=[account])
+
+
+def test_available_command_says_fable_is_out_in_json_and_text(capsys):
+    from aiuse import cli
+
+    _write_latest(_fixture_snapshot(fable_used=100.0))
+    assert cli.main(["--available", "--json", "-q"]) == 0
+    (claude,) = [p for p in json.loads(capsys.readouterr().out)["available"] if p["provider"] == "claude"]
+    assert claude["usable_now"] is True
+    assert claude["model_sublimits"][0]["state"] == "exhausted"
+    assert cli.main(["--available", "-q"]) == 0
+    out = capsys.readouterr().out
+    assert "claude fable: NOT usable now until 2026-11-13T10:00:00.055917+00:00" in out
+    assert "Claude models except Fable; not usable now: Fable until" in out
+
+
+def _pools_with(mutate):
+    """pool_entries() of the fixture snapshot after ``mutate(snap)`` edits the enriched dict."""
+    snap, _ = _paseo_available()
+    mutate(snap)
+    return {p["pool_family"]: p for p in pool_entries(snap)}
+
+
+def test_frozen_fable_reading_is_named_not_usable_whatever_its_state():
+    # F1: a frozen reading keeps state "ok" but the entry is unusable; the shared
+    # entry must not call Fable fine (hint, field and text line follow usable_now).
+    def freeze(snap):
+        fable = next(w for w in snap["accounts"][0]["windows"] if "Fable" in w["label"])
+        fable["used_percent"], fable["remaining_percent"] = 60.0, 40.0
+        fable["state"], fable["headroom_percent"] = "ok", 40.0
+        fable["measurement_frozen"] = True
+
+    shared = _pools_with(freeze)["default"]
+    (cap,) = shared["model_sublimits"]
+    assert (cap["state"], cap["usable_now"], cap["reason"]) == ("ok", False, "reading frozen")
+    assert "Fable (reading frozen)" in shared["models_hint"]
+    assert "without a reported model cap" not in shared["models_hint"]
+
+
+def test_cap_with_no_reading_is_named_not_usable():
+    def blank(snap):
+        fable = next(w for w in snap["accounts"][0]["windows"] if "Fable" in w["label"])
+        for key in ("used_percent", "remaining_percent", "headroom_percent"):
+            fable[key] = None
+        fable["state"] = "unknown"
+
+    (cap,) = _pools_with(blank)["default"]["model_sublimits"]
+    assert (cap["usable_now"], cap["reason"]) == (False, "no reading")
+
+
+def test_each_exhausted_cap_gets_its_own_reset_time():
+    # F2: one `until` for every cap sent agents back to the 429 two days early.
+    entry = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    entry["report"]["windows"].append(
+        {
+            "id": "weekly_model_opus",
+            "label": "Weekly · Opus",
+            "usedPct": 100,
+            "remainingPct": 0,
+            "resetsAt": "2026-11-11T00:00:00+00:00",
+        }
+    )
+    account = _paseo_from_entry(entry)
+    assert account is not None
+    snap = enrich_snapshot(Snapshot(collected_at=utcnow(), accounts=[account]).to_dict())
+    shared = next(p for p in pool_entries(snap) if p["pool_family"] == "default")
+    hint = shared["models_hint"]
+    assert "Fable until 2026-11-13T10:00:00.055917+00:00 (cap exhausted)" in hint
+    assert "Opus until 2026-11-11T00:00:00+00:00 (cap exhausted)" in hint
+
+
+def test_upstream_model_names_with_control_characters_never_reach_output(capsys):
+    # F3: a paseo window id is upstream text; only a plain model name may become a family.
+    entry = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    evil = "weekly_model_$(touch /tmp/x)\x1b]0;pwn\x07"
+    entry["report"]["windows"].append(
+        {"id": evil, "label": "x", "usedPct": 100, "remainingPct": 0, "resetsAt": "2026-11-13T10:00:00+00:00"}
+    )
+    account = _paseo_from_entry(entry)
+    assert account is not None
+    assert [w.label for w in account.windows] == ["Claude Code weekly", "Claude Code weekly — Fable"]
+    from aiuse import cli
+
+    _write_latest(Snapshot(collected_at=utcnow(), accounts=[account]))
+    assert cli.main(["--available", "-q"]) == 0
+    out = capsys.readouterr().out
+    assert "\x1b" not in out and "$(" not in out
