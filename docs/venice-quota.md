@@ -36,12 +36,14 @@ earnedCredits}, diemEpochAllocation}`. The local key lives in
 - Unauthenticated calls get HTTP 402 with an x402 offer (USDC on Base/Solana
   per-call payment) — Venice's newer payment rail, not needed for reads.
 
-## Possible upstream improvement (not filed)
+## Possible upstream improvement
 
 CodexBar's `venice.js` checks `!canConsume` first and hides the numbers; it
 could show `$0.10 USD remaining · blocked (buffer)` in that branch so the row
-carries the balance it already fetched. steipete/CodexBar (AGPL-3.0) — file as
-a PR there if wanted; aiuse just relays CodexBar's text today.
+carries the balance it already fetched. Searched for duplicates first (only
+unrelated Clerk-cookie Venice issues) and filed
+[steipete/CodexBar#5048](https://github.com/steipete/CodexBar/issues/5048)
+(2026-11-10). aiuse just relays CodexBar's text until that lands.
 
 ## aiuse behavior
 
