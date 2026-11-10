@@ -95,6 +95,13 @@ Canonical pricing table:
    them again (operator-only).
 6. `[hidden_pools]` drops configured rows at collection; `[analysis.excluded_pools]`
    omits them from `--available` routing only.
+7. Deduplicate the standalone **grok-bot** provider row (tokscale reports the
+   same Cursor Grok Bot weekly allowance as its own provider; resets match the
+   cursor pool to the second). When a cursor account carries the `grok_bot`
+   pool, the runner drops the standalone row and its cross-checks and notes
+   the fold on the cursor row (2026-11-10: the matrix showed the same window
+   twice — `Grok Bot` and `cursor grok-bot`). Without the cursor pool the
+   standalone row survives, so a tokscale-only reading is not hidden.
 
 `aiuse` sets no on-demand cap of its own — the figure is whatever Cursor reports.
 

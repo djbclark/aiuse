@@ -728,7 +728,37 @@ def _select_and_cross_check(
             )
         )
 
+    _drop_duplicate_grok_bot_rows(selected, checks)
     return selected, checks
+
+
+def _drop_duplicate_grok_bot_rows(selected: list[AccountUsage], checks: list[CrossCheck]) -> None:
+    """Drop the standalone ``grok-bot`` row when Cursor's grok-bot pool exists.
+
+    CodexBar reports the Cursor Grok Bot weekly allowance as a cursor pool
+    (window id ``cursor-grok-bot``); tokscale reports the same allowance as a
+    standalone ``grok-bot`` provider. Shown side by side they read as two
+    quotas when only one exists (2026-11-10). The cursor pool wins; the
+    standalone row survives only when no cursor grok-bot pool was collected.
+    """
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    def has_grok_bot_pool(account: AccountUsage) -> bool:
+        return any(pool_family_id("cursor", window.label, window.window_id) == "grok_bot" for window in account.windows)
+
+    cursor_winners = [account for account in selected if account.provider == "cursor" and has_grok_bot_pool(account)]
+    if not cursor_winners or not any(account.provider == "grok-bot" for account in selected):
+        return
+    dropped_sources = sorted({account.source for account in selected if account.provider == "grok-bot"})
+    selected[:] = [account for account in selected if account.provider != "grok-bot"]
+    checks[:] = [check for check in checks if check.provider != "grok-bot"]
+    note = (
+        f"Grok Bot standalone row hidden (reported by {', '.join(dropped_sources)}): "
+        "the same Cursor Grok Bot allowance this grok-bot pool measures."
+    )
+    for account in cursor_winners:
+        if note not in account.notes:
+            account.notes = [*account.notes, note]
 
 
 def _rows_from_primary(

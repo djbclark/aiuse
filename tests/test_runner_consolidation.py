@@ -67,6 +67,50 @@ def test_copilot_prefers_tokscale_over_codexbar_when_both_live():
     assert [account.source for account in accounts] == ["tokscale"]
 
 
+def _cursor_with_grok_bot_pool() -> AccountUsage:
+    return AccountUsage(
+        source="codexbar",
+        provider="cursor",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[
+            QuotaWindow(label="total", used_percent=50.0, window_minutes=43200, window_id="primary"),
+            QuotaWindow(
+                label="grok-bot",
+                used_percent=36.98,
+                remaining_percent=63.02,
+                window_minutes=10080,
+                window_id="cursor-grok-bot",
+            ),
+        ],
+    )
+
+
+def test_standalone_grok_bot_row_hidden_when_cursor_pool_exists():
+    cursor = _cursor_with_grok_bot_pool()
+    standalone = AccountUsage(
+        source="tokscale",
+        provider="grok-bot",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="Grok Bot Weekly", used_percent=36.92, remaining_percent=63.08)],
+    )
+    accounts, checks = _select_and_cross_check([cursor, standalone], cswap_authoritative=True)
+    assert [account.provider for account in accounts] == ["cursor"]
+    assert all(check.provider != "grok-bot" for check in checks)
+    assert any("standalone row hidden" in note for note in accounts[0].notes)
+
+
+def test_standalone_grok_bot_row_survives_without_cursor_pool():
+    standalone = AccountUsage(
+        source="tokscale",
+        provider="grok-bot",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="Grok Bot Weekly", used_percent=36.92, remaining_percent=63.08)],
+    )
+    cursor_without_pool = _account("codexbar", "cursor")
+    accounts, _checks = _select_and_cross_check([cursor_without_pool, standalone], cswap_authoritative=True)
+    assert sorted(account.provider for account in accounts) == ["cursor", "grok-bot"]
+
+
 def test_gemini_weekly_does_not_match_claude_gpt_weekly():
     gemini = QuotaWindow(
         label="Gemini weekly",
