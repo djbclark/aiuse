@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any
 
 from aiuse.models import (
+    SAFE_MODEL_SCOPE_RE,
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
     BillingKind,
@@ -110,6 +111,10 @@ def _window(provider: str, raw: dict[str, Any]) -> QuotaWindow | None:
         return None
 
     window_id = str(raw.get("id") or "")
+    if window_id.startswith("weekly_model_") and not SAFE_MODEL_SCOPE_RE.fullmatch(
+        window_id.removeprefix("weekly_model_").casefold()
+    ):
+        return None  # not a plain model name: never let upstream text into labels or hints
     label = _label(provider, window_id, str(raw.get("label") or window_id or "quota"))
     if provider == "copilot" and not keep_copilot_report_window(label):
         return None

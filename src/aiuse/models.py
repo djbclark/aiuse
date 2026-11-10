@@ -56,6 +56,11 @@ def coerce_int(value: Any) -> int | None:
     return int(number) if number is not None else None
 
 
+# A Claude model name taken from upstream text (a paseo window id) is echoed into
+# hints and terminal output only when it is a plain name (adversary F3, 2026-11-10).
+SAFE_MODEL_SCOPE_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,31}")
+
+
 def claude_model_scope(label: str | None) -> str | None:
     """Model-specific Claude caps, not additional or account-wide allotments."""
     text = (label or "").strip()

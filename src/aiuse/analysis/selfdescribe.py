@@ -37,6 +37,7 @@ from aiuse.analysis.pool_keys import (
 from aiuse.models import (
     OPERATOR_APPROVAL_NOTICE,
     REUSED_QUERY_NOTE_MARKER,
+    SAFE_MODEL_SCOPE_RE,
     QuotaWindow,
     Snapshot,
     canonical_provider,
@@ -76,7 +77,7 @@ SEMANTICS: dict[str, str] = {
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
     "shared_pool_family": "parent routing family whose windows also constrain this model sublimit",
     "max_share_of_parent_percent": "model cap as a share of the shared weekly budget; Fable <=50%, not an extra 50%",
-    "model_sublimits": "on a Claude shared (default) entry: one item per model cap the account reports, whatever its state {pool_family, label, state, usable_now, headroom_percent, available_at, max_share_of_parent_percent}. --available lists only usable pools, so an exhausted cap (Fable at 0% left) has no entry of its own; this field is where it shows. usable_now false and state exhausted: do not route that model; the other Claude models are unaffected. Omitted when the account reports no model cap (older or partial data)",
+    "model_sublimits": "on a Claude shared (default) entry: one item per model cap the account reports, whatever its state {pool_family, label, state, usable_now, reason (only when usable_now is false: cap exhausted | reading frozen | no reading | not usable), headroom_percent, available_at (that cap's own reset), max_share_of_parent_percent}. --available lists only usable pools, so an exhausted cap (Fable at 0% left) has no entry of its own; this field is where it shows. usable_now false, whatever the state: do not route that model until its available_at; the other Claude models are unaffected. Omitted when the account reports no model cap (older or partial data)",
     "headroom_basis": "shared_weekly for Fable routing entries: min(shared headroom, 0.5 * Fable cap headroom); window percentages remain relative to their own limits",
     "age_seconds": "seconds since collected_at, computed at read time; stale data can hide a fresh exhaustion",
     "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
@@ -978,15 +979,27 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
     return pools
 
 
+def _cap_reason(entry: Mapping[str, Any], state: str) -> str:
+    """Why a model cap's entry is not usable: what to tell the operator and agents."""
+    if any(w.get("measurement_frozen") for w in entry.get("windows") or []):
+        return "reading frozen"
+    if state == "exhausted":
+        return "cap exhausted"
+    if state == "unknown":
+        return "no reading"
+    return "not usable"
+
+
 def _attach_model_sublimits(entries: list[dict[str, Any]]) -> None:
     """Name an account's Claude model caps on its shared entry.
 
-    ``--available`` lists only usable pools, so a model cap that is exhausted
-    (Fable's own weekly window at 0% left) vanishes as an entry while the
-    shared entry stays usable and its hint says "without a reported model
-    cap". Consumers then dispatch to the capped model and hit the vendor's
-    429 (2026-11-10). The shared entry now carries ``model_sublimits``, one
-    item per cap whatever its state, and its hint says which models are out.
+    ``--available`` lists only usable pools, so a model cap that is out (Fable's
+    own weekly window at 0% left) vanishes as an entry while the shared entry
+    stays usable and its hint said "without a reported model cap". Consumers
+    then dispatch to the capped model and hit the vendor's 429 (2026-11-10).
+    The shared entry now carries ``model_sublimits``, one item per cap whatever
+    its state, and its hint names every model whose entry is not usable, each
+    with its own reset. ``usable_now: false`` alone means do not route.
     """
     shared = next((e for e in entries if (e.get("pool_family") or "default") == "default"), None)
     if shared is None:
@@ -994,19 +1007,23 @@ def _attach_model_sublimits(entries: list[dict[str, Any]]) -> None:
     caps: list[dict[str, Any]] = []
     for entry in entries:
         family = entry.get("pool_family")
-        if entry is shared or not family:
+        # A family name is upstream text (a paseo window id): never echo one that is
+        # not a plain model name into the hint or the terminal.
+        if entry is shared or not family or not SAFE_MODEL_SCOPE_RE.fullmatch(str(family)):
             continue
         own = [w for w in entry.get("windows") or [] if w.get("quota_scope") == "model_sublimit"]
         if not own:
             continue
         binding = min(own, key=lambda w: (window_remaining(w) is None, window_remaining(w) or 0.0))
         state = str(binding.get("state") or "unknown")
+        usable = bool(entry.get("usable_now"))
         caps.append(
             {
                 "pool_family": family,
                 "label": binding.get("label"),
                 "state": state,
-                "usable_now": bool(entry.get("usable_now")),
+                "usable_now": usable,
+                **({} if usable else {"reason": _cap_reason(entry, state)}),
                 "headroom_percent": entry.get("headroom_percent"),
                 "available_at": entry.get("available_at"),
                 **(
@@ -1019,15 +1036,28 @@ def _attach_model_sublimits(entries: list[dict[str, Any]]) -> None:
     if not caps:
         return
     shared["model_sublimits"] = caps
-    out = [c for c in caps if c["state"] == "exhausted"]
+    out = [c for c in caps if not c["usable_now"]]
     if out:
         names = ", ".join(str(c["pool_family"]).title() for c in out)
-        until = [t for t in (parse_dt(c.get("available_at")) for c in out) if t is not None]
-        when = f" until {min(until).isoformat()}" if until else ""
+        parts = "; ".join(model_cap_notice(c) for c in out)
         shared["models_hint"] = (
-            f"Claude models except {names}; {names} unavailable{when} (its own weekly cap is "
-            "exhausted; see model_sublimits). Other models draw only the shared quota"
+            f"Claude models except {names}; not usable now: {parts}. "
+            "See model_sublimits; the other models draw only the shared quota"
         )
+
+
+def _cap_until(cap: Mapping[str, Any]) -> str:
+    return f" until {cap['available_at']}" if cap.get("available_at") else ""
+
+
+def model_cap_notice(cap: Mapping[str, Any]) -> str:
+    """``Fable until <reset> (cap exhausted)``: one cap's own reset and reason."""
+    return f"{str(cap['pool_family']).title()}{_cap_until(cap)} ({cap.get('reason') or 'not usable'})"
+
+
+def model_cap_line(provider: str, cap: Mapping[str, Any]) -> str:
+    """The `--available` text line for a model cap that is not usable."""
+    return f"{provider} {cap['pool_family']}: NOT usable now{_cap_until(cap)} ({cap.get('reason') or 'not usable'})"
 
 
 def _independent_families(provider: str, by_family: Mapping[str, Any]) -> bool:

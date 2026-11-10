@@ -18,7 +18,7 @@ Releases before 3.9.0 are in the
   Fable weekly window made no entry (only usable pools are listed) while the
   shared Claude entry read usable, "without a reported model cap", so a Fable
   dispatch hit the vendor's 429. The shared entry carries `model_sublimits`
-  (every cap, with state, `usable_now`, `available_at`), its hint names the
+  (every cap, with state, `usable_now`, `reason`, its own `available_at`), its hint names the
   exhausted model and its reset, and the text form prints a `NOT usable now`
   line. Additive; schema stays 1.5
   ([`docs/json-contract.md`](docs/json-contract.md#changelog)).
