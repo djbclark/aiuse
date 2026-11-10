@@ -12,6 +12,8 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [4.0.3] - 2026-11-10
+
 ### Fixed
 
 - **`aiuse --available` now says when a Claude model cap is out.** An exhausted
@@ -334,7 +336,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.0.3...HEAD
+[4.0.3]: https://github.com/djbclark/aiuse/compare/v4.0.0...v4.0.3
 [4.0.0]: https://github.com/djbclark/aiuse/compare/v3.14.0...v4.0.0
 [3.14.0]: https://github.com/djbclark/aiuse/compare/v3.13.2...v3.14.0
 [3.13.2]: https://github.com/djbclark/aiuse/compare/v3.13.1...v3.13.2
