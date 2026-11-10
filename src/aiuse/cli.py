@@ -1348,6 +1348,10 @@ def _run_available(args: argparse.Namespace) -> int:
         if pool.get("models_hint"):
             line += f"  [{pool['models_hint']}]"
         print(line)
+        for cap in pool.get("model_sublimits") or []:
+            if cap.get("usable_now") is False and cap.get("state") == "exhausted":
+                until = f" until {cap['available_at']}" if cap.get("available_at") else ""
+                print(f"  {pool['provider']} {cap['pool_family']}: NOT usable now{until} (own cap exhausted)")
         if pool.get("burn_before_reset"):
             print(f"  burn before reset: {pool['burn_before_reset']['suggestion']}")
     for entry in excluded:
