@@ -42,6 +42,7 @@ project's guides by the job they help you do; most people only need one or two.
 - [`grok-quota.md`](grok-quota.md) — Grok weekly pool + Extra Usage Credits (`grok_billing` native collector).
 
 - [`devin-quota.md`](devin-quota.md) — Devin Free/Pro/Max daily + weekly included quota.
+- [`venice-quota.md`](venice-quota.md) — Venice API USD/DIEM balance; "Balance unavailable" means `canConsume: false` (below Venice's spend buffer), not a fetch failure.
 - [`muse-quota.md`](muse-quota.md) — Muse Code pay-as-you-go spend, plus the 5 h / weekly plan percent when `subs_usage` is present.
 - [`bedrock-quota.md`](bedrock-quota.md) — AWS account total spend from Cost Explorer (not CodexBar's Bedrock row), one read per 6h and only after other usage moves.
 - [`qwencloud-quota.md`](qwencloud-quota.md) — QwenCloud plans + PAYG limit via `qwencloud` CLI; Alibaba Cloud (Bailian) `alibaba` via `bl`.
