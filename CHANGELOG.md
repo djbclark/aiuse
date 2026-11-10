@@ -12,6 +12,24 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-10
+
+### Added
+
+- **`tokscale` collector and ledger caching**:
+  - File-backed caching and `QueryGate` throttling in `collect_tokscale` to prevent child process stampedes and reuse recent responses within `max_cache_age_seconds` (default 600s).
+  - Previous-sample caching in `capture_tokscale_ledger` within `max_cache_age` (default 300s) to avoid re-running `tokscale models` on every snapshot.
+  - Collector cache and QueryGate reuse in `aiuse watch` across screen-only and `all_providers` runs.
+
+### Changed
+
+- **Relaxed sampling and freshness cadences for lower CPU and run-queue footprint**:
+  - Increased `sampling.burst_interval` from 180s to 300s (5m) to reduce LaunchAgent wakeup frequency.
+  - Increased `sampling.active_interval` from 900s to 1800s (30m).
+  - Relaxed `analysis.fresh_threshold_seconds` from 1500s to 1800s (30m).
+  - Increased `collectors.codexbar.max_cache_age_seconds` from 300s to 600s (10m).
+  - Changed default `collectors.openusage_ai.force_refresh` from `true` to `false` so the local service's cached limits are reused without forcing an upstream refresh on every collection.
+
 ### Fixed
 
 - Client-limit messages now require fresh quota and client-availability checks
@@ -343,7 +361,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.0.3...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/djbclark/aiuse/compare/v4.0.3...v4.1.0
 [4.0.3]: https://github.com/djbclark/aiuse/compare/v4.0.0...v4.0.3
 [4.0.0]: https://github.com/djbclark/aiuse/compare/v3.14.0...v4.0.0
 [3.14.0]: https://github.com/djbclark/aiuse/compare/v3.13.2...v3.14.0
