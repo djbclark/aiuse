@@ -192,14 +192,16 @@ Not covered, and why:
 
 ## CLI burst lockout signal (2026-10-09, #33)
 
-The agy CLI and the ACP server are separate clients of one quota. The CLI can
-429 on every request while the quota windows show headroom and ACP keeps
-working (2026-10-03). aiuse now reads the CLI's own logs, passively, at report
-time and attaches `client_limits` (`client: cli`, `state: limited`) to the
-antigravity account and its routing entries. `usable_now` is unchanged, and
-the summary line says "agy cli rate-limited … ACP may still work". Format,
-config knob and limits: [`json-contract.md`](json-contract.md) (section
-`client_limits`). aiuse never sends a probe for this.
+On 2026-10-03, the agy CLI returned 429 on every request while the quota
+windows showed headroom and the then-used ACP client kept working. Clients
+share subscription quota, but a client's burst lockout is a separate signal.
+aiuse reads the CLI's own logs, passively, at report time and attaches
+`client_limits` (`client: cli`, `state: limited`) to the antigravity account
+and its routing entries. `usable_now` stays quota-based. The summary line
+requires fresh quota and client checks before using the configured native
+provider; it does not recommend a retired client. Format, config knob and
+limits: [`json-contract.md`](json-contract.md) (section `client_limits`).
+aiuse never sends a probe for this.
 
 ## Widget-snapshot rows and their clocks (2026-10-17)
 

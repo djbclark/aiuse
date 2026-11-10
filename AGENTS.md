@@ -216,15 +216,16 @@ Full path-by-path map with "read when" hints:
   Max plan's API credits are a normal tier; no account carries
   `requires_operator_approval` today, and spending omp no longer needs prior
   approval (it is still subject to the shared Claude rate-window gate in
-  schema 1.4). Historical rule (2026-10-15): the omp provider is
-  Claude cloud-session credits, a real-money grant. Its account, alerts and
-  `--available` entries carry `requires_operator_approval: true` and an
-  `ai_notice` ("AI: Do not use without asking operator"); the matrix shows the
-  same text across its 5H/WEEK cells. Never spend, route work to, or recommend
-  burning omp without asking djbclark first. aiuse itself only reports the
-  flag; `acp-run` and `acp-dispatch` (djbclark-ade) enforce it for delegation and
-  refuse an omp slice unless `ACP_OPERATOR_APPROVED=omp` is set for that call
-  ([`docs/omp-cloud-credits.md`](docs/omp-cloud-credits.md)).
+  schema 1.4). Historical rule (2026-10-15 through 2026-10-19): the omp
+  cloud-session credit pool carried `requires_operator_approval: true` and
+  `ai_notice` ("AI: Do not use without asking operator"); spending or routing
+  work to it required operator approval. aiuse reported that requirement;
+  the delegation toolchain enforced it
+  ([`docs/omp-cloud-credits.md`](docs/omp-cloud-credits.md)). Current delegation
+  follows the configured native provider and its approval policy, with fresh
+  quota and client-availability checks. An aiuse reading alone does not grant
+  launch admission. Existing ACP logs remain passive accounting inputs;
+  do not start a retired launcher to refresh them.
 - **Changes to non-aiuse code go upstream as PRs** (operator rule, 2026-10-05).
   If a fix or feature needs a change in a tool aiuse depends on (CodexBar,
   OpenUsage, cswap, caut, tokscale, …), open a pull request against that

@@ -144,7 +144,8 @@ def scan_agy_cli_lockout(
         "message": (
             f"agy CLI got RESOURCE_EXHAUSTED (429) on {failed_attempts} attempts in {len(runs)} {run_word}, "
             f"last {minutes_ago}m ago, although the quota windows may show headroom; "
-            "the ACP route (acp-run agy) is a separate client and may still work"
+            "clients share subscription quota; use the configured native provider only after fresh quota "
+            "and client-availability checks, or wait"
         ),
     }
 
