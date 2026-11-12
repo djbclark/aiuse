@@ -79,10 +79,11 @@ SEMANTICS: dict[str, str] = {
     "max_share_of_parent_percent": "model cap as a share of the shared weekly budget; Fable <=50%, not an extra 50%",
     "model_sublimits": "on a Claude shared (default) entry: one item per model cap the account reports, whatever its state {pool_family, label, state, usable_now, reason (only when usable_now is false: cap exhausted | reading frozen | no reading | not usable), headroom_percent, available_at (that cap's own reset), max_share_of_parent_percent}. --available lists only usable pools, so an exhausted cap (Fable at 0% left) has no entry of its own; this field is where it shows. usable_now false, whatever the state: do not route that model until its available_at; the other Claude models are unaffected. Omitted when the account reports no model cap (older or partial data)",
     "headroom_basis": "shared_weekly for Fable routing entries: min(shared headroom, 0.5 * Fable cap headroom); window percentages remain relative to their own limits",
-    "age_seconds": "seconds since collected_at, computed at read time; stale data can hide a fresh exhaustion",
-    "fresh": "age_seconds <= fresh threshold (default 1500s); when false, re-collect before trusting ok states",
-    "stale": "age_seconds > fresh threshold; the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
-    "stale_reason": "present on a stale pool/account: why the reading is old — its age against the fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
+    "age_seconds": "seconds since collected_at (an account's own collected_at when its collector served a reused/cached payload), computed at read time; a future timestamp is clock skew, clamped to 0; stale data can hide a fresh exhaustion",
+    "fresh": "age_seconds <= the pool's fresh limit (analysis.fresh_threshold_seconds, default 1800s; analysis.fresh_threshold_seconds_by_provider overrides per provider — antigravity ships at 600s because its pools drain fast and its collector reuses payloads up to its 900s query gate); when false, re-collect before trusting ok states. In --available/serve envelopes the top-level fresh is true only when every usable entry is fresh too",
+    "stale": "age_seconds > the pool's fresh limit (per-provider, see fresh); the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
+    "stale_reason": "present on a stale pool/account: why the reading is old — its age against the pool's fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
+    "stale_pools": "--available and serve /v1/snapshot envelopes: usable_now entries whose own reading is past their pool's fresh limit; the envelope's top-level fresh is true only when this list is empty and the snapshot itself is fresh. Do not route on a stale usable entry without re-collecting (--live): a burst drain or a reused query can have emptied it between reads",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
     "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
@@ -310,8 +311,16 @@ def enrich_account(
     now: datetime | None = None,
     notes: list[Mapping[str, Any]] | None = None,
     threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
+    threshold_by_provider: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
-    """Add self-describing fields to one account dict (windows enriched too)."""
+    """Add self-describing fields to one account dict (windows enriched too).
+
+    ``threshold_by_provider`` (provider id -> seconds) overrides the global
+    ``threshold_seconds`` per provider: a fast-draining pool (antigravity) must
+    read stale long before the 30-min global limit — its collector legitimately
+    serves reused payloads up to its query gate interval old, and a burst can
+    empty the pool inside that window (2026-11-12 agy incident).
+    """
     now = now or utcnow()
     provider = str(account.get("provider") or "")
     windows = [w for w in (account.get("windows") or []) if isinstance(w, dict)]
@@ -372,16 +381,20 @@ def enrich_account(
         account["available_at"] = None
 
     acct_collected = account.get("collected_at") or collected_at
+    limit = _provider_fresh_limit(provider, threshold_seconds, threshold_by_provider)
     if acct_collected:
         account["collected_at"] = acct_collected
         dt = parse_dt(acct_collected)
         if dt:
-            age = (now - dt).total_seconds()
+            # A reading timestamped in the future is clock skew, not time travel:
+            # clamp so age never goes negative and the entry reads fresh, not
+            # pre-fresh (the envelope's freshness() clamps the same way).
+            age = max(0.0, (now - dt).total_seconds())
             account["age_seconds"] = round(age, 1)
-            account["fresh"] = age <= threshold_seconds
-            account["stale"] = age > threshold_seconds
+            account["fresh"] = age <= limit
+            account["stale"] = age > limit
             if account["stale"]:
-                account["stale_reason"] = _stale_reason(account, age, threshold_seconds)
+                account["stale_reason"] = _stale_reason(account, age, limit)
             else:
                 account.pop("stale_reason", None)
         else:
@@ -395,6 +408,21 @@ def enrich_account(
 
     _apply_ceiling_caps(provider, windows)
     return account
+
+
+def _provider_fresh_limit(
+    provider: str,
+    threshold_seconds: float,
+    threshold_by_provider: Mapping[str, float] | None,
+) -> float:
+    """This provider's fresh limit: its mapping entry, else the global limit."""
+    if threshold_by_provider:
+        key = provider.strip().lower()
+        try:
+            return float(threshold_by_provider.get(key, threshold_seconds))
+        except (TypeError, ValueError):
+            return threshold_seconds
+    return threshold_seconds
 
 
 def _stale_reason(account: Mapping[str, Any], age: float, threshold_seconds: float) -> str:
@@ -688,6 +716,7 @@ def enrich_snapshot(
     notes: list[Mapping[str, Any]] | None = None,
     client_limits: Mapping[str, list[dict[str, Any]]] | None = None,
     threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
+    threshold_by_provider: Mapping[str, float] | None = None,
     history: list[Mapping[str, Any]] | None = None,
     min_frozen_seconds: float | None = None,
     check_frozen: bool = False,
@@ -701,6 +730,11 @@ def enrich_snapshot(
     each matching account's ``client_limits``; read-time evidence wins over
     whatever a cached snapshot carried.
 
+    ``threshold_by_provider`` (provider id -> seconds) overrides the global
+    ``threshold_seconds`` per account; when omitted it is read from
+    ``config['analysis']['fresh_threshold_seconds_by_provider']`` so every
+    enrichment path (read, save, serve) applies the same per-pool limits.
+
     When ``check_frozen`` is true, identical ``used_percent`` values that span
     ``min_frozen_seconds`` of ``history`` (or recent on-disk snapshots when
     ``history`` is omitted) mark the window ``measurement_frozen`` only if an
@@ -709,6 +743,10 @@ def enrich_snapshot(
     unit tests leave it off (or pass a temp ``acp_log_dir``) so they stay hermetic.
     """
     now = now or utcnow()
+    if threshold_by_provider is None and isinstance(config, Mapping):
+        analysis_cfg = config.get("analysis")
+        if isinstance(analysis_cfg, Mapping):
+            threshold_by_provider = analysis_cfg.get("fresh_threshold_seconds_by_provider")
     if credit_overrides is not None or any(
         isinstance(a, dict) and a.get("provider") in ("omp", "pi") for a in snap.get("accounts") or []
     ):
@@ -725,6 +763,7 @@ def enrich_snapshot(
             now=now,
             notes=notes,
             threshold_seconds=threshold_seconds,
+            threshold_by_provider=threshold_by_provider,
         )
         if client_limits is not None:
             limits = client_limits.get(str(account.get("provider") or ""))
@@ -803,6 +842,50 @@ def freshness(
         return {"age_seconds": None, "fresh": False}
     age = max(0.0, (now - dt).total_seconds())
     return {"age_seconds": round(age, 1), "fresh": age <= threshold_seconds}
+
+
+def stale_pool_summaries(entries: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Compact identity rows for usable-now entries past their pool's fresh limit.
+
+    These are the pools an orchestrator must not trust from this envelope: the
+    reading is old enough (per-provider limit, see enrich_account) to hide a
+    burst drain — re-collect (--live) before routing on them.
+    """
+    out: list[dict[str, Any]] = []
+    for entry in entries:
+        if not entry.get("usable_now") or entry.get("fresh"):
+            continue
+        summary: dict[str, Any] = {
+            "provider": entry.get("provider"),
+            "account": entry.get("account"),
+            "pool_family": entry.get("pool_family"),
+            "age_seconds": entry.get("age_seconds"),
+        }
+        if entry.get("stale_reason"):
+            summary["stale_reason"] = entry["stale_reason"]
+        out.append(summary)
+    return out
+
+
+def envelope_freshness(
+    collected_at: str | None,
+    entries: list[Mapping[str, Any]],
+    *,
+    now: datetime | None = None,
+    threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
+) -> dict[str, Any]:
+    """Top-level age/fresh for an envelope whose entries route independently.
+
+    ``fresh`` is true only when the snapshot itself is within the global
+    threshold AND no usable-now entry is past its own pool's fresh limit
+    (per-provider thresholds) — the 2026-11-12 agy incident: the snapshot said
+    fresh while its reused antigravity reading was 15-20 min old and the pools
+    drained minutes later. ``stale_pools`` names the offenders so a consumer
+    can re-collect just those.
+    """
+    base = freshness(collected_at, now=now, threshold_seconds=threshold_seconds)
+    stale = stale_pool_summaries(entries)
+    return {**base, "fresh": bool(base["fresh"]) and not stale, "stale_pools": stale}
 
 
 BURN_BEFORE_RESET_DAYS = 21.0

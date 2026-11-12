@@ -1223,7 +1223,7 @@ def _run_available(args: argparse.Namespace) -> int:
         apply_exclusions,
         available_pools,
         enrich_snapshot,
-        freshness,
+        envelope_freshness,
         model_cap_line,
         summary_line,
     )
@@ -1308,7 +1308,6 @@ def _run_available(args: argparse.Namespace) -> int:
         credit_overrides=load_overrides(config),
         config=config,
     )
-    fresh = freshness(snap_dict.get("collected_at"), threshold_seconds=threshold)
     # [disabled_services] is the stronger, overall disable: rows are normally
     # filtered at collection, but a cache written by an older build (or with
     # the entry added after the snapshot) can still carry the pools — so the
@@ -1320,6 +1319,10 @@ def _run_available(args: argparse.Namespace) -> int:
         candidates = [p for p in candidates if _wanted(str(p.get("provider") or ""))]
     pools, excluded = apply_exclusions(candidates, exclusions)
     hidden_pools = snap_dict.get("hidden_pools") or {}
+    # Top-level fresh is honest per pool: it is true only when the snapshot
+    # itself is within the global limit AND every reported usable entry is
+    # within its own pool's limit (fast-draining pools ship shorter defaults).
+    fresh = envelope_freshness(snap_dict.get("collected_at"), pools, threshold_seconds=threshold)
 
     if args.json or args.format == "json":
         print(
@@ -1369,6 +1372,11 @@ def _run_available(args: argparse.Namespace) -> int:
         taken = parse_dt(snap_dict.get("collected_at") if isinstance(snap_dict.get("collected_at"), str) else None)
         if fresh["fresh"]:
             age_note = f"age {fresh['age_seconds']:.0f}s, fresh"
+        elif fresh["stale_pools"]:
+            names = ", ".join(
+                f"{entry['provider']}/{entry['pool_family'] or 'default'}" for entry in fresh["stale_pools"]
+            )
+            age_note = f"age {fresh['age_seconds']:.0f}s, stale pools: {names} (--live re-collects)"
         elif taken is not None:
             age_note = format_as_of(taken)
         else:

@@ -179,6 +179,11 @@
 # persist_snapshots = true
 # learn_from_history = "auto" # true | false | auto
 # fresh_threshold_seconds = 1800 # cached snapshot counts as fresh under this age (seconds)
+# Per-provider overrides of fresh_threshold_seconds: fast-draining pools need a
+# shorter limit (antigravity ships at 600s — its collector reuses payloads up to
+# its 900s query gate, and a burst can empty the pool inside that window).
+# [analysis.fresh_threshold_seconds_by_provider]
+# antigravity = 600
 # agy_cli_lockout_minutes = 60  # scan agy CLI logs this far back for 429s (client_limits); 0 off
 
 # Operator-declared dead subscriptions: "provider/account" = reason (or true).
