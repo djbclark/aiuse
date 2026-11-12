@@ -122,7 +122,7 @@ def alert_priority_band(alert: UseOrLoseAlert) -> int:
 def alert_use_urgency(alert: UseOrLoseAlert) -> float:
     """Primary within-band priority; higher appears lower in the queue.
 
-    For slow, mid and use rows it is the dollars at risk in the alert's window at
+    For slow rows it is capacity dollars; mid/use use unused dollars per day at
     the built-in plan prices (the formula is in :class:`_Pricing`).  Kept as a
     scalar public helper for callers/tests.  Rendering uses the full
     :func:`_alert_queue_priority` tuple, so ties preserve the analyzer's

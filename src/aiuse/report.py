@@ -837,7 +837,7 @@ def _account_queue_priority(
 ) -> _Priority:
     """Category-specific priority for rows without an analysis alert.
 
-    A live window leads with the dollars its own pace projects to expire unspent
+    A live window leads with unused dollars per day until reset, projected by its pace
     (no alert carried that pace, so it is measured here at ``now``), or with what
     it holds when there is no pace to project; see :class:`_Pricing`.
     """
@@ -890,7 +890,7 @@ def _pool_queue_priority(
     monthly parent.  Taking every window instead makes ubiquitous nested 5h
     rate limits dominate.  Pick one representative per clock, ignore 5h when
     the pool also has weekly/monthly clocks, then take the clock with the most
-    dollars at risk (its projected waste), the soft recommendation breaking ties.
+    unused dollars per day until reset, the soft recommendation breaking ties.
     Single-clock short-window providers still rank normally.
     """
     if band != _BAND_MID or not windows:
