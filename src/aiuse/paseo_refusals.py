@@ -223,10 +223,13 @@ def scan_paseo_quota_refusals(
             zai_limit = parse_zai_usage_limit(text)
             if zai_limit is None:
                 continue
-            family, resets_at = zai_limit
+            span_family, resets_at = zai_limit
             if resets_at <= now:
                 continue  # already reset; a fresh collector reading wins
-            provider = _provider_of(doc) or "zai"
+            # Pi is a transport: pi + zai/glm-* must exhaust zai's 5h window,
+            # not a residual pi pool (review F1, 2026-11-12).
+            provider, _mapped = refusal_target(_provider_of(doc) or "zai", _model_of(doc))
+            family = span_family
             event = _event_time(doc) or now
             key = (provider, family)
             if key in found and found[key][0] >= event:
@@ -321,8 +324,13 @@ def paseo_note_evidence_gone(evidence: str) -> bool:
     text = str(doc.get("lastError") or "").casefold()
     if not text:
         return True
+    # 1308 is quota ("usage limit reached ... reset at"), not the 1302
+    # rate limit. A live 1308 must keep its note until the stated reset
+    # (review F2); a later 1302 on the same file does not.
     refusal_standing = (
-        any(marker in text for marker in _EXHAUSTED_MARKERS) or _SPEND_LIMIT_MARKER in text
+        any(marker in text for marker in _EXHAUSTED_MARKERS)
+        or _SPEND_LIMIT_MARKER in text
+        or parse_zai_usage_limit(text) is not None
     ) and not any(marker in text for marker in _THROTTLE_MARKERS)
     return not refusal_standing
 

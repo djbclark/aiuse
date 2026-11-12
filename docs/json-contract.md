@@ -242,8 +242,6 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
   its own `stale: true` / `stale_reason`; consumers must treat it as
   unverified and re-collect before routing on it.
 
-||||||| parent of 0859887 (feat(refusals): paseo agent errors mark pools exhausted or throttled)
-
 #### Additive (2026-11-12, paseo refusals — schema stays 1.5)
 
 - Paseo agent error files are a passive refusal source: a multi-day

@@ -206,12 +206,26 @@ def test_zai_1308_parses_as_utc_plus_eight():
 def test_zai_1308_marks_the_five_hour_pool_exhausted_until_the_reset():
     now = parse_dt("2026-11-12T17:45:00+00:00")
     assert now is not None
+    # The agent that hit 1308 runs through Pi; the exhausted pool is zai's.
     _write_agent("proj", "oooo-1", _agent("pi", "zai/glm-5.3-flash", ZAI_1308, now=now))
     refusals = scan_paseo_quota_refusals(now=now)
-    assert [(r["provider"], r["pool_family"]) for r in refusals] == [("pi", "5h")]
+    assert [(r["provider"], r["pool_family"]) for r in refusals] == [("zai", "5h")]
     assert parse_dt(refusals[0]["resets_at"]) == parse_dt("2026-11-12T22:14:11+00:00")
     # quota exhaustion, never the throttle path (that is code 1302)
     assert scan_paseo_throttle(now=now) is None
+
+
+def test_live_1308_evidence_keeps_the_note():
+    now = parse_dt("2026-11-12T17:45:00+00:00")
+    assert now is not None
+    doc = _agent("pi", "zai/glm-5.3-flash", ZAI_1308, now=now)
+    _write_agent("proj", "qqqq-1", doc)
+    path = paseo_refusals.paseo_agents_dir() / "proj" / "qqqq-1.json"
+    notes = load_active_notes(now=now)
+    assert any(n.get("provider") == "zai" and n.get("pool_family") == "5h" for n in notes)
+    assert not paseo_refusals.paseo_note_evidence_gone(str(path))
+    notes = load_active_notes(now=now + timedelta(minutes=5))
+    assert any(n.get("pool_family") == "5h" for n in notes)
 
 
 def test_zai_1308_past_reset_is_ignored():

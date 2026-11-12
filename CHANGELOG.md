@@ -26,8 +26,6 @@ Releases before 3.9.0 are in the
   age 0 instead of a negative age. Additive, schema stays 1.5; contract noted
   in `docs/json-contract.md`.
 
-||||||| parent of 0859887 (feat(refusals): paseo agent errors mark pools exhausted or throttled)
-
 ### Added
 
 - Paseo agents are now a passive refusal source, so a pool fails closed right
