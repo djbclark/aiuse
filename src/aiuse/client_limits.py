@@ -157,4 +157,12 @@ def load_client_limits(config: dict[str, Any] | None = None) -> dict[str, list[d
     agy = scan_agy_cli_lockout(lookback=timedelta(minutes=minutes)) if minutes > 0 else None
     if agy is not None:
         limits["antigravity"] = [agy]
+    # Paseo agents hitting a short vendor 429 (Pi z.ai code 1302): state
+    # limited with a short cooldown, never an exhausted pool (usable_now
+    # stays quota-based; the route may already work again).
+    from aiuse.paseo_refusals import scan_paseo_throttle
+
+    throttle = scan_paseo_throttle()
+    if throttle is not None:
+        limits["pi"] = [throttle]
     return limits
