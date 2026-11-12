@@ -151,7 +151,7 @@ def test_use_band_orders_by_dollars_not_analyzer_score():
     rows = _rows([weekly, short], CLAUDE_PLANS)
     assert [r.account_full for r in rows] == ["short@x.com", "weekly@x.com"]
     assert [r.band for r in rows] == [_BAND_USE, _BAND_USE]
-    assert [r.queue_score for r in rows] == [84, 90]
+    assert [r.queue_score for r in rows] == [84, 88]
 
 
 def test_a_percent_of_a_bigger_plan_is_worth_more_in_use_and_mid():
@@ -253,7 +253,7 @@ def test_a_pool_collapses_onto_its_most_valuable_burn_and_most_restrictive_conse
         _alert("claude", "b@x.com", "weekly", WEEKLY, 5.0, kind="conserve"),  # $3.45
     ]
     burn_row, slow_row = sorted(_rows(alerts, plans, snapshot), key=lambda r: r.account_full)
-    assert burn_row.band == _BAND_USE and burn_row.queue_score == 75 + 21  # the 5h's $2.87 would score 75 + 15
+    assert burn_row.band == _BAND_USE and burn_row.queue_score == 75 + 19  # $27.60 over two days: $13.80/day
     assert slow_row.band == _BAND_SLOW and slow_row.queue_score == 25 + 12  # $3.45 would score 25 + 15
 
 
@@ -279,12 +279,12 @@ def test_unalerted_mid_rows_order_by_projected_waste():
         ("claude", "pro@x.com"),
         ("claude", "max@x.com"),
     ]
-    assert [r.queue_score for r in rows] == [50, 60, 62, 68]
+    assert [r.queue_score for r in rows] == [50, 57, 59, 65]
 
 
-def test_unalerted_mid_rows_with_equal_waste_fall_back_to_soft_urgency():
-    # Untouched windows project all of their value as waste whatever the days left, so the dollars
-    # tie; the soft urgency (percent left x deadline pressure) then puts the later reset first.
+def test_unalerted_mid_rows_with_equal_waste_prioritize_earlier_reset():
+    # Untouched windows hold the same capacity, but the nearer deadline has
+    # more dollars per day to rescue and receives a higher primary score.
     snapshot = Snapshot(
         collected_at=utcnow(),
         accounts=[
@@ -294,7 +294,7 @@ def test_unalerted_mid_rows_with_equal_waste_fall_back_to_soft_urgency():
     )
     rows = _rows([], CLAUDE_PLANS, snapshot)
     assert [r.account_full for r in rows] == ["late@x.com", "soon@x.com"]
-    assert rows[0].queue_score == rows[1].queue_score
+    assert rows[0].queue_score < rows[1].queue_score
 
 
 def test_unalerted_mid_row_without_a_window_sits_at_the_mid_floor():

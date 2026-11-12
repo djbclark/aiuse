@@ -31,7 +31,7 @@ category transitions contiguous: `slow` is 25–49, `mid` is 50–74, and `use`
 is 75–99. The ranges are not independently stretched: inside its range a row's
 score is the dollars at risk in its window, log-scaled from $0.01 to $100 — in
 `slow` what is still unspent (plan price per refill × percent left), in `mid` and
-`use` the share of a refill the row's pace projects to expire unspent — so the
+`use` the share of a refill the row's pace projects to expire unspent divided by days until reset — so the
 strongest `slow` row is 49 beside a weakest `mid` at 50, and the strongest `mid`
 is 74 beside a weakest active `use` recommendation at 75. An error prints `??`
 because its urgency is unknown; non-expiring `n/a` inventory prints `--` because
@@ -93,7 +93,7 @@ The bands are fixed in that order and each is also a deliberate queue. Read
   window) higher and the one with the most lower; at equal capacity the most
   severe projected early lockout sits higher and the pool closest to safe use lower.
 - **mid** is a soft recommendation queue: the dollars the row's pace projects to
-  expire unspent at the reset rank it, so an imminent reset with real waste
+  expire unspent divided by days until reset rank it, so an imminent reset with real waste
   outranks a big window with days left. An on-pace window the analyzer raised no
   alert for is paced by the board itself; a window with no pace to project (no
   reset time) keeps its capacity, and so does one still under 15% elapsed
@@ -101,9 +101,13 @@ The bands are fixed in that order and each is also a deliberate queue. Read
   never ranks on a projection `classify_pace` declined to act on. Ties fall to
   the analyzer score when there is an alert, else to the soft recommendation
   (remaining capacity multiplied by reset pressure).
-- **use** ranks the same way (projected waste, then analyzer score, remaining
+- **use** ranks the same way (projected unused dollars per day, then analyzer score, remaining
   capacity and sooner reset), so the bottom row is the one `aiuse suggest`, the
   JSON `suggestion` and the `use:` head of `aiuse status` name.
+
+The time horizon has a one-day floor so minute-scale reset changes cannot dominate.
+Unknown or already-passed deadlines use a conservative 30-day horizon. Capacity
+fallbacks also receive this deadline weighting; conserve rows keep capacity ranking.
 
 The score uses shared action-state thresholds, while sorting retains the
 category-specific evidence needed to order unlike states honestly. The matrix

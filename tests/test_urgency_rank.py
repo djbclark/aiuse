@@ -1,6 +1,6 @@
 """Mid and use rows rank by the dollars their pace projects to expire unspent.
 
-A row's priority leads with ``projected_waste_fraction x cycle value``: the share of one full refill of its
+A row's priority leads with ``projected_waste_fraction x cycle value / max(days_left, 1)``: the share of one full refill of its
 window that will still be unspent at the reset, priced exactly like capacity (the account's price, the plan's
 value_multiplier, the cheapest-plan fallback for an unpriced provider).  An imminent reset with real waste
 therefore outranks a big window with days left.  A row with no pace to project keeps its capacity, and slow
@@ -143,7 +143,7 @@ def test_an_alert_leads_with_the_dollars_its_pace_projects_to_expire():
     pricing = _Pricing.from_config(CONFIG)
     alert = _alert("claude", "max@x.com", "weekly", WEEKLY, 40.0, score=77.0, days=2.0, pace=_pace(0.31))
     priority = _alert_queue_priority(alert, pricing=pricing)
-    assert priority[0] == pytest.approx(0.31 * 200 * _share(WEEKLY))
+    assert priority[0] == pytest.approx(0.31 * 200 * _share(WEEKLY) / 2)
     # The tie-breakers are unchanged: analyzer score, remaining capacity, sooner reset.
     assert priority[1:] == (77.0, 40.0, -2.0)
 
@@ -208,7 +208,7 @@ def test_an_early_window_keeps_its_capacity_not_a_projection_the_analyzer_refuse
     # floor).  Gated, each row is worth its capacity instead.
     for remaining in (90.0, 95.0):
         assert pricing.window_at_risk_usd("copilot", "a@x.com", early(remaining), now) == pytest.approx(
-            pricing.capacity_usd("copilot", "a@x.com", remaining, WEEKLY, "weekly")
+            pricing.capacity_usd("copilot", "a@x.com", remaining, WEEKLY, "weekly") / (7 * 0.96)
         )
     # A real reorder: the fuller window now outranks the emptier one, where the raw projection had
     # flattened both to the floor.
@@ -228,7 +228,7 @@ def test_a_window_past_the_early_threshold_still_ranks_by_its_projection():
         window_minutes=WEEKLY,
     )
     assert pricing.window_at_risk_usd("copilot", "a@x.com", paced, now) == pytest.approx(
-        pricing.at_risk_usd("copilot", "a@x.com", 70.0, WEEKLY, "weekly", 0.4)
+        pricing.at_risk_usd("copilot", "a@x.com", 70.0, WEEKLY, "weekly", 0.4, 3.5)
     )
 
 
@@ -246,8 +246,8 @@ def test_an_early_window_ranks_by_its_capacity_on_the_board():
     )
     rows = _build_matrix_rows([], snapshot, CONFIG)
     assert [r.account_full for r in rows] == ["fast@x.com", "idle@x.com"]
-    assert rows[0].queue_score == 64  # $2.42: the unspent 70% of a $10 plan's weekly refill
-    assert rows[1].queue_score == 65  # $3.45: the whole weekly refill of a $10 plan
+    assert rows[0].queue_score == 59  # $2.42 over 6.72 days
+    assert rows[1].queue_score == 60  # $3.45 over 6.72 days
 
 
 def test_an_analyzer_approved_early_burn_still_ranks_by_its_projection():
@@ -272,7 +272,7 @@ def test_an_analyzer_approved_early_burn_still_ranks_by_its_projection():
         ),
     )
     assert _alert_queue_priority(approved, pricing=pricing)[0] == pytest.approx(
-        pricing.at_risk_usd("claude", "a@x.com", 60.0, WEEKLY, "weekly", 0.4)
+        pricing.at_risk_usd("claude", "a@x.com", 60.0, WEEKLY, "weekly", 0.4, 2.0)
     )
 
 
@@ -286,8 +286,8 @@ def test_a_row_with_no_pace_to_project_ranks_by_its_capacity():
     # No pace at all, and a pace that projects nothing (an unclocked window): the same dollars.
     no_pace = _alert("claude", "a@x.com", "weekly", WEEKLY, 60.0, pace=None)
     unprojected = _alert("claude", "a@x.com", "weekly", WEEKLY, 60.0, pace=_pace(None))
-    assert _alert_queue_priority(no_pace, pricing=pricing)[0] == pytest.approx(capacity)
-    assert _alert_queue_priority(unprojected, pricing=pricing)[0] == pytest.approx(capacity)
+    assert _alert_queue_priority(no_pace, pricing=pricing)[0] == pytest.approx(capacity / 2)
+    assert _alert_queue_priority(unprojected, pricing=pricing)[0] == pytest.approx(capacity / 2)
 
     # An unalerted window with no reset time has no pace either: it scores its capacity.
     snapshot = Snapshot(
@@ -303,7 +303,7 @@ def test_a_row_with_no_pace_to_project_ranks_by_its_capacity():
     )
     (row,) = _build_matrix_rows([], snapshot, CONFIG)
     assert row.band == _BAND_MID
-    assert row.queue_score == 64  # 60% of a $3.45 weekly refill = $2.07
+    assert row.queue_score == 55  # $2.07 over the unknown-deadline horizon of 30 days
 
 
 def test_no_pace_ranks_at_capacity_the_most_it_could_lose_above_a_window_projected_to_be_used():
@@ -473,3 +473,37 @@ def test_ranking_waste_matches_the_json_projected_waste_usd_of_a_priced_account(
             alert.pace.projected_waste_fraction,
         )
         assert alert.pace.projected_waste_usd == pytest.approx(waste, abs=0.006)
+
+
+def test_monthly_waste_due_tomorrow_beats_more_waste_due_next_week():
+    imminent = _alert("copilot", "tomorrow", "monthly", MONTHLY, 60, days=1, pace=_pace(0.5))
+    later = _alert("claude", "later", "monthly", MONTHLY, 90, days=6, pace=_pace(0.8))
+    rows = _build_matrix_rows([later, imminent], None, CONFIG)
+    assert [row.account_full for row in rows] == ["later", "tomorrow"]
+    assert alert_sort_key(imminent, _Pricing.from_config(CONFIG)) > alert_sort_key(later, _Pricing.from_config(CONFIG))
+
+
+def test_reset_pressure_is_bounded_and_does_not_promote_stale_deadlines():
+    pricing = _Pricing.from_config(CONFIG)
+
+    def priority(days):
+        return _alert_queue_priority(
+            _alert("copilot", None, "monthly", MONTHLY, 60, days=days, pace=_pace(0.5)), pricing=pricing
+        )[0]
+
+    assert priority(0) == priority(0.001) == priority(1)
+    assert priority(1) > priority(7) > priority(14) > priority(None)
+    assert priority(-1) == priority(None)
+
+
+def test_unalerted_monthly_pools_also_prioritize_nearby_waste():
+    now = utcnow()
+    snapshot = Snapshot(
+        collected_at=now,
+        accounts=[
+            _account(now, "copilot", "tomorrow", ("monthly", 60, 1, MONTHLY)),
+            _account(now, "claude", "later", ("monthly", 80, 6, MONTHLY)),
+        ],
+    )
+    rows = _build_matrix_rows([], snapshot, CONFIG)
+    assert [row.account_full for row in rows] == ["later", "tomorrow"]

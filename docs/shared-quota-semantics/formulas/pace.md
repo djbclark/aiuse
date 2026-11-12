@@ -72,11 +72,12 @@ Default parameters: see `policy/pace_defaults.yaml`.
   - **capacity**, what is still unspent in the row's window now:
     `monthly_price / max(refills per waking month, 1) x remaining% x value_multiplier`. `slow` ranks by it.
   - **projected waste**, what the pace says will still be unspent at the reset: `projected_waste_fraction`
-    (P7) `x` the cycle value, the capacity figure at 100% remaining. `mid` and `use` rank by it, so an
+    (P7) `x` the cycle value, the capacity figure at 100% remaining. `mid` and `use` rank by it divided by days until reset, so an
     imminent reset with real waste outranks a big window with days left. A row with no
     `projected_waste_fraction` (no reset time or duration, P3/W1; an alert that carries no pace) ranks by its
     capacity instead, the most it could lose. A window with no alert is paced the same way (P1–P7, no
-    learned rate).
+    learned rate). The divisor has a one-day floor; unknown or already-passed deadlines use 30 days.
+    Capacity fallbacks receive the same deadline weighting. `slow` capacity ranking is unchanged.
 - **B2:** Never promote prepaid into `use`/`slow` from remaining% alone.
 
 ## Suggestion (G1–G2)
