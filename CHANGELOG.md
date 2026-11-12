@@ -26,6 +26,28 @@ Releases before 3.9.0 are in the
   age 0 instead of a negative age. Additive, schema stays 1.5; contract noted
   in `docs/json-contract.md`.
 
+### Added
+
+- Paseo agents are now a passive refusal source, so a pool fails closed right
+  after the first vendor refusal instead of when the quota endpoint catches
+  up. The daemon's per-agent error files (`~/.paseo/agents/...`) are scanned
+  read-only at note/limit load time: a multi-day `Individual quota reached …
+Resets in XhYmZs` refusal persists as the usual `agent-reported` exhaustion
+  note (reset parsed from the text, anchored to the error's `updatedAt`;
+  antigravity `claude-*`/`gpt-*` → `claude_gpt`, `gemini-4-argon*` →
+  `gemini_argon`), and the refusal beats a stale or optimistic reading until
+  its reset — or, with no reset in the text, until a fresh successful probe
+  (notes whose evidence file no longer shows the refusal are pruned). The Pi
+  `enforced spend limit` refusal (metered OpenAI API platform, `openai/*`
+  models → the `pi` provider's `openai_api` pool, never codex) marks that
+  pool exhausted with a bounded 24 h fallback reset; `openai_api` exhaustion
+  is refusal-driven only, since neither CodexBar's meter nor the OpenAI API
+  exposes the enforced limit. A short rate limit — the Pi z.ai `429 code
+1302` — is never an exhaustion: it surfaces as a `client_limits` cooldown
+  entry (state `limited`, 10 min) on the `pi` account with `usable_now`
+  untouched. Evidence 2026-11-12: agents saw both antigravity weekly pools
+  refuse while aiuse still reported 36%/31% left.
+
 ## [4.1.1] - 2026-11-12
 
 ### Changed

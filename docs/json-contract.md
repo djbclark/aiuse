@@ -242,6 +242,27 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
   its own `stale: true` / `stale_reason`; consumers must treat it as
   unverified and re-collect before routing on it.
 
+#### Additive (2026-11-12, paseo refusals — schema stays 1.5)
+
+- Paseo agent error files are a passive refusal source: a multi-day
+  `Individual quota reached … Resets in XhYmZs` refusal persists as an
+  `agent-reported` exhaustion note for its pool
+  (provider + model → family via the existing antigravity split), so
+  `--available` fails closed after the first refusal even when the quota
+  endpoint still serves cached percentages. Reset is anchored to the error's
+  `updatedAt`, never the scan time. The refusal beats a stale or optimistic
+  reading until its reset — or, when the text carries no reset (the OpenAI
+  enforced spend limit), until a fresh successful probe: a note whose Paseo
+  evidence file no longer shows the refusal is pruned. Pi models named
+  `openai/*` map to the `pi` provider's `openai_api` pool (never codex); its
+  exhaustion is refusal-driven only (see above). A short rate limit (Pi z.ai
+  429 code 1302, "Rate limit reached for requests") is NEVER an exhaustion:
+  it appears as a `client_limits` entry (`client: "paseo-agent"`, state
+  `limited`, `cooldown_until`, 10 min) on the `pi` account, quota-based
+  `usable_now` untouched. New fields inside `client_limits[]` entries:
+  `provider_hint`, `cooldown_until`, `cooldown_minutes` (agy entries keep
+  their shape); note files gain an optional `evidence` path (additive).
+
 #### Additive (2026-11-10, schema stays 1.5)
 
 - Claude shared (`pool_family: "default"`) entries gain `model_sublimits`: one
@@ -744,7 +765,12 @@ each of its routing entries (`--available`, `snapshot.accounts[]`) may carry:
 
 It is read **passively** at report time from the client's own logs (today:
 the agy CLI's `Run: attempt N failed (RESOURCE_EXHAUSTED (code 429) …` retry
-lines within `analysis.agy_cli_lockout_minutes`, default 60, 0 disables). No
+lines within `analysis.agy_cli_lockout_minutes`, default 60, 0 disables; and
+since 2026-11-12 the Paseo daemon's per-agent error files
+(`~/.paseo/agents/...`, source `paseo-agent-error`): a recent Pi z.ai 429
+(`code 1302`, "Rate limit reached for requests") puts a `client: "paseo-agent"`
+entry on the `pi` account with a short `cooldown_until` (10 min) — a short
+rate limit, never an exhausted pool). No
 request is sent. `usable_now` stays quota-based; a client lockout is separate
 from the shared subscription quota. Use the configured native provider only
 after fresh quota and client-availability checks, or wait while the CLI entry
@@ -753,6 +779,32 @@ gains `[agy cli rate-limited: 429 xN, last Mm ago; native provider requires
 fresh quota and client checks]`, and the board's antigravity row gets the
 message as a note. The CLI logs have no positive success marker, so the entry
 clears only when the 429s age out of the window.
+
+The same Paseo error files also carry **multi-day** vendor refusals. Since
+2026-11-12, `Individual quota reached … Resets in XhYmZs` recorded by a Paseo
+agent is persisted as an exhaustion note (the same `agent-reported` note shape
+as `aiuse note-exhausted`, anchored to the error's `updatedAt`, reset parsed
+from the text, ≥20 h horizon) so the pool fails closed right after the first
+refusal — antigravity `claude-*`/`gpt-*` map to the `claude_gpt` family and
+`gemini-4-argon*` to `gemini_argon`, other providers to their residual pool.
+The refusal beats a stale or optimistic reading until its reset; a note whose
+Paseo evidence file no longer shows the refusal (the agent's next run
+succeeded — a fresh successful probe) is pruned even before its reset.
+Pi models named `openai/*` are the metered OpenAI API platform: the refusal
+`Your organization has reached its configured enforced spend limit` marks the
+`pi` provider's `openai_api` pool exhausted (never codex). That refusal text
+has no reset; the note carries a bounded 24 h fallback and clears as soon as
+a fresh probe succeeds. `openai_api` exhaustion is **refusal-driven only**:
+aiuse's OpenAI organization view is CodexBar's spend meter (`spent_usd`, no
+limit — a budget/limit is deliberately never prepaid balance), the OpenAI
+public API exposes usage/costs but no enforced-limit endpoint (dashboard-only
+setting), so nothing can read the limit before an agent hits it.
+A z.ai `429` code **1308** (`Usage limit reached for 5 hour. Your limit will
+reset at YYYY-MM-DD HH:MM:SS`) is quota exhaustion too, unlike code 1302: the
+`zai` 5-hour pool (`pool_family: "5h"`) is marked exhausted until the stated
+reset. The stamp carries no timezone and is z.ai local time (UTC+8) — the
+2026-11-12 evidence `06:14:11` parses to `2026-11-12T22:14:11Z`, exactly the
+reset CodexBar reports for the same window.
 
 ## `aiuse attribute --json` — quota burned beside tokens spent
 

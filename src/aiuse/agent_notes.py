@@ -53,6 +53,7 @@ def write_note(
     pool_family: str | None,
     resets_at: datetime,
     reason: str | None,
+    evidence: str | None = None,
 ) -> Path:
     directory = notes_dir()
     directory.mkdir(parents=True, exist_ok=True)
@@ -67,6 +68,8 @@ def write_note(
         "created_at": utcnow().isoformat(),
         "source": "agent-reported",
     }
+    if evidence:
+        payload["evidence"] = evidence
     path = directory / f"{slug}.json"
     tmp = directory / f".{slug}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -89,11 +92,18 @@ def load_active_notes(
     multi-day ``Individual quota`` / ``QUOTA_EXHAUSTED`` refusal are persisted
     as notes before the list is returned — so a bare acp-run 429 still fails
     closed for ``--available`` even when acp-dispatch never called
-    ``note-exhausted``.
+    ``note-exhausted``. Paseo agent error files are scanned the same way: a
+    multi-day refusal the daemon recorded (``Individual quota reached ...
+    Resets in XhYmZs``) becomes a note, so the pool fails closed after the
+    first refusal (2026-11-12 agy incident). Short vendor rate limits (Pi
+    z.ai 429 code 1302) are never notes — they surface as ``client_limits``
+    cooldowns instead.
     """
     now = now or utcnow()
     directory = notes_dir()
     notes: list[dict[str, Any]] = []
+    from aiuse.paseo_refusals import paseo_note_evidence_gone
+
     if directory.is_dir():
         for entry in sorted(directory.iterdir()):
             if not entry.is_file() or entry.suffix.lower() != ".json":
@@ -112,12 +122,25 @@ def load_active_notes(
                     except OSError:
                         pass
                 continue
+            # A refusal note whose evidence file no longer shows the refusal
+            # (the agent's next run succeeded — a fresh successful probe) is
+            # superseded: drop it even before its reset, so a recovered pool
+            # is not held out by yesterday's error (2026-11-12 goal: refusal
+            # beats the reading only until reset or probe).
+            evidence = note.get("evidence")
+            if prune and isinstance(evidence, str) and paseo_note_evidence_gone(evidence):
+                try:
+                    entry.unlink()
+                except OSError:
+                    pass
+                continue
             notes.append(note)
     if discover_acp:
+        from aiuse.paseo_refusals import scan_paseo_quota_refusals
         from aiuse.quota_refusals import scan_acp_quota_refusals
 
         known = {(str(n.get("provider") or ""), n.get("pool_family")) for n in notes}
-        for refusal in scan_acp_quota_refusals(now=now):
+        for refusal in [*scan_acp_quota_refusals(now=now), *scan_paseo_quota_refusals(now=now)]:
             key = (str(refusal.get("provider") or ""), refusal.get("pool_family"))
             if key in known:
                 continue
@@ -128,7 +151,8 @@ def load_active_notes(
                 provider=str(refusal["provider"]),
                 pool_family=refusal.get("pool_family"),
                 resets_at=resets,
-                reason=str(refusal.get("reason") or "acp quota refusal"),
+                reason=str(refusal.get("reason") or "agent-reported quota refusal"),
+                evidence=refusal.get("evidence"),
             )
             notes.append(refusal)
             known.add(key)

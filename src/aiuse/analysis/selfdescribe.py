@@ -87,7 +87,7 @@ SEMANTICS: dict[str, str] = {
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
     "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
-    "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
+    "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs; Paseo agent 429s from the daemon's per-agent error files, short cooldown, never an exhaustion); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
     "hidden_pools": "operator-hidden pools (config [hidden_pools]) with the reason; rows are dropped at collection and omitted from human outputs and --available by default",
@@ -119,6 +119,12 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     "antigravity": [
         ("claude/gpt", "claude_gpt", "agy models — claude-* / gpt-* models draw this pool"),
         ("gemini", "gemini", "agy models — gemini-* models (except gemini-4-argon*) draw this pool"),
+    ],
+    # z.ai credits nest: the 5-hour window refreshes on its own clock inside the
+    # weekly, so a 5-hour refusal (429 code 1308) must exhaust only that window.
+    "zai": [
+        ("5-hour", "5h", "z.ai 5-hour credits (refresh five hours after consumption)"),
+        ("weekly", "weekly", "z.ai weekly credits"),
     ],
     "claude": [
         ("5-hour", "default", "Claude models without a reported model cap; quota is shared with capped models"),
