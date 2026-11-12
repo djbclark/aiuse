@@ -36,6 +36,16 @@ CAAM_TIMEOUT = 90.0
 # 429s on every model, so its quota is read at most once per 15 minutes.
 DEFAULT_QUERY_MIN_INTERVAL: dict[str, float] = {"antigravity": 900.0}
 
+# Per-provider fresh limits (seconds) that override analysis.fresh_threshold_seconds.
+# Fast-draining pools need a shorter limit than the 30-min global: on 2026-11-12 a
+# burst of agents emptied the antigravity Claude/GPT and Gemini weekly pools
+# inside the 15-min antigravity query gate (throttle.py), and `aiuse --available
+# --json` kept reporting `fresh: true` / `usable_now: true` with 15-20-minute-old
+# headroom because one global threshold judged every pool. 600s is shorter than
+# the 900s gate, so a reused (never a live) antigravity payload always reads
+# stale and the envelope says so.
+DEFAULT_FRESH_MAX_AGE_BY_PROVIDER: dict[str, float] = {"antigravity": 600.0}
+
 # Collectors deprecated 2026-10-22 for overlap with cswap/CodexBar/tokscale/
 # paseo (docs/collectors-caut-openusage.md). They still run when the binary is
 # present and the collector is enabled, but nothing force-collects them: the
@@ -76,6 +86,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # in --json/--available/serve output. 30 min covers the watch refresh
         # cadence (10-20 min) plus the hourly LaunchAgent with margin.
         "fresh_threshold_seconds": 1800.0,
+        # Per-provider overrides of fresh_threshold_seconds (provider id as it
+        # appears in JSON, e.g. "antigravity"). Fast-draining pools need a
+        # shorter fresh limit than the global; DEFAULT_FRESH_MAX_AGE_BY_PROVIDER
+        # ships the defaults. --available's top-level `fresh` is true only when
+        # every usable entry is within its own pool's limit.
+        "fresh_threshold_seconds_by_provider": dict(DEFAULT_FRESH_MAX_AGE_BY_PROVIDER),
         # Minutes of agy CLI log history scanned (passively, no requests) for
         # RESOURCE_EXHAUSTED 429 retries; a hit marks the CLI client limited
         # in client_limits (issue #33). 0 disables.
@@ -1003,6 +1019,24 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             issues.append(
                 f"warning: analysis.scoring_mode {mode!r} is not one of {', '.join(sorted(KNOWN_SCORING_MODES))}"
             )
+        by_provider = analysis.get("fresh_threshold_seconds_by_provider")
+        if by_provider is not None and not isinstance(by_provider, dict):
+            issues.append("error: analysis.fresh_threshold_seconds_by_provider must be a provider -> seconds mapping")
+        elif isinstance(by_provider, dict):
+            for provider, value in by_provider.items():
+                try:
+                    seconds = float(value)
+                except (TypeError, ValueError):
+                    issues.append(
+                        f"error: analysis.fresh_threshold_seconds_by_provider.{provider} must be a number of "
+                        f"seconds (got {value!r})"
+                    )
+                    continue
+                if seconds < 0:
+                    issues.append(
+                        f"error: analysis.fresh_threshold_seconds_by_provider.{provider} must not be negative "
+                        f"(got {seconds:g})"
+                    )
         pace = analysis.get("pace")
         if pace is not None and not isinstance(pace, dict):
             issues.append("error: analysis.pace must be a mapping")

@@ -54,13 +54,22 @@ Everything below is also stated inside the output itself: `--json` carries a
 `semantics` object mapping each of these field names to its meaning, so a
 consumer that never read this document can learn the conventions from the JSON
 alone. When data is cached rather than live, `age_seconds` (computed at read
-time) and `fresh` (age ≤ `analysis.fresh_threshold_seconds`, default 1500s)
-say how old it is — a stale `ok` can hide a fresh exhaustion, so re-collect
-(`--live`) before trusting it for routing.
+time) and `fresh` (age ≤ the pool's fresh limit) say how old it is — a stale
+`ok` can hide a fresh exhaustion, so re-collect (`--live`) before trusting it
+for routing. The fresh limit is per provider: `analysis.fresh_threshold_seconds`
+(default 1800s) with `analysis.fresh_threshold_seconds_by_provider` overrides
+per provider id — `antigravity` ships at 600s because its pools drain fast and
+its collector legitimately reuses payloads up to its 900s query gate, so a
+burst can empty the pool inside one "fresh" window (2026-11-12 agy incident).
+A future `collected_at` is clock skew, clamped to age 0, never a negative age.
 A stale pool or account also carries `stale_reason` (additive, schema 1.5): the
-age against the fresh limit plus, when a throttled query reused an earlier
+age against the pool's fresh limit plus, when a throttled query reused an earlier
 payload, the collector's own note. Dispatchers should quote it when they
-refuse a stale pool.
+refuse a stale pool. In the `--available` and serve `/v1/snapshot` envelopes,
+top-level `fresh` is true only when every usable entry is within its own
+pool's limit too, and `stale_pools` (additive, schema 1.5) names the usable
+entries that are not: do not route on a stale usable entry without
+re-collecting.
 
 ## What's new in schema 1.5 (2026-10-31)
 
@@ -211,6 +220,27 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
     `overall_pace_percent`, and `overall_pace_early`.
 
 ### Changelog
+
+#### Additive (2026-11-12, schema stays 1.5)
+
+- Freshness is judged **per pool**, not with one global threshold:
+  `analysis.fresh_threshold_seconds_by_provider` (provider id → seconds)
+  overrides `analysis.fresh_threshold_seconds` per provider, and the shipped
+  default covers `antigravity` at 600s (its query gate reuses payloads for up
+  to 900s, so a fast drain could hide inside a "fresh" 30-min window: on
+  2026-11-12 `--available` reported `fresh: true` / `usable_now: true` with
+  36%/31% left while Antigravity was already refusing with "Individual quota
+  reached"). A future `collected_at` clamps to `age_seconds: 0` instead of a
+  negative age.
+- **Top-level `fresh` in `--available` and serve `/v1/snapshot` tightened**
+  (meaning change, shape unchanged): it is `true` only when the snapshot is
+  within the global limit AND every usable entry is within its own pool's
+  limit. New additive envelope field `stale_pools`: one compact row per
+  usable-now entry past its pool's limit
+  (`{provider, account, pool_family, age_seconds, stale_reason?}`). A stale
+  usable entry still reports `usable_now: true` (quota-based) but always with
+  its own `stale: true` / `stale_reason`; consumers must treat it as
+  unverified and re-collect before routing on it.
 
 #### Additive (2026-11-10, schema stays 1.5)
 
@@ -615,6 +645,7 @@ sorted by headroom (most left first), each with `models_hint` and the local
   "source": "cache",
   "age_seconds": 412.0,
   "fresh": true,
+  "stale_pools": [],
   "available": [
     {
       "provider": "antigravity",
@@ -633,6 +664,14 @@ sorted by headroom (most left first), each with `models_hint` and the local
   "semantics": { ... }
 }
 ```
+
+`age_seconds` is the snapshot's age; `fresh` (2026-11-12) is `true` only when
+that age is within the global limit AND no entry in `available` is past its
+own pool's fresh limit. When `fresh` is `false` because of per-pool staleness,
+`stale_pools` carries one compact row per offending pool —
+`{provider, account, pool_family, age_seconds, stale_reason?}` — so a
+dispatcher can re-collect just those (`--live`) instead of distrusting the
+whole envelope.
 
 Reads the snapshot cache (`latest.json`, kept fresh by `aiuse watch` and the
 hourly LaunchAgent) by default — a fast answer in well under a second.

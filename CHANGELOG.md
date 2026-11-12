@@ -12,6 +12,20 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Fixed
+
+- Judge freshness per pool instead of with one global 30-minute threshold. A
+  fast-draining pool (antigravity) now reads stale long before the global
+  limit — `analysis.fresh_threshold_seconds_by_provider` ships `antigravity =
+600` — and `aiuse --available`'s top-level `fresh` is true only when every
+  usable entry is within its own pool's limit, with a `stale_pools` list
+  naming the offenders. On 2026-11-12 the envelope reported `fresh: true` /
+  `usable_now: true` with 15-20-minute-old antigravity readings while a burst
+  of agents was emptying the pools (Antigravity already refused with
+  "Individual quota reached"). A future `collected_at` (clock skew) clamps to
+  age 0 instead of a negative age. Additive, schema stays 1.5; contract noted
+  in `docs/json-contract.md`.
+
 ## [4.1.1] - 2026-11-12
 
 ### Changed

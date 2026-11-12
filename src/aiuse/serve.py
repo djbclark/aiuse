@@ -144,14 +144,18 @@ def run_serve(
                 if path == "/v1/snapshot":
                     payload = state.get_payload(refresh=refresh)
                     snap = payload["snapshot"]
-                    from aiuse.analysis.selfdescribe import freshness
+                    from aiuse.analysis.selfdescribe import envelope_freshness, pool_entries
 
+                    usable = [p for p in pool_entries(snap) if p.get("usable_now")]
                     self._json(
                         200,
                         {
                             "snapshot": snap,
                             "source": payload["source"],
-                            **freshness(snap.get("collected_at")),
+                            # Top-level fresh is honest per pool: usable entries
+                            # past their own pool's fresh limit (per-provider
+                            # thresholds) make it false and name themselves.
+                            **envelope_freshness(snap.get("collected_at"), usable),
                             "summary_lines": snap.get("summary_lines", []),
                             "semantics": snap.get("semantics", {}),
                         },
