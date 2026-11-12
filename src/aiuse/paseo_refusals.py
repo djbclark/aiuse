@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +52,15 @@ _THROTTLE_COOLDOWN = timedelta(minutes=THROTTLE_COOLDOWN_MINUTES)
 # a day even if the operator never touches the limit — a fresh refusal (or the
 # operator's own note-exhausted) re-closes it.
 _UNKNOWN_RESET_FALLBACK = timedelta(hours=24)
+# z.ai stamps its reset in its own local time with no offset ("Your limit will
+# reset at 2026-11-13 06:14:11"): China Standard Time, UTC+8. The same reset
+# aiuse reads from CodexBar as 22:14Z (2026-11-12 evidence).
+ZAI_RESET_OFFSET = timedelta(hours=8)
+_ZAI_USAGE_LIMIT = re.compile(
+    r"usage limit reached for (?P<span>5 hour|5-hour|weekly).*?"
+    r"reset at (?P<stamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})",
+    re.IGNORECASE | re.DOTALL,
+)
 
 _EXHAUSTED_MARKERS = (
     "individual quota reached",
@@ -74,18 +83,27 @@ _UNIT = re.compile(r"(\d+)\s*([dhms])", re.IGNORECASE)
 _UNIT_SECONDS = {"d": 86400.0, "h": 3600.0, "m": 60.0, "s": 1.0}
 
 
-def pool_family_for_paseo_model(provider: str, model: str | None) -> str | None:
-    """Map a Paseo agent's provider+model to an aiuse pool_family.
+def refusal_target(provider: str, model: str | None) -> tuple[str, str | None]:
+    """The aiuse (provider, pool_family) a Paseo agent's refusal flips.
 
-    Pi models named ``openai/*`` are the metered OpenAI API platform, not the
-    Codex subscription and not pi's other routes: they get the same
-    ``openai_api`` family the omp OpenAI-key route uses. Everything else goes
-    through the antigravity split (claude-* / gpt-* / gemini-*); providers
-    without a split return None (one residual pool).
+    Pi is a transport across several billing pools (same idea as
+    route_agent.map_agent_to_provider): its model namespace decides.
+    ``openai/*`` is the metered OpenAI API platform -> ``(pi, openai_api)``
+    (never codex — the lead's ruling of 2026-11-12). ``zai/*``, ``cursor/*``,
+    ``antigravity/*`` and ``xai-oauth/*`` flip that vendor's own pool, not
+    pi's. A Claude Fable model is its own sublimit family, so a Fable refusal
+    never marks the shared Claude pool exhausted (review finding F1).
     """
-    if provider == "pi" and model and model.casefold().startswith("openai/"):
-        return "openai_api"
-    return pool_family_for_acp_model(provider, model)
+    if provider == "pi" and model and "/" in model:
+        namespace, _, rest = model.partition("/")
+        namespace = namespace.casefold()
+        if namespace == "openai":
+            return "pi", "openai_api"
+        if namespace in ("zai", "cursor", "antigravity", "xai-oauth"):
+            return namespace, pool_family_for_acp_model(namespace, rest or None)
+    if provider == "claude" and model and "fable" in model.casefold():
+        return provider, "fable"
+    return provider, pool_family_for_acp_model(provider, model)
 
 
 def paseo_agents_dir() -> Path:
@@ -102,6 +120,26 @@ def parse_resets_in_horizon(text: str) -> timedelta | None:
     for unit in _UNIT.finditer(match.group(1)):
         total += float(unit.group(1)) * _UNIT_SECONDS[unit.group(2).lower()]
     return timedelta(seconds=total)
+
+
+def parse_zai_usage_limit(text: str) -> tuple[str, datetime] | None:
+    """z.ai 429 code 1308: quota exhaustion with an absolute local reset time.
+
+    ``Usage limit reached for 5 hour. Your limit will reset at YYYY-MM-DD
+    HH:MM:SS`` (the span can also be weekly) -> ``(pool_family, reset)``. The
+    stamp carries no timezone and is z.ai local time (UTC+8); unlike code 1302
+    this is QUOTA, not a rate limit.
+    """
+    match = _ZAI_USAGE_LIMIT.search(text)
+    if match is None:
+        return None
+    try:
+        naive = datetime.strptime(match.group("stamp"), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    span = match.group("span").casefold()
+    family = "weekly" if "week" in span else "5h"
+    return family, naive.replace(tzinfo=timezone.utc) - ZAI_RESET_OFFSET
 
 
 def _recent_files(root: Path, since: datetime, limit: int) -> list[Path]:
@@ -182,13 +220,40 @@ def scan_paseo_quota_refusals(
         text = str(doc.get("lastError") or "")
         low = text.casefold()
         if not any(marker in low for marker in _EXHAUSTED_MARKERS) and _SPEND_LIMIT_MARKER not in low:
+            zai_limit = parse_zai_usage_limit(text)
+            if zai_limit is None:
+                continue
+            family, resets_at = zai_limit
+            if resets_at <= now:
+                continue  # already reset; a fresh collector reading wins
+            provider = _provider_of(doc) or "zai"
+            event = _event_time(doc) or now
+            key = (provider, family)
+            if key in found and found[key][0] >= event:
+                continue
+            found[key] = (
+                event,
+                {
+                    "schema_version": "1.0",
+                    "provider": provider,
+                    "pool_family": family,
+                    "resets_at": resets_at.isoformat(),
+                    "reason": (
+                        f"paseo agent error ({path.name}): z.ai usage limit reached "
+                        f"({family} pool, code 1308); resets {resets_at.isoformat()}"
+                    ),
+                    "created_at": now.isoformat(),
+                    "source": "agent-reported",
+                    "evidence": str(path),
+                },
+            )
             continue
         if any(marker in low for marker in _THROTTLE_MARKERS):
             continue  # a short rate limit is never an exhausted pool
         provider = _provider_of(doc)
         if not provider:
             continue
-        family = pool_family_for_paseo_model(provider, _model_of(doc))
+        mapped_provider, mapped_family = refusal_target(provider, _model_of(doc))
         if _SPEND_LIMIT_MARKER in low:
             # OpenAI platform enforced spend limit: no reset in the text — the
             # block stands until the operator raises the limit. Flip the
@@ -211,15 +276,15 @@ def scan_paseo_quota_refusals(
             if resets_at <= now:
                 continue  # already reset; a fresh collector reading wins anyway
             reason = f"paseo agent error ({path.name}): {text[:160]}"
-        key = (provider, family)
-        if key in found and found[key][0] >= event:
+        mapped_key = (mapped_provider, mapped_family)
+        if mapped_key in found and found[mapped_key][0] >= event:
             continue
-        found[key] = (
+        found[mapped_key] = (
             event,
             {
                 "schema_version": "1.0",
-                "provider": provider,
-                "pool_family": family,
+                "provider": mapped_provider,
+                "pool_family": mapped_family,
                 "resets_at": resets_at.astimezone().isoformat(),
                 "reason": reason,
                 "created_at": now.isoformat(),

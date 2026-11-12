@@ -169,12 +169,56 @@ def test_spend_limit_is_not_a_throttle_and_models_map_explicitly():
     now = utcnow()
     _write_agent("proj", "nnnn-1", _agent("pi", "openai/gpt-6.1-sol", SPEND_LIMIT, now=now))
     assert scan_paseo_throttle(now=now) is None
-    from aiuse.paseo_refusals import pool_family_for_paseo_model
+    from aiuse.paseo_refusals import refusal_target
 
-    assert pool_family_for_paseo_model("pi", "openai/gpt-6.1-sol") == "openai_api"
-    assert pool_family_for_paseo_model("pi", "zai/glm-5.3-flash") is None
-    assert pool_family_for_paseo_model("antigravity", "claude-sonnet-5-5-medium") == "claude_gpt"
-    assert pool_family_for_paseo_model("antigravity", "gemini-4-argon-high") == "gemini_argon"
+    # pi is a transport: the model namespace decides the billing pool.
+    assert refusal_target("pi", "openai/gpt-6.1-sol") == ("pi", "openai_api")
+    assert refusal_target("pi", "zai/glm-5.3-flash") == ("zai", None)
+    assert refusal_target("pi", "cursor/composer-2.5") == ("cursor", None)
+    assert refusal_target("pi", "antigravity/gemini-4-argon-high") == ("antigravity", "gemini_argon")
+    assert refusal_target("antigravity", "claude-sonnet-5-5-medium") == ("antigravity", "claude_gpt")
+    assert refusal_target("antigravity", "gemini-4-argon-high") == ("antigravity", "gemini_argon")
+    # a Fable refusal is its own sublimit: it must never flip the shared Claude pool
+    assert refusal_target("claude", "claude-fable-5") == ("claude", "fable")
+    assert refusal_target("claude", "claude-sonnet-5-5") == ("claude", None)
+
+
+# ── z.ai 429 code 1308: quota exhaustion, absolute local reset ──────────────
+
+
+ZAI_1308 = (
+    '429: {"code":"1308","message":"Usage limit reached for 5 hour. Your limit will reset at 2026-11-13 06:14:11"}'
+)
+
+
+def test_zai_1308_parses_as_utc_plus_eight():
+    from aiuse.paseo_refusals import parse_zai_usage_limit
+
+    parsed = parse_zai_usage_limit(ZAI_1308)
+    assert parsed is not None
+    family, reset = parsed
+    assert family == "5h"
+    # 06:14:11 in z.ai local time (UTC+8) is 22:14:11Z the day before — the
+    # same reset aiuse reads from CodexBar.
+    assert reset.isoformat() == "2026-11-12T22:14:11+00:00"
+
+
+def test_zai_1308_marks_the_five_hour_pool_exhausted_until_the_reset():
+    now = parse_dt("2026-11-12T17:45:00+00:00")
+    assert now is not None
+    _write_agent("proj", "oooo-1", _agent("pi", "zai/glm-5.3-flash", ZAI_1308, now=now))
+    refusals = scan_paseo_quota_refusals(now=now)
+    assert [(r["provider"], r["pool_family"]) for r in refusals] == [("pi", "5h")]
+    assert parse_dt(refusals[0]["resets_at"]) == parse_dt("2026-11-12T22:14:11+00:00")
+    # quota exhaustion, never the throttle path (that is code 1302)
+    assert scan_paseo_throttle(now=now) is None
+
+
+def test_zai_1308_past_reset_is_ignored():
+    now = parse_dt("2026-11-13T00:00:00+00:00")
+    assert now is not None
+    _write_agent("proj", "pppp-1", _agent("pi", "zai/glm-5.3-flash", ZAI_1308, now=now))
+    assert scan_paseo_quota_refusals(now=now) == []
 
 
 # ── short rate limit: throttled, never exhausted ────────────────────────────

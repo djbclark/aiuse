@@ -120,6 +120,12 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ("claude/gpt", "claude_gpt", "agy models — claude-* / gpt-* models draw this pool"),
         ("gemini", "gemini", "agy models — gemini-* models (except gemini-4-argon*) draw this pool"),
     ],
+    # z.ai credits nest: the 5-hour window refreshes on its own clock inside the
+    # weekly, so a 5-hour refusal (429 code 1308) must exhaust only that window.
+    "zai": [
+        ("5-hour", "5h", "z.ai 5-hour credits (refresh five hours after consumption)"),
+        ("weekly", "weekly", "z.ai weekly credits"),
+    ],
     "claude": [
         ("5-hour", "default", "Claude models without a reported model cap; quota is shared with capped models"),
         ("weekly", "default", "Claude models without a reported model cap; quota is shared with capped models"),

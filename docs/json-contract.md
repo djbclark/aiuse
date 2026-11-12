@@ -801,6 +801,12 @@ aiuse's OpenAI organization view is CodexBar's spend meter (`spent_usd`, no
 limit — a budget/limit is deliberately never prepaid balance), the OpenAI
 public API exposes usage/costs but no enforced-limit endpoint (dashboard-only
 setting), so nothing can read the limit before an agent hits it.
+A z.ai `429` code **1308** (`Usage limit reached for 5 hour. Your limit will
+reset at YYYY-MM-DD HH:MM:SS`) is quota exhaustion too, unlike code 1302: the
+`zai` 5-hour pool (`pool_family: "5h"`) is marked exhausted until the stated
+reset. The stamp carries no timezone and is z.ai local time (UTC+8) — the
+2026-11-12 evidence `06:14:11` parses to `2026-11-12T22:14:11Z`, exactly the
+reset CodexBar reports for the same window.
 
 ## `aiuse attribute --json` — quota burned beside tokens spent
 
