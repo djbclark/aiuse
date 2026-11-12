@@ -212,7 +212,7 @@ def test_equal_capacity_falls_back_to_the_analyzer_score(kind, urgency):
     assert _alert_queue_priority(loud, pricing=pricing)[0] == _alert_queue_priority(quiet, pricing=pricing)[0]
     rows = _rows([loud, quiet], plans)
     assert [r.account_full for r in rows] == ["quiet@x.com", "loud@x.com"]
-    assert rows[0].queue_score < rows[1].queue_score
+    assert rows[0].queue_score == rows[1].queue_score
 
 
 def _account(provider, name, *windows):
