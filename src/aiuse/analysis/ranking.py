@@ -346,7 +346,7 @@ def _alert_queue_priority(
     """Category-specific queue priority; larger tuples appear lower.
 
     Slow, mid and use rows lead with dollars (see :class:`_Pricing`): a slow row's
-    capacity, a mid or use row's projected waste; each band's own signal breaks
+    capacity, a mid or use row's projected unused dollars per day; each band's own signal breaks
     ties.
     """
     band = alert_priority_band(alert) if band is None else band
@@ -370,7 +370,7 @@ def _alert_queue_priority(
         return (capacity, _conserve_use_readiness(alert), -float(alert.score))
 
     # Burn alerts, including low-urgency ``mid`` ones, lead with the dollars their
-    # pace projects to expire unspent and break ties by analyzer score, then
+    # pace projects to expire unspent per day and break ties by analyzer score, then
     # remaining capacity, then sooner reset.
     waste = alert.pace.projected_waste_fraction if alert.pace is not None else None
     at_risk = pricing.at_risk_usd(

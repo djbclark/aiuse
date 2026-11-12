@@ -1,6 +1,6 @@
 """Mid and use rows rank by the dollars their pace projects to expire unspent.
 
-A row's priority leads with ``projected_waste_fraction x cycle value``: the share of one full refill of its
+A row's priority leads with ``projected_waste_fraction x cycle value / max(days_left, 1)``: the share of one full refill of its
 window that will still be unspent at the reset, priced exactly like capacity (the account's price, the plan's
 value_multiplier, the cheapest-plan fallback for an unpriced provider).  An imminent reset with real waste
 therefore outranks a big window with days left.  A row with no pace to project keeps its capacity, and slow

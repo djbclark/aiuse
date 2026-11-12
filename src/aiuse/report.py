@@ -863,9 +863,17 @@ def _account_queue_priority(
     if representative is None:
         # Nothing to size: no dollars at risk, the floor of its band.
         return (0.0, _account_use_urgency(account), 0.0, 0.0)
-    at_risk = (pricing or _Pricing.from_config(None)).window_at_risk_usd(
-        account.provider, account.account, representative, now
-    )
+    pricing = pricing or _Pricing.from_config(None)
+    if band == _BAND_CONSERVE:
+        at_risk = pricing.capacity_usd(
+            account.provider,
+            account.account,
+            representative.remaining() or 0.0,
+            representative.window_minutes,
+            representative.label,
+        )
+    else:
+        at_risk = pricing.window_at_risk_usd(account.provider, account.account, representative, now)
     return (at_risk, _window_use_urgency(representative), 0.0, 0.0)
 
 

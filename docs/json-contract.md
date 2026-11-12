@@ -530,9 +530,10 @@ urgent. Prefer this over re-ranking `alerts[]` in scripts. Also available via
 **Which window wins** (changed 2026-10-13; the shape below is unchanged). The winner is the burn
 alert the board ranks highest: the table's bottom row among those a burn alert backs, not the alert
 with the highest `score`. That is the highest band first (`use`, then `mid`), then the most
-dollars projected to expire unspent (`pace.projected_waste_fraction` × the value of one full refill
+dollars per day projected to expire unspent (`pace.projected_waste_fraction` × the value of one full refill
 of that window, priced per account like `value_at_risk_usd`; an alert with no pace ranks by the
-dollars it still holds), then the analyzer `score`, then the remaining percent, then the sooner
+dollars it still holds; divide either by days until reset, with a one-day floor and
+a 30-day horizon for unknown or already-passed deadlines), then the analyzer `score`, then the remaining percent, then the sooner
 reset. Eligibility is unchanged: only `burn` alerts with urgency above `info` qualify, so
 conserve, info and prepaid alerts never win. A burn a stronger alert in its own pool hides —
 the board's pool collapse (2026-10-14) — is skipped as well, so `suggestion` can be `null`
