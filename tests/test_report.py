@@ -855,9 +855,8 @@ def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
         score=90.0,
         kind="burn",
     )
-    # Same plan price, remaining% and window: equal capacity (the primary key), so the
-    # analyzer score breaks the tie and the sooner, higher-score burn sorts lower.
-    assert alert_use_urgency(sooner) == alert_use_urgency(later)
+    # Equal capacity: the earlier reset needs more value rescued per day.
+    assert alert_use_urgency(sooner) > alert_use_urgency(later)
     assert _alert_queue_priority(sooner) > _alert_queue_priority(later)
     text = render_priority_ladder([later, sooner], color=False)
     assert text.index("Zzz") > text.index("Aaa")
@@ -1036,8 +1035,8 @@ def test_priority_ladder_mid_queue_uses_most_valuable_clock_without_nested_5h_no
     assert (
         text.index("Mid_Short_Noise")
         < text.index("Mid_Tiny_Monthly")
-        < text.index("Mid_Weekly_Signal")
         < text.index("Mid_Monthly_Only")
+        < text.index("Mid_Weekly_Signal")
     )
 
 

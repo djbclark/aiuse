@@ -246,8 +246,8 @@ def test_an_early_window_ranks_by_its_capacity_on_the_board():
     )
     rows = _build_matrix_rows([], snapshot, CONFIG)
     assert [r.account_full for r in rows] == ["fast@x.com", "idle@x.com"]
-    assert rows[0].queue_score == 64  # $2.42: the unspent 70% of a $10 plan's weekly refill
-    assert rows[1].queue_score == 65  # $3.45: the whole weekly refill of a $10 plan
+    assert rows[0].queue_score == 59  # $2.42 over 6.72 days
+    assert rows[1].queue_score == 60  # $3.45 over 6.72 days
 
 
 def test_an_analyzer_approved_early_burn_still_ranks_by_its_projection():
@@ -303,7 +303,7 @@ def test_a_row_with_no_pace_to_project_ranks_by_its_capacity():
     )
     (row,) = _build_matrix_rows([], snapshot, CONFIG)
     assert row.band == _BAND_MID
-    assert row.queue_score == 64  # 60% of a $3.45 weekly refill = $2.07
+    assert row.queue_score == 55  # $2.07 over the unknown-deadline horizon of 30 days
 
 
 def test_no_pace_ranks_at_capacity_the_most_it_could_lose_above_a_window_projected_to_be_used():
