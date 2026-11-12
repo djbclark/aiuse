@@ -12,6 +12,14 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-11-12
+
+### Changed
+
+- Rank actionable subscription allowances by projected unused value per day until
+  reset, giving behind-pace allowances approaching reset higher priority. A
+  one-day floor bounds urgency; conserve and shared-budget safeguards remain.
+
 ### Fixed
 
 - A Claude model cap whose name is not plain (`weekly_model_fable (beta)`, over 32
@@ -369,7 +377,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.1.1...HEAD
+[4.1.1]: https://github.com/djbclark/aiuse/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/djbclark/aiuse/compare/v4.0.3...v4.1.0
 [4.0.3]: https://github.com/djbclark/aiuse/compare/v4.0.0...v4.0.3
 [4.0.0]: https://github.com/djbclark/aiuse/compare/v3.14.0...v4.0.0
