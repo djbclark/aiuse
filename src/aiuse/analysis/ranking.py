@@ -217,7 +217,8 @@ class _Pricing:
       has no such figure and ranks by capacity, like a row with no pace at all.
 
     ``slow`` rows rank by capacity: they are on course to run dry, so what counts
-    is how much they hold.  ``mid`` and ``use`` rows rank by waste, so an imminent
+    is how much they hold. ``mid`` and ``use`` rows rank by waste per day until
+    reset (one-day floor), so an imminent
     reset with real waste outranks a big window with days left; a row whose pace
     cannot project a waste share (unclocked window, an alert that carries no pace)
     ranks by its capacity, the most it could lose.
@@ -284,8 +285,13 @@ class _Pricing:
         window_minutes: int | None,
         label: str | None,
         waste_fraction: float | None,
+        days_until_reset: float | None = 1.0,
     ) -> float:
-        """Dollars a ``mid`` or ``use`` row is ranked by.
+        """Projected unused dollars per day for a ``mid`` or ``use`` row.
+
+        Divide by days to reset, floored at one day to bound urgency near
+        expiry. Unknown or expired deadlines use a conservative 30-day
+        horizon. Omitting the horizon returns the unweighted dollar value.
 
         ``waste_fraction`` is the pace's ``projected_waste_fraction``: the share of
         the window that will still be unspent at its reset.  With one, the row is
@@ -295,9 +301,15 @@ class _Pricing:
         dollars it holds now (capacity), the most it could lose.
         """
         if waste_fraction is None:
-            return self.capacity_usd(provider, account, remaining, window_minutes, label)
-        cycle = self.capacity_usd(provider, account, 100.0, window_minutes, label)
-        return max(0.0, min(1.0, float(waste_fraction))) * cycle
+            value = self.capacity_usd(provider, account, remaining, window_minutes, label)
+        else:
+            cycle = self.capacity_usd(provider, account, 100.0, window_minutes, label)
+            value = max(0.0, min(1.0, float(waste_fraction))) * cycle
+        # Rank the amount that needs rescuing per day. A one-day floor keeps
+        # minute-scale reset jitter from overwhelming valuable monthly pools.
+        # An unknown deadline provides no evidence of imminent expiry.
+        horizon = 30.0 if days_until_reset is None or days_until_reset < 0 else max(1.0, days_until_reset)
+        return value / horizon
 
     def window_at_risk_usd(
         self,
@@ -321,7 +333,9 @@ class _Pricing:
             return 0.0
         pace = compute_pace(window, now=now or utcnow())
         waste = _gated_waste_fraction(pace, self.min_elapsed_fraction)
-        return self.at_risk_usd(provider, account, remaining, window.window_minutes, window.label, waste)
+        return self.at_risk_usd(
+            provider, account, remaining, window.window_minutes, window.label, waste, window.days_until_reset(now)
+        )
 
 
 def _alert_queue_priority(
@@ -359,7 +373,9 @@ def _alert_queue_priority(
     # pace projects to expire unspent and break ties by analyzer score, then
     # remaining capacity, then sooner reset.
     waste = alert.pace.projected_waste_fraction if alert.pace is not None else None
-    at_risk = pricing.at_risk_usd(alert.provider, alert.account, rem, alert.window_minutes, alert.window_label, waste)
+    at_risk = pricing.at_risk_usd(
+        alert.provider, alert.account, rem, alert.window_minutes, alert.window_label, waste, days
+    )
     return (at_risk, float(alert.score), rem, -(days if days is not None else 99.0))
 
 
