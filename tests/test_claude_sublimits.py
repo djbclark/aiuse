@@ -215,6 +215,11 @@ def test_identical_overall_and_model_readings_keep_both_windows():
         ("Claude Sonnet", "Sonnet"),
         ("Claude/GPT weekly", None),
         ("Claude Code weekly", None),
+        ("Claude Code weekly — Fable 5", "Fable 5"),
+        ("Claude Code weekly — $(touch /tmp/x)\x1b]0;pwn\x07", "Unknown model"),
+        ("Claude Code weekly — " + "a" * 33, "Unknown model"),
+        ("Claude Code weekly — \u212aable", "Unknown model"),  # Kelvin sign casefolds to "k"
+        ("Claude Code weekly — on_demand", "Unknown model"),
     ],
 )
 def test_scope_labels(label, expected):
@@ -423,10 +428,53 @@ def test_upstream_model_names_with_control_characters_never_reach_output(capsys)
     )
     account = _paseo_from_entry(entry)
     assert account is not None
-    assert [w.label for w in account.windows] == ["Claude Code weekly", "Claude Code weekly — Fable"]
+    assert [w.label for w in account.windows] == [
+        "Claude Code weekly",
+        "Claude Code weekly — Fable",
+        "Claude Code weekly — Unknown model",
+    ]
     from aiuse import cli
 
     _write_latest(Snapshot(collected_at=utcnow(), accounts=[account]))
     assert cli.main(["--available", "-q"]) == 0
     out = capsys.readouterr().out
     assert "\x1b" not in out and "$(" not in out
+
+
+@pytest.mark.parametrize("model_id", ["fable (beta)", "a" * 40, "on_demand", "\u212aable", "fable\x1b[31m", "$(x)"])
+def test_oddly_named_cap_is_kept_under_a_generic_name(model_id):
+    # N2 (#52): dropping the cap brought back "without a reported model cap" and the silent 429.
+    entry = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    entry["report"]["windows"] = [w for w in entry["report"]["windows"] if w["id"] != "weekly_model_fable"]
+    entry["report"]["windows"].append(
+        {
+            "id": f"weekly_model_{model_id}",
+            "label": "x",
+            "usedPct": 100,
+            "remainingPct": 0,
+            "resetsAt": "2026-11-13T10:00:00+00:00",
+        }
+    )
+    account = _paseo_from_entry(entry)
+    assert account is not None
+    assert [w.label for w in account.windows][-1] == "Claude Code weekly — Unknown model"
+    snap = enrich_snapshot(Snapshot(collected_at=utcnow(), accounts=[account]).to_dict())
+    shared = next(p for p in pool_entries(snap) if p["pool_family"] == "default")
+    assert "without a reported model cap" not in shared["models_hint"]
+    (cap,) = shared["model_sublimits"]
+    assert (cap["pool_family"], cap["usable_now"], cap["reason"]) == ("unknown_model", False, "cap exhausted")
+    assert "\x1b" not in shared["models_hint"] and "$(" not in shared["models_hint"]
+
+
+def test_non_model_window_id_cannot_smuggle_a_model_name_or_escape():
+    # N1 (#52): the guard covered only `weekly_model_*` ids; `_label` and `claude_model_scope` take the label too.
+    entry = json.loads(_FIXTURE.read_text(encoding="utf-8"))
+    evil = "weekly — $(touch /tmp/x)\x1b]0;pwn\x07"
+    entry["report"]["windows"].append(
+        {"id": "other", "label": evil, "usedPct": 100, "remainingPct": 0, "resetsAt": "2026-11-13T10:00:00+00:00"}
+    )
+    account = _paseo_from_entry(entry)
+    assert account is not None
+    label = account.windows[-1].label
+    assert "\x1b" not in label
+    assert claude_model_scope(label) == "Unknown model"

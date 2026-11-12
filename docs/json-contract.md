@@ -227,8 +227,12 @@ exhausted`, `reading frozen`, `no reading` or `not usable`. The other Claude
   models and the shared entry's `usable_now` are unchanged. The shared entry's
   `models_hint` names every such model with its own reset and reason. The field
   is omitted when the account reports no model cap (older or partial data). A
-  model name that is not a plain name (`[a-z0-9._-]`, at most 32 characters) is
-  dropped by the paseo collector and never listed. `aiuse --available` text
+  model name that is not a plain name (`[a-z0-9._-]` after lower-casing and
+  `_` for spaces, at most 32 characters) is never echoed as a model name (ASCII
+  only; `default` and `on_demand` are reserved), whether it comes from a
+  `weekly_model_*` id or from a label (control characters are also stripped
+  from other labels, capped at 64 characters): the cap is kept under the generic model `unknown_model`
+  (label `Unknown model`), so the shared hint still reports a model cap. `aiuse --available` text
   prints one `claude fable: NOT usable now until ... (cap exhausted)` line under
   the pool.
 

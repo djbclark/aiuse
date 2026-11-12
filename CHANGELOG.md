@@ -12,6 +12,14 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Fixed
+
+- A Claude model cap whose name is not plain (`weekly_model_fable (beta)`, over 32
+  characters, control characters) is now kept under the generic model
+  `unknown_model` instead of vanishing, so the shared hint still reports a
+  model cap. The model-name guard also covers non-`weekly_model_` window ids
+  (#52).
+
 ## [4.1.0] - 2026-11-10
 
 ### Added
