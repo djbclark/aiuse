@@ -30,7 +30,6 @@ from __future__ import annotations
 from typing import Any
 
 from aiuse.models import (
-    SAFE_MODEL_SCOPE_RE,
     WINDOW_NOMINAL_MINUTES,
     AccountUsage,
     BillingKind,
@@ -38,6 +37,7 @@ from aiuse.models import (
     coerce_float,
     keep_copilot_report_window,
     parse_dt,
+    safe_model_scope,
 )
 
 from .base import run_json, which
@@ -111,10 +111,6 @@ def _window(provider: str, raw: dict[str, Any]) -> QuotaWindow | None:
         return None
 
     window_id = str(raw.get("id") or "")
-    if window_id.startswith("weekly_model_") and not SAFE_MODEL_SCOPE_RE.fullmatch(
-        window_id.removeprefix("weekly_model_").casefold()
-    ):
-        return None  # not a plain model name: never let upstream text into labels or hints
     label = _label(provider, window_id, str(raw.get("label") or window_id or "quota"))
     if provider == "copilot" and not keep_copilot_report_window(label):
         return None
@@ -141,7 +137,8 @@ def _label(provider: str, window_id: str, label: str) -> str:
     if provider == "claude":
         model = window_id.removeprefix("weekly_model_")
         if model != window_id:
-            return f"Claude Code weekly — {model.replace('_', ' ').title()}"
+            # Not a plain model name: keep the cap under a generic name, never upstream text.
+            return f"Claude Code weekly — {safe_model_scope(model.replace('_', ' ').title())}"
         kind = _window_kind(window_id)
         if kind == "5h":
             return "Claude Code 5-hour"
@@ -149,7 +146,8 @@ def _label(provider: str, window_id: str, label: str) -> str:
             return "Claude Code weekly"
         if kind == "monthly":
             return "Claude Code monthly"
-        return f"Claude Code {label}"
+        # Upstream text reaches the terminal: drop control characters, cap the length.
+        return f"Claude Code {''.join(c for c in label if c.isprintable())[:64]}"
     if provider == "copilot":
         return f"GitHub Copilot {label}"
     return f"{provider.replace('-', ' ').title()} {label or window_id}"

@@ -61,6 +61,20 @@ def coerce_int(value: Any) -> int | None:
 SAFE_MODEL_SCOPE_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,31}")
 
 
+# Shown for a model cap whose name is not plain: the cap stays reported (a dropped
+# cap would bring back the silent vendor 429); its family is `unknown_model`.
+GENERIC_MODEL_SCOPE = "Unknown model"
+
+
+def safe_model_scope(name: str) -> str:
+    """`name` if it is a plain model name, else the generic one (N1/N2, issue 52)."""
+    family = name.casefold().replace(" ", "_")
+    # ASCII only (casefold maps U+212A to "k"); `default`/`on_demand` are reserved pool families.
+    if name.isascii() and SAFE_MODEL_SCOPE_RE.fullmatch(family) and family not in ("default", "on_demand"):
+        return name
+    return GENERIC_MODEL_SCOPE
+
+
 def claude_model_scope(label: str | None) -> str | None:
     """Model-specific Claude caps, not additional or account-wide allotments."""
     text = (label or "").strip()
@@ -68,7 +82,8 @@ def claude_model_scope(label: str | None) -> str | None:
         return None
     if "weekly — " in text:
         model = text.split("weekly — ", 1)[1].strip()
-        return model.removeprefix("Claude ") or None
+        model = model.removeprefix("Claude ")
+        return safe_model_scope(model) if model else None
     for model in ("Fable", "Sonnet", "Opus"):
         if re.search(rf"\b{model}\b", text, re.IGNORECASE):
             return model
