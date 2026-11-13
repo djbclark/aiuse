@@ -1348,6 +1348,7 @@ def _run_available(args: argparse.Namespace) -> int:
         )
         return EXIT_OK if pools else EXIT_NO_POOLS
 
+    printed_siblings: set[tuple[Any, Any, Any]] = set()
     for pool in pools:
         line = summary_line(pool)
         if pool.get("models_hint"):
@@ -1357,7 +1358,13 @@ def _run_available(args: argparse.Namespace) -> int:
             if cap.get("usable_now") is False:
                 print(f"  {model_cap_line(str(pool['provider']), cap)}")
         for sibling in pool.get("sibling_pools") or []:
-            if sibling.get("usable_now") is False:
+            # One line per unusable sibling per account (not under every entry),
+            # and the on-demand cap only when it is actually spent.
+            seen_key = (pool.get("provider"), pool.get("account"), sibling.get("pool_family"))
+            if sibling.get("usable_now") is False and seen_key not in printed_siblings:
+                if sibling.get("pool_family") == "on_demand" and sibling.get("state") != "exhausted":
+                    continue
+                printed_siblings.add(seen_key)
                 print(f"  {sibling_pool_line(str(pool['provider']), sibling)}")
         if pool.get("burn_before_reset"):
             print(f"  burn before reset: {pool['burn_before_reset']['suggestion']}")

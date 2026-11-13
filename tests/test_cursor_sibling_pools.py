@@ -7,6 +7,7 @@ headroom, so a plan-rejected ``cursor-agent`` model still read as usable.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from aiuse.analysis.selfdescribe import (
@@ -120,6 +121,77 @@ def test_other_providers_do_not_gain_sibling_pools():
     )
     snap = enrich_snapshot(Snapshot(collected_at=_now(), accounts=[account]).to_dict(), now=_now())
     assert all("sibling_pools" not in p for p in pool_entries(snap))
+
+
+def test_frozen_sibling_reads_unusable_with_reason():
+    snap = _snapshot(monthly_used=40.0, on_demand=False)
+    for window in snap["accounts"][0]["windows"]:
+        if window.get("pool_family") == "auto":
+            window["measurement_frozen"] = True
+    grok = next(p for p in pool_entries(snap) if p["pool_family"] == "grok_bot")
+    auto_entry = next(p for p in pool_entries(snap) if p["pool_family"] == "auto")
+    assert auto_entry["usable_now"] is False
+    sibling = next(s for s in grok["sibling_pools"] if s["pool_family"] == "auto")
+    assert sibling["usable_now"] is False
+    assert sibling["reason"] == "reading frozen"
+    assert "auto" in grok["models_hint"].split("not usable now:")[1]
+
+
+def test_partial_exhaustion_and_unknown_reading():
+    snap = _snapshot(monthly_used=30.0, on_demand=False)
+    for window in snap["accounts"][0]["windows"]:
+        if window.get("pool_family") == "auto":
+            window.update(used_percent=100.0, remaining_percent=0.0, state="exhausted")
+        if window.get("pool_family") == "third_party":
+            window.update(used_percent=None, remaining_percent=None, headroom_percent=None, state="unknown")
+    grok = next(p for p in pool_entries(snap) if p["pool_family"] == "grok_bot")
+    siblings = {s["pool_family"]: s for s in grok["sibling_pools"]}
+    assert siblings["auto"]["reason"] == "pool exhausted"
+    assert siblings["third_party"]["usable_now"] is False
+    assert siblings["third_party"]["reason"] == "no reading"
+    assert siblings["total"]["usable_now"] is True
+
+
+def test_unknown_family_text_is_never_echoed():
+    snap = _snapshot(monthly_used=100.0, on_demand=False)
+    snap["accounts"][0]["windows"].append(
+        {
+            "label": "weird",
+            "pool_family": "evil\x1b[2J\nINJECT",
+            "used_percent": 100.0,
+            "remaining_percent": 0.0,
+            "state": "exhausted",
+            "resets_at": (_now() + timedelta(days=3)).isoformat(),
+        }
+    )
+    for entry in pool_entries(snap):
+        assert all(
+            s["pool_family"] in {"total", "auto", "third_party", "on_demand", "grok_bot"}
+            for s in entry.get("sibling_pools", [])
+        )
+        assert "INJECT" not in (entry.get("models_hint") or "")
+
+
+def test_available_text_prints_each_unusable_sibling_once(tmp_path, monkeypatch, capsys):
+    from aiuse.analysis import history
+    from aiuse.cli import main
+
+    cache = tmp_path / "snapshots"
+    cache.mkdir()
+    snap = _snapshot(monthly_used=40.0)
+    for window in snap["accounts"][0]["windows"]:
+        if window.get("pool_family") == "auto":
+            window.update(used_percent=100.0, remaining_percent=0.0, state="exhausted")
+        if window.get("pool_family") == "on_demand":
+            window.update(used_percent=None, remaining_percent=None, headroom_percent=None, state="unknown")
+    (cache / "latest.json").write_text(json.dumps(snap))
+    monkeypatch.setattr(history, "snapshot_dir", lambda: cache)
+    config = tmp_path / "config.toml"
+    config.write_text("")
+    main(["--config", str(config), "--available", "-q"])
+    out = capsys.readouterr().out
+    assert out.count("cursor auto (monthly Auto/Composer pool): NOT usable now") == 1
+    assert "on_demand" not in out
 
 
 def test_text_line_for_an_unusable_sibling():

@@ -237,12 +237,14 @@ available_at}` with `pool_family` one of `total`, `auto`, `third_party`,
   `grok_bot` entry therefore reports `cli_binary: null` (it was
   `cursor-agent`) and its `models_hint` says it is not drawn by cursor-agent's
   models and names every monthly pool that is out, with its reset. `reason`
-  (only when `usable_now` is false) is `pool exhausted` or `no reading`. The
-  field is omitted when the account reports a single pool. `aiuse --available`
+  (only when `usable_now` is false) is `pool exhausted` or `no reading`. Each
+  sibling reads like its own entry (a frozen reading is `reading frozen`), and
+  only these five families are named. The
+  field is omitted when the account reports a single pool family. `aiuse --available`
   text prints one `cursor auto (...): NOT usable now until ... (pool
-exhausted)` line under the pool for each sibling that is not usable. The
-  entries themselves, their `pool_family` values and `usable_now` are
-  unchanged; consumers that key on `(provider, pool_family)` (djbclark-ade's
+exhausted)` line per unusable sibling per account (the on-demand cap only when exhausted). Entries,
+  their `pool_family` values and `usable_now` are unchanged (the `grok_bot`
+  entry's `cli_binary`, `models_hint` and text line change as above); consumers that key on `(provider, pool_family)` (djbclark-ade's
   `route_agent.pool_service`) need no change, and a consumer that keyed on the
   provider alone should read `cli_binary` / `sibling_pools` instead of
   `usable_now`.

@@ -1084,24 +1084,48 @@ _CURSOR_GROK_BOT_NOTE = (
 )
 
 
-def _sibling_item(family: str, windows: list[dict[str, Any]]) -> dict[str, Any]:
-    """One other pool of a Cursor account, whatever its state."""
+def _sibling_item(family: str, windows: list[dict[str, Any]], entry: Mapping[str, Any] | None) -> dict[str, Any]:
+    """One other pool of a Cursor account, whatever its state.
+
+    A family with its own routing entry reports that entry's ``usable_now``,
+    headroom and reset, so a frozen reading or rate gate reads the same here as
+    on the entry; only ``on_demand`` (no entry of its own) is judged from its
+    windows.
+    """
     numbered = [w for w in windows if window_remaining(w) is not None]
     binding = min(numbered, key=lambda w: window_remaining(w) or 0.0) if numbered else windows[0]
     states = [str(w.get("state") or "unknown") for w in windows]
     state = "exhausted" if "exhausted" in states else str(binding.get("state") or "unknown")
-    usable = state not in ("exhausted", "unknown")
     resets = [parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")]
     resets = [t for t in resets if t is not None]
+    if entry is not None:
+        usable = bool(entry.get("usable_now"))
+        headroom = entry.get("headroom_percent")
+        available_at = entry.get("available_at")
+        frozen = any(w.get("measurement_frozen") for w in entry.get("windows") or [])
+        reason = (
+            "reading frozen"
+            if frozen
+            else "pool exhausted"
+            if state == "exhausted"
+            else "no reading"
+            if state == "unknown"
+            else "not usable"
+        )
+    else:
+        usable = state not in ("exhausted", "unknown")
+        headroom = binding.get("headroom_percent")
+        available_at = min(resets).isoformat() if resets else None
+        reason = "pool exhausted" if state == "exhausted" else "no reading"
     return {
         "pool_family": family,
-        "kind": _CURSOR_POOL_KIND.get(family, family),
+        "kind": _CURSOR_POOL_KIND[family],
         "label": binding.get("label"),
         "state": state,
         "usable_now": usable,
-        **({} if usable else {"reason": "pool exhausted" if state == "exhausted" else "no reading"}),
-        "headroom_percent": binding.get("headroom_percent"),
-        "available_at": min(resets).isoformat() if resets else None,
+        **({} if usable else {"reason": reason}),
+        "headroom_percent": headroom,
+        "available_at": available_at,
     }
 
 
@@ -1116,14 +1140,18 @@ def _attach_sibling_pools(account: Mapping[str, Any], entries: list[dict[str, An
     usable (2026-11-13). Every Cursor entry now carries ``sibling_pools`` (the
     account's other pools in any state, with their own reset) and the
     Grok Bot entry drops ``cli_binary``: ``cursor-agent`` does not spend it.
+    Only the five known Cursor families are named, so no upstream text is echoed.
     """
     by_family: dict[str, list[dict[str, Any]]] = {}
     for window in account.get("windows") or []:
         if isinstance(window, dict):
-            by_family.setdefault(str(window.get("pool_family") or "default"), []).append(window)
+            family = str(window.get("pool_family") or "default")
+            if family in _CURSOR_POOL_KIND:
+                by_family.setdefault(family, []).append(window)
+    by_entry = {str(e.get("pool_family") or "default"): e for e in entries}
     for entry in entries:
         own = str(entry.get("pool_family") or "default")
-        siblings = [_sibling_item(f, ws) for f, ws in by_family.items() if f != own]
+        siblings = [_sibling_item(f, ws, by_entry.get(f)) for f, ws in by_family.items() if f != own]
         if siblings:
             entry["sibling_pools"] = siblings
         if own != "grok_bot":
