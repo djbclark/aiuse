@@ -281,3 +281,20 @@ def test_ceiling_and_own_exhausted_with_different_resets_wait_for_the_later():
     # total resets in 21 days, auto in 30: the entry is out until the later one
     assert entries["auto"]["available_at"].startswith("2026-12-13")
     assert entries["third_party"]["available_at"].startswith("2026-12-04")
+
+
+def test_ceiling_later_than_own_exhausted_reset_waits_for_the_ceiling():
+    snap = _snapshot(monthly_used=60.0, on_demand=False)
+    _set(snap, "total", used_percent=100.0, remaining_percent=0.0, headroom_percent=0.0, state="exhausted")
+    _set(
+        snap,
+        "third_party",
+        used_percent=100.0,
+        remaining_percent=0.0,
+        headroom_percent=0.0,
+        state="exhausted",
+        resets_at=(_now() + timedelta(days=10)).isoformat(),
+    )
+    entries = {p["pool_family"]: p for p in pool_entries(snap)}
+    # own window resets in 10 days, the ceiling in 21: the entry is out until the ceiling
+    assert entries["third_party"]["available_at"].startswith("2026-12-04")
