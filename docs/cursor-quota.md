@@ -105,6 +105,21 @@ Canonical pricing table:
 
 `aiuse` sets no on-demand cap of its own — the figure is whatever Cursor reports.
 
+## Routing view: `sibling_pools` (2026-11-13)
+
+`aiuse --available` lists only usable pools. The monthly **auto** and
+**3rd-party** pools are what `cursor-agent` models spend; **grok-bot** is a
+separate weekly meter. When the monthly pools are exhausted the shortlist used to
+keep a lone `cursor` / `grok_bot` entry at ~80% headroom while the plan rejected
+every Cursor model. Now every Cursor entry carries `sibling_pools` (the other
+pools in any state, with their own reset), the `grok_bot` entry has
+`cli_binary: null`, and its hint names the monthly pools that are out. A spent **total** ceiling makes the
+**auto** and **3rd-party** entries unusable too. (Do not hide `cursor/total` with
+`[hidden_pools]`: that drops the ceiling at collection and the breakdown entries
+lose it; the default `show_total_rows = false` already keeps it off the board.) Consumers
+key on `(cursor, auto)` / `(cursor, third_party)` for `cursor-agent` headroom,
+never on the provider alone.
+
 ## Verify
 
 ```bash

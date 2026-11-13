@@ -83,6 +83,7 @@ SEMANTICS: dict[str, str] = {
     "fresh": "age_seconds <= the pool's fresh limit (analysis.fresh_threshold_seconds, default 1800s; analysis.fresh_threshold_seconds_by_provider overrides per provider — antigravity ships at 600s because its pools drain fast and its collector reuses payloads up to its 900s query gate); when false, re-collect before trusting ok states. In --available/serve envelopes the top-level fresh is true only when every usable entry is fresh too",
     "stale": "age_seconds > the pool's fresh limit (per-provider, see fresh); the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "stale_reason": "present on a stale pool/account: why the reading is old — its age against the pool's fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
+    "sibling_pools": "on every Cursor routing entry: the account's other pools, whatever their state {pool_family (total | auto | third_party | on_demand | grok_bot), kind, label, state, usable_now, reason (only when usable_now is false), headroom_percent, available_at}. --available lists only usable pools, so with the monthly auto / third_party pools exhausted the shortlist kept cursor/grok_bot at ~80% headroom while cursor-agent's own models were plan-rejected; this field is where the exhausted pools show. The grok_bot entry is the Grok Bot weekly allowance, not cursor-agent headroom: its cli_binary is null and its models_hint names the monthly pools that are out. A spent total ceiling makes the auto and third_party entries usable_now false too (reason monthly total exhausted, available_at the ceiling's reset, the later of the two when the entry's own window is out too). Omitted when the account reports a single pool",
     "stale_pools": "--available and serve /v1/snapshot envelopes: usable_now entries whose own reading is past their pool's fresh limit; the envelope's top-level fresh is true only when this list is empty and the snapshot itself is fresh. Do not route on a stale usable entry without re-collecting (--live): a burst drain or a reused query can have emptied it between reads",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
@@ -963,7 +964,16 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             shared = by_family.get("default", []) if model_sublimit else windows
             if model_sublimit:
                 windows = shared + windows
-            states = [str(w.get("state") or "unknown") for w in windows]
+            # Cursor's auto / third_party pools are breakdowns of the monthly total
+            # ceiling: an exhausted ceiling stops them too (the plan rejects the
+            # model), whatever their own percentages say. The ceiling's windows
+            # judge usability and the reset but are not listed under the entry.
+            ceiling = (
+                [w for w in by_family.get("total", []) if w.get("state") == "exhausted"]
+                if provider == "cursor" and family in ("auto", "third_party")
+                else []
+            )
+            states = [str(w.get("state") or "unknown") for w in windows + ceiling]
             numbered = [w for w in windows if w.get("headroom_percent") is not None]
             # Antigravity's families are independent budgets: a frozen reading in one
             # (Argon) must not zero its siblings, so judge each by its own windows.
@@ -985,6 +995,11 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
             ]
             resets = [t for t in resets if t is not None]
+            ceiling_resets = [parse_dt(w.get("resets_at")) for w in ceiling if w.get("resets_at")]
+            ceiling_resets = [t for t in ceiling_resets if t is not None]
+            if ceiling_resets:
+                # Out until the ceiling AND the entry's own exhausted window both reset.
+                resets = [max(min(resets), min(ceiling_resets))] if resets else ceiling_resets
             gate_reset = parse_dt(gate.get("resets_at")) if gate else None
             if gate_reset is not None and (not resets or gate_reset <= min(resets)):
                 pool_available: datetime | None = gate_reset
@@ -1065,7 +1080,115 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             )
         if provider == "claude":
             _attach_model_sublimits(pools[first_entry:])
+        elif provider == "cursor":
+            _attach_sibling_pools(account, pools[first_entry:])
     return pools
+
+
+_CURSOR_POOL_KIND = {
+    "total": "monthly ceiling",
+    "auto": "monthly Auto/Composer pool",
+    "third_party": "monthly third-party (API-rate) pool",
+    "on_demand": "on-demand spend cap",
+    "grok_bot": "Grok Bot weekly allowance",
+}
+
+_CURSOR_GROK_BOT_NOTE = (
+    "Not drawn by cursor-agent's own models: they spend the monthly auto / third-party pools (see sibling_pools)"
+)
+
+
+def _sibling_item(
+    family: str, windows: list[dict[str, Any]], entry: Mapping[str, Any] | None, *, ceiling_out: bool = False
+) -> dict[str, Any]:
+    """One other pool of a Cursor account, whatever its state.
+
+    A family with its own routing entry reports that entry's ``usable_now``,
+    headroom and reset, so a frozen reading or rate gate reads the same here as
+    on the entry; only ``on_demand`` (no entry of its own) is judged from its
+    windows.
+    """
+    numbered = [w for w in windows if window_remaining(w) is not None]
+    binding = min(numbered, key=lambda w: window_remaining(w) or 0.0) if numbered else windows[0]
+    states = [str(w.get("state") or "unknown") for w in windows]
+    state = "exhausted" if "exhausted" in states else str(binding.get("state") or "unknown")
+    resets = [parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")]
+    resets = [t for t in resets if t is not None]
+    if entry is not None:
+        usable = bool(entry.get("usable_now"))
+        headroom = entry.get("headroom_percent")
+        available_at = entry.get("available_at")
+        frozen = bool(entry.get("measurement_frozen")) or any(
+            w.get("measurement_frozen") for w in entry.get("windows") or []
+        )
+        reason = (
+            "reading frozen"
+            if frozen
+            else "pool exhausted"
+            if state == "exhausted"
+            else "monthly total exhausted"
+            if ceiling_out
+            else "no reading"
+            if state == "unknown"
+            else "not usable"
+        )
+    else:
+        usable = state not in ("exhausted", "unknown")
+        headroom = binding.get("headroom_percent")
+        available_at = min(resets).isoformat() if resets else None
+        reason = "pool exhausted" if state == "exhausted" else "no reading"
+    return {
+        "pool_family": family,
+        "kind": _CURSOR_POOL_KIND[family],
+        "label": binding.get("label"),
+        "state": state,
+        "usable_now": usable,
+        **({} if usable else {"reason": reason}),
+        "headroom_percent": headroom,
+        "available_at": available_at,
+    }
+
+
+def _attach_sibling_pools(account: Mapping[str, Any], entries: list[dict[str, Any]]) -> None:
+    """Name a Cursor account's other pools on each of its routing entries.
+
+    ``--available`` lists only usable pools, and Cursor reports several that
+    differ in what spends them: the monthly Auto and third-party pools are what
+    ``cursor-agent`` models draw, the Grok Bot weekly allowance is a separate
+    meter. With the monthly pools exhausted the shortlist kept ``cursor`` /
+    ``grok_bot`` at ~80% headroom, so a plan-rejected Cursor model still read as
+    usable (2026-11-13). Every Cursor entry now carries ``sibling_pools`` (the
+    account's other pools in any state, with their own reset) and the
+    Grok Bot entry drops ``cli_binary``: ``cursor-agent`` does not spend it.
+    Only the five known Cursor families are named, so no upstream text is echoed.
+    """
+    by_family: dict[str, list[dict[str, Any]]] = {}
+    for window in account.get("windows") or []:
+        if isinstance(window, dict):
+            family = str(window.get("pool_family") or "default")
+            if family in _CURSOR_POOL_KIND:
+                by_family.setdefault(family, []).append(window)
+    by_entry = {str(e.get("pool_family") or "default"): e for e in entries}
+    total_out = any(w.get("state") == "exhausted" for w in by_family.get("total", []))
+    for entry in entries:
+        own = str(entry.get("pool_family") or "default")
+        siblings = [
+            _sibling_item(f, ws, by_entry.get(f), ceiling_out=total_out and f in ("auto", "third_party"))
+            for f, ws in by_family.items()
+            if f != own
+        ]
+        if siblings:
+            entry["sibling_pools"] = siblings
+        if own != "grok_bot":
+            continue
+        entry["cli_binary"] = None
+        note = _CURSOR_GROK_BOT_NOTE
+        out = [s for s in siblings if not s["usable_now"] and s["pool_family"] != "on_demand"]
+        if out:
+            names = ", ".join(f"{s['pool_family']}{_cap_until(s)} ({s['reason']})" for s in out)
+            note += f"; not usable now: {names}"
+        base = entry.get("models_hint")
+        entry["models_hint"] = f"{base}. {note}" if base else note
 
 
 def _cap_reason(entry: Mapping[str, Any], state: str) -> str:
@@ -1147,6 +1270,14 @@ def model_cap_notice(cap: Mapping[str, Any]) -> str:
 def model_cap_line(provider: str, cap: Mapping[str, Any]) -> str:
     """The `--available` text line for a model cap that is not usable."""
     return f"{provider} {cap['pool_family']}: NOT usable now{_cap_until(cap)} ({cap.get('reason') or 'not usable'})"
+
+
+def sibling_pool_line(provider: str, sibling: Mapping[str, Any]) -> str:
+    """The `--available` text line for a sibling pool that is not usable."""
+    return (
+        f"{provider} {sibling['pool_family']} ({sibling.get('kind')}): NOT usable now"
+        f"{_cap_until(sibling)} ({sibling.get('reason') or 'not usable'})"
+    )
 
 
 def _independent_families(provider: str, by_family: Mapping[str, Any]) -> bool:

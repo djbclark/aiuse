@@ -221,6 +221,41 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-11-13, Cursor `sibling_pools` — schema stays 1.5)
+
+- Every Cursor routing entry (`provider: "cursor"`) gains `sibling_pools`: the
+  account's **other** pools, whatever their state:
+  `{pool_family, kind, label, state, usable_now, reason, headroom_percent,
+available_at}` with `pool_family` one of `total`, `auto`, `third_party`,
+  `on_demand`, `grok_bot`. `--available` lists only usable pools, so with the
+  monthly Auto and third-party pools exhausted (Cursor "Upgrade your plan") the
+  shortlist kept a lone `cursor` / `grok_bot` entry at ~80% headroom and a
+  plan-rejected `cursor-agent` model still read as usable (2026-11-13).
+  **`cursor-agent`'s own models draw the monthly `auto` / `third_party` pools**
+  (the `total` row is their ceiling and `on_demand` the overflow spend cap);
+  **`grok_bot` is the Grok Bot weekly allowance, a separate meter.** The
+  `grok_bot` entry therefore reports `cli_binary: null` (it was
+  `cursor-agent`) and its `models_hint` says it is not drawn by cursor-agent's
+  models and names every monthly pool that is out, with its reset. `reason`
+  (only when `usable_now` is false) is `pool exhausted`, `monthly total exhausted`,
+  `reading frozen` or `no reading`. **A spent `total` ceiling stops its `auto` and
+  `third_party` breakdown entries too**: they report `usable_now: false` with
+  `available_at` the ceiling's reset (the later of the two when the entry's own
+  window is exhausted too) (their own percentages are not enough, the
+  plan rejects the model), and `--available` drops them. Each
+  sibling reads like its own entry (a frozen reading is `reading frozen`), and
+  only these five families are named. The
+  field is omitted when the account reports a single pool family. `aiuse --available`
+  text prints one `cursor auto (...): NOT usable now until ... (pool
+exhausted)` line per unusable sibling per account (the on-demand cap only when exhausted). Entries
+  and their `pool_family` values are unchanged, and so is `usable_now` except
+  that a spent `total` ceiling now makes the `auto` and `third_party` entries
+  `false` (above); the `grok_bot` entry's `cli_binary`, `models_hint` and text
+  line change as above; consumers that key on `(provider, pool_family)` (djbclark-ade's
+  `route_agent.pool_service`) need no change, and a consumer that keyed on the
+  provider alone should read `cli_binary` / `sibling_pools` instead of
+  `usable_now`.
+
 #### Additive (2026-11-12, schema stays 1.5)
 
 - Freshness is judged **per pool**, not with one global threshold:
