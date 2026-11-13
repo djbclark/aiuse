@@ -1225,6 +1225,7 @@ def _run_available(args: argparse.Namespace) -> int:
         enrich_snapshot,
         envelope_freshness,
         model_cap_line,
+        sibling_pool_line,
         summary_line,
     )
     from aiuse.models import canonical_provider, parse_dt, utcnow
@@ -1355,6 +1356,9 @@ def _run_available(args: argparse.Namespace) -> int:
         for cap in pool.get("model_sublimits") or []:
             if cap.get("usable_now") is False:
                 print(f"  {model_cap_line(str(pool['provider']), cap)}")
+        for sibling in pool.get("sibling_pools") or []:
+            if sibling.get("usable_now") is False:
+                print(f"  {sibling_pool_line(str(pool['provider']), sibling)}")
         if pool.get("burn_before_reset"):
             print(f"  burn before reset: {pool['burn_before_reset']['suggestion']}")
     for entry in excluded:

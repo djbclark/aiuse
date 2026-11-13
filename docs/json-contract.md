@@ -221,6 +221,32 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 
 ### Changelog
 
+#### Additive (2026-11-13, Cursor `sibling_pools` — schema stays 1.5)
+
+- Every Cursor routing entry (`provider: "cursor"`) gains `sibling_pools`: the
+  account's **other** pools, whatever their state:
+  `{pool_family, kind, label, state, usable_now, reason, headroom_percent,
+available_at}` with `pool_family` one of `total`, `auto`, `third_party`,
+  `on_demand`, `grok_bot`. `--available` lists only usable pools, so with the
+  monthly Auto and third-party pools exhausted (Cursor "Upgrade your plan") the
+  shortlist kept a lone `cursor` / `grok_bot` entry at ~80% headroom and a
+  plan-rejected `cursor-agent` model still read as usable (2026-11-13).
+  **`cursor-agent`'s own models draw the monthly `auto` / `third_party` pools**
+  (the `total` row is their ceiling and `on_demand` the overflow spend cap);
+  **`grok_bot` is the Grok Bot weekly allowance, a separate meter.** The
+  `grok_bot` entry therefore reports `cli_binary: null` (it was
+  `cursor-agent`) and its `models_hint` says it is not drawn by cursor-agent's
+  models and names every monthly pool that is out, with its reset. `reason`
+  (only when `usable_now` is false) is `pool exhausted` or `no reading`. The
+  field is omitted when the account reports a single pool. `aiuse --available`
+  text prints one `cursor auto (...): NOT usable now until ... (pool
+exhausted)` line under the pool for each sibling that is not usable. The
+  entries themselves, their `pool_family` values and `usable_now` are
+  unchanged; consumers that key on `(provider, pool_family)` (djbclark-ade's
+  `route_agent.pool_service`) need no change, and a consumer that keyed on the
+  provider alone should read `cli_binary` / `sibling_pools` instead of
+  `usable_now`.
+
 #### Additive (2026-11-12, schema stays 1.5)
 
 - Freshness is judged **per pool**, not with one global threshold:

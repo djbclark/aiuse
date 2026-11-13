@@ -28,6 +28,16 @@ Releases before 3.9.0 are in the
 
 ### Added
 
+- Cursor routing entries carry `sibling_pools` (the account's other pools in any
+  state, with their own reset) and the `grok_bot` entry drops `cli_binary`.
+  `--available` lists only usable pools, so with the monthly Auto and third-party
+  pools exhausted (the plan rejecting a Cursor model with "Upgrade your plan")
+  the only Cursor entry left was `grok_bot` at ~80% headroom, which read as
+  `cursor-agent` being usable on 2026-11-13. `grok_bot` is the Grok Bot weekly
+  allowance, not what `cursor-agent`'s models spend; its `models_hint` now says
+  so and names the monthly pools that are out, and `aiuse --available` prints a
+  `NOT usable now` line per exhausted sibling. Additive, schema stays 1.5;
+  contract in `docs/json-contract.md`, vocabulary in `docs/cursor-quota.md`.
 - Paseo agents are now a passive refusal source, so a pool fails closed right
   after the first vendor refusal instead of when the quota endpoint catches
   up. The daemon's per-agent error files (`~/.paseo/agents/...`) are scanned
