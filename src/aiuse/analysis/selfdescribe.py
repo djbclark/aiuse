@@ -83,7 +83,7 @@ SEMANTICS: dict[str, str] = {
     "fresh": "age_seconds <= the pool's fresh limit (analysis.fresh_threshold_seconds, default 1800s; analysis.fresh_threshold_seconds_by_provider overrides per provider — antigravity ships at 600s because its pools drain fast and its collector reuses payloads up to its 900s query gate); when false, re-collect before trusting ok states. In --available/serve envelopes the top-level fresh is true only when every usable entry is fresh too",
     "stale": "age_seconds > the pool's fresh limit (per-provider, see fresh); the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "stale_reason": "present on a stale pool/account: why the reading is old — its age against the pool's fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
-    "sibling_pools": "on every Cursor routing entry: the account's other pools, whatever their state {pool_family (total | auto | third_party | on_demand | grok_bot), kind, label, state, usable_now, reason (only when usable_now is false), headroom_percent, available_at}. --available lists only usable pools, so with the monthly auto / third_party pools exhausted the shortlist kept cursor/grok_bot at ~80% headroom while cursor-agent's own models were plan-rejected; this field is where the exhausted pools show. The grok_bot entry is the Grok Bot weekly allowance, not cursor-agent headroom: its cli_binary is null and its models_hint names the monthly pools that are out. A spent total ceiling makes the auto and third_party entries usable_now false too (reason monthly total exhausted, available_at the ceiling's reset). Omitted when the account reports a single pool",
+    "sibling_pools": "on every Cursor routing entry: the account's other pools, whatever their state {pool_family (total | auto | third_party | on_demand | grok_bot), kind, label, state, usable_now, reason (only when usable_now is false), headroom_percent, available_at}. --available lists only usable pools, so with the monthly auto / third_party pools exhausted the shortlist kept cursor/grok_bot at ~80% headroom while cursor-agent's own models were plan-rejected; this field is where the exhausted pools show. The grok_bot entry is the Grok Bot weekly allowance, not cursor-agent headroom: its cli_binary is null and its models_hint names the monthly pools that are out. A spent total ceiling makes the auto and third_party entries usable_now false too (reason monthly total exhausted, available_at the ceiling's reset, the later of the two when the entry's own window is out too). Omitted when the account reports a single pool",
     "stale_pools": "--available and serve /v1/snapshot envelopes: usable_now entries whose own reading is past their pool's fresh limit; the envelope's top-level fresh is true only when this list is empty and the snapshot itself is fresh. Do not route on a stale usable entry without re-collecting (--live): a burst drain or a reused query can have emptied it between reads",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
@@ -992,11 +992,14 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             else:
                 usable = False
             resets = [
-                parse_dt(w.get("resets_at"))
-                for w in windows + ceiling
-                if w.get("state") == "exhausted" and w.get("resets_at")
+                parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
             ]
             resets = [t for t in resets if t is not None]
+            ceiling_resets = [parse_dt(w.get("resets_at")) for w in ceiling if w.get("resets_at")]
+            ceiling_resets = [t for t in ceiling_resets if t is not None]
+            if ceiling_resets:
+                # Out until the ceiling AND the entry's own exhausted window both reset.
+                resets = [max(min(resets), min(ceiling_resets))] if resets else ceiling_resets
             gate_reset = parse_dt(gate.get("resets_at")) if gate else None
             if gate_reset is not None and (not resets or gate_reset <= min(resets)):
                 pool_available: datetime | None = gate_reset

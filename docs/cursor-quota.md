@@ -114,7 +114,9 @@ keep a lone `cursor` / `grok_bot` entry at ~80% headroom while the plan rejected
 every Cursor model. Now every Cursor entry carries `sibling_pools` (the other
 pools in any state, with their own reset), the `grok_bot` entry has
 `cli_binary: null`, and its hint names the monthly pools that are out. A spent **total** ceiling makes the
-**auto** and **3rd-party** entries unusable too. Consumers
+**auto** and **3rd-party** entries unusable too. (Do not hide `cursor/total` with
+`[hidden_pools]`: that drops the ceiling at collection and the breakdown entries
+lose it; the default `show_total_rows = false` already keeps it off the board.) Consumers
 key on `(cursor, auto)` / `(cursor, third_party)` for `cursor-agent` headroom,
 never on the provider alone.
 

@@ -240,7 +240,8 @@ available_at}` with `pool_family` one of `total`, `auto`, `third_party`,
   (only when `usable_now` is false) is `pool exhausted`, `monthly total exhausted`,
   `reading frozen` or `no reading`. **A spent `total` ceiling stops its `auto` and
   `third_party` breakdown entries too**: they report `usable_now: false` with
-  `available_at` the ceiling's reset (their own percentages are not enough, the
+  `available_at` the ceiling's reset (the later of the two when the entry's own
+  window is exhausted too) (their own percentages are not enough, the
   plan rejects the model), and `--available` drops them. Each
   sibling reads like its own entry (a frozen reading is `reading frozen`), and
   only these five families are named. The

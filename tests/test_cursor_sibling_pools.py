@@ -263,3 +263,21 @@ def test_on_demand_with_no_reading_is_not_usable():
     assert on_demand["usable_now"] is False
     assert on_demand["reason"] == "no reading"
     assert on_demand["state"] == "unknown"
+
+
+def test_ceiling_and_own_exhausted_with_different_resets_wait_for_the_later():
+    snap = _snapshot(monthly_used=60.0, on_demand=False)
+    _set(snap, "total", used_percent=100.0, remaining_percent=0.0, headroom_percent=0.0, state="exhausted")
+    _set(
+        snap,
+        "auto",
+        used_percent=100.0,
+        remaining_percent=0.0,
+        headroom_percent=0.0,
+        state="exhausted",
+        resets_at=(_now() + timedelta(days=30)).isoformat(),
+    )
+    entries = {p["pool_family"]: p for p in pool_entries(snap)}
+    # total resets in 21 days, auto in 30: the entry is out until the later one
+    assert entries["auto"]["available_at"].startswith("2026-12-13")
+    assert entries["third_party"]["available_at"].startswith("2026-12-04")
