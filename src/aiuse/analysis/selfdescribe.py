@@ -83,7 +83,7 @@ SEMANTICS: dict[str, str] = {
     "fresh": "age_seconds <= the pool's fresh limit (analysis.fresh_threshold_seconds, default 1800s; analysis.fresh_threshold_seconds_by_provider overrides per provider — antigravity ships at 600s because its pools drain fast and its collector reuses payloads up to its 900s query gate); when false, re-collect before trusting ok states. In --available/serve envelopes the top-level fresh is true only when every usable entry is fresh too",
     "stale": "age_seconds > the pool's fresh limit (per-provider, see fresh); the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "stale_reason": "present on a stale pool/account: why the reading is old — its age against the pool's fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
-    "sibling_pools": "on every Cursor routing entry: the account's other pools, whatever their state {pool_family (total | auto | third_party | on_demand | grok_bot), kind, label, state, usable_now, reason (only when usable_now is false), headroom_percent, available_at}. --available lists only usable pools, so with the monthly auto / third_party pools exhausted the shortlist kept cursor/grok_bot at ~80% headroom while cursor-agent's own models were plan-rejected; this field is where the exhausted pools show. The grok_bot entry is the Grok Bot weekly allowance, not cursor-agent headroom: its cli_binary is null and its models_hint names the monthly pools that are out. Omitted when the account reports a single pool",
+    "sibling_pools": "on every Cursor routing entry: the account's other pools, whatever their state {pool_family (total | auto | third_party | on_demand | grok_bot), kind, label, state, usable_now, reason (only when usable_now is false), headroom_percent, available_at}. --available lists only usable pools, so with the monthly auto / third_party pools exhausted the shortlist kept cursor/grok_bot at ~80% headroom while cursor-agent's own models were plan-rejected; this field is where the exhausted pools show. The grok_bot entry is the Grok Bot weekly allowance, not cursor-agent headroom: its cli_binary is null and its models_hint names the monthly pools that are out. A spent total ceiling makes the auto and third_party entries usable_now false too (reason monthly total exhausted, available_at the ceiling's reset). Omitted when the account reports a single pool",
     "stale_pools": "--available and serve /v1/snapshot envelopes: usable_now entries whose own reading is past their pool's fresh limit; the envelope's top-level fresh is true only when this list is empty and the snapshot itself is fresh. Do not route on a stale usable entry without re-collecting (--live): a burst drain or a reused query can have emptied it between reads",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
@@ -964,7 +964,16 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             shared = by_family.get("default", []) if model_sublimit else windows
             if model_sublimit:
                 windows = shared + windows
-            states = [str(w.get("state") or "unknown") for w in windows]
+            # Cursor's auto / third_party pools are breakdowns of the monthly total
+            # ceiling: an exhausted ceiling stops them too (the plan rejects the
+            # model), whatever their own percentages say. The ceiling's windows
+            # judge usability and the reset but are not listed under the entry.
+            ceiling = (
+                [w for w in by_family.get("total", []) if w.get("state") == "exhausted"]
+                if provider == "cursor" and family in ("auto", "third_party")
+                else []
+            )
+            states = [str(w.get("state") or "unknown") for w in windows + ceiling]
             numbered = [w for w in windows if w.get("headroom_percent") is not None]
             # Antigravity's families are independent budgets: a frozen reading in one
             # (Argon) must not zero its siblings, so judge each by its own windows.
@@ -983,7 +992,9 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             else:
                 usable = False
             resets = [
-                parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
+                parse_dt(w.get("resets_at"))
+                for w in windows + ceiling
+                if w.get("state") == "exhausted" and w.get("resets_at")
             ]
             resets = [t for t in resets if t is not None]
             gate_reset = parse_dt(gate.get("resets_at")) if gate else None
@@ -1084,7 +1095,9 @@ _CURSOR_GROK_BOT_NOTE = (
 )
 
 
-def _sibling_item(family: str, windows: list[dict[str, Any]], entry: Mapping[str, Any] | None) -> dict[str, Any]:
+def _sibling_item(
+    family: str, windows: list[dict[str, Any]], entry: Mapping[str, Any] | None, *, ceiling_out: bool = False
+) -> dict[str, Any]:
     """One other pool of a Cursor account, whatever its state.
 
     A family with its own routing entry reports that entry's ``usable_now``,
@@ -1102,12 +1115,16 @@ def _sibling_item(family: str, windows: list[dict[str, Any]], entry: Mapping[str
         usable = bool(entry.get("usable_now"))
         headroom = entry.get("headroom_percent")
         available_at = entry.get("available_at")
-        frozen = any(w.get("measurement_frozen") for w in entry.get("windows") or [])
+        frozen = bool(entry.get("measurement_frozen")) or any(
+            w.get("measurement_frozen") for w in entry.get("windows") or []
+        )
         reason = (
             "reading frozen"
             if frozen
             else "pool exhausted"
             if state == "exhausted"
+            else "monthly total exhausted"
+            if ceiling_out
             else "no reading"
             if state == "unknown"
             else "not usable"
@@ -1149,9 +1166,14 @@ def _attach_sibling_pools(account: Mapping[str, Any], entries: list[dict[str, An
             if family in _CURSOR_POOL_KIND:
                 by_family.setdefault(family, []).append(window)
     by_entry = {str(e.get("pool_family") or "default"): e for e in entries}
+    total_out = any(w.get("state") == "exhausted" for w in by_family.get("total", []))
     for entry in entries:
         own = str(entry.get("pool_family") or "default")
-        siblings = [_sibling_item(f, ws, by_entry.get(f)) for f, ws in by_family.items() if f != own]
+        siblings = [
+            _sibling_item(f, ws, by_entry.get(f), ceiling_out=total_out and f in ("auto", "third_party"))
+            for f, ws in by_family.items()
+            if f != own
+        ]
         if siblings:
             entry["sibling_pools"] = siblings
         if own != "grok_bot":

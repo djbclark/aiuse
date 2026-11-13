@@ -16,6 +16,7 @@ from aiuse.analysis.selfdescribe import (
     enrich_snapshot,
     pool_entries,
     sibling_pool_line,
+    summary_line,
 )
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow, Snapshot
 
@@ -205,3 +206,60 @@ def test_text_line_for_an_unusable_sibling():
 def test_semantics_publish_sibling_pools():
     text = SEMANTICS["sibling_pools"]
     assert "grok_bot" in text and "cli_binary is null" in text
+
+
+def _set(snap: dict, family: str, **fields: object) -> None:
+    for window in snap["accounts"][0]["windows"]:
+        if window.get("pool_family") == family:
+            window.update(fields)
+
+
+def test_exhausted_total_ceiling_stops_the_breakdown_entries():
+    snap = _snapshot(monthly_used=60.0, on_demand=False)
+    _set(snap, "total", used_percent=100.0, remaining_percent=0.0, headroom_percent=0.0, state="exhausted")
+    entries = {p["pool_family"]: p for p in pool_entries(snap)}
+    for family in ("auto", "third_party"):
+        entry = entries[family]
+        assert entry["usable_now"] is False, family
+        assert entry["available_at"].startswith("2026-12-04")
+        # the ceiling is judged, not listed: the entry still shows only its own window
+        assert [w["pool_family"] for w in entry["windows"]] == [family]
+        assert "NOT usable now" in summary_line(entry)
+    assert [p["pool_family"] for p in available_pools(snap)] == ["grok_bot"]
+    grok = entries["grok_bot"]
+    siblings = {s["pool_family"]: s for s in grok["sibling_pools"]}
+    for family in ("auto", "third_party"):
+        assert siblings[family]["usable_now"] is False
+        assert siblings[family]["reason"] == "monthly total exhausted"
+        assert siblings[family]["available_at"].startswith("2026-12-04")
+    assert siblings["total"]["reason"] == "pool exhausted"
+    assert "auto until 2026-12-04" in grok["models_hint"]
+
+
+def test_total_with_headroom_leaves_the_breakdown_entries_usable():
+    snap = _snapshot(monthly_used=60.0, on_demand=False)
+    _set(snap, "total", used_percent=80.0, remaining_percent=20.0, headroom_percent=20.0, state="ok")
+    entries = {p["pool_family"]: p for p in pool_entries(snap)}
+    assert entries["auto"]["usable_now"] is True
+    assert entries["third_party"]["usable_now"] is True
+
+
+def test_account_wide_freeze_reads_frozen_on_every_sibling():
+    snap = _snapshot(monthly_used=30.0, on_demand=False)
+    snap["accounts"][0]["measurement_frozen"] = True
+    _set(snap, "grok_bot", measurement_frozen=True)
+    entries = {p["pool_family"]: p for p in pool_entries(snap)}
+    assert all(e["usable_now"] is False for e in entries.values())
+    for sibling in entries["grok_bot"]["sibling_pools"]:
+        assert sibling["usable_now"] is False
+        assert sibling["reason"] == "reading frozen"
+
+
+def test_on_demand_with_no_reading_is_not_usable():
+    snap = _snapshot(monthly_used=30.0, on_demand=True)
+    _set(snap, "on_demand", used_percent=None, remaining_percent=None, headroom_percent=None, state="unknown")
+    grok = next(p for p in pool_entries(snap) if p["pool_family"] == "grok_bot")
+    on_demand = next(s for s in grok["sibling_pools"] if s["pool_family"] == "on_demand")
+    assert on_demand["usable_now"] is False
+    assert on_demand["reason"] == "no reading"
+    assert on_demand["state"] == "unknown"

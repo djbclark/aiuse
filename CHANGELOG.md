@@ -36,7 +36,9 @@ Releases before 3.9.0 are in the
   `cursor-agent` being usable on 2026-11-13. `grok_bot` is the Grok Bot weekly
   allowance, not what `cursor-agent`'s models spend; its `models_hint` now says
   so and names the monthly pools that are out, and `aiuse --available` prints a
-  `NOT usable now` line per exhausted sibling. Additive, schema stays 1.5;
+  `NOT usable now` line per exhausted sibling. A spent monthly `total` ceiling
+  now also makes the `auto` and `third_party` entries `usable_now: false`
+  (they stayed usable at 0% headroom). Additive, schema stays 1.5;
   contract in `docs/json-contract.md`, vocabulary in `docs/cursor-quota.md`.
 - Paseo agents are now a passive refusal source, so a pool fails closed right
   after the first vendor refusal instead of when the quota endpoint catches
