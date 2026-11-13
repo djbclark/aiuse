@@ -247,9 +247,11 @@ available_at}` with `pool_family` one of `total`, `auto`, `third_party`,
   only these five families are named. The
   field is omitted when the account reports a single pool family. `aiuse --available`
   text prints one `cursor auto (...): NOT usable now until ... (pool
-exhausted)` line per unusable sibling per account (the on-demand cap only when exhausted). Entries,
-  their `pool_family` values and `usable_now` are unchanged (the `grok_bot`
-  entry's `cli_binary`, `models_hint` and text line change as above); consumers that key on `(provider, pool_family)` (djbclark-ade's
+exhausted)` line per unusable sibling per account (the on-demand cap only when exhausted). Entries
+  and their `pool_family` values are unchanged, and so is `usable_now` except
+  that a spent `total` ceiling now makes the `auto` and `third_party` entries
+  `false` (above); the `grok_bot` entry's `cli_binary`, `models_hint` and text
+  line change as above; consumers that key on `(provider, pool_family)` (djbclark-ade's
   `route_agent.pool_service`) need no change, and a consumer that keyed on the
   provider alone should read `cli_binary` / `sibling_pools` instead of
   `usable_now`.
