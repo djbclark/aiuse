@@ -57,8 +57,10 @@ It is still its own canonical id, never an alias of the parent:
 must not be folded into `claude`. Details:
 [`omp-cloud-credits.md`](omp-cloud-credits.md).
 
-`pi` is the separately funded OpenAI API pool used by Pi, never a Codex CLI
-subscription alias. See [Pi OpenAI API credits](pi-openai-credits.md); costs
+`pi` is the separately funded OpenAI API pool used by Pi (fed by CodexBar's
+`openai` provider, not `codex`), never a Codex CLI subscription alias. Disabling
+`openai` in CodexBar drops this `pi` spend meter without affecting `codex`
+subscription windows. See [Pi OpenAI API credits](pi-openai-credits.md); costs
 alone do not establish remaining prepaid credit.
 
 ## Window identity across collectors

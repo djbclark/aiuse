@@ -12,6 +12,13 @@ aiuse does not read its credential store. `aiuse --providers pi` queries CodexBa
 `openai` source, never the `codex` OAuth subscription source. Spend counts upward;
 no remaining balance is fabricated, even if a spending limit is reported.
 
+Because CodexBar's `codex` (ChatGPT / Codex CLI subscription) and `openai`
+(OpenAI Platform API spend) are separate providers, disabling `openai` in
+CodexBar leaves `codex` subscription windows unaffected; it only stops `aiuse`
+from collecting the `pi` OpenAI API spend meter (which has no other collector).
+If you do not track OpenAI API spend in `aiuse` (or have `pi` disabled in
+`aiuse`), disabling `openai` in CodexBar is safe.
+
 No balance is inferred from Pi credentials, conversation token totals, a Codex
 subscription, or an unverified spending limit. A Pi **balance** appears only after
 the operator records a verified grant and console balance. Missing data is not
