@@ -237,6 +237,7 @@ class _ClockCell:
     window_minutes: int | None = None  # full window length, when the source or label states it
     pace_percent: int | None = None
     pace_early: bool = False
+    rolling: bool = False
 
 
 _UNSTARTED_MARK = "↻"  # a rolling window's clock starts on first use
@@ -1225,11 +1226,11 @@ def _clock_span(cell: _ClockCell, *, compact: bool) -> tuple[_ResetSpan | None, 
     """The span shown after a cell's percentages, and whether it is an unstarted window's full length.
 
     A cell with a reset timestamp shows the time left. A sub-day rolling window
-    (the 5-hour kind) that has not been used yet (nothing consumed, no reset
-    timestamp) cannot say when it resets -- its clock starts on first use -- so
-    it shows its full length instead. Longer windows are usually anchored to a
-    calendar or billing date, so an unused one gets no span. Otherwise there is
-    no span.
+    (the 5-hour kind), or a longer window explicitly marked ``rolling``, that
+    has not been used yet (nothing consumed, no reset timestamp) cannot say
+    when it resets -- its clock starts on first use -- so it shows its full
+    length instead. Other longer windows are usually anchored to a calendar or
+    billing date, so an unused one gets no span. Otherwise there is no span.
     """
     span = _format_reset_span(cell.days_until_reset, estimated=cell.reset_estimated, compact=compact)
     if span is not None:
@@ -1238,7 +1239,7 @@ def _clock_span(cell: _ClockCell, *, compact: bool) -> tuple[_ResetSpan | None, 
         cell.days_until_reset is None
         and cell.used_percent <= 0.0
         and cell.window_minutes
-        and 0 < cell.window_minutes < 1440
+        and (0 < cell.window_minutes < 1440 or cell.rolling)
     ):
         return _format_reset_span(cell.window_minutes / 1440.0, compact=compact), True
     return None, False
@@ -1703,6 +1704,7 @@ def _build_matrix_rows(
                             window_minutes=window_minutes,
                             pace_percent=pace_pct,
                             pace_early=pace_early,
+                            rolling=window.rolling,
                         )
                     else:
                         # Same clock, same pool (Cursor total ⊂ auto): show the
@@ -1716,6 +1718,7 @@ def _build_matrix_rows(
                             cell.window_minutes = window_minutes
                             cell.pace_percent = pace_pct
                             cell.pace_early = pace_early
+                            cell.rolling = window.rolling
                 remaining = window.remaining()
                 if remaining is not None:
                     priced = _window_value_usd(window, remaining, account.provider, account.account, plans, analysis)

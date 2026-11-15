@@ -2288,6 +2288,49 @@ def test_unused_window_of_a_day_or_longer_gets_no_marker():
     assert "↻" not in text
 
 
+def test_unused_rolling_monthly_window_shows_full_length_and_marker():
+    now = utcnow()
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="clinepass",
+                account="cline",
+                source="clinepass",
+                windows=[
+                    QuotaWindow(
+                        label="ClinePass 5-hour",
+                        used_percent=0.0,
+                        remaining_percent=100.0,
+                        window_minutes=300,
+                        rolling=True,
+                    ),
+                    QuotaWindow(
+                        label="ClinePass weekly",
+                        used_percent=24.0,
+                        remaining_percent=76.0,
+                        resets_at=now + timedelta(hours=17, minutes=11),
+                        window_minutes=10080,
+                        rolling=True,
+                    ),
+                    QuotaWindow(
+                        label="ClinePass monthly",
+                        used_percent=0.0,
+                        remaining_percent=100.0,
+                        window_minutes=43200,
+                        rolling=True,
+                    ),
+                ],
+            ),
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    row = next(line for line in text.splitlines() if " clinepass/" in line)
+    assert "0u/100l/5h↻" in row
+    assert "0u/100l/30d↻" in row
+    assert _UNSTARTED_LEGEND_LINE in text
+
+
 def test_board_without_unstarted_windows_has_no_marker_legend():
     text = render_clock_matrix(
         [], snapshot=_unused_window_snapshot(five_hour_used=0.0, five_hour_resets=True), color=False, width=200

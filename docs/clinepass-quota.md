@@ -5,11 +5,16 @@ OpenCode Go, not a prepaid wallet.
 
 Official [usage docs](https://docs.cline.bot/getting-started/clinepass):
 
-| Window         | What it is     |
-| -------------- | -------------- |
-| 5-hour rolling | Burst cap      |
-| Weekly         | Calendar week  |
-| Monthly        | Calendar month |
+| Window         | What it is                                |
+| -------------- | ----------------------------------------- |
+| 5-hour rolling | Burst cap                                 |
+| Weekly         | Calendar week (docs) / rolling 7d (API)   |
+| Monthly        | Calendar month (docs) / rolling 30d (API) |
+
+Although the docs say calendar week/month, the live `usage-limits` API emits
+rolling `resetsAt` timestamps (arbitrary time-of-day) and omits `resetsAt` when
+`percentUsed` is `0`, so `aiuse` marks ClinePass windows as `rolling=True` and
+renders an unused monthly window as `0u/100l/30d↻`.
 
 Burning the 5-hour bar spends the same ClinePass allotment as weekly/monthly.
 `analysis.provider_overrides.clinepass.shared_allotment` is **true**, so pace

@@ -1341,6 +1341,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         # extra/named window — do not drop real subscription slots just because
         # a prepaid balance blob also exists.
         if window and not any(window.same_measurement(extra) for extra in extra_windows):
+            if provider == "clinepass":
+                window.rolling = True
             windows.append(window)
 
     if provider == "copilot":

@@ -39,6 +39,7 @@ def test_collect_clinepass_parses_official_limits(monkeypatch):
     ]
     assert [window.used_percent for window in account.windows] == [4.0, 32.0, 16.0]
     assert [window.window_minutes for window in account.windows] == [300, 10080, 43200]
+    assert all(window.rolling for window in account.windows)
     assert "test-key" not in str(account)
 
 

@@ -496,6 +496,7 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
                     window_id=w.get("window_id"),
                     # Dropping this would make a cached carried reset read as measured.
                     resets_at_carried_from=carried_from if isinstance(carried_from, dict) else None,
+                    rolling=bool(w.get("rolling", False)),
                 )
             )
         try:

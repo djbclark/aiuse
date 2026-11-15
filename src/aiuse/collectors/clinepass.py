@@ -190,6 +190,7 @@ def _fetch_windows(api_key: str, timeout: float) -> list[QuotaWindow]:
                 remaining_percent=max(0.0, 100.0 - used),
                 resets_at=parse_dt(item.get("resetsAt")),
                 window_minutes=minutes,
+                rolling=True,
             )
         )
     return windows

@@ -422,6 +422,8 @@ class QuotaWindow:
     # forward from an earlier reading: ``{"source": <collector that measured
     # it>, "collected_at": <ISO time of that reading>}``.
     resets_at_carried_from: dict[str, str] | None = None
+    # True when the window is a rolling timer that starts on first use (even >= 1 day).
+    rolling: bool = False
 
     def remaining(self) -> float | None:
         if self.remaining_percent is not None:
@@ -478,6 +480,8 @@ class QuotaWindow:
         if self.resets_at_carried_from is None:
             # Additive, optional: present only on a window whose reset was carried.
             del d["resets_at_carried_from"]
+        if not self.rolling:
+            d.pop("rolling", None)
         return d
 
 
