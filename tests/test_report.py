@@ -1310,6 +1310,25 @@ def test_dollar_meter_names_direction_and_kind():
     assert dollar_meter("up", "PAYG", 16.89, 50, compact=True) == "↑$16.89/$50.00 PAYG"
 
 
+def test_api_inventory_note_uses_window_reset_description_before_generic_api():
+    from aiuse.report import _api_inventory_note
+
+    account = AccountUsage(
+        provider="omp",
+        account="anthropic api key",
+        source="omp_agent_db",
+        billing_kind=BillingKind.PREPAID_BALANCE,
+        windows=[
+            QuotaWindow(
+                label="api key",
+                used_percent=None,
+                reset_description="Anthropic API credits; no balance known",
+            )
+        ],
+    )
+    assert _api_inventory_note(account) == "Anthropic API credits; no balance known"
+
+
 def test_grok_extra_usage_wallet_fragment():
     account = AccountUsage(
         provider="grok",

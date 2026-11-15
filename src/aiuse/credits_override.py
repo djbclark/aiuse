@@ -416,7 +416,7 @@ def _credits_window(
         "used_percent": None if pct is None else 100.0 - pct,
         "remaining_percent": pct,
         "resets_at": expires,
-        "reset_description": f"${remaining:.2f} of ${total:.2f} left, expires",
+        "reset_description": f"↓ ${remaining:.2f} of ${total:.2f} left, expires",
         "refill_capacity": total,
         "refill_capacity_unit": "usd",
         "window_id": CREDIT_WINDOW_IDS[provider],
@@ -783,7 +783,7 @@ def _apply_credit_override_for_provider(
                             "used_percent": used_pct,
                             "remaining_percent": rem_pct,
                             "window_minutes": 43200,
-                            "reset_description": f"Spend cap ${used:.2f} / ${spend_limit:.2f}",
+                            "reset_description": f"Spend cap ↑ ${used:.2f} / ${spend_limit:.2f}",
                             "refill_capacity": spend_limit,
                             "refill_capacity_unit": "usd",
                         }

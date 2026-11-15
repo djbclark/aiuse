@@ -773,6 +773,9 @@ def _api_inventory_note(account: AccountUsage) -> str:
         return dollar_meter("down", "prepaid", account.balance_usd)
     if account.credits_remaining is not None:
         return f"↓ {account.credits_remaining:g} credits"
+    for window in account.windows:
+        if window.reset_description:
+            return window.reset_description
     return "API"
 
 
