@@ -29,18 +29,7 @@ def compute_pace(
     remaining = window.remaining()
     if remaining is None:
         return None
-    used_fraction = (100.0 - remaining) / 100.0
-    if used_fraction <= 0:
-        return PaceProfile(
-            elapsed_fraction=None,
-            used_fraction=used_fraction,
-            pace_ratio=None,
-            projected_used_fraction=None,
-            projected_waste_fraction=None,
-            projected_waste_usd=None,
-            projected_exhaust_at=None,
-            confidence="low",
-        )
+    used_fraction = max(0.0, (100.0 - remaining) / 100.0)
 
     kind = classify_window_minutes(window.window_minutes)
     duration_minutes = window.window_minutes or nominal_window_minutes(kind)
@@ -74,9 +63,8 @@ def compute_pace(
     projected_used = min(1.0, used_fraction + r_hat * t_left_days)
     waste = 1.0 - projected_used
     exhaust_at = None
-    if r_hat > 1e-9:
-        if window.refill_capacity_unit != "usd" or used_fraction > 0:
-            exhaust_at = now + timedelta(days=(1.0 - used_fraction) / r_hat)
+    if r_hat > 1e-9 and used_fraction > 0:
+        exhaust_at = now + timedelta(days=(1.0 - used_fraction) / r_hat)
 
     return PaceProfile(
         elapsed_fraction=elapsed,
@@ -156,7 +144,7 @@ def overall_pace(windows: list[QuotaWindow], now: datetime) -> tuple[int | None,
             candidates.append((pct, early))
     if not candidates:
         return None, False
-    return max(candidates, key=lambda pair: pair[0])
+    return max(candidates, key=lambda pair: (pair[0], not pair[1]))
 
 
 def overall_pace_percent(windows: list[QuotaWindow], now: datetime) -> int | None:

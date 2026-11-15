@@ -270,3 +270,33 @@ def test_json_fields_pace_early_and_overall_pace_early():
     # SEMANTICS contains the new glossary keys
     assert "pace_early" in data["semantics"]
     assert "overall_pace_early" in data["semantics"]
+
+
+def test_zero_used_clocked_windows_report_minus_100_pace():
+    # A clocked, non-exhausted window at 0% used is -100% behind even spend.
+    w_5h = QuotaWindow(label="5h", used_percent=0, window_minutes=300, resets_at=NOW + timedelta(hours=5))
+    w_week = QuotaWindow(
+        label="weekly",
+        used_percent=0,
+        window_minutes=10080,
+        resets_at=NOW + timedelta(hours=2, minutes=18),
+    )
+    w_month = QuotaWindow(
+        label="monthly",
+        used_percent=0,
+        window_minutes=43200,
+        resets_at=NOW + timedelta(days=24, hours=20),
+    )
+    assert window_pace(w_5h, NOW) == (-100, True)
+    assert window_pace(w_week, NOW) == (-100, False)
+    assert window_pace(w_month, NOW) == (-100, False)
+    # When all windows tie at -100%, a non-early window wins over an early one.
+    assert overall_pace([w_5h, w_week, w_month], NOW) == (-100, False)
+    snap = Snapshot(
+        collected_at=NOW,
+        accounts=[AccountUsage(provider="opencode", source="test", windows=[w_5h, w_week, w_month])],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    oc_line = next(line for line in text.splitlines() if "opencode" in line)
+    pace_end = text.splitlines()[0].index("PACE") + len("PACE")
+    assert oc_line[pace_end - len("-100%") : pace_end] == "-100%"

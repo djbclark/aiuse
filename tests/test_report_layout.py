@@ -186,9 +186,20 @@ def test_other_column_header_width_and_alignment():
     assert grok[col:] == "↓$1.64 prepaid"
     assert fable[col:] == "Fable-cap"
     assert "(counts down)" not in text
-    # The pace placeholder stays in its own column, right-aligned under PACE.
+    # Zero-used clocked row shows -100%~ right-aligned under PACE.
     pace_end = header.index("PACE") + len("PACE")
-    assert grok[pace_end - 1] == "—"
+    assert grok[pace_end - len("-100%~") : pace_end] == "-100%~"
+
+    # An unclocked row keeps the pace placeholder right-aligned under PACE.
+    now = utcnow()
+    unclocked_grok = _grok(now)
+    unclocked_grok.windows[0].resets_at = None
+    unclocked_text = render_clock_matrix(
+        [], snapshot=Snapshot(collected_at=now, accounts=[unclocked_grok]), color=False, width=200
+    )
+    unclocked_header = unclocked_text.splitlines()[0]
+    unclocked_pace_end = unclocked_header.index("PACE") + len("PACE")
+    assert _row_line(unclocked_text, "grok")[unclocked_pace_end - 1] == "—"
 
 
 def test_other_column_absent_without_tail_notes():
