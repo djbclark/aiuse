@@ -1592,10 +1592,12 @@ def test_deepseek_prepaid_has_no_use_urgency():
     assert alert_use_urgency(large) == 0.0
     prepaid_text = render_priority_ladder([large], color=False)
     assert prepaid_text.startswith("n/a")
-    assert "$18.90" in prepaid_text
+    assert "↓ $18.90" in prepaid_text
     assert "no expiry" not in prepaid_text
     assert "use before" not in prepaid_text.casefold()
     assert "100%" not in prepaid_text
+    matrix_text = render_clock_matrix([large], color=False, width=200)
+    assert "* [↓ $18.90]" in matrix_text
 
 
 def test_brief_aliases_default_priority_ladder():

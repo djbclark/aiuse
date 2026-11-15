@@ -306,7 +306,7 @@ def test_available_prints_burn_line(monkeypatch, capsys):
 
     assert cli.main(["--available"]) == 0
     out = capsys.readouterr().out
-    assert "burn before reset: omp: $150.00 (75% of the grant) expires in 10d" in out
+    assert "burn before reset: omp: ↓ $150.00 (75% of the grant) expires in 10d" in out
 
     assert cli.main(["--available", "--json"]) == 0
     pool = json.loads(capsys.readouterr().out)["available"][0]

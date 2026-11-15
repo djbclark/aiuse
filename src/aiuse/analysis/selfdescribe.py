@@ -932,7 +932,7 @@ def burn_before_reset(
         "remaining_percent": headroom_percent,
         "remaining_usd": left,
         "suggestion": (
-            f"{provider}: ${left:.2f} ({headroom_percent:.0f}% of the grant) expires in {days_text} "
+            f"{provider}: ↓ ${left:.2f} ({headroom_percent:.0f}% of the grant) expires in {days_text} "
             f"({expiry.date().isoformat()}); use it before it lapses"
         ),
     }

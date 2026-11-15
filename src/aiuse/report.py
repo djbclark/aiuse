@@ -1962,7 +1962,8 @@ def _row_from_alert(
         scope=_POOL_SCOPE_LABELS.get(_pool_id_for_label(alert.window_label, alert.provider), "—"),
     )
     if alert.kind == "prepaid":
-        row.note = f"{alert.window_label}"
+        label = alert.window_label
+        row.note = f"↓ {label}" if label.startswith("$") else label
         return row
 
     now = now or utcnow()
@@ -2548,7 +2549,10 @@ def _priority_alert_line(alert: UseOrLoseAlert, s: _Style, band: int) -> str:
     name = s.bold(provider_display_name(alert.provider))
     if alert.kind == "prepaid":
         # Inventory only — no "use before reset" language for non-expiring tokens.
-        body = f"{name} · {who} · {alert.window_label}"
+        label = alert.window_label
+        if label.startswith("$"):
+            label = f"↓ {label}"
+        body = f"{name} · {who} · {label}"
         return f"{_priority_tag(s, band)} {body}"
     # Chronic-underuse alerts summarize earlier cycles rather than one live
     # account/window.  A fresh Claude 5-hour window can legitimately have no

@@ -300,12 +300,12 @@ def analyze_use_or_lose(
                         urgency=Urgency.INFO,
                         provider=account.provider,
                         account=account.account,
-                        window_label=f"${account.balance_usd:.2f}",
+                        window_label=f"↓ ${account.balance_usd:.2f}",
                         remaining_percent=0.0,
                         days_until_reset=None,
                         plan=account.plan,
                         message=(
-                            f"{account.provider}: ${account.balance_usd:.2f} prepaid "
+                            f"{account.provider}: ↓ ${account.balance_usd:.2f} prepaid "
                             "balance (usually does not expire — spend when useful, "
                             "not urgent like subscription windows)."
                         ),

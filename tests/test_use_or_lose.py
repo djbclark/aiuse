@@ -142,7 +142,7 @@ def test_prepaid_is_info_only():
     assert alerts[0].urgency == Urgency.INFO
     assert alerts[0].kind == "prepaid"
     assert alerts[0].score == 0.0
-    assert "$18.90" in alerts[0].window_label
+    assert alerts[0].window_label == "↓ $18.90"
     assert "balance" not in alerts[0].window_label
 
 
