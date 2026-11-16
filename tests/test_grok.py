@@ -1,9 +1,14 @@
+import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
+from aiuse.collectors.base import CollectorError
 from aiuse.collectors.grok import (
     _plan_window,
     _prepaid_balance_usd,
     _product_usage_note,
+    _refresh_oidc_token,
     collect_grok,
 )
 from aiuse.collectors.runner import _merge_grok_extra_credits
@@ -247,3 +252,111 @@ def test_merge_grok_keeps_window_only_billing_row_without_host():
     assert len(accounts) == 1
     assert accounts[0].source == "grok_billing"
     assert len(accounts[0].windows) == 1
+
+
+def test_collect_grok_refreshes_expired_oidc_token_and_persists(tmp_path, monkeypatch):
+    auth_file = tmp_path / "auth.json"
+    expired = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+    auth_file.write_text(
+        json.dumps(
+            {
+                "https://auth.x.ai::client-1": {
+                    "key": "stale-token",
+                    "refresh_token": "old-refresh",
+                    "expires_at": expired,
+                    "oidc_issuer": "https://auth.x.ai",
+                    "oidc_client_id": "client-1",
+                    "email": "user@example.com",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GROK_HOME", str(tmp_path))
+
+    class _FakeResp:
+        def __init__(self, body: dict):
+            self._body = json.dumps(body).encode("utf-8")
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda _req, timeout=15.0: _FakeResp(
+            {"access_token": "fresh-token", "refresh_token": "new-refresh", "expires_in": 3600}
+        ),
+    )
+    seen_tokens: list[str] = []
+
+    def fake_fetch(token: str, _timeout: float) -> dict:
+        seen_tokens.append(token)
+        return _billing_payload({"prepaidBalance": {"val": 92}})
+
+    monkeypatch.setattr("aiuse.collectors.grok._fetch_billing", fake_fetch)
+
+    accounts = collect_grok(timeout=5)
+    assert seen_tokens == ["fresh-token"]
+    assert len(accounts) == 1
+    assert accounts[0].usage_credits is not None
+    assert accounts[0].usage_credits.remaining == 0.92
+
+    persisted = json.loads(auth_file.read_text(encoding="utf-8"))["https://auth.x.ai::client-1"]
+    assert persisted["key"] == "fresh-token"
+    assert persisted["refresh_token"] == "new-refresh"
+
+
+def test_collect_grok_retries_on_401_after_oidc_refresh(tmp_path, monkeypatch):
+    auth_file = tmp_path / "auth.json"
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+    auth_file.write_text(
+        json.dumps(
+            {
+                "https://auth.x.ai::client-1": {
+                    "key": "revoked-token",
+                    "refresh_token": "old-refresh",
+                    "expires_at": future,
+                    "oidc_issuer": "https://auth.x.ai",
+                    "oidc_client_id": "client-1",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GROK_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "aiuse.collectors.grok._refresh_oidc_token",
+        lambda entry, _timeout: {**entry, "key": "fresh-token"},
+    )
+    calls: list[str] = []
+
+    def fake_fetch(token: str, _timeout: float) -> dict:
+        calls.append(token)
+        if token == "revoked-token":
+            raise CollectorError("Grok billing HTTP 401")
+        return _billing_payload({"prepaidBalance": {"val": 500}})
+
+    monkeypatch.setattr("aiuse.collectors.grok._fetch_billing", fake_fetch)
+
+    accounts = collect_grok(timeout=5)
+    assert calls == ["revoked-token", "fresh-token"]
+    assert accounts[0].usage_credits is not None
+    assert accounts[0].usage_credits.remaining == 5.0
+
+
+def test_refresh_oidc_token_rejects_non_https_issuer():
+    assert (
+        _refresh_oidc_token(
+            {"refresh_token": "r", "oidc_issuer": "http://auth.x.ai", "oidc_client_id": "c"},
+            5.0,
+        )
+        is None
+    )
+    with pytest.raises(CollectorError):
+        raise CollectorError("Grok billing HTTP 401")

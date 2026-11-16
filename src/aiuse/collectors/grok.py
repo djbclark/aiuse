@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from aiuse.models import AccountUsage, BillingKind, QuotaWindow, UsageCredits, coerce_float, parse_dt
+from aiuse.models import AccountUsage, BillingKind, QuotaWindow, UsageCredits, coerce_float, parse_dt, utcnow
 
 from .base import CollectorError
 
@@ -44,7 +47,19 @@ def collect_grok(*, timeout: float = 15.0) -> list[AccountUsage]:
     token = _read_bearer_token()
     if not token:
         return []
-    data = _fetch_billing(token, timeout)
+    if _token_is_expired():
+        refreshed = _try_refresh_auth(timeout)
+        if refreshed:
+            token = refreshed
+    try:
+        data = _fetch_billing(token, timeout)
+    except CollectorError as exc:
+        if "HTTP 401" not in str(exc):
+            raise
+        refreshed = _try_refresh_auth(timeout)
+        if not refreshed:
+            raise
+        data = _fetch_billing(refreshed, timeout)
     raw_config = data.get("config")
     config = raw_config if isinstance(raw_config, dict) else {}
     balance_usd = _prepaid_balance_usd(config.get("prepaidBalance"))
@@ -128,10 +143,7 @@ def _read_auth() -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _read_bearer_token() -> str | None:
-    auth = _read_auth()
-    if not auth:
-        return None
+def _select_auth_entry(auth: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
     preferred_scopes = (
         "https://auth.x.ai::",
         "https://accounts.x.ai/sign-in",
@@ -141,13 +153,127 @@ def _read_bearer_token() -> str | None:
         if isinstance(entry, dict):
             token = entry.get("key")
             if isinstance(token, str) and token.strip():
-                return token.strip()
-    for entry in auth.values():
+                return scope, entry
+    for scope, entry in auth.items():
         if isinstance(entry, dict):
             token = entry.get("key")
             if isinstance(token, str) and token.strip():
-                return token.strip()
+                return scope, entry
     return None
+
+
+def _read_bearer_token() -> str | None:
+    auth = _read_auth()
+    if not auth:
+        return None
+    selected = _select_auth_entry(auth)
+    if selected is None:
+        return None
+    return str(selected[1]["key"]).strip()
+
+
+def _token_is_expired() -> bool:
+    auth = _read_auth()
+    if not auth:
+        return False
+    selected = _select_auth_entry(auth)
+    if selected is None:
+        return False
+    expires_at = parse_dt(selected[1].get("expires_at"))
+    if expires_at is None:
+        return False
+    return expires_at <= utcnow() + timedelta(seconds=60)
+
+
+def _write_auth(auth: dict[str, Any]) -> None:
+    path = _auth_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".auth.", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(auth, handle, indent=2)
+            handle.write("\n")
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _refresh_oidc_token(entry: dict[str, Any], timeout: float) -> dict[str, Any] | None:
+    refresh_token = entry.get("refresh_token")
+    issuer = entry.get("oidc_issuer")
+    client_id = entry.get("oidc_client_id")
+    if not (
+        isinstance(refresh_token, str)
+        and refresh_token.strip()
+        and isinstance(issuer, str)
+        and isinstance(client_id, str)
+        and client_id.strip()
+    ):
+        return None
+    parts = urllib.parse.urlsplit(issuer.strip())
+    if parts.scheme != "https" or not parts.netloc:
+        return None
+    token_url = f"{issuer.strip().rstrip('/')}/oauth2/token"
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token.strip(),
+            "client_id": client_id.strip(),
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        token_url,
+        data=body,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310  # nosemgrep
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    access_token = payload.get("access_token")
+    if not isinstance(access_token, str) or not access_token.strip():
+        return None
+    updated = dict(entry)
+    updated["key"] = access_token.strip()
+    new_refresh = payload.get("refresh_token")
+    if isinstance(new_refresh, str) and new_refresh.strip():
+        updated["refresh_token"] = new_refresh.strip()
+    expires_in = coerce_float(payload.get("expires_in"))
+    if expires_in is not None and expires_in > 0:
+        updated["expires_at"] = (utcnow() + timedelta(seconds=expires_in)).isoformat().replace("+00:00", "Z")
+    return updated
+
+
+def _try_refresh_auth(timeout: float) -> str | None:
+    auth = _read_auth()
+    if not auth:
+        return None
+    selected = _select_auth_entry(auth)
+    if selected is None:
+        return None
+    scope, entry = selected
+    updated = _refresh_oidc_token(entry, timeout)
+    if updated is None:
+        return None
+    new_auth = dict(auth)
+    new_auth[scope] = updated
+    try:
+        _write_auth(new_auth)
+    except OSError:
+        pass
+    return str(updated["key"])
 
 
 def _email_from_auth() -> str | None:
