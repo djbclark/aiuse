@@ -447,11 +447,11 @@ def test_agy_cli_burst_lockout_is_per_transport_without_emptying_pool(tmp_path):
     )
     acct = snap["accounts"][0]
     assert acct["usable_now"] is True
-    assert acct["transports"]["cli"]["usable"] is False
-    assert acct["transports"]["cli"]["state"] == "limited"
-    assert acct["transports"]["acp"]["usable"] is True
+    assert acct["transport_status"]["cli"]["usable"] is False
+    assert acct["transport_status"]["cli"]["state"] == "limited"
+    assert acct["transport_status"]["acp"]["usable"] is True
 
     pools = pool_entries(snap, now=now)
     assert pools and all(p["usable_now"] is True for p in pools)
-    assert all(p["transports"]["cli"]["usable"] is False for p in pools)
-    assert all(p["transports"]["acp"]["usable"] is True for p in pools)
+    assert all(p["transport_status"]["cli"]["usable"] is False for p in pools)
+    assert all(p["transport_status"]["acp"]["usable"] is True for p in pools)

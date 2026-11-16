@@ -42,12 +42,12 @@ def test_literals_match_ids_aliases_and_display_names():
 
 
 def test_globs_match_id_or_display_name_but_not_aliases():
-    assert matches("opencode-zen", "oc-*")
+    assert matches("antigravity", "ag*")
     assert matches("opencode-zen", "opencode-*")
     assert matches("claude", "CLAUDE*")
-    # "openai" is an alias of codex and pi: a glob must not reach them through it.
+    # "oc-zen" and "openai" are aliases: a glob must not reach providers through them.
+    assert not matches("opencode-zen", "oc-*")
     assert not matches("codex", "open*")
-    assert not matches("pi", "open*")
 
 
 def test_include_overrides_config_disable_and_exclude_wins():

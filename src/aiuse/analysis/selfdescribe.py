@@ -36,6 +36,7 @@ from aiuse.analysis.pool_keys import (
 )
 from aiuse.models import (
     OPERATOR_APPROVAL_NOTICE,
+    PROVIDER_VENDORS,
     REUSED_QUERY_NOTE_MARKER,
     SAFE_MODEL_SCOPE_RE,
     QuotaWindow,
@@ -44,11 +45,14 @@ from aiuse.models import (
     classify_window_minutes,
     claude_model_scope,
     parse_dt,
+    provider_pool_id,
+    provider_transports,
+    provider_vendor,
     utcnow,
 )
 from aiuse.timefmt import format_as_of, format_clock, format_lead
 
-SCHEMA_VERSION = "1.5"
+SCHEMA_VERSION = "1.6"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -59,7 +63,37 @@ FRESH_THRESHOLD_SECONDS_DEFAULT = 1800.0  # 30 min
 OMP_OPENAI_SOURCE = "omp_models_yml"
 
 
-SEMANTICS: dict[str, str] = {
+SEMANTICS: dict[str, Any] = {
+    "taxonomy_version": "1.6",
+    "provider_to_vendor": dict(PROVIDER_VENDORS),
+    "pool_id_map": {
+        "claude": "anthropic:subscription",
+        "claude/default": "anthropic:subscription",
+        "claude/fable": "anthropic:fable",
+        "omp": "anthropic:claude_api",
+        "omp/claude": "anthropic:claude_api",
+        "omp/anthropic_api": "anthropic:anthropic_api",
+        "omp/openai_api": "openai:openai_api",
+        "codex": "openai:codex",
+        "pi": "openai:openai_api",
+        "antigravity/gemini": "google:gemini",
+        "antigravity/gemini_argon": "google:gemini_argon",
+        "antigravity/claude_gpt": "google:claude_gpt",
+        "cursor/auto": "cursor:auto",
+        "cursor/third_party": "cursor:third_party",
+        "cursor/grok_bot": "cursor:grok_bot",
+        "cursor/total": "cursor:total",
+        "opencode-go": "opencode:go",
+        "opencode-zen": "opencode:zen",
+        "clinepass": "clinepass:default",
+        "zai": "zai:default",
+        "deepseek": "deepseek:default",
+        "bedrock": "aws:bedrock",
+        "sipb": "sipb:default",
+    },
+    "vendor": "billing vendor authority (schema 1.6 additive bridge; e.g. anthropic, openai, google, cursor)",
+    "pool_id": "canonical <vendor>:<pool_family> identifier (schema 1.6 additive bridge; e.g. anthropic:subscription, openai:codex, google:gemini_argon)",
+    "transports": "client harnesses/transports that can spend this pool (schema 1.6 additive bridge; e.g. ['claude'], ['cursor-agent', 'pi'])",
     "pace_percent": "round((pace_ratio - 1) * 100); positive ahead, negative behind even spend; null when exhausted or unclocked",
     "pace_ratio": "unblended used fraction / elapsed fraction (minimum elapsed 0.05), at snapshot collection time",
     "pace_early": "true when window elapsed fraction is below 0.10 (early in the window, pace is noisy); false when pace is null or not early",
@@ -361,6 +395,15 @@ def enrich_account(
     """
     now = now or utcnow()
     provider = str(account.get("provider") or "")
+    family_hint = (
+        "openai_api" if (canonical_provider(provider) == "omp" and account.get("source") == OMP_OPENAI_SOURCE) else None
+    )
+    if not account.get("vendor"):
+        account["vendor"] = provider_vendor(provider, pool_family=family_hint)
+    if not account.get("pool_id"):
+        account["pool_id"] = provider_pool_id(provider, pool_family=family_hint)
+    if not account.get("transports"):
+        account["transports"] = provider_transports(provider)
     windows = [w for w in (account.get("windows") or []) if isinstance(w, dict)]
     for window in windows:
         enrich_window(window, provider=provider)
@@ -830,7 +873,7 @@ def enrich_snapshot(
                     for entry in limits
                 )
                 if cli_limited:
-                    account["transports"] = {
+                    account["transport_status"] = {
                         "cli": {"usable": False, "state": "limited"},
                         "acp": {
                             "usable": bool(account.get("usable_now")),
@@ -839,7 +882,7 @@ def enrich_snapshot(
                     }
             else:
                 account.pop("client_limits", None)
-                account.pop("transports", None)
+                account.pop("transport_status", None)
     _apply_shared_rate_gate(accounts, now=now)
     pace_now = parse_dt(collected) or now
     for account in accounts:
@@ -1098,8 +1141,22 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             pools.append(
                 {
                     "provider": provider,
+                    "vendor": provider_vendor(provider, pool_family=family),
+                    "pool_id": provider_pool_id(provider, pool_family=family),
                     "account": account.get("account"),
                     "pool_family": family if family != "default" or _vendor_splits(provider) else None,
+                    "quota_scope": (
+                        "model_sublimit"
+                        if model_sublimit
+                        else (
+                            "ceiling"
+                            if provider == "cursor" and family == "total"
+                            else "shared"
+                            if provider == "claude"
+                            else "pool"
+                        )
+                    ),
+                    "transports": list(account.get("transports") or provider_transports(provider)),
                     "cli_binary": account.get("cli_binary"),
                     "usable_now": usable,
                     "binding_window": str(binding.get("label") or "") if binding else None,
@@ -1144,7 +1201,7 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     **({"collected_at": account["collected_at"]} if account.get("collected_at") else {}),
                     **({"measurement_frozen": True} if frozen else {}),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
-                    **({"transports": account["transports"]} if account.get("transports") else {}),
+                    **({"transport_status": account["transport_status"]} if account.get("transport_status") else {}),
                     **(
                         {
                             "state": "blocked",

@@ -177,14 +177,14 @@ def test_ladder_keeps_opencode_zen_separate_from_go_quota_alert():
     text = render_priority_ladder([alert], snapshot=snapshot, color=False)
 
     lines = text.splitlines()
-    go_line = next(line for line in lines if "opencode" in line)
+    go_line = next(line for line in lines if "opencode-go" in line)
     assert go_line.startswith("empty")
     assert "100u/0l" in go_line
     assert "resets" in go_line
     # Empty tag must not also claim pace / upcoming lockout.
     assert " pace " not in go_line
     assert "~lockout" not in go_line
-    zen_line = next(line for line in lines if "oc-zen" in line)
+    zen_line = next(line for line in lines if "opencode-zen" in line)
     assert zen_line.startswith("empty")
     assert "↓ $-0.04 prepaid" in zen_line
     assert "balance" not in zen_line
@@ -806,7 +806,7 @@ def test_default_report_is_clock_matrix():
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
     # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["##", "TUI", "PACE", "5H", "WEEK", "MONTH"]
+    assert lines[0].split() == ["##", "POOL", "PACE", "5H", "WEEK", "MONTH"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -2136,7 +2136,7 @@ def test_clock_matrix_omits_slash_when_clock_has_no_timestamp():
         ],
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    zai = next(line for line in text.splitlines() if " zai/zcode " in line)
+    zai = next(line for line in text.splitlines() if " zai " in line)
     assert "0u/100l/6d20h" in zai
     # The 5h cell is a labeled pair, not 12u/88l/—.
     assert "12u/88l/—" not in zai
@@ -2349,7 +2349,7 @@ def test_unused_rolling_monthly_window_shows_full_length_and_marker():
         ],
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
-    row = next(line for line in text.splitlines() if " clinepass/" in line)
+    row = next(line for line in text.splitlines() if " clinepass " in line)
     assert "0u/100l/5h↻" in row
     assert "0u/100l/30d↻" in row
     assert _UNSTARTED_LEGEND_LINE in text
@@ -2403,10 +2403,13 @@ def test_clock_column_stays_aligned_when_marker_and_countdown_share_it():
 @pytest.mark.parametrize(
     ("provider", "display"),
     [
-        ("zai", "zai/zcode"),
-        ("clinepass", "clinepass/cline"),
-        ("deepseek", "deepseek/codewhale"),
-        ("opencode-go", "opencode"),
+        ("zai", "zai"),
+        ("clinepass", "clinepass"),
+        ("deepseek", "deepseek"),
+        ("opencode-go", "opencode-go"),
+        ("opencode-zen", "opencode-zen"),
+        ("omp", "anthropic-api"),
+        ("pi", "openai-api"),
     ],
 )
 def test_provider_display_names_preserve_service_and_default_client(provider, display):

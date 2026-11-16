@@ -71,6 +71,30 @@ pool's limit too, and `stale_pools` (additive, schema 1.5) names the usable
 entries that are not: do not route on a stale usable entry without
 re-collecting.
 
+## What's new in schema 1.6 (2026-11-16)
+
+Schema 1.6 is an additive taxonomy bridge from TUI-centric names to the 4-axis
+`vendor` / `pool_id` / `transports` model (see
+[taxonomy-migration-plan.md](taxonomy-migration-plan.md)). Existing `provider`
+and `pool_family` fields remain unchanged so consumers keying on them stay
+unbroken until Schema 2.0.
+
+- **`vendor`** (`str`) on each `accounts[]` and `--available` / `pool_entries`
+  entry: billing authority (`anthropic`, `openai`, `google`, `cursor`, `zai`,
+  `clinepass`, `opencode`, `deepseek`, `aws`, `sipb`, …).
+- **`pool_id`** (`str`) on each `accounts[]` and `--available` / `pool_entries`
+  entry: canonical `<vendor>:<pool_family>` identifier (e.g.
+  `anthropic:subscription`, `anthropic:claude_api`, `openai:codex`,
+  `openai:openai_api`, `google:gemini_argon`, `cursor:auto`, `opencode:go`,
+  `opencode:zen`, `aws:bedrock`).
+- **`transports`** (`list[str]`) on each `accounts[]` and `--available` /
+  `pool_entries` entry: client harnesses/transports that can spend that pool
+  (e.g. `["claude"]`, `["cursor-agent", "pi"]`, `["pi"]`).
+- **`quota_scope`** on each `--available` / `pool_entries` entry: `pool` |
+  `shared` | `model_sublimit` | `ceiling`.
+- **`semantics` taxonomy metadata:** `semantics.taxonomy_version = "1.6"`,
+  `semantics.provider_to_vendor`, and `semantics.pool_id_map`.
+
 ## What's new in schema 1.5 (2026-10-31)
 
 Schema 1.5 is additive: a new `pool_family` value splits Gemini 4 Argon out of

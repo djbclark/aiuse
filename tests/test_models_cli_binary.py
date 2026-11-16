@@ -70,3 +70,43 @@ def test_to_dict_resolves_collector_spelling():
     # A row carrying a vendor alias spelling still resolves the binary.
     account = AccountUsage(source="codexbar", provider="opencodego")
     assert account.to_dict()["cli_binary"] == "opencode"
+
+
+def test_schema16_taxonomy_fields_and_legacy_aliases():
+    from aiuse.analysis.selfdescribe import SCHEMA_VERSION, SEMANTICS, enrich_snapshot
+    from aiuse.models import canonical_provider, provider_pool_id, provider_transports, provider_vendor, utcnow
+
+    assert canonical_provider("omp") == "omp"
+    assert canonical_provider("pi") == "pi"
+    assert canonical_provider("opencode") == "opencode-go"
+    assert canonical_provider("oc-zen") == "opencode-zen"
+    assert canonical_provider("cline") == "clinepass"
+
+    assert provider_vendor("claude") == "anthropic"
+    assert provider_vendor("omp") == "anthropic"
+    assert provider_vendor("omp", pool_family="openai_api") == "openai"
+    assert provider_pool_id("claude") == "anthropic:subscription"
+    assert provider_pool_id("omp") == "anthropic:claude_api"
+    assert provider_pool_id("pi") == "openai:openai_api"
+    assert provider_pool_id("antigravity", "gemini_argon") == "google:gemini_argon"
+    assert provider_pool_id("opencode-go") == "opencode:go"
+    assert provider_transports("cursor") == ["cursor-agent", "pi"]
+
+    acc_dict = AccountUsage(source="codexbar", provider="omp").to_dict()
+    assert acc_dict["vendor"] == "anthropic"
+    assert acc_dict["pool_id"] == "anthropic:claude_api"
+    assert acc_dict["transports"] == ["pi"]
+
+    snap = enrich_snapshot(
+        {
+            "collected_at": utcnow().isoformat(),
+            "accounts": [{"source": "codexbar", "provider": "codex", "windows": []}],
+        },
+    )
+    assert SCHEMA_VERSION == "1.6"
+    assert snap["accounts"][0]["vendor"] == "openai"
+    assert snap["accounts"][0]["pool_id"] == "openai:codex"
+    assert snap["accounts"][0]["transports"] == ["codex"]
+    assert snap["semantics"]["taxonomy_version"] == "1.6"
+    assert SEMANTICS["provider_to_vendor"]["claude"] == "anthropic"
+    assert SEMANTICS["pool_id_map"]["opencode-zen"] == "opencode:zen"

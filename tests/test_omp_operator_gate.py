@@ -83,7 +83,7 @@ def _matrix(accounts: list[AccountUsage], *, color: bool = False, width: int = 1
 
 
 def _omp_line(lines: list[str]) -> str:
-    return next(line for line in lines if re.search(r"\bomp\b", _strip_ansi(line)))
+    return next(line for line in lines if re.search(r"\banthropic-api\b", _strip_ansi(line)))
 
 
 # --- matrix -------------------------------------------------------------------
@@ -221,7 +221,7 @@ def test_available_entry_and_summary_line_carry_the_gate():
 def test_chat_adds_the_notice_under_the_status_line():
     lines = render_chat_report(Snapshot(collected_at=NOW, accounts=[_omp(), _codex()]), []).splitlines()
 
-    i = next(n for n, line in enumerate(lines) if "**omp · credits**" in line)
+    i = next(n for n, line in enumerate(lines) if "**anthropic-api · credits**" in line)
     assert lines[i + 1].startswith("   ↳ `100% left · ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan")
     assert lines[i + 2] == f"   ↳ {OPERATOR_APPROVAL_NOTICE}"
     assert sum(OPERATOR_APPROVAL_NOTICE in line for line in lines) == 1
@@ -236,7 +236,7 @@ def test_chat_ungated_omp_has_no_notice():
 def test_chat_prepaid_fallback_keeps_the_notice():
     lines = render_chat_report(Snapshot(collected_at=NOW, accounts=[_omp(window=False)]), []).splitlines()
 
-    i = next(n for n, line in enumerate(lines) if "**omp**" in line)
+    i = next(n for n, line in enumerate(lines) if "**anthropic-api**" in line)
     assert lines[i + 1] == f"   ↳ {OPERATOR_APPROVAL_NOTICE}"
 
 

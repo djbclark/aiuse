@@ -58,7 +58,7 @@ def test_fresh_widget_envelope_retains_old_pi_spend_age(tmp_path, age_hours, gat
     assert matrix_row.measured_at == measured
     assert matrix_row.stale
     text = render_clock_matrix([], snapshot=snapshot, color=False, width=200)
-    line = _row_line(text, "pi")
+    line = _row_line(text, "openai-api")
     assert "codex-api" in line
     assert format_stamp(measured) in line
     if not gated:
@@ -138,7 +138,7 @@ def _row_line(text, service, *, extra=None):
 
 def test_omp_row_tail_note_is_dollars_left():
     rows = _build_matrix_rows([], _snapshot(_omp), None)
-    (omp,) = [row for row in rows if row.service == "omp"]
+    (omp,) = [row for row in rows if row.service == "anthropic-api"]
     assert omp.tail_note == "↓$249.27/$250.00 plan"
     assert omp.note is None
     assert omp.scope == "claude-api"
@@ -156,7 +156,7 @@ def test_rate_gated_omp_is_not_a_spendable_clock():
     }
     snap = Snapshot(collected_at=now, accounts=[omp])
     text = render_clock_matrix([], snapshot=snap, color=False, width=160)
-    line = _row_line(text, "omp")
+    line = _row_line(text, "anthropic-api")
     assert line.startswith("empty")
     assert "claude-api" in line
     assert line.index("claude-api") < line.index("rate-gated until")
@@ -178,7 +178,7 @@ def test_other_column_header_width_and_alignment():
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=200)
     header = text.splitlines()[0]
     col = header.index("OTHER")
-    omp = _row_line(text, "omp")
+    omp = _row_line(text, "anthropic-api")
     grok = _row_line(text, "grok")
     fable = _row_line(text, "claude", extra="fable")
     # Left-aligned: every note starts under the O of OTHER.
@@ -216,7 +216,7 @@ def test_stale_follows_other():
     snap = _snapshot(_omp, _grok)
     snap.accounts[0].collected_at = utcnow() - timedelta(days=2)
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
-    omp = _row_line(text, "omp")
+    omp = _row_line(text, "anthropic-api")
     measured = snap.accounts[0].collected_at
     assert measured is not None
     assert omp.endswith("↓$249.27/$250.00 plan " + format_stamp(measured))
@@ -257,7 +257,7 @@ def test_watch_board_puts_ai_legend_and_footer_above_the_table():
     assert "sampler " in board[0]
     assert board[1].strip() == AI_JSON_NOTE
     assert sum(AI_JSON_NOTE in line for line in board) == 1
-    header = next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "TUI"])
+    header = next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "POOL"])
     collected = next(i for i, line in enumerate(board) if "Collected at" in line)
     detail = next(i for i, line in enumerate(board) if line.strip() == "Detail: ai --full")
     legend = next(i for i, line in enumerate(board) if "u/l = percent used" in line)

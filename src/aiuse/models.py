@@ -138,18 +138,16 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "codex": "codex",
     "copilot": "copilot",
     "cursor": "cursor",
-    "deepseek": "deepseek/codewhale",
+    "deepseek": "deepseek",
     "grok": "grok",
-    # Name the default local client for each independent service without
-    # collapsing their provider identities.
-    "clinepass": "clinepass/cline",
-    "zai": "zai/zcode",
+    "clinepass": "clinepass",
+    "zai": "zai",
     "bedrock": "bedrock",
     "devin": "devin",
-    "opencode-go": "opencode",
-    "opencode-zen": "oc-zen",
-    "omp": "omp",
-    "pi": "pi",
+    "opencode-go": "opencode-go",
+    "opencode-zen": "opencode-zen",
+    "omp": "anthropic-api",
+    "pi": "openai-api",
     "openrouter": "openrouter",
     "muse": "muse",
     "qwencloud": "qwen",
@@ -171,14 +169,18 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "chatgpt": "codex",
     "openai-codex": "codex",
     "openai": "pi",  # CodexBar's API costs, not its codex/OAuth subscription
+    "openai-api": "pi",
     "claudeplatform": "omp",  # CodexBar Claude Console subscription API credits
     "claude-platform": "omp",
+    "anthropic-api": "omp",
     "github-copilot": "copilot",
     "grok-build": "grok",
     "supergrok": "grok",
     "opencodego": "opencode-go",
     "opencode": "opencode-go",
     "oc-go": "opencode-go",  # the display name before it became `opencode`
+    "oc-zen": "opencode-zen",
+    "cline": "clinepass",
     "codewhale": "deepseek",  # CodeWhale, formerly DeepSeek-TUI: the TUI that spends DeepSeek's balance
     "codew": "deepseek",
     "gemini": "antigravity",
@@ -276,6 +278,90 @@ def provider_cli_binary(provider: str) -> str | None:
     canonical id. Returns None for providers with no local CLI.
     """
     return PROVIDER_CLI_BINARIES.get(canonical_provider(provider))
+
+
+# Billing vendor authority keyed by canonical provider id (Schema 1.6+).
+PROVIDER_VENDORS: dict[str, str] = {
+    "antigravity": "google",
+    "claude": "anthropic",
+    "omp": "anthropic",
+    "codex": "openai",
+    "pi": "openai",
+    "cursor": "cursor",
+    "zai": "zai",
+    "clinepass": "clinepass",
+    "opencode-go": "opencode",
+    "opencode-zen": "opencode",
+    "deepseek": "deepseek",
+    "bedrock": "aws",
+    "sipb": "sipb",
+}
+
+# Client harnesses/transports that can spend each canonical provider's pool.
+PROVIDER_TRANSPORTS: dict[str, list[str]] = {
+    "antigravity": ["agy"],
+    "claude": ["claude"],
+    "codex": ["codex"],
+    "copilot": ["copilot"],
+    "cursor": ["cursor-agent", "pi"],
+    "grok": ["grok"],
+    "zai": ["pi"],
+    "clinepass": ["pi"],
+    "devin": ["devin"],
+    "muse": ["muse"],
+    "deepseek": ["codewhale"],
+    "opencode-go": ["pi"],
+    "opencode-zen": ["opencode"],
+    "omp": ["pi"],
+    "pi": ["pi"],
+    "qwencloud": ["qwen"],
+    "alibaba": ["qwen"],
+}
+
+
+def provider_vendor(provider: str, pool_family: str | None = None) -> str:
+    """Billing vendor authority for a canonical provider (and optional pool_family)."""
+    key = canonical_provider(provider)
+    if key == "omp" and pool_family == "openai_api":
+        return "openai"
+    return PROVIDER_VENDORS.get(key, key)
+
+
+def provider_pool_id(provider: str, pool_family: str | None = None) -> str:
+    """Canonical ``<vendor>:<pool_family>`` identifier (Schema 1.6+)."""
+    key = canonical_provider(provider)
+    family = (pool_family or "").strip()
+    vendor = provider_vendor(key, pool_family=family or None)
+    if key == "claude":
+        return f"{vendor}:{'subscription' if family in ('', 'default') else family}"
+    if key == "codex":
+        return f"{vendor}:{'codex' if family in ('', 'default') else family}"
+    if key == "omp":
+        if family == "openai_api":
+            return "openai:openai_api"
+        if family == "anthropic_api":
+            return "anthropic:anthropic_api"
+        return "anthropic:claude_api"
+    if key == "pi":
+        if family in ("", "default", "codex_api", "openai_api"):
+            return "openai:openai_api"
+        return f"{vendor}:{family}"
+    if key == "opencode-go":
+        return f"{vendor}:{'go' if family in ('', 'default', 'go') else family}"
+    if key == "opencode-zen":
+        return f"{vendor}:{'zen' if family in ('', 'default', 'zen') else family}"
+    if key == "bedrock":
+        return f"{vendor}:{'bedrock' if family in ('', 'default') else family}"
+    return f"{vendor}:{family or 'default'}"
+
+
+def provider_transports(provider: str) -> list[str]:
+    """Client harnesses/transports that can spend this provider's pool."""
+    key = canonical_provider(provider)
+    if key in PROVIDER_TRANSPORTS:
+        return list(PROVIDER_TRANSPORTS[key])
+    cli = provider_cli_binary(key)
+    return [cli] if cli else []
 
 
 def keep_copilot_report_window(label: str) -> bool:
@@ -720,6 +806,9 @@ class AccountUsage:
     provider_id: str | None = None
     service_id: str | None = None
     collector_id: str | None = None
+    vendor: str | None = None
+    pool_id: str | None = None
+    transports: list[str] = field(default_factory=list)
 
     # When the source itself reports a measurement time for this account
     # (e.g. CodexBar's usage.updatedAt). Older than the snapshot's
@@ -731,9 +820,18 @@ class AccountUsage:
     context_usage: ContextUsage | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        family_hint = (
+            "openai_api" if (canonical_provider(self.provider) == "omp" and self.source == "omp_models_yml") else None
+        )
+        vendor = self.vendor or provider_vendor(self.provider, pool_family=family_hint)
+        pool_id = self.pool_id or provider_pool_id(self.provider, pool_family=family_hint)
+        transports = list(self.transports) if self.transports else provider_transports(self.provider)
         d: dict[str, Any] = {
             "source": self.source,
             "provider": self.provider,
+            "vendor": vendor,
+            "pool_id": pool_id,
+            "transports": transports,
             "cli_binary": provider_cli_binary(self.provider),
             "account": self.account,
             "plan": self.plan,

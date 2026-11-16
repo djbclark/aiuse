@@ -749,7 +749,7 @@ def test_board_footer_is_centered_over_the_table():
     from aiuse.watch import render_watch_board
 
     rows = render_watch_board(_snap(), [], color=False).splitlines()
-    header = next(i for i, r in enumerate(rows) if r.split()[:2] == ["##", "TUI"])
+    header = next(i for i, r in enumerate(rows) if r.split()[:2] == ["##", "POOL"])
     width = max(len(r) for r in rows[header:])
     meta = next(r for r in rows if "Collected at" in r)
     left = len(meta) - len(meta.lstrip())
