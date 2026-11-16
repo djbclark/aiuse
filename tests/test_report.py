@@ -2733,3 +2733,40 @@ def test_fold_mark_hangs_after_the_pair_so_the_l_column_stays_aligned():
     # Same column for the end of the `u/l` pair on every row.
     assert folded.index("100l") == plain.index("100l") == spanned.index("98l") - 1
     assert "+ = >1 window, most-used shown" in text
+
+
+def test_matrix_acct_column_capped_at_16_chars():
+    now = datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)
+
+    def weekly(label: str, pct: float) -> QuotaWindow:
+        return QuotaWindow(
+            label=label,
+            used_percent=pct,
+            remaining_percent=100.0 - pct,
+            resets_at=now + timedelta(days=5),
+            window_minutes=10080,
+        )
+
+    snap = Snapshot(
+        collected_at=now,
+        accounts=[
+            AccountUsage(
+                provider="clinepass",
+                source="codexbar",
+                account="CODEXBAR_CLINEPASS_DJBCLARK_API_KEY",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[weekly("ClinePass weekly", 24.0)],
+            ),
+            AccountUsage(
+                provider="clinepass",
+                source="codexbar",
+                account="SHORT_ACCOUNT_OK",
+                billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+                windows=[weekly("ClinePass weekly", 0.0)],
+            ),
+        ],
+    )
+    text = render_clock_matrix([], snapshot=snap, color=False, width=160)
+    assert "CODEXBAR_CLINEP…" in text
+    assert "CODEXBAR_CLINEPASS_DJBCLARK_API_KEY" not in text
+    assert "SHORT_ACCOUNT_OK" in text

@@ -247,6 +247,7 @@ _OTHER_CUT_SCISSORS = "✂"
 _OTHER_CUT_WIDTH = len(_OTHER_CUT_ELLIPSIS) + len(_OTHER_CUT_SCISSORS)
 # OTHER is trimmed no narrower than its own header; past that the PACE columns give way.
 _OTHER_MIN_WIDTH = len("OTHER")
+_ACCOUNT_MAX_WIDTH = 16
 _OPERATOR_GATE_TEXT = f"({OPERATOR_APPROVAL_NOTICE})"
 # Shorter wording for terminals too narrow for the full text; keeps the instruction readable.
 _OPERATOR_GATE_SHORT = "(AI: ask operator)"
@@ -1009,6 +1010,13 @@ def _disambiguate_accounts(rows: list[_MatrixRow]) -> None:
             row.account = row.account_full
 
 
+def _truncate_account(account: str, limit: int = _ACCOUNT_MAX_WIDTH) -> str:
+    """Cap ACCT cell text at ``limit`` characters, marking cuts with ``…``."""
+    if len(account) <= limit:
+        return account
+    return account[: max(1, limit - 1)] + "…"
+
+
 def _window_value_usd(
     window: QuotaWindow,
     remaining: float,
@@ -1199,7 +1207,7 @@ def _row_identity(
     """Service / account / scope labels for one row under ``layout``."""
     scope = _scope_display(row.scope, short=layout.short_scope or layout.fold_identity)
     if not layout.fold_identity:
-        return row.service, row.account, scope
+        return row.service, _truncate_account(row.account), scope
     parts = [row.service]
     if row.service in account_needed and row.account != "—":
         parts.append(row.account)
