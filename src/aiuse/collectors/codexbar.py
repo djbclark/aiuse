@@ -1053,11 +1053,17 @@ def _query_providers(
         return [(provider_arg, run(provider_arg)) for provider_arg in deduped]
 
     workers = min(len(deduped), _MAX_CONCURRENT_PROVIDER_QUERIES)
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
         futures = {pool.submit(copy_context().run, run, provider_arg): provider_arg for provider_arg in deduped}
         outcomes: dict[str | None, Any] = {}
         for future in as_completed(futures):
             outcomes[futures[future]] = future.result()
+    except KeyboardInterrupt:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
     return [(provider_arg, outcomes[provider_arg]) for provider_arg in deduped]
 
 

@@ -441,6 +441,7 @@ def collect_with_ledger(
                 timeout=timeout_for(config, "tokscale"),
                 max_cache_age=max_cache_age,
             )
+    interrupted = False
     try:
         snapshot = collect(config)
         sample: dict[str, Any] | None = None
@@ -450,9 +451,12 @@ def collect_with_ledger(
                 sample = pending.result()
             except Exception as exc:  # noqa: BLE001 — the ledger is best-effort
                 error = str(exc)
+    except KeyboardInterrupt:
+        interrupted = True
+        raise
     finally:
         if pool is not None:
-            pool.shutdown(wait=True)
+            pool.shutdown(wait=not interrupted, cancel_futures=interrupted)
     return snapshot, sample, error
 
 

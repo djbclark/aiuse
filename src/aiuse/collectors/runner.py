@@ -407,15 +407,21 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs = [(name, fn) for name, fn in jobs if collector_serves_requested(name, provider_filter)]
 
     if jobs:
-        with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        pool = ThreadPoolExecutor(max_workers=len(jobs))
+        try:
             futures = {name: pool.submit(fn) for name, fn in jobs}
-        for name, _ in jobs:
-            try:
-                snapshot.accounts.extend(futures[name].result())
-            except CollectorNotInstalled:
-                snapshot.uninstalled_tools.append(name)
-            except Exception as exc:  # noqa: BLE001
-                snapshot.collector_errors.append(f"{name}: {exc}")
+            for name, _ in jobs:
+                try:
+                    snapshot.accounts.extend(futures[name].result())
+                except CollectorNotInstalled:
+                    snapshot.uninstalled_tools.append(name)
+                except Exception as exc:  # noqa: BLE001
+                    snapshot.collector_errors.append(f"{name}: {exc}")
+        except KeyboardInterrupt:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            pool.shutdown(wait=True)
 
     snapshot.disabled_services = disabled_services
     if selection_active(config):

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -494,10 +496,22 @@ def main(argv: list[str] | None = None) -> int:
     # Collectors may leave stdin without echo if a child TTY-mutates and dies;
     # always restore attrs we observed at entry (see aiuse.tty / run_json).
     saved_tty = save_stdin_tty()
+    interrupted = False
     try:
         return _main_inner(argv)
+    except KeyboardInterrupt:
+        interrupted = True
+        return 130
     finally:
         restore_stdin_tty(saved_tty)
+        if interrupted and argv is None:
+            # Abandoned ThreadPoolExecutor workers (non-daemon) would otherwise
+            # block in concurrent.futures.thread._python_exit at interpreter exit.
+            sys.stdout.flush()
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+            if any(t is not threading.main_thread() and t.is_alive() for t in threading.enumerate()):
+                os._exit(130)
 
 
 def _main_inner(argv: list[str] | None = None) -> int:

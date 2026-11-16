@@ -664,3 +664,70 @@ def test_generate_config_creates_files_and_refuses_overwrite(monkeypatch, tmp_pa
     err = capsys.readouterr().err
     assert "exists (not overwritten)" in err
     assert "already exist" in err or "left unchanged" in err
+
+
+def test_main_returns_130_on_keyboard_interrupt(monkeypatch):
+    restored: list[object] = []
+    monkeypatch.setattr(cli, "save_stdin_tty", lambda: "saved")
+    monkeypatch.setattr(cli, "restore_stdin_tty", lambda attrs: restored.append(attrs))
+
+    def raise_interrupt(_argv):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "_main_inner", raise_interrupt)
+    assert cli.main([]) == 130
+    assert restored == ["saved"]
+
+
+def test_run_collectors_shuts_down_pool_without_waiting_on_keyboard_interrupt(monkeypatch):
+    from aiuse.collectors import runner
+
+    shutdown_calls: list[tuple[bool, bool]] = []
+
+    class FakeFuture:
+        def result(self):
+            raise KeyboardInterrupt
+
+    class FakePool:
+        def __init__(self, **_kwargs):
+            pass
+
+        def submit(self, _fn):
+            return FakeFuture()
+
+        def shutdown(self, *, wait: bool = True, cancel_futures: bool = False):
+            shutdown_calls.append((wait, cancel_futures))
+
+    monkeypatch.setattr(runner, "ThreadPoolExecutor", FakePool)
+    monkeypatch.setattr(runner, "collect_sipb", lambda **_kw: [])
+
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_collectors(
+            {
+                "collectors": {
+                    "cswap": False,
+                    "codexbar": False,
+                    "grok_billing": False,
+                    "caut": False,
+                    "caam": False,
+                    "openusage_ai": False,
+                    "openusage_sh": False,
+                    "tokscale": False,
+                    "paseo": False,
+                    "hermes": False,
+                    "opencode_zen": False,
+                    "opencode_go": False,
+                    "zai": False,
+                    "muse": False,
+                    "clinepass": False,
+                    "bailian": False,
+                    "qwen_cloud": False,
+                    "omp_models_yml": False,
+                    "omp_agent_db": False,
+                    "acp": False,
+                    "sipb": True,
+                }
+            }
+        )
+
+    assert shutdown_calls == [(False, True)]
