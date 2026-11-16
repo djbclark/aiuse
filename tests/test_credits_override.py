@@ -219,7 +219,7 @@ def test_set_credits_cli_round_trip(capsys, monkeypatch):
         ["omp", "--remaining", "95.57", "--total", "200", "--expires", "2026-11-06", "--note", "claude.ai billing"]
     )
     assert rc == 0
-    assert "recorded: omp $95.57 of $200.00 left, expires 2026-11-06" in capsys.readouterr().out
+    assert "recorded: claude-api $95.57 of $200.00 left, expires 2026-11-06" in capsys.readouterr().out
     entry = load_overrides(now=NOW)["omp"]
     assert entry["remaining_usd"] == 95.57 and entry["total_usd"] == 200.0
     assert entry["expires_at"] == "2026-11-06T00:00:00+00:00"
