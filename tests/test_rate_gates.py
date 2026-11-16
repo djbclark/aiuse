@@ -321,3 +321,137 @@ def test_active_api_key_ignores_claude_shared_window_latch(tmp_path, monkeypatch
     active = rate_gates.active_gate("omp")
     assert active is not None
     assert active["source"] == "omp-429-anthropic"
+
+
+# --- Issue #51: non-resettable OpenAI API org spend-limit refusals -----------
+
+
+def test_openai_spend_limit_refusal_records_non_resettable_block(tmp_path, monkeypatch):
+    from aiuse import agent_notes, quota_refusals
+    from aiuse.analysis.selfdescribe import OMP_OPENAI_SOURCE, enrich_snapshot, pool_entries
+
+    now = utcnow()
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    (log_dir / "20261116-120000-pi-101.stderr").write_text(
+        "[System Error] Your organization has reached its configured enforced spend limit. "
+        "Update your limit at https://platform.openai.com/settings/organization/limits.\n",
+        encoding="utf-8",
+    )
+
+    refusals = quota_refusals.scan_acp_quota_refusals(log_dir=log_dir, now=now)
+    assert len(refusals) == 1
+    refusal = refusals[0]
+    assert refusal["provider"] == "pi"
+    assert refusal["pool_family"] == "openai_api"
+    assert refusal["state"] == "blocked"
+    assert refusal["refusal_kind"] == "spend_limit"
+    assert refusal["operator_action_required"] is True
+    assert refusal["usable_now"] is False
+    assert refusal["resets_at"] is None
+
+    monkeypatch.setattr(quota_refusals, "default_acp_log_dir", lambda: log_dir)
+    monkeypatch.setattr(agent_notes, "notes_dir", lambda: tmp_path / "agent-notes")
+
+    notes = agent_notes.load_active_notes(now=now, discover_acp=True)
+    assert len(notes) == 1
+    assert notes[0]["state"] == "blocked"
+    assert notes[0]["resets_at"] is None
+
+    # Persisted block survives past 24h without expiring on a fake reset timer.
+    later = agent_notes.load_active_notes(now=now + timedelta(days=3), discover_acp=False)
+    assert len(later) == 1
+    assert later[0]["refusal_kind"] == "spend_limit"
+
+    snap = enrich_snapshot(
+        {
+            "collected_at": now.isoformat(),
+            "accounts": [
+                {
+                    "provider": "pi",
+                    "source": OMP_OPENAI_SOURCE,
+                    "api_key_pool": {"usable": True, "available_at": None},
+                    "windows": [{"label": "openai_api", "used_percent": 0.0, "remaining_percent": 100.0}],
+                }
+            ],
+        },
+        now=now,
+        notes=later,
+    )
+    acct = snap["accounts"][0]
+    assert acct["state"] == "blocked"
+    assert acct["refusal_kind"] == "spend_limit"
+    assert acct["operator_action_required"] is True
+    assert acct["usable_now"] is False
+    assert acct["available_at"] is None
+
+    pools = pool_entries(snap, now=now)
+    assert len(pools) == 1
+    assert pools[0]["state"] == "blocked"
+    assert pools[0]["refusal_kind"] == "spend_limit"
+    assert pools[0]["operator_action_required"] is True
+    assert pools[0]["usable_now"] is False
+    assert pools[0]["available_at"] is None
+
+
+# --- Issue #33: agy CLI burst lockout per-transport while ACP works -----------
+
+
+def test_agy_cli_burst_lockout_is_per_transport_without_emptying_pool(tmp_path):
+    from aiuse import quota_refusals
+    from aiuse.analysis.selfdescribe import enrich_snapshot, pool_entries
+
+    now = utcnow().replace(microsecond=0)
+    acp_dir = tmp_path / "acp-run"
+    acp_dir.mkdir()
+    (acp_dir / "20261116-120000-agy-202.stderr").write_text(
+        "Error: RESOURCE_EXHAUSTED (code 429): rate limit exceeded\n",
+        encoding="utf-8",
+    )
+    # Burst RESOURCE_EXHAUSTED without a multi-day quotaResetTimeStamp must NOT mark the pool exhausted.
+    assert quota_refusals.scan_acp_quota_refusals(log_dir=acp_dir, now=now) == []
+
+    cli_dir = tmp_path / "agy-cli-log"
+    cli_dir.mkdir()
+    stamp = now.astimezone().strftime("%m%d %H:%M:%S.100000")
+    day = now.astimezone().strftime("%Y%m%d")
+    (cli_dir / f"cli-{day}_120000.log").write_text(
+        f"I{stamp} 1001 run.go:395] Run: attempt 1 failed (RESOURCE_EXHAUSTED (code 429): burst), retrying in 4s\n",
+        encoding="utf-8",
+    )
+
+    lockouts = quota_refusals.scan_transport_burst_lockouts(agy_log_dir=cli_dir, now=now)
+    assert "antigravity" in lockouts
+    entry = lockouts["antigravity"][0]
+    assert entry["transport"] == "cli"
+    assert entry["state"] == "limited"
+    assert entry["usable"] is False
+    assert entry["pool_exhausted"] is False
+
+    snap = enrich_snapshot(
+        {
+            "collected_at": now.isoformat(),
+            "accounts": [
+                {
+                    "provider": "antigravity",
+                    "cli_binary": "agy",
+                    "windows": [
+                        {"label": "Gemini 5-hour", "used_percent": 5.0, "remaining_percent": 95.0},
+                        {"label": "Claude/GPT weekly", "used_percent": 20.0, "remaining_percent": 80.0},
+                    ],
+                }
+            ],
+        },
+        now=now,
+        client_limits=lockouts,
+    )
+    acct = snap["accounts"][0]
+    assert acct["usable_now"] is True
+    assert acct["transports"]["cli"]["usable"] is False
+    assert acct["transports"]["cli"]["state"] == "limited"
+    assert acct["transports"]["acp"]["usable"] is True
+
+    pools = pool_entries(snap, now=now)
+    assert pools and all(p["usable_now"] is True for p in pools)
+    assert all(p["transports"]["cli"]["usable"] is False for p in pools)
+    assert all(p["transports"]["acp"]["usable"] is True for p in pools)

@@ -51,25 +51,37 @@ def write_note(
     *,
     provider: str,
     pool_family: str | None,
-    resets_at: datetime,
+    resets_at: datetime | None,
     reason: str | None,
     evidence: str | None = None,
+    state: str | None = None,
+    refusal_kind: str | None = None,
+    operator_action_required: bool = False,
+    usable_now: bool | None = None,
 ) -> Path:
     directory = notes_dir()
     directory.mkdir(parents=True, exist_ok=True)
     directory.chmod(0o700)
     slug = provider if not pool_family else f"{provider}-{pool_family}"
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": "1.0",
         "provider": provider,
         "pool_family": pool_family,
-        "resets_at": resets_at.astimezone().isoformat(),
+        "resets_at": resets_at.astimezone().isoformat() if resets_at is not None else None,
         "reason": reason,
         "created_at": utcnow().isoformat(),
         "source": "agent-reported",
     }
     if evidence:
         payload["evidence"] = evidence
+    if state is not None:
+        payload["state"] = state
+    if refusal_kind is not None:
+        payload["refusal_kind"] = refusal_kind
+    if operator_action_required:
+        payload["operator_action_required"] = True
+    if usable_now is not None:
+        payload["usable_now"] = usable_now
     path = directory / f"{slug}.json"
     tmp = directory / f".{slug}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -78,6 +90,14 @@ def write_note(
         handle.write("\n")
     os.rename(tmp, path)
     return path
+
+
+def _is_non_resettable_block(note: dict[str, Any]) -> bool:
+    return (
+        note.get("state") == "blocked"
+        or note.get("refusal_kind") == "spend_limit"
+        or bool(note.get("operator_action_required"))
+    )
 
 
 def load_active_notes(
@@ -113,9 +133,10 @@ def load_active_notes(
             except (json.JSONDecodeError, OSError):
                 continue
             resets = parse_dt(note.get("resets_at"))
-            if resets is None:
+            is_blocked = _is_non_resettable_block(note)
+            if resets is None and not is_blocked:
                 continue
-            if resets <= now:
+            if resets is not None and resets <= now:
                 if prune:
                     try:
                         entry.unlink()
@@ -145,7 +166,8 @@ def load_active_notes(
             if key in known:
                 continue
             resets = parse_dt(refusal.get("resets_at"))
-            if resets is None:
+            is_blocked = _is_non_resettable_block(refusal)
+            if resets is None and not is_blocked:
                 continue
             write_note(
                 provider=str(refusal["provider"]),
@@ -153,6 +175,10 @@ def load_active_notes(
                 resets_at=resets,
                 reason=str(refusal.get("reason") or "agent-reported quota refusal"),
                 evidence=refusal.get("evidence"),
+                state=refusal.get("state"),
+                refusal_kind=refusal.get("refusal_kind"),
+                operator_action_required=bool(refusal.get("operator_action_required")),
+                usable_now=refusal.get("usable_now"),
             )
             notes.append(refusal)
             known.add(key)

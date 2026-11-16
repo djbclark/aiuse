@@ -355,6 +355,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "burst_percent_per_hour": 8.0,
         "burst_pace_ratio": 3.0,
         "cooldown_samples": 3,  # quiet samples before stepping down one tier
+        # Per-provider minimum sample interval in seconds (overrides shorter
+        # tier intervals for expensive CLI probes like antigravity, issue #34).
+        "provider_intervals": {
+            "antigravity": 900,
+        },
+        # Exponential backoff when a provider probe returns no data (empty probe).
+        "empty_probe_backoff_factor": 2.0,
+        "max_empty_probe_interval": 7200,
     },
     # Token ledgers set beside the quota meters by `aiuse attribute`.
     "attribution": {
@@ -1164,12 +1172,30 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             if key not in KNOWN_SAMPLING_KEYS:
                 issues.append(f"warning: unknown sampling key {key!r}")
                 continue
+            if key == "provider_intervals":
+                if not isinstance(value, dict):
+                    issues.append("error: sampling.provider_intervals must be a mapping")
+                    continue
+                for prov, raw_interval in value.items():
+                    try:
+                        pnum = float(raw_interval)
+                    except (TypeError, ValueError):
+                        issues.append(
+                            f"error: sampling.provider_intervals.{prov} must be a number (got {raw_interval!r})"
+                        )
+                        continue
+                    if pnum <= 0:
+                        issues.append(f"error: sampling.provider_intervals.{prov} must be positive (got {pnum:g})")
+                continue
             try:
                 num = float(value)
             except (TypeError, ValueError):
                 issues.append(f"error: sampling.{key} must be a number (got {value!r})")
                 continue
-            if num <= 0:
+            if key == "empty_probe_backoff_factor":
+                if num < 1.0:
+                    issues.append(f"error: sampling.{key} must be >= 1.0 (got {num:g})")
+            elif num <= 0:
                 issues.append(f"error: sampling.{key} must be positive (got {num:g})")
 
     attribution = cfg.get("attribution")

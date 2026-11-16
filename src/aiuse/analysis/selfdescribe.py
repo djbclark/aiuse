@@ -290,16 +290,47 @@ def enrich_window(window: dict[str, Any], *, provider: str) -> dict[str, Any]:
     return window
 
 
+def _is_blocked_note(note: Mapping[str, Any]) -> bool:
+    return (
+        note.get("state") == "blocked"
+        or note.get("refusal_kind") == "spend_limit"
+        or bool(note.get("operator_action_required"))
+    )
+
+
 def _apply_note_to_window(window: dict[str, Any], note: Mapping[str, Any]) -> bool:
-    if window.get("state") == "exhausted":
+    blocked = _is_blocked_note(note)
+    target_state = "blocked" if blocked else "exhausted"
+    if window.get("state") == target_state:
         return False
-    window["state"] = "exhausted"
+    if window.get("state") == "exhausted" and not blocked:
+        return False
+    window["state"] = target_state
     window["state_source"] = "agent-reported"
-    window["agent_reported"] = {
+    reported: dict[str, Any] = {
         "resets_at": note.get("resets_at"),
         "reason": note.get("reason"),
     }
+    if blocked:
+        if note.get("refusal_kind"):
+            window["refusal_kind"] = note["refusal_kind"]
+            reported["refusal_kind"] = note["refusal_kind"]
+        if note.get("operator_action_required"):
+            window["operator_action_required"] = True
+            reported["operator_action_required"] = True
+    window["agent_reported"] = reported
     return True
+
+
+def _note_matches_account(note: Mapping[str, Any], provider: str, account: Mapping[str, Any]) -> bool:
+    if str(note.get("provider") or "") != provider:
+        return False
+    family = note.get("pool_family")
+    if not family:
+        return True
+    if provider == "pi" and family == "openai_api" and account.get("source") == OMP_OPENAI_SOURCE:
+        return True
+    return any(w.get("pool_family") == family for w in account.get("windows") or [] if isinstance(w, Mapping))
 
 
 def _note_matches(note: Mapping[str, Any], provider: str, window: Mapping[str, Any]) -> bool:
@@ -354,7 +385,11 @@ def enrich_account(
         w for w in windows if w.get("quota_scope") != "model_sublimit" and w.get("pool_family") != "on_demand"
     ]
     states = [str(w.get("state")) for w in applicable]
-    if any(s == "exhausted" for s in states):
+    blocked_note = next(
+        (n for n in (notes or []) if _is_blocked_note(n) and _note_matches_account(n, provider, account)),
+        None,
+    )
+    if blocked_note is not None or any(s in ("exhausted", "blocked") for s in states):
         usable_now: bool | None = False
     elif applicable and any(s != "unknown" for s in states):
         usable_now = True
@@ -362,10 +397,22 @@ def enrich_account(
         # no windows at all, or every window unknown: no evidence of headroom
         usable_now = False
     key_pool = account.get("api_key_pool")
-    if isinstance(key_pool, dict) and account.get("source") in {"omp_agent_db", OMP_OPENAI_SOURCE}:
+    if (
+        blocked_note is None
+        and isinstance(key_pool, dict)
+        and account.get("source") in {"omp_agent_db", OMP_OPENAI_SOURCE}
+    ):
         # A pool with no measurable balance: the collector's verdict, not window percentages.
         usable_now = bool(key_pool.get("usable"))
     account["usable_now"] = usable_now
+    if blocked_note is not None:
+        account["state"] = "blocked"
+        account["refusal_kind"] = blocked_note.get("refusal_kind") or "spend_limit"
+        account["operator_action_required"] = bool(blocked_note.get("operator_action_required", True))
+    else:
+        account.pop("state", None)
+        account.pop("refusal_kind", None)
+        account.pop("operator_action_required", None)
 
     numbered = [w for w in applicable if w.get("headroom_percent") is not None]
     if numbered:
@@ -380,7 +427,9 @@ def enrich_account(
         parse_dt(w.get("resets_at")) for w in applicable if w.get("state") == "exhausted" and w.get("resets_at")
     ]
     reset_times = [t for t in reset_times if t is not None]
-    if isinstance(key_pool, dict):
+    if blocked_note is not None:
+        account["available_at"] = None
+    elif isinstance(key_pool, dict):
         account["available_at"] = key_pool.get("available_at")
     elif reset_times:
         account["available_at"] = min(reset_times).isoformat()
@@ -776,8 +825,21 @@ def enrich_snapshot(
             limits = client_limits.get(str(account.get("provider") or ""))
             if limits:
                 account["client_limits"] = [dict(entry) for entry in limits]
+                cli_limited = any(
+                    isinstance(entry, Mapping) and entry.get("client") == "cli" and entry.get("state") == "limited"
+                    for entry in limits
+                )
+                if cli_limited:
+                    account["transports"] = {
+                        "cli": {"usable": False, "state": "limited"},
+                        "acp": {
+                            "usable": bool(account.get("usable_now")),
+                            "state": "ok" if account.get("usable_now") else "exhausted",
+                        },
+                    }
             else:
                 account.pop("client_limits", None)
+                account.pop("transports", None)
     _apply_shared_rate_gate(accounts, now=now)
     pace_now = parse_dt(collected) or now
     for account in accounts:
@@ -830,6 +892,10 @@ def enrich_snapshot(
                 "resets_at": n.get("resets_at"),
                 "reason": n.get("reason"),
                 "source": "agent-reported",
+                **({"state": n["state"]} if n.get("state") else {}),
+                **({"refusal_kind": n["refusal_kind"]} if n.get("refusal_kind") else {}),
+                **({"operator_action_required": True} if n.get("operator_action_required") else {}),
+                **({"usable_now": n["usable_now"]} if "usable_now" in n else {}),
             }
             for n in notes
         ]
@@ -983,7 +1049,8 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             )
             gate = account.get("rate_gated_by")
             key_pool = account.get("api_key_pool")
-            if any(s == "exhausted" for s in states) or frozen or gate:
+            is_blocked = account.get("state") == "blocked" or any(s == "blocked" for s in states)
+            if is_blocked or any(s == "exhausted" for s in states) or frozen or gate:
                 usable: bool | None = False
             elif isinstance(key_pool, dict):
                 usable = bool(key_pool.get("usable"))
@@ -1001,8 +1068,10 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 # Out until the ceiling AND the entry's own exhausted window both reset.
                 resets = [max(min(resets), min(ceiling_resets))] if resets else ceiling_resets
             gate_reset = parse_dt(gate.get("resets_at")) if gate else None
-            if gate_reset is not None and (not resets or gate_reset <= min(resets)):
-                pool_available: datetime | None = gate_reset
+            if is_blocked:
+                pool_available: datetime | None = None
+            elif gate_reset is not None and (not resets or gate_reset <= min(resets)):
+                pool_available = gate_reset
             elif resets:
                 pool_available = min(resets)
             elif isinstance(key_pool, dict) and not key_pool.get("usable"):
@@ -1075,6 +1144,16 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     **({"collected_at": account["collected_at"]} if account.get("collected_at") else {}),
                     **({"measurement_frozen": True} if frozen else {}),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),
+                    **({"transports": account["transports"]} if account.get("transports") else {}),
+                    **(
+                        {
+                            "state": "blocked",
+                            "refusal_kind": account.get("refusal_kind") or "spend_limit",
+                            "operator_action_required": True,
+                        }
+                        if is_blocked
+                        else {}
+                    ),
                     "windows": windows,
                 }
             )

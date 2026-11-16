@@ -59,6 +59,11 @@ _COPILOT_QUOTA_MARKERS = (
     "user_session_rate_limited",
     "session_rate_limited",
 )
+_SPEND_LIMIT_MARKERS = (
+    "enforced spend limit",
+    "organization has reached its configured enforced spend limit",
+)
+_TRANSPORT_BURST_MARKERS = ("resource_exhausted",)
 _LOG_NAME = re.compile(r"^(\d{8})-(\d{6})-(.+)-(\d+)\.(jsonl|stderr)$")
 # Multi-day reset: shorter resets are often the 5h / burst window, which the
 # existing agy CLI client_limits path already surfaces without flipping the pool.
@@ -96,6 +101,17 @@ def _family_for(provider: str, model: str | None) -> str | None:
 
 def _extract_refusal(text: str, *, now: datetime, provider: str | None = None) -> dict[str, Any] | None:
     low = text.casefold()
+    if any(marker in low for marker in _SPEND_LIMIT_MARKERS):
+        return {
+            "resets_at": None,
+            "model": None,
+            "reason": "OpenAI organization enforced spend limit reached (operator action required)",
+            "snippet": text[:240],
+            "refusal_kind": "spend_limit",
+            "state": "blocked",
+            "operator_action_required": True,
+            "usable_now": False,
+        }
     if not any(marker.casefold() in low for marker in _QUOTA_MARKERS):
         return None
 
@@ -168,6 +184,8 @@ def scan_acp_quota_refusals(
         if agent is None:
             continue
         provider = ACP_AGENT_PROVIDERS.get(agent)
+        if provider is None and agent in ("pi", "openai"):
+            provider = "pi"
         if provider is None:
             continue
         try:
@@ -175,14 +193,22 @@ def scan_acp_quota_refusals(
         except OSError:
             continue
         # JSONL can be large; only scan when a marker appears.
-        if not any(marker in text for marker in _QUOTA_MARKERS if marker.isupper()) and not any(
-            marker.casefold() in text.casefold() for marker in _QUOTA_MARKERS
-        ):
+        low = text.casefold()
+        has_quota_marker = any(marker in text for marker in _QUOTA_MARKERS if marker.isupper()) or any(
+            marker.casefold() in low for marker in _QUOTA_MARKERS
+        )
+        has_spend_marker = any(marker in low for marker in _SPEND_LIMIT_MARKERS)
+        if not has_quota_marker and not has_spend_marker:
             continue
         refusal = _extract_refusal(text, now=now, provider=provider)
         if refusal is None:
             continue
-        family = _family_for(provider, refusal.get("model"))
+        if refusal.get("refusal_kind") == "spend_limit":
+            # OpenAI org enforced spend limit belongs to the metered API pool (pi/openai_api), never codex.
+            provider = "pi"
+            family: str | None = "openai_api"
+        else:
+            family = _family_for(provider, refusal.get("model"))
         key = (provider, family)
         if key in found:
             continue
@@ -191,17 +217,50 @@ def scan_acp_quota_refusals(
             if refusal.get("reason")
             else f"acp-run log {path.name}: Individual/QUOTA_EXHAUSTED (model={refusal.get('model') or '?'})"
         )
-        found[key] = {
+        resets_dt = refusal.get("resets_at")
+        record: dict[str, Any] = {
             "schema_version": "1.0",
             "provider": provider,
             "pool_family": family,
-            "resets_at": refusal["resets_at"].astimezone(timezone.utc).isoformat(),
+            "resets_at": resets_dt.astimezone(timezone.utc).isoformat() if resets_dt is not None else None,
             "reason": reason,
             "created_at": now.isoformat(),
             "source": "agent-reported",
             "evidence": str(path),
         }
+        for extra in ("refusal_kind", "state", "operator_action_required", "usable_now"):
+            if extra in refusal:
+                record[extra] = refusal[extra]
+        found[key] = record
     return list(found.values())
+
+
+def scan_transport_burst_lockouts(
+    *,
+    agy_log_dir: str | Path | None = None,
+    lookback: timedelta | None = None,
+    now: datetime | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Per-transport burst lockouts (e.g. agy CLI 429 RESOURCE_EXHAUSTED).
+
+    Unlike ``scan_acp_quota_refusals``, a CLI burst lockout is recorded only for
+    its transport (``cli``) and never marks the underlying subscription pool
+    exhausted so working transports (e.g. ``acp``) remain routable.
+    """
+    from aiuse.client_limits import DEFAULT_LOOKBACK_MINUTES, scan_agy_cli_lockout
+
+    moment = now or utcnow()
+    window = lookback if lookback is not None else timedelta(minutes=DEFAULT_LOOKBACK_MINUTES)
+    log_path = Path(agy_log_dir).expanduser() if agy_log_dir is not None else None
+    agy = scan_agy_cli_lockout(lookback=window, now=moment, log_dir=log_path)
+    if agy is None:
+        return {}
+    entry = dict(agy)
+    entry.setdefault("provider", "antigravity")
+    entry.setdefault("transport", str(entry.get("client") or "cli"))
+    entry.setdefault("usable", False)
+    entry.setdefault("pool_exhausted", False)
+    return {"antigravity": [entry]}
 
 
 def persist_acp_quota_refusals(
