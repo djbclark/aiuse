@@ -263,6 +263,78 @@ def scan_transport_burst_lockouts(
     return {"antigravity": [entry]}
 
 
+def scan_pi_quota_refusals(
+    *,
+    sessions_dir: str | Path | None = None,
+    lookback: timedelta = timedelta(hours=DEFAULT_LOOKBACK_HOURS),
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Recent quota/balance refusals from Pi session JSONL logs (``~/.pi/agent/sessions``)."""
+    import json
+
+    from aiuse.models import canonical_provider
+
+    moment = now or utcnow()
+    root = Path(sessions_dir).expanduser() if sessions_dir else Path.home() / ".pi" / "agent" / "sessions"
+    if not root.is_dir() or lookback.total_seconds() <= 0:
+        return []
+    since_ts = (moment - lookback).timestamp()
+    recent: list[tuple[float, Path]] = []
+    for path in root.rglob("*.jsonl"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime >= since_ts:
+            recent.append((mtime, path))
+    recent.sort(reverse=True)
+
+    found: dict[tuple[str, str | None], dict[str, Any]] = {}
+    for _mtime, path in recent[:_MAX_FILES]:
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in reversed(lines):
+            if "error" not in line and "429" not in line and "402" not in line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict) or obj.get("type") != "message":
+                continue
+            msg = obj.get("message")
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            err = msg.get("errorMessage")
+            if not isinstance(err, str) or not err.strip():
+                continue
+            raw_prov = str(msg.get("provider") or "").strip()
+            if not raw_prov or raw_prov == "xai-oauth":
+                provider = "grok" if raw_prov == "xai-oauth" else ""
+            else:
+                provider = canonical_provider(raw_prov)
+            if not provider:
+                continue
+            extracted = _extract_refusal(err, now=moment, provider=provider)
+            if extracted is None:
+                continue
+            model = str(msg.get("model") or "") or extracted.get("model")
+            family = _family_for(provider, model)
+            key = (provider, family)
+            if key not in found:
+                found[key] = {
+                    "provider": provider,
+                    "pool_family": family,
+                    "resets_at": extracted["resets_at"],
+                    "reason": extracted.get("reason") or f"pi session refusal ({model or provider})",
+                    "model": model,
+                    "source": "pi-session",
+                }
+    return list(found.values())
+
+
 def persist_acp_quota_refusals(
     *,
     now: datetime | None = None,

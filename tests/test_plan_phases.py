@@ -169,3 +169,33 @@ def test_codexbar_parses_reset_credits_confidence_and_zai_rate():
         }
     )
     assert any("Z.ai quota rate: Off-peak (peak in 13h 19m)." in n for n in zai.notes)
+
+
+def test_pi_session_refusal_scanner_extracts_429(tmp_path):
+    import json
+
+    from aiuse.quota_refusals import scan_pi_quota_refusals
+
+    now = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
+    sess = tmp_path / "proj" / "session.jsonl"
+    sess.parent.mkdir(parents=True)
+    sess.write_text(
+        json.dumps(
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "provider": "zai",
+                    "model": "glm-5.3-flash",
+                    "stopReason": "error",
+                    "errorMessage": "429 QUOTA_EXHAUSTED quotaResetTimeStamp:2026-11-20T00:00:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    hits = scan_pi_quota_refusals(sessions_dir=tmp_path, now=now)
+    assert len(hits) == 1
+    assert hits[0]["provider"] == "zai"
+    assert hits[0]["source"] == "pi-session"

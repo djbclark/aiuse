@@ -1774,6 +1774,18 @@ def _build_matrix_rows(
                 # An expiring dollar grant (omp): what is left of the plan.
                 # Spent stays in JSON spent_usd.
                 tail_note = dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account), compact=True)
+            if tail_note is None:
+                for note_line in account.notes:
+                    if note_line.startswith("Codex reset credits: ") and note_line.endswith(" available."):
+                        count = note_line[len("Codex reset credits: ") : -len(" available.")].strip()
+                        if count:
+                            tail_note = f"{count} reset credits"
+                            break
+                    if note_line.startswith("Z.ai quota rate: "):
+                        rate = note_line[len("Z.ai quota rate: ") :].split("(", 1)[0].rstrip(".").strip()
+                        if rate:
+                            tail_note = rate
+                            break
             data_age = _account_data_age(account, now)
             stale = data_age is not None and data_age > fresh_threshold
             pace_windows = [window for window in pool if claude_model_scope(window.label) is None]
