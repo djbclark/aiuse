@@ -490,7 +490,7 @@ def test_multi_account_settings_change_the_policy_fingerprint() -> None:
     assert len(prints) == 3
 
 
-def test_codexbar_all_accounts_skips_http_server(monkeypatch) -> None:
+def test_codexbar_all_accounts_uses_http_server(monkeypatch) -> None:
     from aiuse.collectors import codexbar
 
     http_calls: list[list[str]] = []
@@ -499,11 +499,11 @@ def test_codexbar_all_accounts_skips_http_server(monkeypatch) -> None:
 
     def fake_http(_client, argv, **_kw):
         http_calls.append(list(argv))
-        return []
+        return [_codexbar_row("work", 10.0), _codexbar_row("personal", 20.0)]
 
     def fake_cli(argv, **_kw):
         cli_calls.append(list(argv))
-        return [_codexbar_row("work", 10.0), _codexbar_row("personal", 20.0)]
+        return []
 
     monkeypatch.setattr(codexbar, "_codexbar_http_if_up", lambda *_a, **_k: client)
     monkeypatch.setattr(codexbar, "_fetch_codexbar_http_usage", fake_http)
@@ -515,6 +515,6 @@ def test_codexbar_all_accounts_skips_http_server(monkeypatch) -> None:
         all_accounts_providers=frozenset({"clinepass"}),
         http_url="http://127.0.0.1:10546",
     )
-    assert http_calls == []
-    assert any("--all-accounts" in argv for argv in cli_calls)
+    assert cli_calls == []
+    assert any("--all-accounts" in argv for argv in http_calls)
     assert [row.account for row in rows] == ["work", "personal"]

@@ -1171,7 +1171,7 @@ def _fetch_codexbar_http_usage(client: _CodexbarHttp, argv: list[str], *, timeou
 
 
 def _run_codexbar_usage(argv: list[str], *, timeout: float) -> Any:
-    http = None if "--all-accounts" in argv else _CODEXBAR_HTTP.get()
+    http = _CODEXBAR_HTTP.get()
     if http is not None:
         fetched = _fetch_codexbar_http_usage(http, argv, timeout=timeout)
         if fetched is not _HTTP_MISS:
