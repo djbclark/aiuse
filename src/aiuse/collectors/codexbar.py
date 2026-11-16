@@ -402,6 +402,67 @@ def collect_codexbar(
         _CODEXBAR_HTTP.reset(reset)
 
 
+def _is_error_only_row(account: AccountUsage) -> bool:
+    """True when a row carries only an error and no usable quota or balance."""
+    return bool(
+        account.error
+        and not account.windows
+        and account.balance_usd is None
+        and account.usage_credits is None
+        and account.spent_usd is None
+    )
+
+
+def _fallback_widget_snapshot_for_errors(
+    accounts: list[AccountUsage],
+    *,
+    cache_path: Path | str | None,
+    max_cache_age: float,
+    skip_providers: frozenset[str] | None,
+    all_accounts: frozenset[str],
+) -> list[AccountUsage]:
+    """Replace error-only HTTP/CLI rows with fresh widget-snapshot rows when available.
+
+    CodexBar.app can hold browser cookies (e.g. grok.com) that CodexBarCLI
+    and ``CodexBarCLI serve`` cannot read.
+    """
+    failed = {
+        canonical_provider(a.provider)
+        for a in accounts
+        if _is_error_only_row(a)
+        and canonical_provider(a.provider) not in all_accounts
+        and canonical_provider(a.provider) != "bedrock"
+    }
+    if not failed:
+        return accounts
+    cached = _read_widget_snapshot(
+        cache_path=cache_path,
+        max_age=max_cache_age,
+        provider_list=[None],
+        skip_providers=(skip_providers or frozenset()) | all_accounts,
+    )
+    if not cached:
+        return accounts
+    by_provider: dict[str, list[AccountUsage]] = {}
+    for row in cached:
+        p = canonical_provider(row.provider)
+        if p in failed and not row.error and not _is_error_only_row(row):
+            by_provider.setdefault(p, []).append(row)
+    if not by_provider:
+        return accounts
+    result: list[AccountUsage] = []
+    emitted: set[str] = set()
+    for row in accounts:
+        p = canonical_provider(row.provider)
+        if p in by_provider and _is_error_only_row(row):
+            if p not in emitted:
+                result.extend(by_provider[p])
+                emitted.add(p)
+            continue
+        result.append(row)
+    return result
+
+
 def _collect_codexbar_impl(
     *,
     providers: str | list[str] | None = "enabled",
@@ -551,6 +612,14 @@ def _collect_codexbar_impl(
         backoff=TimeoutBackoff("codexbar", base=timeout_backoff) if timeout_backoff else None,
         all_accounts_providers=all_accounts,
     )
+    if use_cache:
+        accounts = _fallback_widget_snapshot_for_errors(
+            accounts,
+            cache_path=cache_path,
+            max_cache_age=max_cache_age,
+            skip_providers=skip_providers,
+            all_accounts=all_accounts,
+        )
     if not accounts and errors and not include_disabled:
         raise CollectorError("; ".join(errors))
     bedrock_queried = any(p is not None and canonical_provider(p) == "bedrock" for p in provider_list)

@@ -1073,6 +1073,53 @@ def test_http_server_supplies_usage_and_sends_the_bearer_token(monkeypatch):
     assert usage == [("/usage", [("provider", "codex")], "server-token")]
 
 
+def test_http_server_error_row_falls_back_to_widget_snapshot(monkeypatch):
+    from aiuse.collectors.codexbar import collect_codexbar
+    from aiuse.models import AccountUsage, BillingKind, QuotaWindow
+
+    monkeypatch.setattr("aiuse.collectors.codexbar.which", lambda _name: "/usr/bin/codexbar")
+
+    def http_get(client, path, *, timeout, params=None):  # noqa: ARG001
+        if path == "/health":
+            return 200, b'{"status":"ok","version":"0.84.1"}'
+        return 200, json.dumps(
+            [
+                {
+                    "provider": "grok",
+                    "source": "auto",
+                    "error": {
+                        "code": 1,
+                        "kind": "provider",
+                        "message": "Grok web billing requires a signed-in grok.com browser session or `grok login`.",
+                    },
+                }
+            ]
+        ).encode()
+
+    monkeypatch.setattr("aiuse.collectors.codexbar._http_get", http_get)
+
+    snapshot_row = AccountUsage(
+        source="codexbar",
+        provider="grok",
+        billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+        windows=[QuotaWindow(label="Grok usage limit", used_percent=42.0, window_id="primary")],
+    )
+    monkeypatch.setattr("aiuse.collectors.codexbar._read_widget_snapshot", lambda **_kw: [snapshot_row])
+
+    rows = collect_codexbar(
+        providers=["grok"],
+        use_cache=True,
+        timeout_backoff=None,
+        http_url="http://127.0.0.1:10546/",
+        http_token="server-token",
+    )
+
+    assert len(rows) == 1
+    assert rows[0].provider == "grok"
+    assert rows[0].error is None
+    assert rows[0].windows[0].used_percent == 42.0
+
+
 def test_http_server_down_falls_back_to_the_cli(monkeypatch):
     from urllib.error import URLError
 
