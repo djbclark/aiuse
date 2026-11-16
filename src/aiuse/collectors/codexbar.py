@@ -1715,9 +1715,51 @@ def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
         return None
     usage_value = row.get("usage")
     usage: dict[str, Any] = usage_value if isinstance(usage_value, dict) else {}
+    identity = usage.get("identity")
+    identity = identity if isinstance(identity, dict) else {}
+    org_raw = identity.get("accountOrganization")
+    if not isinstance(org_raw, str) or not org_raw.strip():
+        row_account = row.get("account")
+        org_raw = row_account if isinstance(row_account, str) and row_account.strip() else None
+    else:
+        org_raw = org_raw.strip()
+    account = _display_account(org_raw or row.get("account") or usage.get("accountEmail"))
+    source_tag = str(row.get("source") or "auto")
+
     grant = _subscription_grant_from_usage(usage)
     if grant is None:
-        return None
+        cost = usage.get("providerCost")
+        if not isinstance(cost, dict) or cost.get("currencyCode") != "USD":
+            return None
+        balance = _f(cost.get("balance"))
+        if balance is None:
+            return None
+        month_spent: float | None = None
+        if isinstance(usage.get("details"), list):
+            for section in usage["details"]:
+                if not isinstance(section, dict):
+                    continue
+                for item in section.get("rows") or []:
+                    if isinstance(item, dict) and "this month" in str(item.get("label") or "").casefold():
+                        val = str(item.get("value") or "").strip().lstrip("$").replace(",", "")
+                        month_spent = _f(val)
+        notes = [f"Live Claude Platform prepaid balance fetched by CodexBar via {source_tag}."]
+        if month_spent is not None:
+            notes.append(f"This month (UTC) spend: ${month_spent:.2f}.")
+        return AccountUsage(
+            source="codexbar",
+            provider="omp",
+            account=account,
+            console_organization=org_raw,
+            billing_kind=BillingKind.PREPAID_BALANCE,
+            windows=[],
+            balance_usd=balance,
+            spent_usd=month_spent,
+            credits_label="Claude API credits",
+            collected_at=parse_dt(usage.get("updatedAt")),
+            notes=notes,
+            raw=row,
+        )
     remaining, total, expires_at = grant
     spent = round(max(0.0, total - remaining), 6)
     remaining_percent = max(0.0, min(100.0, remaining / total * 100.0))
@@ -1732,16 +1774,6 @@ def _omp_from_claudeplatform_row(row: dict[str, Any]) -> AccountUsage | None:
         refill_capacity_unit="usd",
         window_id=_CLOUD_CREDITS_ROW_ID,
     )
-    identity = usage.get("identity")
-    identity = identity if isinstance(identity, dict) else {}
-    org_raw = identity.get("accountOrganization")
-    if not isinstance(org_raw, str) or not org_raw.strip():
-        row_account = row.get("account")
-        org_raw = row_account if isinstance(row_account, str) and row_account.strip() else None
-    else:
-        org_raw = org_raw.strip()
-    account = _display_account(org_raw or row.get("account") or usage.get("accountEmail"))
-    source_tag = str(row.get("source") or "auto")
     return AccountUsage(
         source="codexbar",
         provider="omp",

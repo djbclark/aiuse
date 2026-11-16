@@ -199,3 +199,26 @@ def test_pi_session_refusal_scanner_extracts_429(tmp_path):
     assert len(hits) == 1
     assert hits[0]["provider"] == "zai"
     assert hits[0]["source"] == "pi-session"
+
+
+def test_claudeplatform_prepaid_fallback_without_promo_grant():
+    from aiuse.collectors.codexbar import _from_row
+    from aiuse.models import BillingKind
+
+    acc = _from_row(
+        {
+            "provider": "claudeplatform",
+            "source": "web",
+            "usage": {
+                "updatedAt": "2026-11-16T17:11:58Z",
+                "providerCost": {"balance": -0.07, "used": -0.07, "currencyCode": "USD", "period": "Prepaid credits"},
+                "details": [{"title": "Billing", "rows": [{"label": "This month (UTC)", "value": "$325.38"}]}],
+                "identity": {"accountOrganization": "Freedom Included"},
+            },
+        }
+    )
+    assert acc.provider == "omp"
+    assert acc.error is None
+    assert acc.billing_kind == BillingKind.PREPAID_BALANCE
+    assert acc.balance_usd == -0.07
+    assert acc.spent_usd == 325.38
