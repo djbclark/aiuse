@@ -5,16 +5,25 @@
 [timeouts]
 # Wall-clock seconds for external tools. Per-tool entries override default.
 # default = 45
-# cswap = 90       # cswap list --json crossed 45s beside the other collectors
+# force = 45               # override even when a collector has a larger default
+# cswap = 90               # cswap list --json crossed 45s beside the other collectors
 # codexbar = 45
-# openusage_ai = 45  # OpenUsage.ai macOS menu-bar app
-# openusage_sh = 90  # OpenUsage.sh export polls every provider; 45s often kills a live run
-# caam = 90          # caam limits --format json sweeps 4 providers under caam's own 60s deadline
-# opencode_zen = 45 # direct OpenCode Zen billing (when its session cookie is supplied)
-# muse = 45       # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
-# qwencloud = 45  # qwencloud CLI (`qwencloud auth login` once; no API-key mode)
-# bailian = 45    # bailian-cli / bl (`bl auth login --console` once)
-# grok_billing = 15  # native Grok Extra Usage Credits billing (~/.grok/auth.json)
+# codexbar_discovery = 45  # CodexBar provider-list discovery probe
+# caut = 45
+# caam = 90                # caam limits --format json sweeps 4 providers under caam's own 60s deadline
+# openusage_ai = 45        # OpenUsage.ai macOS menu-bar app
+# openusage_sh = 90        # OpenUsage.sh export polls every provider; 45s often kills a live run
+# opencode_zen = 45        # direct OpenCode Zen billing (when its session cookie is supplied)
+# opencode_go = 45         # direct OpenCode Go usage
+# hermes = 45
+# muse = 45                # Muse: Bearer (META_API_KEY) or cookie (dev.meta.ai); mutual failover
+# qwencloud = 45           # qwencloud CLI (`qwencloud auth login` once; no API-key mode)
+# bailian = 45             # bailian-cli / bl (`bl auth login --console` once)
+# openrouter = 45
+# deepseek = 45
+# clinepass = 45
+# grok_billing = 15        # native Grok Extra Usage Credits billing (~/.grok/auth.json)
+# sipb = 5                 # MIT SIPB probe (keep short so a dead host does not hold the collect)
 # tokscale = 45
 
 [collectors.caut]
@@ -159,6 +168,18 @@
 # the SuperGrok weekly pool from CodexBar/OpenUsage — see docs/grok-quota.md.
 # enabled = false   # when you do not use the grok CLI on this machine
 
+[collectors.hermes]
+# Hermes local-log collector.
+# enabled = false
+
+[collectors.omp_agent_db]
+# omp's Anthropic API-key pool from ~/.omp/agent/agent.db (read-only, no secrets).
+# enabled = true
+
+[collectors.openrouter]
+# Native OpenRouter prepaid credit balance (GET /api/v1/credits).
+# enabled = true
+
 [query_min_interval]
 # Minimum seconds between live quota queries of one provider, enforced across
 # every aiuse process (CLI, `aiuse sample` LaunchAgent, watch, serve) through a
@@ -171,8 +192,36 @@
 # Usually unnecessary: aiuse automatically unifies a provider when every live
 # source reports exactly one named account.  For a genuinely multi-account
 # provider, map a source-local id to the account label used elsewhere.
+# The ACCT column caps displayed account labels at 16 characters, so remap
+# long token-account names here to short labels (matching native labels).
 # [account_aliases.codex.openusage_sh]
 # "codex-cli" = "me@example.com"
+#
+# [account_aliases.clinepass.codexbar]
+# "CODEXBAR_CLINEPASS_WORK_API_KEY" = "work"
+# "CODEXBAR_CLINEPASS_PERSONAL_API_KEY" = "personal"
+
+[sampling]
+# Adaptive cadence for `aiuse sample` (seconds unless noted).
+# idle_interval = 3600           # nothing moved since the previous sample
+# active_interval = 1800         # some window moved
+# burst_interval = 300           # a window is burning fast (hot providers only)
+# min_move_percent = 0.5         # smallest rise that counts as "moved"
+# burst_percent_per_hour = 8.0   # minimum burn rate to enter burst
+# burst_pace_ratio = 3.0         # minimum pace multiple to enter burst
+# cooldown_samples = 3           # quiet samples before stepping down one tier
+
+[attribution]
+# Token ledgers set beside the quota meters by `aiuse attribute`.
+# ledger = "auto"                # true | false | "auto" (tokscale session totals)
+# [attribution.provider_map]
+# "hermes/openai" = "codex"      # "tokscale-client/tokscale-provider" (fnmatch) -> aiuse provider
+#
+# [attribution.litellm]
+# database_url = "postgresql://user@127.0.0.1:5433/litellm"  # empty = off
+# psql = "psql"
+# [attribution.litellm.provider_map]
+# "grok-sub" = "grok"            # model_group (fnmatch) -> aiuse provider
 
 [analysis]
 # Persist hourly/manual snapshots for History learning.

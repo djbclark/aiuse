@@ -293,10 +293,17 @@ guess:
 ```toml
 [account_aliases.codex.openusage_sh]
 "codex-cli" = "me@example.com"
+
+[account_aliases.clinepass.codexbar]
+"CODEXBAR_CLINEPASS_WORK_API_KEY" = "work"
+"CODEXBAR_CLINEPASS_PERSONAL_API_KEY" = "personal"
 ```
 
 `aiuse --full` prints this exact table when a multi-account source cannot be
-matched safely. Explicit mappings take precedence over automatic normalization.
+matched safely. Explicit mappings take precedence over automatic normalization,
+and the `ACCT` column caps displayed labels at 16 characters (longer names are
+truncated with `…`), so `[account_aliases]` is also the place to shorten long
+token-account names.
 
 When one source reports several accounts for a provider (Claude excepted, which
 cswap owns), aiuse picks the best source per account, so an account only one
