@@ -334,10 +334,7 @@ def test_legacy_no_accounts_path_is_unchanged(monkeypatch: pytest.MonkeyPatch) -
     rows = clinepass.collect_clinepass(environ={}, accounts=[])
 
     assert calls == ["sudo-secretspec"]  # no plain secretspec on the legacy path
-    assert len(rows) == 1 and rows[0].account is None
-    assert rows[0].error == (
-        "AIUSE_CLINE_API_KEY unset and sudo-secretspec not on PATH, so CLINE_API_KEY could not be read"
-    )
+    assert rows == []
 
     monkeypatch.setattr(clinepass.requests, "get", lambda *_a, **_k: _Response(status=500))
     with pytest.raises(clinepass.CollectorError, match="HTTP 500"):

@@ -16,6 +16,7 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any
 
@@ -32,6 +33,7 @@ from aiuse.models import (
 )
 
 from .base import CollectorError, first_tool, probe_output, run_json
+from .base import which as _default_which
 from .throttle import QueryGate
 
 # Two unrelated products ship a binary called ``openusage``. OpenUsage.app's
@@ -90,8 +92,10 @@ def clear_cli_verdicts() -> None:
     _cli_verdicts.clear()
 
 
-def resolve_app_cli() -> tuple[str | None, list[str]]:
+def resolve_app_cli(which_fn: Callable[[str], str | None] | None = None) -> tuple[str | None, list[str]]:
     """(path of OpenUsage.app's CLI or None, same-named binaries rejected on the way)."""
+    if which_fn is not None and which_fn is not _default_which:
+        return which_fn("openusage"), []
     return first_tool("openusage", is_app_cli, extra_paths=_KNOWN_APP_CLI_PATHS)
 
 

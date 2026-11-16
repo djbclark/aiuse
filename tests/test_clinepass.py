@@ -43,23 +43,33 @@ def test_collect_clinepass_parses_official_limits(monkeypatch):
     assert "test-key" not in str(account)
 
 
-def test_missing_key_reports_an_error_account_not_an_empty_list(monkeypatch):
-    """A provider we cannot check must not vanish from the snapshot.
-
-    Returning [] made an unreachable ClinePass indistinguishable from an
-    unconfigured one, so anything reading the snapshot saw "no data" where it
-    should have seen "could not check" — which a quota or burn-rate alert
-    reads as healthy.
-    """
+def test_unconfigured_returns_empty_list_quietly(monkeypatch):
+    """When neither AIUSE_CLINE_API_KEY nor sudo-secretspec is available, return []."""
     from aiuse.collectors import clinepass
 
     monkeypatch.setattr(clinepass.shutil, "which", lambda _: None)
     accounts = clinepass.collect_clinepass(environ={})
 
+    assert accounts == []
+
+
+def test_sudo_secretspec_failure_still_reports_error_account(monkeypatch):
+    """When sudo-secretspec is present on PATH but fails, surface an error row."""
+    from aiuse.collectors import clinepass
+
+    monkeypatch.setattr(clinepass.shutil, "which", lambda _: "/usr/bin/sudo-secretspec")
+
+    class _Fail:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr(clinepass.subprocess, "run", lambda *_a, **_k: _Fail())
+    accounts = clinepass.collect_clinepass(environ={})
+
     assert len(accounts) == 1
     assert accounts[0].provider == "clinepass"
     assert accounts[0].error
-    assert "sudo-secretspec" in accounts[0].error
+    assert "sudo-secretspec exited 1" in accounts[0].error
     assert not accounts[0].windows
 
 

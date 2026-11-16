@@ -70,14 +70,15 @@ def collect_clinepass(
     if configured:
         return [_collect_account(spec, env, timeout) for spec in configured]
 
+    if not str(env.get(_ENV_VAR) or "").strip() and shutil.which("sudo-secretspec") is None:
+        # Unconfigured: neither AIUSE_CLINE_API_KEY nor sudo-secretspec is
+        # available, so return [] quietly like other optional collectors.
+        return []
+
     api_key, key_error = _resolve_api_key(env, timeout)
     if not api_key:
-        # Report the account with an error rather than returning [].
-        # Returning an empty list makes an unreachable provider indistinguishable
-        # from one that is not configured: the account simply vanishes from the
-        # snapshot, and anything reading that snapshot sees "no data" where it
-        # should see "could not check". That is actively dangerous for a
-        # burn-rate or quota alert, which would read silence as healthy.
+        # A key source was configured/reachable (sudo-secretspec on PATH) but
+        # failed; surface the failure as an error row rather than hiding it.
         return [
             AccountUsage(
                 source="clinepass",

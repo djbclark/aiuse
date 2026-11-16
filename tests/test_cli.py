@@ -214,6 +214,26 @@ def test_doctor_reports_config_errors(monkeypatch, tmp_path, capsys):
     assert "positive" in out
 
 
+def test_doctor_openusage_respects_monkeypatched_which(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        cli,
+        "load_config",
+        lambda _p=None: {
+            "collectors": {"openusage_ai": {"enabled": True}, "cswap": True, "codexbar": True},
+            "timeouts": {"default": 45},
+        },
+    )
+    monkeypatch.setattr(cli, "which", lambda cmd: f"/fake/bin/{cmd}")
+    _stub_probe(monkeypatch)
+
+    code = cli.main(["--doctor"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "openusage_ai" in out
+    assert "/fake/bin/openusage" in out
+
+
 def test_print_completion_bash(capsys):
     assert cli.main(["--print-completion", "bash"]) == 0
     out = capsys.readouterr().out

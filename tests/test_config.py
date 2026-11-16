@@ -386,3 +386,17 @@ def test_collection_policy_fingerprint_includes_hidden_pools():
 
     base = collection_policy_fingerprint({})
     assert base != collection_policy_fingerprint({"hidden_pools": {"cursor/auto": "hide"}})
+
+
+def test_generate_user_config_includes_all_collector_sections(monkeypatch, tmp_path):
+    import tomllib
+
+    from aiuse.config import KNOWN_COLLECTOR_KEYS
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    result = generate_user_config()
+    assert result["errors"] == []
+    text = (tmp_path / "aiuse" / "config.toml").read_text(encoding="utf-8")
+    parsed = tomllib.loads(text)
+    assert set(parsed["collectors"]) == KNOWN_COLLECTOR_KEYS
+    assert validate_config(parsed) == []
