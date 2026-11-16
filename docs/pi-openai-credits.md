@@ -1,13 +1,13 @@
 # Pi: OpenAI API credit accounting
 
-Pi is provider `pi`, displayed with scope `codex-api`. It is independent of
-Codex CLI subscription windows. OMP remains provider `omp`, scope `claude-api`.
+OpenAI API is provider `pi`, displayed as `POOL` `openai-api` (`SCOPE` `—`). It is independent of
+Codex CLI subscription windows (`POOL` `openai`, `SCOPE` `codex`). Claude API (`omp`) displays as `POOL` `claude-api` (`SCOPE` `—`).
 This configuration describes Pi's OpenAI API funding, not every model Pi can run.
 
 ## Verified figures, not invented capacity
 
 CodexBar's `openai` provider supplies an organization API spend meter, displayed
-as Pi (`pi`) with scope `codex-api`. Existing CodexBar authentication is sufficient;
+as `openai-api` (`pi`) with `SCOPE` `—`. Existing CodexBar authentication is sufficient;
 aiuse does not read its credential store. `aiuse --providers pi` queries CodexBar's
 `openai` source, never the `codex` OAuth subscription source. Spend counts upward;
 no remaining balance is fabricated, even if a spending limit is reported.

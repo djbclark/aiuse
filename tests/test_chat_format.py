@@ -528,7 +528,7 @@ class TestActionItems:
         row = _WindowRow("codex", "user@example.com", weekly, None)
         items = _build_action_items([], routing_context=routing, sub_rows=[row])
         assert len(items) >= 1
-        assert "Keep codex as primary" in items[0]
+        assert "Keep openai as primary" in items[0]
         assert "49%" in items[0]
 
     def test_prepaid_excluded(self):
@@ -964,7 +964,7 @@ class TestPoolGrouping:
         table = render_clock_matrix([], snapshot=snap, color=False, width=120)
 
         chat_entries = len([ln for ln in chat.splitlines() if ln.startswith(("🟢", "🟡", "🟠", "🔴"))])
-        table_rows = len([ln for ln in table.splitlines() if "agy" in ln])
+        table_rows = len([ln for ln in table.splitlines() if "antigravity" in ln])
         assert chat_entries == table_rows == 2
 
     def test_pool_windows_are_listed_shortest_clock_first(self):
@@ -1205,7 +1205,7 @@ class TestPaceHeadlinesAndWindowPace:
         )
         items = _build_action_items([alert])
         assert len(items) == 1
-        assert "Conserve codex · me@gmail.com: `6%` remains and pace `+362%`" == items[0]
+        assert "Conserve openai · me@gmail.com: `6%` remains and pace `+362%`" == items[0]
 
     def test_legend_line_at_end_of_chat_output(self):
         snap = _snapshot([_account()])

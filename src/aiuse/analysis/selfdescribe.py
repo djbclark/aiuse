@@ -132,9 +132,11 @@ SEMANTICS: dict[str, Any] = {
     "ceiling_headroom_percent": "remaining percent on the ceiling window that caps this sub-row",
     "ceiling_window_id": "window_id of the ceiling row binding this sub-row, when ceiling_binding",
     "context_usage": "ACP context-window fill and this turn's token counts. used/size is the session context, not a 5h or weekly plan. turn_quota is per-turn tokens. Plan windows stay on windows[]",
-    "spent_usd": "dollars already spent from an expiring dollar grant (omp's Claude API credits), or a pay-as-you-go pi meter's organization OpenAI API spend; balance_usd (when known) is dollars left, windows[0].refill_capacity the grant size, windows[0].resets_at its expiry (no refill: unused dollars are lost then). Not usage_credits (an overage wallet)",
-    "expires_at": "ISO time an expiring dollar grant lapses (omp's Claude API credits); unused dollars are lost then. On accounts and on --available pool entries that have one",
-    "source": "which reading an omp or pi account carries: codexbar, admin-api (Admin API reading), or operator-override (aiuse set-credits; the console figure, preferred while it is at least as new as CodexBar or CodexBar shows more credits than it, since a grant never grows). Pool entries carry it with observed_at",
+    "monthly_price": "configured monthly plan price (USD) for this account/provider, honoring per-account overrides and active starts_at/ends_at phases",
+    "headroom_usd": "dollar value of the binding window's remaining quota at the configured monthly_price",
+    "spent_usd": "dollars already spent from an expiring dollar grant (claude-api), or a pay-as-you-go openai-api meter's organization OpenAI API spend; balance_usd (when known) is dollars left, windows[0].refill_capacity the grant size, windows[0].resets_at its expiry (no refill: unused dollars are lost then). Not usage_credits (an overage wallet)",
+    "expires_at": "ISO time an expiring dollar grant lapses (claude-api); unused dollars are lost then. On accounts and on --available pool entries that have one",
+    "source": "which reading a claude-api (provider omp) or openai-api (provider pi) account carries: codexbar, admin-api (Admin API reading), or operator-override (aiuse set-credits; the console figure, preferred while it is at least as new as CodexBar or CodexBar shows more credits than it, since a grant never grows). Pool entries carry it with observed_at",
     "observed_at": "ISO time of the reading an omp account/pool carries (the override's set time or CodexBar's updatedAt); age_seconds/stale derive from it",
     "superseded_reading": "present on an omp account when an operator override replaced the CodexBar reading: {source, observed_at, balance_usd} of the reading it replaced",
     "superseded_override": "present on an omp account when a fresher CodexBar reading won over an operator override or Admin API reading: {source, observed_at, remaining_usd} of the figure it passed over",
@@ -854,8 +856,29 @@ def enrich_snapshot(
         apply_credit_overrides(snap, credit_overrides, now=now, config=config)
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
     collected = snap.get("collected_at")
+    plans_cfg = (
+        config.get("plans") if isinstance(config, Mapping) and isinstance(config.get("plans"), Mapping) else None
+    )
+    analysis_cfg_map = (
+        config.get("analysis") if isinstance(config, Mapping) and isinstance(config.get("analysis"), Mapping) else None
+    )
+    waking_hours = float(analysis_cfg_map.get("waking_hours_per_day", 16.0)) if analysis_cfg_map else 16.0
+    if plans_cfg is not None:
+        from aiuse.config import plan_monthly_price
     for account in accounts:
         account.pop("measurement_frozen", None)
+        if plans_cfg is not None:
+            price = plan_monthly_price(
+                plans_cfg,
+                str(account.get("provider") or ""),
+                account.get("account"),
+                now=now,
+            )
+            if price is not None:
+                account["monthly_price"] = price
+                account["_waking_hours_per_day"] = waking_hours
+            else:
+                account.pop("monthly_price", None)
         enrich_account(
             account,
             collected_at=collected,
@@ -922,6 +945,8 @@ def enrich_snapshot(
             log_dir=acp_log_dir,
         )
     snap["summary_lines"] = summary_lines(pool_entries(snap))
+    for account in accounts:
+        account.pop("_waking_hours_per_day", None)
     snap["semantics"] = dict(SEMANTICS)
     # Snapshots written before this field existed have no key; every reader
     # can rely on it being present (empty = nothing disabled).
@@ -1138,6 +1163,25 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 else None
             )
             grant_expiry = _account_expiry(account) if account.get("spent_usd") is not None else None
+            monthly_price = account.get("monthly_price")
+            headroom_usd: float | None = None
+            if (
+                monthly_price is not None
+                and binding is not None
+                and isinstance(binding.get("window_minutes"), int)
+                and binding["window_minutes"] > 0
+            ):
+                from aiuse.analysis.use_or_lose import _compute_value_at_risk
+
+                headroom_usd = round(
+                    _compute_value_at_risk(
+                        remaining=effective_headroom(binding),
+                        window_minutes=int(binding["window_minutes"]),
+                        monthly_price=float(monthly_price),
+                        waking_hours_per_day=float(account.get("_waking_hours_per_day", 16.0)),
+                    ),
+                    2,
+                )
             pools.append(
                 {
                     "provider": provider,
@@ -1161,6 +1205,8 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     "usable_now": usable,
                     "binding_window": str(binding.get("label") or "") if binding else None,
                     "headroom_percent": effective_headroom(binding) if binding else None,
+                    **({"monthly_price": monthly_price} if monthly_price is not None else {}),
+                    **({"headroom_usd": headroom_usd} if headroom_usd is not None else {}),
                     **(
                         {"shared_pool_family": "default", "headroom_basis": "shared_weekly"}
                         if model_sublimit and family == "fable"

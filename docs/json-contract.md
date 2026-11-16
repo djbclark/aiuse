@@ -94,6 +94,8 @@ unbroken until Schema 2.0.
   `shared` | `model_sublimit` | `ceiling`.
 - **`semantics` taxonomy metadata:** `semantics.taxonomy_version = "1.6"`,
   `semantics.provider_to_vendor`, and `semantics.pool_id_map`.
+- **`monthly_price` & `headroom_usd`** (`float`, optional): when `[plans]` is configured (including per-account overrides and active `starts_at`/`ends_at` `phases`), emitted on `accounts[]` (`monthly_price`) and `--available` / `pool_entries` (`monthly_price` and `headroom_usd` for the binding window).
+- **Display `POOL` / `SCOPE` alignment:** `antigravity` spells out `antigravity` (instead of `agy`); `codex` displays `POOL=openai`, `SCOPE=codex`; `pi` displays `POOL=openai-api`, `SCOPE=—`; `omp` displays `POOL=claude-api`, `SCOPE=—` (`omp_agent_db` is deprecated and disabled by default).
 
 ## What's new in schema 1.5 (2026-10-31)
 

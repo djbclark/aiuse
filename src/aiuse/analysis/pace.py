@@ -446,9 +446,9 @@ POOL_SCOPE_LABELS = {
     "gemini": "gemini",
     "gemini_argon": "gemini-argon",
     "claude_gpt": "claude/gpt",
-    "omp_claude": "claude-api",
+    "omp_claude": "—",
     "omp_openai": "openai-api",
-    "pi_codex_api": "codex-api",
+    "pi_codex_api": "—",
     "cursor_total": "total",
     "cursor_third_party": "3rd-party",
     "cursor_auto": "auto",
@@ -490,9 +490,11 @@ def matrix_pool_scope(
     is not a total row.
     """
     if provider is not None and canonical_provider(provider) == "pi":
-        return "codex-api"  # A spend-only meter has no quota windows/pool id.
+        return "—"
     if not pool_id and provider is not None and canonical_provider(provider) == "omp":
-        return "claude-api"
+        return "—"
+    if not pool_id and provider is not None and canonical_provider(provider) == "codex":
+        return "codex"
     if pool_id:
         return POOL_SCOPE_LABELS.get(pool_id, pool_id)
     if _provider_is_cursor(provider) and pool:

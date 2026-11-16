@@ -118,8 +118,8 @@ def test_pi_row_added_beside_existing_omp_without_mixing_balances(credit_files):
     snap = Snapshot(collected_at=NOW, accounts=[AccountUsage(source="none", provider="omp")])
     assert co.apply_credit_overrides_to_snapshot(snap, overrides={"pi": pi, "omp": omp}, now=NOW)
     assert [(a.provider, a.balance_usd) for a in snap.accounts] == [("omp", 40), ("pi", 70)]
-    assert matrix_pool_scope("pi_codex_api", provider="pi") == "codex-api"
-    assert matrix_pool_scope("omp_claude", provider="omp") == "claude-api"
+    assert matrix_pool_scope("pi_codex_api", provider="pi") == "—"
+    assert matrix_pool_scope("omp_claude", provider="omp") == "—"
     assert snap.accounts[1].windows[0].window_id == "openai-api-credits"
 
 

@@ -292,13 +292,35 @@
 #
 # [plans.claude."me@example.com"]
 # monthly_price = 200
+#
+# [plans.codex]
+# monthly_price = 200
+#
+# [plans.cursor]
+# monthly_price = 200
+#
+# [plans.gemini]  # Antigravity (Google AI Pro $20 / Ultra $250)
+# monthly_price = 20
+#
+# [plans.clinepass]
+# monthly_price = 10
+#
+# Scheduled tier transitions via starts_at / ends_at (inclusive start, exclusive end;
+# YYYY-MM-DD uses UTC midnight) and [[...phases]]:
+# [plans.opencode]
+# monthly_price = 10  # fallback once higher-tier phases expire
+#
+# [[plans.opencode."me@example.com".phases]]
+# monthly_price = 40
+# starts_at = "2026-10-28"
+# ends_at = "2026-11-28"
 
-# Pi (OpenAI API): declare an organizational monthly budget cap. Anchors the
+# OpenAI API (openai-api): declare an organizational monthly budget cap. Anchors the
 # cost meter in the MONTH column so it shows percentage and pace instead of `n/a`.
-# [plans.pi]
+# [plans.openai-api]
 # monthly_spend_limit = 100
 
-# Claude API promotional grant (omp): fallback clock when Console/CodexBar omit
+# Claude API promotional grant (claude-api): fallback clock when Console/CodexBar omit
 # expiry. Dates use UTC midnight on that calendar day (Console convention).
 # [credits.omp]
 # organization = "Freedom Included"  # Console org linked on claude.ai Billing → API credits

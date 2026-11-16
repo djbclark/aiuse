@@ -162,7 +162,7 @@ windows you should pace yourself on, `mid` windows on track — nothing to do).
 
 The `POOL` column names the billing pool (vendor/allotment) rather than a single
 client TUI (`deepseek`, `zai`, `clinepass`, `opencode-go`, `opencode-zen`,
-`anthropic-api`, `openai-api`), while `--json` reports each pool's `vendor`,
+`claude-api`, `openai`, `openai-api`, `antigravity`), while `--json` reports each pool's `vendor`,
 `pool_id`, and `transports` (the client harnesses that can spend it).
 
 ## Try it in 60 seconds
@@ -534,15 +534,15 @@ This tool:
 This command intentionally does not report historical local-token usage or
 API-equivalent cost estimates (use ccusage-class tools for local burn, not plan %).
 
-## OpenAI API credits (`pi`): independent grant accounting
+## OpenAI API credits (`openai-api`, legacy `pi`): independent grant accounting
 
-Pi uses provider `pi` and scope `codex-api`, never Codex subscription quota.
-Verified console grants can be recorded with `aiuse set-credits pi`; an optional
+OpenAI API uses `POOL` `openai-api` (`SCOPE` `—`), never Codex subscription quota (`POOL` `openai`, `SCOPE` `codex`).
+Verified console grants can be recorded with `aiuse set-credits openai-api` (or `pi`); an optional
 organization Admin API cost refresh derives a conservative estimate, not a live
 cash balance. Missing funding data remains unknown. See
 [Pi OpenAI API credits](docs/pi-openai-credits.md) for prerequisites and limits.
 
-## Claude API credits (`omp`): override and expiry nudge
+## Claude API credits (`claude-api`, legacy `omp`): override and expiry nudge
 
 CodexBar reads the Max plan's promotional API credits from claude.ai and can report "100% unused"
 while the Anthropic console shows the grant half spent. The Anthropic Admin API has no

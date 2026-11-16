@@ -56,7 +56,7 @@ usage-sources` lists what is active per vendor and `[usage_sources]` can pin
 one source. Native collectors are default-on and quiet when their
 prerequisites are absent).
 **Deprecated 2026-10-22 for overlap with cswap, CodexBar, tokscale, and
-paseo:** caut, caam, OpenUsage.ai, and OpenUsage.sh. The code stays; the
+paseo:** caut, caam, OpenUsage.ai, and OpenUsage.sh. **Deprecated 2026-11-16:** `omp_agent_db` (disabled by default; `omp` displays as `claude-api`, `pi` as `openai-api`, `codex` as `POOL=openai`/`SCOPE=codex`, `antigravity` as `antigravity`, and `[plans]` supports `starts_at`/`ends_at` `phases`). The code stays; the
 maintainer is happy to re-add support on request
 ([`collectors-caut-openusage.md`](collectors-caut-openusage.md)).
 **CodexBar HTTP (2026-10-29):** `collectors.codexbar.http_url` and

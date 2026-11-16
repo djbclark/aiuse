@@ -333,13 +333,13 @@ def test_per_provider_accounts_are_sorted_by_display_name():
         AccountUsage(provider="claude", source="cswap", error="unavailable"),
     ]
 
-    # Order follows the *display* name, not the canonical provider id, so
-    # antigravity leads: its display name is "agy".
+    # Order follows the *display* name, not the canonical provider id:
+    # antigravity < claude < copilot < openai (codex).
     assert [account.provider for account in _sorted_accounts(accounts)] == [
         "antigravity",
         "claude",
-        "codex",
         "copilot",
+        "codex",
     ]
 
 
@@ -753,7 +753,7 @@ def test_brief_action_plan_caps_lines_per_provider():
     claude_alert_lines = [line for line in plain if "claude" in line and "window-" in line]
     assert len(claude_alert_lines) == BRIEF_MAX_LINES_PER_PROVIDER
     assert any("more" in line for line in plain)
-    assert any("codex" in line for line in plain)
+    assert any("openai" in line for line in plain)
 
 
 def test_default_report_is_clock_matrix():
@@ -817,7 +817,7 @@ def test_default_report_is_clock_matrix():
     assert rows[-1].startswith("use")
     # Every account appears (broken as error; codex via burn alert)
     assert "grok" in text.lower()
-    assert "codex" in text
+    assert "openai" in text
     meta = render_stderr_meta(snap, [empty, burn], color=False)
     assert "Collected at" in meta
     assert "tokscale: boom" in meta
@@ -1898,7 +1898,7 @@ def test_clock_matrix_shows_used_not_remaining():
 
 def test_clock_matrix_splits_independent_pools_into_their_own_rows():
     text = render_clock_matrix([], snapshot=_matrix_snapshot(), color=False)
-    agy = [line for line in text.splitlines() if " agy " in line]
+    agy = [line for line in text.splitlines() if " antigravity " in line]
     assert len(agy) == 2
     scopes = sorted(line.split()[3] for line in agy)
     assert scopes == ["claude/gpt", "gemini"]
@@ -1976,7 +1976,7 @@ def test_clock_matrix_labels_config_lapsed_subscription():
 def test_clock_matrix_sheds_columns_before_truncating_numbers():
     snap = _matrix_snapshot()
     wide = render_clock_matrix([], snapshot=snap, color=False, width=120)
-    narrow = render_clock_matrix([], snapshot=snap, color=False, width=52)
+    narrow = render_clock_matrix([], snapshot=snap, color=False, width=60)
 
     assert "PACE" in wide
     assert "PACE" not in narrow
@@ -2408,8 +2408,10 @@ def test_clock_column_stays_aligned_when_marker_and_countdown_share_it():
         ("deepseek", "deepseek"),
         ("opencode-go", "opencode-go"),
         ("opencode-zen", "opencode-zen"),
-        ("omp", "anthropic-api"),
+        ("omp", "claude-api"),
         ("pi", "openai-api"),
+        ("codex", "openai"),
+        ("antigravity", "antigravity"),
     ],
 )
 def test_provider_display_names_preserve_service_and_default_client(provider, display):
@@ -2533,7 +2535,7 @@ def test_clock_matrix_shortens_then_folds_colliding_identity():
     assert "gem" in short
     assert "claude/gpt" not in short
     # Last resort folds the leftover disambiguator into TUI.
-    assert "agy/gem" in folded or "agy/c/gpt" in folded
+    assert "antigravity/gem" in folded or "antigravity/c/gpt" in folded
     assert "claude/mit" in folded or "claude/gmail" in folded
     header = folded.splitlines()[0]
     assert "SCOPE" not in header.split()

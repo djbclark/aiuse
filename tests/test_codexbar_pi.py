@@ -39,7 +39,7 @@ def test_api_costs_are_not_prepaid_balance_or_subscription_quota(used, limit):
     assert account.balance_usd is None
     assert account.windows == []
     assert account.collected_at == NOW
-    assert matrix_pool_scope("", provider=account.provider) == "codex-api"
+    assert matrix_pool_scope("", provider=account.provider) == "—"
     assert canonical_provider("openai") == "pi"
     assert canonical_provider("openai-codex") == "codex"
 
@@ -103,10 +103,10 @@ def test_pi_spend_only_and_explanatory_rows_keep_scope(gated):
             "evidence": "synthetic test rate gate",
         }
     text = render_clock_matrix([], snapshot=Snapshot(collected_at=now, accounts=[account]), color=False, width=160)
-    line = next(line for line in text.splitlines() if "codex-api" in line)
-    assert "pi" in line
+    line = next(line for line in text.splitlines() if "openai-api" in line)
+    assert "openai-api" in line
     if gated:
-        assert line.index("codex-api") < line.index("rate-gated until")
+        assert line.index("openai-api") < line.index("rate-gated until")
     else:
         assert "$2.80" in line
         assert "↓" not in line  # Spend is not a countdown balance.
@@ -229,7 +229,7 @@ def test_pi_spend_limit_from_config_anchors_payg_meter():
     snapshot = _snapshot_from_accounts_dict(snap)
     alerts = analyze_use_or_lose(snapshot, cfg)
     matrix = render_clock_matrix(alerts, snapshot=snapshot, config=cfg)
-    assert "codex-api" in matrix
+    assert "openai-api" in matrix
     assert "126u/0l" in matrix
     assert "cap left" in matrix
     assert "n/a" not in matrix
@@ -262,6 +262,6 @@ def test_pi_spend_limit_and_grant_coexist():
     snapshot = _snapshot_from_accounts_dict(snap)
     alerts = analyze_use_or_lose(snapshot, cfg)
     matrix = render_clock_matrix(alerts, snapshot=snapshot, config=cfg)
-    assert "codex-api" in matrix
+    assert "openai-api" in matrix
     assert "126u/0l" in matrix
     assert "↓$28.45/$154.00 plan" in matrix

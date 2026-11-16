@@ -133,9 +133,9 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     # Deliberate exception: the OpenCode Zen wallet abbreviates to `oc-zen`, not
     # its CLI name, to stay narrow. `grep -i opencode` finds the Go row (display
     # name `opencode`) but not Zen: grep `oc-` for that one.
-    "antigravity": "agy",
+    "antigravity": "antigravity",
     "claude": "claude",
-    "codex": "codex",
+    "codex": "openai",
     "copilot": "copilot",
     "cursor": "cursor",
     "deepseek": "deepseek",
@@ -146,7 +146,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "devin": "devin",
     "opencode-go": "opencode-go",
     "opencode-zen": "opencode-zen",
-    "omp": "anthropic-api",
+    "omp": "claude-api",
     "pi": "openai-api",
     "openrouter": "openrouter",
     "muse": "muse",
@@ -173,6 +173,8 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "claudeplatform": "omp",  # CodexBar Claude Console subscription API credits
     "claude-platform": "omp",
     "anthropic-api": "omp",
+    "claude-api": "omp",
+    "agy": "antigravity",
     "github-copilot": "copilot",
     "grok-build": "grok",
     "supergrok": "grok",

@@ -508,7 +508,7 @@ def test_openai_pool_key_and_matrix_scope(tmp_path):
     ] == ["omp_claude", "omp_openai"]
     matrix = _build_matrix_rows([], Snapshot(collected_at=NOW, accounts=rows), {})
     assert {(r.account_full, r.scope) for r in matrix} == {
-        ("anthropic api key", "claude-api"),
+        ("anthropic api key", "—"),
         ("openai api key", "openai-api"),
     }
 

@@ -45,21 +45,21 @@ def _chat(account: AccountUsage) -> list[str]:
 def test_chat_line_shows_the_expiring_grant_in_dollars():
     lines = _chat(_omp())
 
-    i = next(n for n, line in enumerate(lines) if "**anthropic-api · credits**" in line)
+    i = next(n for n, line in enumerate(lines) if "**claude-api · credits**" in line)
     assert lines[i + 1] == ("   ↳ `100% left · ↑ $0.73 spent · ↓ $249.27 left of $250.00 plan · expires in 20d 20h`")
 
 
 def test_chat_line_without_spent_keeps_the_plain_window_form():
     lines = _chat(_omp(spent=None))
 
-    i = next(n for n, line in enumerate(lines) if "**anthropic-api · credits**" in line)
+    i = next(n for n, line in enumerate(lines) if "**claude-api · credits**" in line)
     assert lines[i + 1] == "   ↳ `100% left · resets in 20d 20h`"
 
 
 def test_chat_plain_balance_omp_shows_spent_and_left():
     lines = _chat(_omp(window=False))
 
-    assert any("**anthropic-api**: `↑ $0.73 spent · ↓ $249.27 plan`" in line for line in lines)
+    assert any("**claude-api**: `↑ $0.73 spent · ↓ $249.27 plan`" in line for line in lines)
 
 
 def test_json_carries_spent_usd_only_when_set():

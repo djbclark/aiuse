@@ -8,7 +8,7 @@ grant date, clamped to ``[0, total]``. The result is stored beside the override 
 with ``source: admin-api`` and read back by ``credits_override.load_overrides``.
 
 The admin key comes only from ``$ANTHROPIC_ADMIN_KEY``, supplied by
-``sudo-secretspec run --reason "aiuse cost report" -- aiuse refresh-credits omp``. It is never
+``sudo-secretspec run --reason "aiuse cost report" -- aiuse refresh-credits claude-api``. It is never
 printed, logged or stored, and nothing runs without it. Any failure prints one stderr line (no
 headers, no body) and leaves the previous reading in place, where it simply ages.
 """
@@ -147,7 +147,7 @@ def refresh(
     if not key:
         return (
             2,
-            f"{KEY_ENV} is not set; run under: sudo-secretspec run --reason 'aiuse cost report' -- aiuse refresh-credits omp",
+            f"{KEY_ENV} is not set; run under: sudo-secretspec run --reason 'aiuse cost report' -- aiuse refresh-credits claude-api",
         )
     now = now or utcnow()
     if config is None:
@@ -159,13 +159,13 @@ def refresh(
         return (
             2,
             "no grant parameters: set [credits.omp] grant_total_usd/granted_at/expires_at in config, "
-            "or run `aiuse set-credits omp --remaining N --total N --granted DATE --expires DATE` once",
+            "or run `aiuse set-credits claude-api --remaining N --total N --granted DATE --expires DATE` once",
         )
     total, granted_at, expires_at = grant
     if expires_at is not None and now >= expires_at:
         return (
             2,
-            f"the grant expired {expires_at.date().isoformat()}: no Admin API request made; record a new grant with `aiuse set-credits omp`",
+            f"the grant expired {expires_at.date().isoformat()}: no Admin API request made; record a new grant with `aiuse set-credits claude-api`",
         )
     override_ref = co.load_file_entry(co.overrides_path(), co.OVERRIDE_SOURCE)
     override_observed: datetime | None = None

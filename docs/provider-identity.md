@@ -36,7 +36,7 @@ holds.
 It deliberately collapses onto the config's spelling. Feeding its output into
 `provider_display_name()` produced a real defect: history-derived rows rendered
 as `Gemini (agy)` while the live rows for the same subscription rendered as
-the then-current `Google AI / Antigravity (agy)` (today both render `agy`),
+the then-current `Google AI / Antigravity (agy)` (today both render `antigravity`),
 and OpenCode Go history rendered as the title-case fallback `Opencode`. It also silently broke
 `merge_learned_flexibility()`, which looked up `antigravity:5h` in a table
 keyed `gemini:5h` and therefore never matched.
@@ -46,20 +46,20 @@ keyed `gemini:5h` and therefore never matched.
 A provider can come from a sibling vendor's row instead of its own collector.
 It is still its own canonical id, never an alias of the parent:
 
-| Canonical id | Display   | CLI binary | Derived from                                                   | Board SCOPE / pool key       |
-| ------------ | --------- | ---------- | -------------------------------------------------------------- | ---------------------------- |
-| `omp`        | `omp`     | `omp`      | CodexBar Claude Platform (`claudeplatform`) subscription grant | `claude-api` / `omp_claude`  |
-| `pi`         | `pi`      | `pi`       | Verified OpenAI API console grant / organization Costs API     | `codex-api` / `pi_codex_api` |
-| `bedrock`    | `bedrock` | —          | AWS Cost Explorer total account spend (not CodexBar's row)     | no clock; `↑ $` PAYG         |
+| Canonical id | Display (`POOL`) | CLI binary | Derived from                                                 | Board `SCOPE` / pool key |
+| ------------ | ---------------- | ---------- | ------------------------------------------------------------ | ------------------------ |
+| `omp`        | `claude-api`     | `—`        | CodexBar Claude Platform (`claudeplatform`) / Admin API cost | `—` / `omp_claude`       |
+| `pi`         | `openai-api`     | `pi`       | Verified OpenAI API console grant / organization Costs API   | `—` / `pi_codex_api`     |
+| `codex`      | `openai`         | `codex`    | OpenAI Codex subscription (`chatgpt` / `codex` OAuth)        | `codex` / `—`            |
+| `bedrock`    | `bedrock`        | —          | AWS Cost Explorer total account spend (not CodexBar's row)   | no clock; `↑ $` PAYG     |
 
-`omp` is claude.ai's expiring cloud-session dollar grant, spent by the omp
-(oh-my-pi) TUI through the Claude API; it is not a Claude plan window, so it
-must not be folded into `claude`. Details:
+`omp` (displayed as `claude-api`) is Anthropic's API credits / cloud-session grant; it is not a Claude plan window, so it
+must not be folded into `claude`. (`omp_agent_db` is deprecated and disabled by default.) Details:
 [`omp-cloud-credits.md`](omp-cloud-credits.md).
 
-`pi` is the separately funded OpenAI API pool used by Pi (fed by CodexBar's
-`openai` provider, not `codex`), never a Codex CLI subscription alias. Disabling
-`openai` in CodexBar drops this `pi` spend meter without affecting `codex`
+`pi` (displayed as `openai-api`) is the separately funded OpenAI API pool (fed by CodexBar's
+`openai` provider, not `codex`), never a Codex CLI subscription alias (which displays as `POOL=openai`, `SCOPE=codex`). Disabling
+`openai` in CodexBar drops this `openai-api` spend meter without affecting `codex`
 subscription windows. See [Pi OpenAI API credits](pi-openai-credits.md); costs
 alone do not establish remaining prepaid credit.
 

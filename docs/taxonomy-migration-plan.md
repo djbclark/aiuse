@@ -57,8 +57,10 @@ External industry context (e.g., Anthropic 1M standard pricing on Claude 4.6+, C
 
 1. **Rename `TUI` header → `POOL`** in `src/aiuse/report.py` (`_line(..., f"{'POOL':<{w_service}}", ...)`).
 2. **Clean up `PROVIDER_DISPLAY_NAMES` (`src/aiuse/models.py`)**:
-   - `omp` → `anthropic-api` (alias `omp` kept for config/history backwards compatibility)
-   - `pi` → `openai-api` (alias `pi` kept for config/history backwards compatibility)
+   - `omp` → `claude-api` (`SCOPE: —`; alias `omp` kept for config/history backwards compatibility; `omp_agent_db` disabled by default)
+   - `pi` → `openai-api` (`SCOPE: —`; alias `pi` kept for config/history backwards compatibility)
+   - `codex` → `openai` (`SCOPE: codex`, paired with `openai-api`)
+   - `antigravity` → `antigravity` (spelled out instead of `agy`)
    - `clinepass/cline` → `clinepass`
    - `zai/zcode` → `zai`
    - `deepseek/codewhale` → `deepseek`

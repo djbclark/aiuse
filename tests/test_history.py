@@ -725,7 +725,7 @@ def test_format_learned_burn_rate_label():
 
     assert format_learned_burn_rate_label("cursor:cursor_auto:monthly") == "cursor auto (monthly)"
     assert format_learned_burn_rate_label("cursor:cursor_total:monthly") == "cursor total (monthly)"
-    assert format_learned_burn_rate_label("codex:-:weekly") == "codex (weekly)"
+    assert format_learned_burn_rate_label("codex:-:weekly") == "openai (weekly)"
 
 
 def test_history_section_cursor_learned_burn_rate_labels(tmp_path: Path):

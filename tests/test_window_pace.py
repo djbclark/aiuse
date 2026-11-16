@@ -70,16 +70,16 @@ def test_matrix_pace_fixed_columns_and_footer():
     snap = snapshot()
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     lines = text.splitlines()
-    first = next(line for line in lines if "codex" in line)
+    first = next(line for line in lines if "openai" in line)
     second = next(line for line in lines if "claude" in line)
     prepaid = next(line for line in lines if "Jev" in line)
     assert "-50%" in first and "+50%" in first
     assert "-50%" not in second
     assert "EXHAUSTED" not in second
     assert "% <-" not in first and "% <-" not in second
-    # A prepaid row has no clocks: its note starts at the first data column.
+    # A prepaid row has no clocks: its note starts at the first data column (PACE).
     header = lines[0]
-    first_data = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
+    first_data = header.index("PACE")
     assert prepaid[first_data:].startswith("* [↓ $5.00 prepaid]")
     clocks_only = Snapshot(
         collected_at=NOW,
@@ -88,7 +88,7 @@ def test_matrix_pace_fixed_columns_and_footer():
     solo = next(
         line
         for line in render_clock_matrix([], snapshot=clocks_only, color=False, width=200).splitlines()
-        if "codex" in line
+        if "openai" in line
     )
     assert first.index("+50%") == solo.index("+50%")
     assert first.index("-50%") == solo.index("-50%")
@@ -96,7 +96,7 @@ def test_matrix_pace_fixed_columns_and_footer():
     assert "PACE = highest" in text and "+ ahead / - behind" in text
     assert "Pace:" not in render_stderr_meta(snap, [], color=False)
     narrow = render_clock_matrix([], snapshot=snap, color=False, width=65)
-    assert "-50%" not in next(line for line in narrow.splitlines() if "codex" in line)
+    assert "-50%" not in next(line for line in narrow.splitlines() if "openai" in line)
 
 
 def test_long_nonquota_notes_do_not_shift_fixed_columns():
@@ -104,9 +104,9 @@ def test_long_nonquota_notes_do_not_shift_fixed_columns():
     snap.accounts.append(AccountUsage(provider="sipb", source="test", raw={"status": {"up": True, "latency_s": 0.4}}))
     baseline = render_clock_matrix([], snapshot=snap, color=False, width=200)
     header = baseline.splitlines()[0]
-    codex = next(line for line in baseline.splitlines() if "codex" in line)
+    codex = next(line for line in baseline.splitlines() if "openai" in line)
     sipb = next(line for line in baseline.splitlines() if "mit-sipb" in line)
-    first_data = header.index("SCOPE") if "SCOPE" in header else header.index("PACE")
+    first_data = header.index("PACE")
     assert sipb[first_data:].startswith("* [unlimited")
     assert "PACE" in header
     assert "last resort" in sipb

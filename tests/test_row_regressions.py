@@ -263,14 +263,14 @@ def test_no_duplicate_total_rows_and_clocks_share_a_row():
     assert zai[0].clocks["5h"].used_percent == 43
     assert zai[0].clocks["weekly"].used_percent == 17
 
-    codex = _rows("codex")
+    codex = _rows("openai")
     assert len(codex) == 1
-    assert codex[0].scope == "—"
+    assert codex[0].scope == "codex"
     assert set(codex[0].clocks) == {"5h", "weekly"}
     assert codex[0].clocks["5h"].used_percent == 0
     assert codex[0].clocks["weekly"].used_percent == 44
 
-    agy = _rows("agy")
+    agy = _rows("antigravity")
     assert len(agy) == 2
     assert {row.scope for row in agy} == {"gemini", "claude/gpt"}
     assert all(set(row.clocks) == {"5h", "weekly"} for row in agy)
@@ -309,9 +309,9 @@ def test_empty_clock_arrows_point_at_the_windows_the_row_has():
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=220)
     grok = _line(text, "grok")
     zai = _line(text, "zai")
-    codex = _line(text, "codex")
-    gemini = _line(text, "agy", "gemini")
-    claude_gpt = _line(text, "agy", "claude/gpt")
+    codex = _line(text, "openai")
+    gemini = _line(text, "antigravity", "gemini")
+    claude_gpt = _line(text, "antigravity", "claude/gpt")
     claude = next(
         line
         for line in text.splitlines()

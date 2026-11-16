@@ -59,7 +59,6 @@ def test_fresh_widget_envelope_retains_old_pi_spend_age(tmp_path, age_hours, gat
     assert matrix_row.stale
     text = render_clock_matrix([], snapshot=snapshot, color=False, width=200)
     line = _row_line(text, "openai-api")
-    assert "codex-api" in line
     assert format_stamp(measured) in line
     if not gated:
         assert "↑ $2.80 PAYG" in line
@@ -138,10 +137,10 @@ def _row_line(text, service, *, extra=None):
 
 def test_omp_row_tail_note_is_dollars_left():
     rows = _build_matrix_rows([], _snapshot(_omp), None)
-    (omp,) = [row for row in rows if row.service == "anthropic-api"]
+    (omp,) = [row for row in rows if row.service == "claude-api"]
     assert omp.tail_note == "↓$249.27/$250.00 plan"
     assert omp.note is None
-    assert omp.scope == "claude-api"
+    assert omp.scope == "—"
 
 
 def test_rate_gated_omp_is_not_a_spendable_clock():
@@ -156,10 +155,8 @@ def test_rate_gated_omp_is_not_a_spendable_clock():
     }
     snap = Snapshot(collected_at=now, accounts=[omp])
     text = render_clock_matrix([], snapshot=snap, color=False, width=160)
-    line = _row_line(text, "anthropic-api")
+    line = _row_line(text, "claude-api")
     assert line.startswith("empty")
-    assert "claude-api" in line
-    assert line.index("claude-api") < line.index("rate-gated until")
     assert "rate-gated until" in line
     assert "↓ $95.57 left of $250.00 plan" in line
     assert "99l" not in line
@@ -178,7 +175,7 @@ def test_other_column_header_width_and_alignment():
     text = render_clock_matrix([], snapshot=_snapshot(), color=False, width=200)
     header = text.splitlines()[0]
     col = header.index("OTHER")
-    omp = _row_line(text, "anthropic-api")
+    omp = _row_line(text, "claude-api")
     grok = _row_line(text, "grok")
     fable = _row_line(text, "claude", extra="fable")
     # Left-aligned: every note starts under the O of OTHER.
@@ -216,7 +213,7 @@ def test_stale_follows_other():
     snap = _snapshot(_omp, _grok)
     snap.accounts[0].collected_at = utcnow() - timedelta(days=2)
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
-    omp = _row_line(text, "anthropic-api")
+    omp = _row_line(text, "claude-api")
     measured = snap.accounts[0].collected_at
     assert measured is not None
     assert omp.endswith("↓$249.27/$250.00 plan " + format_stamp(measured))
@@ -281,7 +278,12 @@ def test_situation_text_keeps_the_closing_bracket_when_it_truncates():
 def test_situation_note_keeps_scope_before_the_first_data_column():
     now = utcnow()
     broken = AccountUsage(source="tokscale", provider="opencode", error="session expired")
-    snap = Snapshot(collected_at=now, accounts=[_omp(now), broken])
+    codex = AccountUsage(
+        source="codexbar",
+        provider="codex",
+        windows=[QuotaWindow(label="weekly", used_percent=10.0, window_minutes=10080)],
+    )
+    snap = Snapshot(collected_at=now, accounts=[codex, broken])
     text = render_clock_matrix([], snapshot=snap, color=False, width=200)
     header = text.splitlines()[0]
     error = next(line for line in text.splitlines() if line.startswith("error"))

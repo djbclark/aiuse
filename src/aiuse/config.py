@@ -12,10 +12,11 @@ import hashlib
 import json
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from aiuse.models import canonical_provider, parse_dt, provider_config_key
+from aiuse.models import canonical_provider, parse_dt, provider_config_key, utcnow
 from aiuse.provider_select import get_selection, reenabled_by_include
 
 # Default wall-clock budget for every external CLI subprocess. Tools either
@@ -52,7 +53,7 @@ DEFAULT_FRESH_MAX_AGE_BY_PROVIDER: dict[str, float] = {"antigravity": 600.0}
 # watch "a" sweep leaves them at their configured state instead of re-enabling
 # (an uninstalled deprecated tool must not turn the operator-only sweep into
 # four "not found on PATH" error lines).
-DEPRECATED_COLLECTORS = frozenset({"caut", "caam", "openusage_ai", "openusage_sh"})
+DEPRECATED_COLLECTORS = frozenset({"caut", "caam", "openusage_ai", "openusage_sh", "omp_agent_db"})
 
 DEFAULT_CONFIG: dict[str, Any] = {
     # Subprocess timeouts (seconds). ``default`` applies to any tool that does
@@ -172,60 +173,69 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # see plan_monthly_price().
     "plans": {
         "codex": {
-            "name": "ChatGPT / Codex Plus",
-            "notes": "Weekly Codex limits reset; unused weekly quota is lost.",
+            "name": "ChatGPT / Codex Plus / Pro",
+            "notes": (
+                "OpenAI Codex subscription (POOL=openai, SCOPE=codex): Plus $20 / Pro $200. "
+                "5h and weekly limits reset; unused weekly quota is lost. "
+                "Separate from openai-api (PAYG/credits)."
+            ),
             "monthly_price": 20,
         },
         "claude": {
             "name": "Claude Pro / Max",
             "notes": (
-                "Anthropic Claude Code 5h/weekly; multi-account via cswap. "
-                "Not the same as Google Antigravity's Claude/GPT pool."
+                "Anthropic Claude Code 5h/weekly (Pro $20, Max 5x $100, Max 20x $200); "
+                "multi-account via cswap. Fable has a 50% weekly sublimit within the shared pool. "
+                "Not the same as Google Antigravity's Claude/GPT pool or claude-api."
             ),
             "monthly_price": 20,
             "value_multiplier": {"5h": 1.4},
         },
         "cursor": {
-            "name": "Cursor",
+            "name": "Cursor Pro / Ultra",
             "notes": (
-                "total (monthly umbrella), auto (Cursor Auto/Composer), "
-                "third-party (named third-party models), on-demand (spend cap), "
-                "grok-bot (separate weekly allowance)."
+                "Pro $20, Pro+ $60, Ultra $200 (50x included pool; third-party models billed at API "
+                "list price from prepaid/on-demand credits; no free cursor-api). "
+                "Pools: total (monthly umbrella), auto, third-party, on-demand, grok-bot (weekly)."
             ),
             "monthly_price": 20,
         },
         "copilot": {
             "name": "GitHub Copilot",
-            "notes": "Premium-request quota only (completions/chat omitted — not comparable burn windows).",
+            "notes": "Premium-request quota only (Pro $10, Pro+ $39; completions/chat omitted).",
             "monthly_price": 10,
         },
         "grok": {
             "name": "SuperGrok",
-            "notes": "Credits / rate windows reset on a short cycle.",
+            "notes": "SuperGrok ($30/mo). Credits / rate windows reset on a short cycle.",
             "monthly_price": 30,
         },
         "gemini": {
             "name": "Google AI Pro / Ultra",
             "notes": (
-                "Antigravity / Gemini CLI. Gemini and Claude/GPT are independent "
-                "Google pools (list separately). Claude/GPT here is Google-sold, "
-                "not Anthropic Claude Code (cswap)."
+                "Antigravity / Gemini CLI (Pro $20, Ultra $250). Independent pools: "
+                "gemini (Flash), gemini_argon (Gemini 4 Argon), and claude_gpt. "
+                "Claude/GPT here is Google-sold, not Anthropic Claude Code."
             ),
             "monthly_price": 20,
         },
         "opencode": {
             "name": "OpenCode Go",
-            "notes": "Has 5h / weekly / monthly windows when subscribed.",
+            "notes": (
+                "5h / weekly / monthly windows ($10 base tier, 2x better value for DeepSeek Flash; "
+                "$40 higher tier). Supports per-account overrides and [[plans.opencode.<acct>.phases]] "
+                "with starts_at/ends_at for scheduled tier changes."
+            ),
             "monthly_price": 10,
         },
         "clinepass": {
             "name": "ClinePass",
-            "notes": "5h / weekly / monthly subscription limits; unused is lost.",
+            "notes": "ClinePass ($10/mo). 5h / weekly / monthly subscription limits; unused is lost.",
             "monthly_price": 10,
         },
         "zai": {
             "name": "z.ai Lite",
-            "notes": "GLM coding plan: 5h and weekly credit windows (shared allotment).",
+            "notes": "GLM coding plan (~$18-$20/mo): 5h and weekly credit windows (shared allotment).",
             "monthly_price": 18,
         },
         "devin": {
@@ -263,13 +273,29 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "bailian-cli once with `bl auth login --console`."
             ),
         },
-        "pi": {
-            "name": "OpenAI API (Pi)",
+        "omp": {
+            "name": "Claude API",
             "notes": (
-                "Organization API spend meter from CodexBar. Does not include "
-                "Codex subscription quota. Monthly spend limit sets a budget ceiling; "
-                "prepaid credit grants are recorded with `aiuse set-credits pi`."
+                "Anthropic API credits / PAYG (POOL=claude-api). "
+                "Prepaid grants are recorded with `aiuse set-credits claude-api` "
+                "or refreshed via `aiuse refresh-credits claude-api` ($ANTHROPIC_ADMIN_KEY)."
             ),
+        },
+        "pi": {
+            "name": "OpenAI API",
+            "notes": (
+                "Organization API spend meter from CodexBar (POOL=openai-api). Does not include "
+                "Codex subscription quota. Monthly spend limit sets a budget ceiling; "
+                "prepaid credit grants are recorded with `aiuse set-credits openai-api`."
+            ),
+        },
+        "bedrock": {
+            "name": "AWS Bedrock",
+            "notes": "Pay-as-you-go AWS Bedrock spend meter (no monthly plan price; never_route without gateway cap).",
+        },
+        "sipb": {
+            "name": "MIT SIPB LLMs",
+            "notes": "Free unlimited MIT SIPB endpoint; slow — use sparingly / last resort.",
         },
     },
     "collectors": {
@@ -319,8 +345,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "muse": {"enabled": True},
         "qwencloud": {"enabled": True},
         "bailian": {"enabled": True},
-        # omp's Anthropic API-key pool from ~/.omp/agent/agent.db (read-only, no secrets).
-        "omp_agent_db": {"enabled": True},
+        # Retired omp TUI Anthropic API-key pool from ~/.omp/agent/agent.db (disabled by default).
+        "omp_agent_db": {"enabled": False},
         # SIPB LLMs (MIT): Opt-in only; unlimited but very slow.
         "sipb": {"enabled": False, "ignore_expired_certificates": False},
         # Passive ACP context fill from acp-run JSONL. Not a plan-quota source.
@@ -708,30 +734,100 @@ def _is_price(value: Any) -> bool:
     return not isinstance(value, bool) and isinstance(value, (int, float)) and value >= 0
 
 
-def plan_monthly_price(plans: Any, provider: str, account: str | None = None) -> float | None:
+def _plan_entry_bounds(entry: Mapping[str, Any]) -> tuple[Any, Any, bool]:
+    """Return ``(starts_at, ends_at, valid)`` for a plan table or phase."""
+    start_raw = entry.get("starts_at") if entry.get("starts_at") is not None else entry.get("start_date")
+    end_raw = entry.get("ends_at") if entry.get("ends_at") is not None else entry.get("end_date")
+    starts_at = parse_dt(str(start_raw)) if start_raw is not None else None
+    ends_at = parse_dt(str(end_raw)) if end_raw is not None else None
+    if start_raw is not None and starts_at is None:
+        return None, None, False
+    if end_raw is not None and ends_at is None:
+        return None, None, False
+    if starts_at is not None and ends_at is not None and starts_at >= ends_at:
+        return starts_at, ends_at, False
+    return starts_at, ends_at, True
+
+
+def _plan_entry_active(entry: Mapping[str, Any], moment: Any) -> bool:
+    """True when ``moment`` falls inside the optional ``[starts_at, ends_at)`` window."""
+    starts_at, ends_at, valid = _plan_entry_bounds(entry)
+    if not valid:
+        return False
+    if starts_at is not None and moment < starts_at:
+        return False
+    if ends_at is not None and moment >= ends_at:
+        return False
+    return True
+
+
+def _resolve_plan_price(table: Mapping[str, Any], moment: Any) -> float | None:
+    """Resolve active ``monthly_price`` from ``table.phases`` then ``table``."""
+    phases = table.get("phases")
+    if isinstance(phases, list):
+        for phase in phases:
+            if not isinstance(phase, dict):
+                continue
+            if _plan_entry_active(phase, moment):
+                price = _positive_number(phase.get("monthly_price"))
+                if price is not None:
+                    return price
+    if _plan_entry_active(table, moment):
+        return _positive_number(table.get("monthly_price"))
+    return None
+
+
+def _plan_meta_lookup(plans: Mapping[str, Any], provider: str) -> dict[str, Any] | None:
+    """Find the plans table for ``provider`` across config aliases."""
+    canon = canonical_provider(provider)
+    candidates = [provider_config_key(provider), provider, canon]
+    if canon == "omp":
+        candidates.extend(["claude-api", "anthropic-api"])
+    elif canon == "pi":
+        candidates.extend(["openai-api"])
+    elif canon == "codex":
+        candidates.extend(["openai"])
+    for key in candidates:
+        meta = plans.get(key)
+        if isinstance(meta, dict):
+            return meta
+    return None
+
+
+def plan_monthly_price(
+    plans: Any,
+    provider: str,
+    account: str | None = None,
+    *,
+    now: Any = None,
+) -> float | None:
     """Configured monthly plan price for a provider, optionally per account.
 
     ``[plans.claude."me@x"] monthly_price = 200`` overrides the provider-level
     ``[plans.claude] monthly_price`` for that one account (matched
-    case-insensitively); other accounts keep the provider value.  Returns None
-    when nothing positive is configured.  Dict-valued plan keys other than the
+    case-insensitively); other accounts keep the provider value.  Both levels
+    also support optional ``starts_at``/``ends_at`` (or ``start_date``/``end_date``)
+    bounds and ``[[...phases]]`` arrays for scheduled tier transitions (e.g. a
+    $40 OpenCode Go phase dropping to $10 when it expires).  Returns None when
+    nothing positive is configured/active.  Dict-valued plan keys other than the
     reserved ``value_multiplier`` are per-account sub-tables.
     """
     if not isinstance(plans, dict):
         return None
-    meta = plans.get(provider_config_key(provider)) or plans.get(provider)
+    meta = _plan_meta_lookup(plans, provider)
     if not isinstance(meta, dict):
         return None
+    moment = now if now is not None else utcnow()
     want = (account or "").strip().casefold()
     if want:
         for key, sub in meta.items():
             if key == "value_multiplier" or not isinstance(sub, dict):
                 continue
             if str(key).strip().casefold() == want:
-                price = _positive_number(sub.get("monthly_price"))
+                price = _resolve_plan_price(sub, moment)
                 if price is not None:
                     return price
-    return _positive_number(meta.get("monthly_price"))
+    return _resolve_plan_price(meta, moment)
 
 
 def credit_grant_from_config(config: Any, provider: str) -> tuple[float, Any, Any] | None:
@@ -1146,16 +1242,48 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     issues.append(
                         f"warning: plans.{name}.{limit_key} must be a non-negative number (got {meta[limit_key]!r})"
                     )
+            _, _, bounds_ok = _plan_entry_bounds(meta)
+            if not bounds_ok:
+                issues.append(
+                    f"warning: plans.{name} has invalid starts_at/ends_at bounds (must be ISO dates with starts_at < ends_at)"
+                )
+            if "phases" in meta:
+                phases = meta["phases"]
+                if not isinstance(phases, list):
+                    issues.append(f"warning: plans.{name}.phases must be a list of tables")
+                else:
+                    for idx, phase in enumerate(phases):
+                        if not isinstance(phase, dict):
+                            issues.append(f"warning: plans.{name}.phases[{idx}] must be a table")
+                            continue
+                        if "monthly_price" in phase and not _is_price(phase["monthly_price"]):
+                            issues.append(
+                                f"warning: plans.{name}.phases[{idx}].monthly_price must be a non-negative number "
+                                f"(got {phase['monthly_price']!r})"
+                            )
+                        _, _, p_ok = _plan_entry_bounds(phase)
+                        if not p_ok:
+                            issues.append(f"warning: plans.{name}.phases[{idx}] has invalid starts_at/ends_at bounds")
             for sub_key, sub in meta.items():
                 # Dict-valued keys other than value_multiplier are per-account
                 # sub-tables: [plans.<provider>."<account>"] monthly_price = N.
                 if sub_key == "value_multiplier" or not isinstance(sub, dict):
                     continue
+                allowed_sub_fields = (
+                    "monthly_price",
+                    "monthly_spend_limit",
+                    "spend_limit",
+                    "starts_at",
+                    "ends_at",
+                    "start_date",
+                    "end_date",
+                    "phases",
+                )
                 for field in sub:
-                    if field not in ("monthly_price", "monthly_spend_limit", "spend_limit"):
+                    if field not in allowed_sub_fields:
                         issues.append(
                             f"warning: unknown plans.{name}.{sub_key!r} key {field!r} "
-                            "(per-account plan sub-tables take monthly_price or monthly_spend_limit)"
+                            "(per-account plan sub-tables take monthly_price, monthly_spend_limit, starts_at/ends_at, or phases)"
                         )
                 for field in ("monthly_price", "monthly_spend_limit", "spend_limit"):
                     if field in sub and not _is_price(sub[field]):
@@ -1163,6 +1291,28 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                             f"warning: plans.{name}.{sub_key!r}.{field} must be a non-negative number "
                             f"(got {sub[field]!r})"
                         )
+                _, _, sub_bounds_ok = _plan_entry_bounds(sub)
+                if not sub_bounds_ok:
+                    issues.append(f"warning: plans.{name}.{sub_key!r} has invalid starts_at/ends_at bounds")
+                if "phases" in sub:
+                    sub_phases = sub["phases"]
+                    if not isinstance(sub_phases, list):
+                        issues.append(f"warning: plans.{name}.{sub_key!r}.phases must be a list of tables")
+                    else:
+                        for idx, phase in enumerate(sub_phases):
+                            if not isinstance(phase, dict):
+                                issues.append(f"warning: plans.{name}.{sub_key!r}.phases[{idx}] must be a table")
+                                continue
+                            if "monthly_price" in phase and not _is_price(phase["monthly_price"]):
+                                issues.append(
+                                    f"warning: plans.{name}.{sub_key!r}.phases[{idx}].monthly_price must be a "
+                                    f"non-negative number (got {phase['monthly_price']!r})"
+                                )
+                            _, _, p_ok = _plan_entry_bounds(phase)
+                            if not p_ok:
+                                issues.append(
+                                    f"warning: plans.{name}.{sub_key!r}.phases[{idx}] has invalid starts_at/ends_at bounds"
+                                )
 
     sampling = cfg.get("sampling")
     if sampling is not None and not isinstance(sampling, dict):

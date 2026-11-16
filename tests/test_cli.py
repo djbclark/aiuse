@@ -266,7 +266,7 @@ def test_brief_mode_skips_usage_section(monkeypatch, capsys):
     assert cli.main(["--brief", "--no-color", "-q", "--no-tui"]) == 2
     out = capsys.readouterr().out
     assert "use" in out
-    assert "codex" in out
+    assert "openai" in out
     assert "## Per-provider usage" not in out
     assert "## Tips" not in out
 
