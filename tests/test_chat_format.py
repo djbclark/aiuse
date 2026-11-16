@@ -1158,14 +1158,19 @@ class TestPaceHeadlinesAndWindowPace:
         assert "5-hour — `94% left · resets in 1h 30m · pace -91%`" in output
         assert "weekly — `22% left · resets in 3d 15h · pace +64%`" in output
 
-    def test_header_pace_omitted_when_any_window_exhausted(self):
+    def test_header_pace_keeps_governing_window_unless_all_exhausted(self):
         w1 = _window("5-hour", remaining=0.0, resets_hours=1.0, window_minutes=300)
         w2 = _window("weekly", remaining=50.0, resets_hours=48.0, window_minutes=10080)
         acc = _account(provider="claude", account="user@example.com", windows=[w1, w2])
         snap = _snapshot([acc])
         output = render_chat_report(snap, [])
         header = next(ln for ln in output.splitlines() if "**claude" in ln)
-        assert "pace" not in header
+        assert "pace -30%" in header
+
+        w2_empty = _window("weekly", remaining=0.0, resets_hours=48.0, window_minutes=10080)
+        snap_all_empty = _snapshot([_account(provider="claude", account="user@example.com", windows=[w1, w2_empty])])
+        header_all_empty = next(ln for ln in render_chat_report(snap_all_empty, []).splitlines() if "**claude" in ln)
+        assert "pace" not in header_all_empty
 
     def test_no_separate_pace_number_line_keep_projection(self):
         w = _window("weekly", remaining=22.0, resets_hours=88.0, window_minutes=10080)

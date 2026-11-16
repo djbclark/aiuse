@@ -131,27 +131,28 @@ def window_pace_percent(window: QuotaWindow, now: datetime) -> int | None:
 
 
 def overall_pace(windows: list[QuotaWindow], now: datetime) -> tuple[int | None, bool]:
-    """Highest window pace and whether that governing window is early.
+    """Pace of the longest clocked, non-exhausted window and its early flag.
 
-    (None, False) when no window has pace or any window is exhausted.
+    Exhausted sub-windows (e.g. an anti-burst 5-hour cap) do not blank out the
+    macro subscription pace; immediate lockout is already shown by the band
+    column. Ties on duration pick the higher pace, preferring non-early.
     """
-    if any((remaining := window.remaining()) is not None and remaining <= 0 for window in windows):
-        return None, False
-    candidates: list[tuple[int, bool]] = []
+    candidates: list[tuple[int, int, bool]] = []
     for window in windows:
         pct, early = window_pace(window, now)
         if pct is not None:
-            candidates.append((pct, early))
+            minutes = window.window_minutes or (7 * 24 * 60 if claude_model_scope(window.label) is not None else 0)
+            candidates.append((minutes, pct, early))
     if not candidates:
         return None, False
-    return max(candidates, key=lambda pair: (pair[0], not pair[1]))
+    _minutes, best_pct, best_early = max(candidates, key=lambda item: (item[0], item[1], not item[2]))
+    return best_pct, best_early
 
 
 def overall_pace_percent(windows: list[QuotaWindow], now: datetime) -> int | None:
-    """Highest window pace: the window furthest ahead of an even spend runs out first.
+    """Pace of the governing (longest) non-exhausted window.
 
-    None when any window is exhausted: the row is locked out until that window
-    resets, so a pace from its other windows would read as spare capacity.
+    None only when no window has pace (e.g. all windows are exhausted or unclocked).
     """
     percent, _ = overall_pace(windows, now)
     return percent

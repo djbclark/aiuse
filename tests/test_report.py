@@ -1403,9 +1403,12 @@ def test_clock_matrix_trims_other_before_dropping_pace():
     assert len(grok_line) == full_width - 4
     assert trimmed[0].split()[-1] == "OTHER"
 
-    # Trimming stops at the OTHER header's width; narrower than that PACE goes.
+    # Trimming stops at the OTHER header's width; PACE still survives compacting
+    # deadlines and only drops as the final squish stage.
     narrow = render_clock_matrix([], snapshot=snap, color=False, width=full_width - 12).splitlines()
-    assert "PACE" not in narrow[0]
+    assert "PACE" in narrow[0]
+    very_narrow = render_clock_matrix([], snapshot=snap, color=False, width=40).splitlines()
+    assert "PACE" not in very_narrow[0]
 
 
 def test_clock_matrix_depleted_clock_reads_empty_despite_sibling_conserve_alert():

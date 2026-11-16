@@ -1136,9 +1136,6 @@ def _services_needing_account(rows: list[_MatrixRow]) -> set[str]:
 
 def _advance_matrix_layout(layout: _MatrixLayout, rows: list[_MatrixRow]) -> bool:
     """Apply the next width-squish stage. False when nothing remains to drop."""
-    if layout.show_value:
-        layout.show_value = False
-        return True
     if layout.show_pace:
         layout.show_pace = False
         return True
@@ -1164,6 +1161,9 @@ def _advance_matrix_layout(layout: _MatrixLayout, rows: list[_MatrixRow]) -> boo
         return True
     if layout.reserve_gate and any(_row_shows_gate(row) for row in rows):
         layout.reserve_gate = False
+        return True
+    if layout.show_value:
+        layout.show_value = False
         return True
     return False
 

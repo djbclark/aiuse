@@ -131,9 +131,17 @@ def test_missing_reset_has_no_cell_pace():
     assert snap.to_dict()["accounts"][0]["overall_pace_percent"] is None
 
 
-def test_exhausted_window_blanks_overall_pace():
+def test_exhausted_subwindow_keeps_governing_overall_pace():
     assert window_pace_ratio(window(100), NOW) is None
-    assert overall_pace_percent([window(), window(100)], NOW) is None
+    assert overall_pace_percent([window(100)], NOW) is None
+    # Exhausted 5h sub-window does not blank out a non-exhausted macro window.
+    w_month = QuotaWindow(
+        label="monthly",
+        used_percent=35,
+        window_minutes=43200,
+        resets_at=NOW + timedelta(days=15),
+    )
+    assert overall_pace_percent([window(100), w_month], NOW) == -30
     assert window_pace_percent(window(50), NOW) == 0
 
 
@@ -174,15 +182,15 @@ def test_format_pace():
     assert format_pace(0, False) == "+0%"
 
 
-def test_overall_early_follows_max_window():
-    # Window A: elapsed 0.50, pace -20% (not early)
+def test_overall_early_follows_governing_window():
+    # Window A: 1000m, elapsed 0.50, pace -20% (not early)
     wa = QuotaWindow(
         label="5h",
         used_percent=40,
         window_minutes=1000,
         resets_at=NOW + timedelta(minutes=500),
     )
-    # Window B: elapsed 0.05, used 73% -> pace +1360% (early)
+    # Window B: 10000m (longest), elapsed 0.05, used 73% -> pace +1360% (early)
     wb = QuotaWindow(
         label="monthly",
         used_percent=73,
@@ -194,15 +202,13 @@ def test_overall_early_follows_max_window():
     assert early is True
     assert overall_pace_early([wa, wb], NOW) is True
 
-    # When not-early window has higher pace:
-    # Window C: elapsed 0.50, used 90% -> pace +80% (not early)
+    # Longest window still governs even when shorter window has higher pace:
     wc = QuotaWindow(
         label="5h",
         used_percent=90,
         window_minutes=1000,
         resets_at=NOW + timedelta(minutes=500),
     )
-    # Window D: elapsed 0.05, used 2% -> pace -60% (early)
     wd = QuotaWindow(
         label="monthly",
         used_percent=2,
@@ -210,9 +216,20 @@ def test_overall_early_follows_max_window():
         resets_at=NOW + timedelta(minutes=9500),
     )
     pct2, early2 = overall_pace([wc, wd], NOW)
-    assert pct2 == 80
-    assert early2 is False
-    assert overall_pace_early([wc, wd], NOW) is False
+    assert pct2 == -60
+    assert early2 is True
+    assert overall_pace_early([wc, wd], NOW) is True
+
+    # Equal-duration windows pick the higher pace (and non-early on ties):
+    we = QuotaWindow(
+        label="monthly-b",
+        used_percent=90,
+        window_minutes=10000,
+        resets_at=NOW + timedelta(minutes=5000),
+    )
+    pct3, early3 = overall_pace([wd, we], NOW)
+    assert pct3 == 80
+    assert early3 is False
 
 
 def test_matrix_cell_shows_tilde_and_columns_aligned():
