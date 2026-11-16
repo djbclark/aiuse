@@ -250,6 +250,9 @@ Full path-by-path map with "read when" hints:
   watch is the first collect (2026-10-29: Bedrock `??` / `[UNKNOWN]`). Do not
   pass `--all-providers` or press `a` unless djbclark asked for that sweep in
   this session.
+- **Always run `aiuse` and `aiuse --json` after making a fix to make sure it
+  took** (with `AIUSE_SKIP_HOMEBREW_FORMULA=1` when testing working-tree code),
+  and verify the affected row(s) are no longer errored or empty.
 - **Beads profile: this repo opts in to team-maintainer behavior.** Agents may
   close beads, run quality gates, commit, and push, and should sync beads
   proactively — `bd dolt pull` then `bd dolt push` — after creating, updating,
