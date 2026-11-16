@@ -156,7 +156,7 @@ def test_zen_api_keys_read_each_balance(monkeypatch):
 
 
 def test_zen_reports_a_vault_timeout_and_does_not_use_the_cookie(monkeypatch):
-    """A vault read that exceeds 5s is the collector error, not a signed-out cookie."""
+    """A vault read that exceeds the vault timeout is the collector error, not a signed-out cookie."""
 
     def fake_run(command, **_kwargs):
         raise subprocess.TimeoutExpired(command, 5)
@@ -277,3 +277,22 @@ def test_parallel_vault_timeout_is_a_single_read(monkeypatch):
         "sudo-secretspec timed out reading OPENCODE_GO_API_KEY_DJBCLARK",
         "sudo-secretspec timed out reading OPENCODE_GO_API_KEY_DJBCLARK",
     ]
+
+
+def test_vault_lookup_caps_per_key_timeout_at_15s_and_tracks_deadline(monkeypatch):
+    timeouts: list[float] = []
+
+    def fake_run(command, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        value = _KEYS.get(command[2], "")
+        return SimpleNamespace(returncode=0 if value else 1, stdout=f"{value}\n")
+
+    _patch_vault(monkeypatch, fake_run)
+    resolve_opencode_api_keys({}, 45.0, allow_vault=True)
+    assert len(timeouts) == 4
+    assert all(14.0 <= t <= 15.0 for t in timeouts)
+
+    timeouts.clear()
+    resolve_opencode_api_keys({}, 2.0, allow_vault=True)
+    assert len(timeouts) == 4
+    assert all(0.1 <= t <= 2.0 for t in timeouts)

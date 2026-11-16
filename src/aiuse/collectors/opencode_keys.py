@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Mapping
 
 from .base import CollectorError
@@ -34,7 +35,7 @@ _VAULT_KEY_NAMES = (
     "OPENCODE_GO_API_KEY_TECHNOEUPHORA",
     "OPENCODE_GO_API_KEY",
 )
-_SECRETSPEC_TIMEOUT = 5.0
+_SECRETSPEC_TIMEOUT = 15.0
 _ACTIVE_LINE = re.compile(r"^\*\s+opencode\s+'([^']+)'")
 # Go and Zen collect in parallel. Each would otherwise start the same
 # sudo-secretspec get, and the two clients stall each other past this cap.
@@ -126,7 +127,7 @@ def _keys_from_vault(timeout: float) -> list[tuple[str, str]]:
             flight.waiters += 1
             leader = False
     if not leader:
-        wait_s = _SECRETSPEC_TIMEOUT * len(_VAULT_KEY_NAMES) + 1.0
+        wait_s = min(max(timeout, 0.1), _SECRETSPEC_TIMEOUT * len(_VAULT_KEY_NAMES)) + 1.0
         if not flight.done.wait(wait_s):
             raise CollectorError(f"sudo-secretspec timed out reading {_VAULT_KEY_NAMES[0]}")
         if flight.error is not None:
@@ -149,9 +150,11 @@ def _read_vault_keys(timeout: float) -> list[tuple[str, str]]:
     executable = shutil.which("sudo-secretspec")
     if executable is None:
         return []
+    deadline = time.monotonic() + max(timeout, 0.1)
     found: list[tuple[str, str]] = []
     for name in _VAULT_KEY_NAMES:
-        key = _vault_get(executable, name, timeout)
+        remaining = max(0.1, deadline - time.monotonic())
+        key = _vault_get(executable, name, remaining)
         if key:
             found.append((name, key))
     return found
