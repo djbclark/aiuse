@@ -26,7 +26,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from aiuse import ledger
 from aiuse.analysis import history
@@ -51,16 +51,35 @@ def state_path() -> Path:
     return history.snapshot_dir().parent / "sampler-state.json"
 
 
-def sampling_settings(config: dict[str, Any] | None) -> dict[str, float]:
-    merged = dict(DEFAULT_CONFIG["sampling"])
+def sampling_settings(config: dict[str, Any] | None) -> dict[str, Any]:
+    merged: dict[str, Any] = copy.deepcopy(DEFAULT_CONFIG["sampling"])
     section = (config or {}).get("sampling")
     if isinstance(section, dict):
         for key, value in section.items():
+            if key == "provider_intervals":
+                if isinstance(value, dict):
+                    merged[key] = dict(value)
+                continue
             try:
                 merged[key] = float(value)
             except (TypeError, ValueError):
                 continue
-    return {k: float(v) for k, v in merged.items()}
+    out: dict[str, Any] = {}
+    for k, v in merged.items():
+        if k == "provider_intervals":
+            intervals: dict[str, float] = {}
+            if isinstance(v, dict):
+                for prov, raw_val in v.items():
+                    try:
+                        num = float(raw_val)
+                    except (TypeError, ValueError):
+                        continue
+                    if num > 0:
+                        intervals[canonical_provider(str(prov))] = num
+            out[k] = intervals
+        else:
+            out[k] = float(v)
+    return out
 
 
 def load_state() -> dict[str, Any]:
@@ -97,32 +116,101 @@ class Decision:
     reason: str
     wait_seconds: float = 0.0
     hot: list[dict[str, str]] = field(default_factory=list)
+    skip_providers: list[str] = field(default_factory=list)
 
 
-def decide(state: dict[str, Any], settings: dict[str, float], now: datetime, *, force: bool = False) -> Decision:
+def provider_sample_interval(
+    provider: str,
+    tier_interval: float,
+    state: Mapping[str, Any],
+    settings: Mapping[str, Any],
+) -> float:
+    """Effective sample interval for ``provider``, applying per-provider floor and empty-probe backoff."""
+    canon = canonical_provider(provider)
+    raw_intervals = settings.get("provider_intervals")
+    intervals = raw_intervals if isinstance(raw_intervals, Mapping) else {}
+    base = max(float(tier_interval), float(intervals.get(canon, 0.0)))
+    raw_pstate = state.get("provider_state")
+    pstate = raw_pstate.get(canon) if isinstance(raw_pstate, Mapping) else None
+    empty_probes = int(pstate.get("empty_probes") or 0) if isinstance(pstate, Mapping) else 0
+    if empty_probes <= 0:
+        return base
+    factor = max(1.0, float(settings.get("empty_probe_backoff_factor", 2.0)))
+    cap = float(settings.get("max_empty_probe_interval", 7200.0))
+    return max(base, min(cap, base * (factor**empty_probes)))
+
+
+def provider_due(
+    provider: str,
+    tier_interval: float,
+    state: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    now: datetime,
+) -> tuple[bool, float]:
+    """``(is_due, wait_seconds)`` for one provider under its cadence and backoff."""
+    canon = canonical_provider(provider)
+    raw_pstate = state.get("provider_state")
+    pstate = raw_pstate.get(canon) if isinstance(raw_pstate, Mapping) else None
+    last = _parse(pstate.get("last_sample_at")) if isinstance(pstate, Mapping) else None
+    if last is None:
+        return True, 0.0
+    interval = provider_sample_interval(canon, tier_interval, state, settings)
+    waited = (now - last).total_seconds()
+    if waited < interval - _SLACK_SECONDS:
+        return False, interval - waited
+    return True, 0.0
+
+
+def decide(state: dict[str, Any], settings: Mapping[str, Any], now: datetime, *, force: bool = False) -> Decision:
     tier = state.get("tier") if state.get("tier") in TIERS else "idle"
     last_sample = _parse(state.get("last_sample_at"))
     last_full = _parse(state.get("last_full_at"))
     if force or last_sample is None or last_full is None:
         return Decision("full", "forced" if force else "first sample")
-    interval = settings[f"{tier}_interval"]
+    interval = float(settings[f"{tier}_interval"])
     waited = (now - last_sample).total_seconds()
     if waited < interval - _SLACK_SECONDS:
         return Decision("skip", f"{tier} tier", wait_seconds=interval - waited)
     hot = [h for h in state.get("hot") or [] if isinstance(h, dict) and h.get("provider")]
-    full_due = (now - last_full).total_seconds() >= settings["active_interval"] - _SLACK_SECONDS
+    full_due = (now - last_full).total_seconds() >= float(settings["active_interval"]) - _SLACK_SECONDS
     if tier == "burst" and hot and not full_due:
-        return Decision("partial", "burst tier", hot=hot)
-    return Decision("full", f"{tier} tier")
+        due_hot: list[dict[str, str]] = []
+        waits: list[float] = []
+        for h in hot:
+            due, wait = provider_due(h["provider"], interval, state, settings, now)
+            if due:
+                due_hot.append(h)
+            else:
+                waits.append(wait)
+        if not due_hot:
+            return Decision(
+                "skip",
+                "burst tier (provider cadence)",
+                wait_seconds=min(waits) if waits else interval,
+            )
+        return Decision("partial", "burst tier", hot=due_hot)
+    skip_providers: list[str] = []
+    tracked: set[str] = set()
+    raw_pstate = state.get("provider_state")
+    if isinstance(raw_pstate, Mapping):
+        tracked.update(canonical_provider(str(k)) for k in raw_pstate)
+    raw_intervals = settings.get("provider_intervals")
+    if isinstance(raw_intervals, Mapping):
+        tracked.update(canonical_provider(str(k)) for k in raw_intervals)
+    for prov in sorted(tracked):
+        due, _wait = provider_due(prov, interval, state, settings, now)
+        if not due:
+            skip_providers.append(prov)
+    return Decision("full", f"{tier} tier", skip_providers=skip_providers)
 
 
-def schedule(state: dict[str, Any], settings: dict[str, float]) -> tuple[datetime, datetime, str] | None:
+def schedule(state: dict[str, Any], settings: Mapping[str, Any]) -> tuple[datetime, datetime, str] | None:
     """``(previous sample, next sample due, tier)``, or None before the first sample."""
     last = _parse(state.get("last_sample_at"))
     if last is None:
         return None
     tier = state.get("tier") if state.get("tier") in TIERS else "idle"
-    return last, last + timedelta(seconds=settings[f"{tier}_interval"]), str(tier)
+    return last, last + timedelta(seconds=float(settings[f"{tier}_interval"])), str(tier)
 
 
 def _series(snapshot: Snapshot) -> dict[str, dict[str, Any]]:
@@ -144,7 +232,13 @@ def _series(snapshot: Snapshot) -> dict[str, dict[str, Any]]:
 
 
 def advance_state(
-    state: dict[str, Any], snapshot: Snapshot, settings: dict[str, float], *, partial: bool
+    state: dict[str, Any],
+    snapshot: Snapshot,
+    settings: Mapping[str, Any],
+    *,
+    partial: bool,
+    sampled_providers: list[str] | None = None,
+    skip_providers: list[str] | None = None,
 ) -> dict[str, Any]:
     """Fold one sample into the tier state. Returns the new state.
 
@@ -215,6 +309,38 @@ def advance_state(
             tier, quiet = TIERS[TIERS.index(tier) - 1], 0
 
     now_iso = snapshot.collected_at.isoformat()
+    raw_pstate = state.get("provider_state")
+    provider_state: dict[str, dict[str, Any]] = (
+        {canonical_provider(str(k)): dict(v) for k, v in raw_pstate.items() if isinstance(v, dict)}
+        if isinstance(raw_pstate, dict)
+        else {}
+    )
+    providers_with_data = {
+        canonical_provider(account.provider)
+        for account in snapshot.accounts
+        if any(w.used_percent is not None for w in account.windows)
+    }
+    skipped = {canonical_provider(p) for p in (skip_providers or [])}
+    if sampled_providers is not None:
+        sampled = {canonical_provider(p) for p in sampled_providers} - skipped
+    elif partial:
+        hot_provs = {
+            canonical_provider(h["provider"])
+            for h in (state.get("hot") or [])
+            if isinstance(h, dict) and h.get("provider")
+        }
+        sampled = (hot_provs | providers_with_data) - skipped
+    else:
+        sampled = (set(provider_state.keys()) | providers_with_data) - skipped
+    for prov in sampled:
+        entry = dict(provider_state.get(prov) or {})
+        entry["last_sample_at"] = now_iso
+        if prov in providers_with_data:
+            entry["empty_probes"] = 0
+        else:
+            entry["empty_probes"] = int(entry.get("empty_probes") or 0) + 1
+        provider_state[prov] = entry
+
     new_state = dict(state)
     new_state.update(
         {
@@ -227,11 +353,26 @@ def advance_state(
             # A partial sample only refreshes the windows it collected.
             "last_values": {**previous, **current} if partial else current,
             "history": trail if partial else {k: v for k, v in trail.items() if k in current},
+            "provider_state": provider_state,
         }
     )
     if not partial:
         new_state["last_full_at"] = now_iso
     return new_state
+
+
+def config_excluding_providers(config: dict[str, Any], providers: list[str]) -> dict[str, Any]:
+    """A copy of ``config`` that marks ``providers`` disabled for this sample pass."""
+    cfg = copy.deepcopy(config)
+    if not providers:
+        return cfg
+    disabled = cfg.get("disabled_services")
+    disabled_map = dict(disabled) if isinstance(disabled, dict) else {}
+    for provider in providers:
+        canon = canonical_provider(provider)
+        disabled_map.setdefault(canon, "sampler cadence/backoff")
+    cfg["disabled_services"] = disabled_map
+    return cfg
 
 
 def partial_config(
@@ -342,7 +483,12 @@ def run_sample(
         return 0
 
     partial = decision.action == "partial"
-    run_config = partial_config(config, decision.hot) if partial else config
+    if partial:
+        run_config = partial_config(config, decision.hot)
+    elif decision.skip_providers:
+        run_config = config_excluding_providers(config, decision.skip_providers)
+    else:
+        run_config = config
     snapshot, sample, ledger_error = collect_with_ledger(run_config, collect)
     if not snapshot.accounts and snapshot.collector_errors and not partial:
         print(f"sample failed: {'; '.join(snapshot.collector_errors)[:300]}", file=sys.stderr)
@@ -358,7 +504,15 @@ def run_sample(
     if sample is not None:
         ledger.save_ledger(sample, collected_at=snapshot.collected_at, retention_days=retention)
 
-    new_state = advance_state(state, snapshot, settings, partial=partial)
+    sampled_providers = [h["provider"] for h in decision.hot] if partial else None
+    new_state = advance_state(
+        state,
+        snapshot,
+        settings,
+        partial=partial,
+        sampled_providers=sampled_providers,
+        skip_providers=decision.skip_providers if not partial else None,
+    )
     save_state(new_state)
     if not quiet:
         tier = new_state["tier"]
