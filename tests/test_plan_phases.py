@@ -121,3 +121,51 @@ def test_normalized_pool_and_scope_names_and_omp_disabled():
     assert matrix_pool_scope("pi_codex_api", provider="pi") == "—"
     assert matrix_pool_scope("omp_claude", provider="omp") == "—"
     assert DEFAULT_CONFIG["collectors"]["omp_agent_db"]["enabled"] is False
+
+
+def test_set_credits_accepts_claude_api_and_openai_api(tmp_path, monkeypatch, capsys):
+    from aiuse import credits_override as co
+
+    monkeypatch.setattr(co, "overrides_path", lambda: tmp_path / "credit-overrides.json")
+    rc = co.run_set_credits(["claude-api", "--remaining", "50", "--total", "100", "--expires", "2027-01-01"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "recorded: claude-api $50.00 of $100.00 left" in out
+    assert co.load_overrides()["omp"]["remaining_usd"] == 50.0
+
+
+def test_codexbar_parses_reset_credits_confidence_and_zai_rate():
+    from aiuse.collectors.codexbar import _from_row
+
+    codex = _from_row(
+        {
+            "provider": "codex",
+            "source": "oauth",
+            "usage": {
+                "updatedAt": "2026-11-16T16:41:53Z",
+                "dataConfidence": "exact",
+                "codexResetCredits": {"availableCount": 3},
+                "primary": {"usedPercent": 10, "windowMinutes": 300},
+            },
+        }
+    )
+    assert any("Data confidence: exact." in n for n in codex.notes)
+    assert any("Codex reset credits: 3 available." in n for n in codex.notes)
+
+    zai = _from_row(
+        {
+            "provider": "zai",
+            "source": "api",
+            "usage": {
+                "updatedAt": "2026-11-16T16:41:53Z",
+                "details": [
+                    {
+                        "title": "Quota details",
+                        "rows": [{"label": "Quota rate", "value": "Off-peak", "secondaryValue": "peak in 13h 19m"}],
+                    }
+                ],
+                "primary": {"usedPercent": 9, "windowMinutes": 300},
+            },
+        }
+    )
+    assert any("Z.ai quota rate: Off-peak (peak in 13h 19m)." in n for n in zai.notes)

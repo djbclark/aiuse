@@ -52,11 +52,11 @@ _OPTIONAL_SECRET_LINES = {
     ),
     "ANTHROPIC_ADMIN_KEY": (
         'ANTHROPIC_ADMIN_KEY = { description = "Anthropic Admin API key (sk-ant-admin...) for '
-        '`aiuse refresh-credits omp`, read through sudo-secretspec run only; reads the org cost report.", '
+        '`aiuse refresh-credits claude-api`, read through sudo-secretspec run only; reads the org cost report.", '
         "required = false }\n"
     ),
     "OPENAI_ADMIN_KEY": (
-        'OPENAI_ADMIN_KEY = { description = "OpenAI organization Admin API key for aiuse refresh-credits pi; '
+        'OPENAI_ADMIN_KEY = { description = "OpenAI organization Admin API key for aiuse refresh-credits openai-api; '
         'injected through sudo-secretspec run only; reads organization costs, not a prepaid balance.", '
         "required = false }\n"
     ),

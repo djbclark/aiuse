@@ -244,7 +244,7 @@ def refresh(
     suffix = f"; rose above the {capped_by}, capped" if capped_by else ""
     return (
         0,
-        f"refreshed: omp ${remaining:.2f} of ${total:.2f} left (${spent:.2f} spent since {granted_at.date()}){suffix}",
+        f"refreshed: claude-api ${remaining:.2f} of ${total:.2f} left (${spent:.2f} spent since {granted_at.date()}){suffix}",
     )
 
 
@@ -253,11 +253,14 @@ def run_refresh_credits(argv: list[str]) -> int:
 
     parser = argparse.ArgumentParser(
         prog="aiuse refresh-credits",
-        description="Refresh an API grant estimate: omp needs ANTHROPIC_ADMIN_KEY; pi needs OPENAI_ADMIN_KEY and a verified grant.",
+        description=(
+            "Refresh an API grant estimate: claude-api needs ANTHROPIC_ADMIN_KEY; "
+            "openai-api needs OPENAI_ADMIN_KEY and a verified grant (legacy omp/pi also accepted)."
+        ),
     )
-    parser.add_argument("provider", choices=co.CREDIT_PROVIDERS)
+    parser.add_argument("provider", choices=co.CREDIT_PROVIDER_CHOICES, metavar="{claude-api,openai-api}")
     args = parser.parse_args(argv)
-    if args.provider == "pi":
+    if co.CREDIT_PROVIDER_ALIASES[args.provider] == "pi":
         from aiuse.openai_cost import run_refresh_credits as refresh_pi
 
         return refresh_pi()

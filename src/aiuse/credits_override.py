@@ -58,11 +58,21 @@ from aiuse.models import (
     canonical_provider,
     parse_dt,
     provider_cli_binary,
+    provider_display_name,
     utcnow,
 )
 
 OVERRIDE_PROVIDER = "omp"  # Backward-compatible default for existing callers.
 CREDIT_PROVIDERS = ("omp", "pi")
+CREDIT_PROVIDER_ALIASES = {
+    "claude-api": "omp",
+    "anthropic-api": "omp",
+    "omp": "omp",
+    "openai-api": "pi",
+    "codex-api": "pi",
+    "pi": "pi",
+}
+CREDIT_PROVIDER_CHOICES = ("claude-api", "openai-api", "omp", "pi", "anthropic-api", "codex-api")
 CREDIT_LABELS = {"omp": "Claude API credits", "pi": "OpenAI API credits"}
 CREDIT_WINDOW_IDS = {"omp": "claude-cloud-credits", "pi": "openai-api-credits"}
 OVERRIDE_SOURCE = "operator-override"
@@ -541,7 +551,7 @@ def _expire_reading(account: dict[str, Any], why: str = "older than 24h") -> Non
     account["reading_expired"] = True
     note = (
         f"{account.get('source')} reading {why}: balance unknown; "
-        f"record the console figure with `aiuse set-credits {account.get('provider', OVERRIDE_PROVIDER)}`."
+        f"record the console figure with `aiuse set-credits {provider_display_name(account.get('provider', OVERRIDE_PROVIDER))}`."
     )
     if note not in (account.get("notes") or []):
         account["notes"] = [*(account.get("notes") or []), note]
@@ -894,15 +904,15 @@ def _finite(text: str) -> float:
 
 
 def run_set_credits(argv: list[str]) -> int:
-    """CLI entry: ``aiuse set-credits omp --remaining 95.57 --total 200 --expires 2026-11-08 --note ...``."""
+    """CLI entry: ``aiuse set-credits claude-api --remaining 95.57 --total 200 --expires 2026-11-08 --note ...``."""
     import argparse
     import sys
 
     parser = argparse.ArgumentParser(
         prog="aiuse set-credits",
-        description="Record a verified API credit balance (omp = Claude API; pi = OpenAI API).",
+        description="Record a verified API credit balance (claude-api or openai-api; legacy omp/pi also accepted).",
     )
-    parser.add_argument("provider", choices=CREDIT_PROVIDERS)
+    parser.add_argument("provider", choices=CREDIT_PROVIDER_CHOICES, metavar="{claude-api,openai-api}")
     parser.add_argument("--remaining", type=_finite, required=True, metavar="USD", help="dollars left")
     parser.add_argument("--total", type=_finite, required=True, metavar="USD", help="dollars granted")
     parser.add_argument("--expires", metavar="DATE", help="grant expiry, YYYY-MM-DD or ISO datetime (UTC)")
@@ -911,6 +921,8 @@ def run_set_credits(argv: list[str]) -> int:
     )
     parser.add_argument("--note", default=None, help='free text, e.g. "console 2026-10-19"')
     args = parser.parse_args(argv)
+    provider = CREDIT_PROVIDER_ALIASES[args.provider]
+    display = provider_display_name(provider)
     if args.total <= 0 or not 0 <= args.remaining <= args.total:
         print("error: need 0 <= --remaining <= --total and --total > 0", file=sys.stderr)
         return 2
@@ -934,7 +946,7 @@ def run_set_credits(argv: list[str]) -> int:
     now = utcnow()
     try:
         saved = save_override(
-            args.provider,
+            provider,
             remaining=args.remaining,
             total=args.total,
             expires=expires,
@@ -947,13 +959,13 @@ def run_set_credits(argv: list[str]) -> int:
         return 1
     if saved.get("observed_at") != now.isoformat():
         print(
-            f"error: not recorded: an equal or newer {args.provider} reading is already accepted "
+            f"error: not recorded: an equal or newer {display} reading is already accepted "
             f"(${saved['remaining_usd']:.2f} of ${saved['total_usd']:.2f} left, observed {saved['observed_at']})",
             file=sys.stderr,
         )
         return 1
     print(
-        f"recorded: {args.provider} ${args.remaining:.2f} of ${args.total:.2f} left"
+        f"recorded: {display} ${args.remaining:.2f} of ${args.total:.2f} left"
         f"{', expires ' + expires.date().isoformat() if expires else ''} ({overrides_path()})"
     )
     return 0

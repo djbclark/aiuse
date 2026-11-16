@@ -1373,6 +1373,25 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
             "OpenCode Go local estimate (SQLite costs vs fixed caps) — may diverge "
             "from the official Go limit; prefer CodexBar web when available."
         )
+    confidence = usage.get("dataConfidence")
+    if isinstance(confidence, str) and confidence.strip():
+        notes.append(f"Data confidence: {confidence.strip()}.")
+    reset_credits = usage.get("codexResetCredits")
+    if isinstance(reset_credits, dict):
+        avail_resets = reset_credits.get("availableCount")
+        if isinstance(avail_resets, int) and not isinstance(avail_resets, bool) and avail_resets > 0:
+            notes.append(f"Codex reset credits: {avail_resets} available.")
+    if provider == "zai" and isinstance(usage.get("details"), list):
+        for section in usage["details"]:
+            if not isinstance(section, dict):
+                continue
+            for item in section.get("rows") or []:
+                if isinstance(item, dict) and str(item.get("label") or "").casefold() == "quota rate":
+                    rate_val = str(item.get("value") or "").strip()
+                    rate_sec = str(item.get("secondaryValue") or "").strip()
+                    if rate_val:
+                        suffix = f" ({rate_sec})" if rate_sec else ""
+                        notes.append(f"Z.ai quota rate: {rate_val}{suffix}.")
 
     credits = row.get("credits")
     if isinstance(credits, dict):
