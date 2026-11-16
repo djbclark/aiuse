@@ -22,7 +22,7 @@ for the actual agent CLI whose quota it tracks:
 | Vendor                      | CLI tracked                   |
 | --------------------------- | ----------------------------- |
 | Claude                      | `claude`                      |
-| Codex                       | `codex`                       |
+| OpenAI / ChatGPT (Codex)    | `codex`                       |
 | Cursor                      | `cursor-agent`                |
 | GitHub Copilot              | `copilot`                     |
 | Grok / SuperGrok            | `grok` (Grok Build)           |

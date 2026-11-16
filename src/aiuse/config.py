@@ -173,9 +173,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # see plan_monthly_price().
     "plans": {
         "codex": {
-            "name": "ChatGPT / Codex Plus / Pro",
+            "name": "OpenAI / ChatGPT Codex Plus / Pro",
             "notes": (
-                "OpenAI Codex subscription (POOL=openai, SCOPE=codex): Plus $20 / Pro $200. "
+                "OpenAI / ChatGPT Codex subscription (POOL=openai, SCOPE=codex; aliases: openai, chatgpt): "
+                "Plus $20 / Pro Lite $100 / Pro $200. "
                 "5h and weekly limits reset; unused weekly quota is lost. "
                 "Separate from openai-api (PAYG/credits)."
             ),

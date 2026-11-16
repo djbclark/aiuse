@@ -293,7 +293,7 @@
 # [plans.claude."me@example.com"]
 # monthly_price = 200
 #
-# [plans.codex]
+# [plans.codex]  # OpenAI / ChatGPT Codex (Plus $20 / Pro Lite $100 / Pro $200; openai/chatgpt aliases)
 # monthly_price = 200
 #
 # [plans.cursor]
