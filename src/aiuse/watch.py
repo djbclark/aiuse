@@ -159,6 +159,9 @@ def all_providers_config(config: dict[str, Any]) -> dict[str, Any]:
     collectors = sweep.get("collectors")
     if isinstance(collectors, dict):
         for name, entry in collectors.items():
+            if name == "openai_cost":
+                collectors[name] = {"enabled": False}  # A screen-only sweep must not save credit readings.
+                continue
             if name in DEPRECATED_COLLECTORS:
                 continue
             if entry is False:

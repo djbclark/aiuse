@@ -90,6 +90,38 @@ and oversized updates are rejected before replacing either pool.
 Legacy Pi API readings without anchor provenance require a refresh when an
 operator anchor is present. OMP retains its purchased-credit calibration rules.
 
+## Optional automatic refresh
+
+Automatic refresh is off by default. To opt in, set:
+
+```toml
+[collectors.openai_cost]
+enabled = true
+```
+
+Supply only `OPENAI_ADMIN_KEY` through an externally managed environment when
+running collection. This hook never calls a credential broker or resolves keys.
+It reuses `refresh-credits pi` validation, endpoint, conservative grant estimate,
+and locked anchor checks. It does not spend model credits.
+
+After ordinary sources finish, the hook skips hidden/disabled/excluded Pi,
+provider filters that omit Pi, source pins other than `admin-api`, and multiple
+Pi rows with ambiguous provider-scoped funding. A valid credit observation under
+15 minutes old needs no refresh. Otherwise automatic callers share a nonblocking
+query lock and a minimum 15-minute attempt interval, including failed attempts.
+The automatic request sequence has a 45-second deadline, at most 20 seconds per
+page, and the existing 20-page limit. Explicit `refresh-credits` remains separate.
+The existing snapshot overlay loads a successful saved reading. A failure or
+throttled attempt leaves its original timestamp intact; notes and collector
+errors distinguish refresh failure from fresh spend-only collection. Costs may
+lag even after a successful refresh; this remains an estimate, not live cash.
+
+A `--live` envelope describes collection, not balance freshness. CodexBar can
+report fresh organization spend while the older operator balance remains stale
+for routing. Seven-day console retention does not extend the 30-minute source
+freshness limit. No key or unsupported funding context leaves remaining balance
+unknown unless a still-valid recorded observation exists.
+
 ## Verification
 
 The `test` GitHub Actions workflow supports manual Linux runs with
