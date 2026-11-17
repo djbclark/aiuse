@@ -79,3 +79,27 @@ def test_r3_valid_chronology_and_amount_are_preserved():
         assert pi["credit_estimate"]["estimated_remaining_usd"] == 65
         assert pi["fresh"] is False
         data = roundtrip(data)
+
+
+@pytest.mark.parametrize("field", ["console_observed_at", "costs_observed_at"])
+@pytest.mark.parametrize("boundary", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])
+def test_r4_offset_conversion_overflow_is_unknown(field, boundary):
+    wire = cached("2026-11-17T00:00:00Z")
+    wire["accounts"][0]["credit_estimate"][field] = boundary
+    failure = None
+    try:
+        data = enrich_snapshot(wire, now=NOW, credit_overrides={})
+    except OverflowError:
+        failure = "uncaught UTC conversion overflow"
+    assert failure is None, failure
+    for _ in range(3):
+        pi = data["accounts"][0]
+        assert pi["credit_estimate"][field] is None
+        assert pi["balance_usd"] is None
+        assert pi["usable_now"] is False
+        assert "UNKNOWN" in pi["error"]
+        if field == "console_observed_at":
+            assert pi["fresh"] is False
+            assert pi["stale"] is True
+        assert available_pools(data) == []
+        data = roundtrip(data)

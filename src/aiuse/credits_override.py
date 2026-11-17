@@ -808,7 +808,10 @@ def _withhold_pi_estimate_cash(
     now = now or utcnow()
 
     def valid_observation(value: Any) -> str | None:
-        observed = _timestamp(value)
+        try:
+            observed = _timestamp(value)
+        except OverflowError:
+            return None
         return value if isinstance(value, str) and observed is not None and observed <= now else None
 
     for account in snap.get("accounts") or []:
