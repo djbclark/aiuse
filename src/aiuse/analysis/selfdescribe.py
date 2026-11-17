@@ -206,6 +206,28 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     "pi": [
         ("credits", "codex_api", "Pi TUI — OpenAI API credits, independent of Codex subscription windows"),
     ],
+    "codex": [
+        (
+            "5-hour",
+            "default",
+            "Codex subscription window (gpt-6-luna and other ChatGPT-subscription models)",
+        ),
+        (
+            "weekly",
+            "default",
+            "Codex subscription window (gpt-6-luna and other ChatGPT-subscription models)",
+        ),
+        (
+            "monthly",
+            "default",
+            "Codex subscription window (gpt-6-luna and other ChatGPT-subscription models)",
+        ),
+        (
+            "openai api credits",
+            "codex_api",
+            "Codex CLI OpenAI API prepaid credits (API-only models gpt-6.1-sol / gpt-6-astra); independent of the Codex subscription windows",
+        ),
+    ],
 }
 
 

@@ -316,6 +316,63 @@ def test_unmapped_provider_windowminutes_bucketing_boundaries():
     assert monthly.windows[0].label == "Codex monthly quota (1)"
 
 
+def _codex_credits_window(acc):
+    return next(w for w in acc.windows if w.window_id == "codex-api-credits")
+
+
+def test_codex_openai_api_credits_window_exhausted_at_zero():
+    acc = _from_row(
+        {
+            "provider": "codex",
+            "source": "oauth",
+            "usage": {"primary": {"usedPercent": 4, "windowMinutes": 10080}},
+            "credits": {"remaining": 0.0},
+        }
+    )
+    credits = _codex_credits_window(acc)
+    assert credits.label == "OpenAI API credits"
+    assert credits.remaining_percent == 0.0
+
+
+def test_codex_openai_api_credits_window_exhausted_when_negative():
+    acc = _from_row(
+        {
+            "provider": "codex",
+            "source": "oauth",
+            "usage": {"primary": {"usedPercent": 4, "windowMinutes": 10080}},
+            "credits": {"remaining": -0.10},
+        }
+    )
+    credits = _codex_credits_window(acc)
+    assert credits.remaining_percent == 0.0
+
+
+def test_codex_openai_api_credits_window_unknown_without_balance():
+    acc = _from_row(
+        {
+            "provider": "codex",
+            "source": "oauth",
+            "usage": {"primary": {"usedPercent": 4, "windowMinutes": 10080}},
+            "credits": {"remaining": None},
+        }
+    )
+    assert not any(w.window_id == "codex-api-credits" for w in acc.windows)
+    assert len(acc.windows) == 1  # only the subscription window
+
+
+def test_codex_openai_api_credits_window_unknown_percent_when_positive():
+    acc = _from_row(
+        {
+            "provider": "codex",
+            "source": "oauth",
+            "usage": {"primary": {"usedPercent": 4, "windowMinutes": 10080}},
+            "credits": {"remaining": 62.55},
+        }
+    )
+    credits = _codex_credits_window(acc)
+    assert credits.remaining_percent is None
+
+
 def test_parse_enabled_providers_filters_to_enabled_true():
     # Shape matches `codexbar config providers --format json`.
     payload = [

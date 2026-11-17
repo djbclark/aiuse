@@ -1472,6 +1472,26 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     if isinstance(credits, dict):
         credits_remaining = _f(credits.get("remaining"))
 
+    # The Codex CLI's `credits` balance is OpenAI API prepaid credits — the
+    # governing identity for API-only models (gpt-6.1-sol / gpt-6-astra),
+    # distinct from the Codex/ChatGPT subscription windows above. A zero or
+    # negative balance is exhausted; a positive balance has no reported limit,
+    # so its percent headroom is unknown; a missing figure is unknown (the pool
+    # is absent, which routing reads as unknown). Surface it as its own window
+    # so routing can fail closed on it instead of borrowing the subscription
+    # window's headroom for those API models.
+    if provider == "codex" and credits_remaining is not None:
+        rem_pct = 0.0 if credits_remaining <= 0 else None
+        windows.append(
+            QuotaWindow(
+                label="OpenAI API credits",
+                window_id="codex-api-credits",
+                used_percent=None,
+                remaining_percent=rem_pct,
+                raw={"credits_remaining": credits_remaining},
+            )
+        )
+
     openrouter = usage.get("openRouterUsage")
     if isinstance(openrouter, dict):
         balance_usd = _f(openrouter.get("balance"))

@@ -391,6 +391,15 @@ def independent_pool_key(
         )
     if provider is not None and canonical_provider(provider) == "pi":
         return "pi_codex_api"
+    # The Codex CLI's OpenAI API prepaid credits are independent of the Codex
+    # subscription windows (the API-only models gpt-6.1-sol / gpt-6-astra bill
+    # this balance, not the ChatGPT subscription).
+    if (
+        provider is not None
+        and canonical_provider(provider) == "codex"
+        and (window_id == "codex-api-credits" or (label or "").casefold() == "openai api credits")
+    ):
+        return "codex_api"
     text = (label or "").casefold()
     if not text:
         return None
@@ -449,6 +458,7 @@ POOL_SCOPE_LABELS = {
     "omp_claude": "—",
     "omp_openai": "openai-api",
     "pi_codex_api": "—",
+    "codex_api": "codex-api",
     "cursor_total": "total",
     "cursor_third_party": "3rd-party",
     "cursor_auto": "auto",

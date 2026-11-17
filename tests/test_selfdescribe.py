@@ -173,7 +173,7 @@ def test_codex_fixture_golden():
     assert account["binding_window"] == "Codex 5-hour quota (1)"
     assert account["available_at"] is not None
     line = snap["summary_lines"][0]
-    assert line.startswith("codex:")
+    assert line.startswith("codex default:")
     assert "EXHAUSTED (100% used / 0% left" in line
     assert "35% used / 65% left" in line
     assert line.rstrip().endswith("NOT usable now")
@@ -182,6 +182,15 @@ def test_codex_fixture_golden():
 
 
 # ── golden: antigravity family split (failure mode 2) ───────────────────────
+
+
+def test_codex_family_split():
+    from aiuse.analysis.selfdescribe import pool_family_id
+
+    assert pool_family_id("codex", "Codex 5-hour quota (1)", "primary") == "default"
+    assert pool_family_id("codex", "Codex weekly quota (2)", "secondary") == "default"
+    assert pool_family_id("codex", "Codex monthly quota (1)", "tertiary") == "default"
+    assert pool_family_id("codex", "OpenAI API credits", "codex-api-credits") == "codex_api"
 
 
 def test_antigravity_fixture_family_split():

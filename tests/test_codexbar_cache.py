@@ -121,9 +121,12 @@ def test_parse_widget_snapshot_entry():
     acc = accounts[0]
     assert acc.provider == "codex"
     assert acc.source == "codexbar"
-    assert len(acc.windows) == 2
+    assert len(acc.windows) == 3
     assert acc.windows[0].label == "Codex 5-hour quota (1)"
     assert acc.windows[0].used_percent == 25.0
+    credits = next(w for w in acc.windows if w.window_id == "codex-api-credits")
+    assert credits.label == "OpenAI API credits"
+    assert credits.remaining_percent == 0.0  # creditsRemaining 0.0 is exhausted
     assert any("Cached widget snapshot age: 42s" in note for note in acc.notes)
 
 
