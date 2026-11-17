@@ -801,19 +801,30 @@ def _apply_credit_override_for_provider(
                     )
 
 
-def _withhold_pi_estimate_cash(snap: dict[str, Any], overrides: Mapping[str, Mapping[str, Any]] | None) -> None:
+def _withhold_pi_estimate_cash(
+    snap: dict[str, Any], overrides: Mapping[str, Mapping[str, Any]] | None, *, now: datetime | None = None
+) -> None:
     """Costs observes spend, never current cash: also fence manual/legacy rows."""
+    now = now or utcnow()
+
+    def valid_observation(value: Any) -> str | None:
+        observed = _timestamp(value)
+        return value if isinstance(value, str) and observed is not None and observed <= now else None
+
     for account in snap.get("accounts") or []:
         if not isinstance(account, dict) or account.get("provider") != "pi" or account.get("source") != "admin-api":
             continue
         previous = account.get("credit_estimate")
         previous = previous if isinstance(previous, Mapping) else {}
         entry = (overrides or {}).get("pi") or {}
+        remaining = _number(previous.get("estimated_remaining_usd", account.get("balance_usd")))
         estimate = {
             "authority": "estimate_only",
-            "estimated_remaining_usd": previous.get("estimated_remaining_usd", account.get("balance_usd")),
-            "costs_observed_at": previous.get("costs_observed_at", account.get("collected_at")),
-            "console_observed_at": previous.get("console_observed_at", entry.get("anchor_observed_at")),
+            "estimated_remaining_usd": remaining if remaining is not None and remaining >= 0 else None,
+            "costs_observed_at": valid_observation(previous.get("costs_observed_at", account.get("collected_at"))),
+            "console_observed_at": valid_observation(
+                previous.get("console_observed_at", entry.get("anchor_observed_at"))
+            ),
             "coverage": "unknown; costs may lag",
         }
         account["credit_estimate"] = estimate
@@ -847,7 +858,7 @@ def apply_credit_overrides(
         if _collector_scope_excludes_credit_provider(config, provider):
             continue
         _apply_credit_override_for_provider(snap, overrides, provider=provider, now=now, config=config)
-    _withhold_pi_estimate_cash(snap, overrides)
+    _withhold_pi_estimate_cash(snap, overrides, now=now)
 
 
 def apply_credit_overrides_to_snapshot(

@@ -1213,3 +1213,9 @@ and binding headroom are withheld and the account is not usable in
 `--available`. Cash freshness cannot be renewed by another Costs fetch.
 Unknown legacy provenance is stale. A newer verified operator cash observation
 may restore measured evidence; estimate-use routing needs a separate policy.
+
+Estimate provenance timestamps must be valid and no later than the observation
+clock. Missing, malformed or future console provenance is unknown and uses the
+stale fallback; it cannot become fresh through clock clamping. Invalid estimate
+amounts (including negative, non-finite and boolean values) are unknown, never
+substituted with zero. Valid recorded timestamps retain their original time.

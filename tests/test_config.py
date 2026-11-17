@@ -53,14 +53,11 @@ def test_default_config_path_uses_xdg_config_home(monkeypatch, tmp_path):
 
 
 def test_all_collectors_default_to_enabled_for_future_installation():
-    assert all(
-        entry["enabled"] is True
-        for name, entry in DEFAULT_CONFIG["collectors"].items()
-        if name not in ("sipb", "caut", "omp_agent_db")
-    )
-    assert DEFAULT_CONFIG["collectors"]["caut"]["enabled"] is False
-    assert DEFAULT_CONFIG["collectors"]["sipb"]["enabled"] is False
-    assert DEFAULT_CONFIG["collectors"]["omp_agent_db"]["enabled"] is False
+    # Only these reviewed collectors intentionally require opt-in.
+    default_off = {"sipb", "caut", "omp_agent_db", "openai_cost"}
+    assert default_off <= DEFAULT_CONFIG["collectors"].keys()
+    for name, entry in DEFAULT_CONFIG["collectors"].items():
+        assert entry["enabled"] is (name not in default_off), name
 
 
 def test_load_config_reads_canonical_toml(monkeypatch, tmp_path):
