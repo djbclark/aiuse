@@ -794,6 +794,7 @@ class AccountUsage:
     credits_label: str | None = None
     # Set while the shared Claude account rate window gates omp (schema 1.4):
     # {provider, account, window_label, resets_at, evidence}. Cleared at reset.
+    credit_estimate: dict[str, Any] | None = None
     bedrock_billing: dict[str, Any] | None = None
     rate_gated_by: dict[str, Any] | None = None
     # Usability of a pool that has no measurable balance (omp's Anthropic API
@@ -862,6 +863,8 @@ class AccountUsage:
             d["ai_notice"] = OPERATOR_APPROVAL_NOTICE
         if self.credits_label:
             d["credits_label"] = self.credits_label
+        if self.credit_estimate is not None:
+            d["credit_estimate"] = dict(self.credit_estimate)
         if self.bedrock_billing is not None:
             d["bedrock_billing"] = dict(self.bedrock_billing)
         if self.rate_gated_by is not None:

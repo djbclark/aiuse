@@ -28,7 +28,17 @@ For a real prepaid/promotional grant, record the console's figures and grant
 start using `aiuse set-credits pi --remaining USD --total USD --granted DATE`.
 Add `--expires DATE` only when an actual expiry exists. Dates accept ISO dates
 or timestamps. Do not substitute a pay-as-you-go spending limit for a grant.
-The console reading expires after seven days; API readings expire after 24 hours.
+The console reading expires after seven days; stored API estimates expire after 24 hours.
+Costs never measures remaining cash. Both explicit manual refresh and automatic
+refresh now expose `credit_estimate` metadata rather than numeric machine cash:
+`authority: estimate_only`, `estimated_remaining_usd`, `costs_observed_at`,
+`console_observed_at`, and unknown cost coverage. `balance_usd`, numeric credit
+windows and routable headroom are withheld, with a cash UNKNOWN diagnostic.
+Cash freshness uses the console observation time (unknown legacy provenance is
+stale), never the Costs fetch time. A newer verified console observation can
+restore measured cash evidence; no estimate-use policy is implicitly granted.
+This deliberately tightens legacy/manual machine output too; the explicit
+refresh command still prints and saves the same conservative estimate.
 A newer verified Pi entry without `--expires` means **non-expiring**; it does not
 inherit an earlier promotion's expiry. Equal or older entries cannot replace an
 established reading or its grant clock.
@@ -109,9 +119,16 @@ provider filters that omit Pi, source pins other than `admin-api`, and multiple
 Pi rows with ambiguous provider-scoped funding. A valid credit observation under
 15 minutes old needs no refresh. Otherwise automatic callers share a nonblocking
 query lock and a minimum 15-minute attempt interval, including failed attempts.
-The automatic request sequence has a 45-second deadline, at most 20 seconds per
-page, and the existing 20-page limit. Explicit `refresh-credits` remains separate.
-The existing snapshot overlay loads a successful saved reading. A failure or
+The reservation is durably written and synced before I/O; a write failure
+prevents the request, and an uncertain or killed request retains its cooldown.
+The automatic request sequence checks a cooperative 45-second deadline, with
+at most 20 seconds of socket timeout per page and the existing 20-page limit.
+A trickling response can exceed that time before the next deadline check, and
+the credit-state save uses a blocking lock. This is not a hard wall-clock bound
+on collection. ADE integrations needing one must supply an outer process
+deadline; that containment is a separate deployment requirement. Explicit `refresh-credits` remains separate.
+The existing snapshot overlay loads a successful saved estimate without
+promoting it to measured cash. Anchors older than seven days are rejected. A failure or
 throttled attempt leaves its original timestamp intact; notes and collector
 errors distinguish refresh failure from fresh spend-only collection. Costs may
 lag even after a successful refresh; this remains an estimate, not live cash.

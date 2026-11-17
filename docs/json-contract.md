@@ -1200,3 +1200,16 @@ aiuse --available --json | jq -r '.available[] | "\(.provider)/\(.pool_family //
 # Report an exhaustion you just hit, so the next agent sees it immediately
 aiuse note-exhausted antigravity --family claude_gpt --resets-in 4h53m --reason "RESOURCE_EXHAUSTED"
 ```
+
+## OpenAI Costs estimates and cash authority
+
+Pi `admin-api` readings, including cached/manual legacy readings, report
+`credit_estimate` on accounts. Its `authority` is `estimate_only`;
+`estimated_remaining_usd` is the existing conservative estimate,
+`costs_observed_at` is the Costs fetch time, `console_observed_at` is the
+verified cash anchor time when known, and `coverage` states the lag uncertainty.
+Costs does not measure current cash. Numeric `balance_usd`, credit windows,
+and binding headroom are withheld and the account is not usable in
+`--available`. Cash freshness cannot be renewed by another Costs fetch.
+Unknown legacy provenance is stale. A newer verified operator cash observation
+may restore measured evidence; estimate-use routing needs a separate policy.

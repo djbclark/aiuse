@@ -121,6 +121,8 @@ def refresh(*, now: datetime | None = None, fetch: Fetch | None = None) -> dict[
     observed = co.parse_dt(console.get("observed_at"))
     if granted >= now or observed is None or observed > now or (expires is not None and expires <= now):
         raise CostReportError("grant or console timestamps are not usable")
+    if now - observed > co.OVERRIDE_MAX_AGE:
+        raise CostReportError("console observation older than 7 days; record a new verified cash observation")
     spent, post_console = fetch_spend_usd(key, granted, ending_at=now, after=observed, fetch=fetch)
     remaining = max(0.0, min(total - spent, float(console["remaining_usd"]) - post_console))
     entry = {
@@ -200,12 +202,8 @@ def refresh_during_collection(snapshot: Snapshot, config: dict[str, Any]) -> Non
                     raise CostReportError("automatic refresh deadline exceeded")
                 return result
 
-            try:
-                refresh(now=now, fetch=bounded_fetch)
-            finally:
-                # Attempts are not balance observations: even failed validation
-                # consumes this throttle, without touching the credit timestamp.
-                gate.record("openai_cost", store=False)
+            gate.reserve("openai_cost")
+            refresh(now=now, fetch=bounded_fetch)
             note("OpenAI costs refreshed; conservative grant-derived estimate, not live cash; costs may lag")
     except (CostReportError, OSError) as exc:
         detail = str(exc) if isinstance(exc, CostReportError) else exc.__class__.__name__
