@@ -190,7 +190,7 @@ def test_codex_family_split():
     assert pool_family_id("codex", "Codex 5-hour quota (1)", "primary") == "default"
     assert pool_family_id("codex", "Codex weekly quota (2)", "secondary") == "default"
     assert pool_family_id("codex", "Codex monthly quota (1)", "tertiary") == "default"
-    assert pool_family_id("codex", "OpenAI API credits", "codex-api-credits") == "codex_api"
+    assert pool_family_id("codex", "OpenAI API credits", "codex-api-credits") == "openai_api"
 
 
 def test_antigravity_fixture_family_split():

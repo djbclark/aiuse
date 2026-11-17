@@ -46,12 +46,12 @@ keyed `gemini:5h` and therefore never matched.
 A provider can come from a sibling vendor's row instead of its own collector.
 It is still its own canonical id, never an alias of the parent:
 
-| Canonical id | Display (`POOL`) | CLI binary | Derived from                                                 | Board `SCOPE` / pool key                             |
-| ------------ | ---------------- | ---------- | ------------------------------------------------------------ | ---------------------------------------------------- |
-| `omp`        | `claude-api`     | `—`        | CodexBar Claude Platform (`claudeplatform`) / Admin API cost | `—` / `omp_claude`                                   |
-| `pi`         | `openai-api`     | `pi`       | Verified OpenAI API console grant / organization Costs API   | `—` / `pi_codex_api`                                 |
-| `codex`      | `openai`         | `codex`    | OpenAI Codex subscription (`chatgpt` / `codex` OAuth)        | `codex` / `—`; API credits `codex-api` / `codex_api` |
-| `bedrock`    | `bedrock`        | —          | AWS Cost Explorer total account spend (not CodexBar's row)   | no clock; `↑ $` PAYG                                 |
+| Canonical id | Display (`POOL`) | CLI binary | Derived from                                                 | Board `SCOPE` / pool key                                     |
+| ------------ | ---------------- | ---------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `omp`        | `claude-api`     | `—`        | CodexBar Claude Platform (`claudeplatform`) / Admin API cost | `—` / `omp_claude`                                           |
+| `pi`         | `openai-api`     | `pi`       | Verified OpenAI API console grant / organization Costs API   | `—` / `pi_codex_api`                                         |
+| `codex`      | `openai`         | `codex`    | OpenAI Codex subscription (`chatgpt` / `codex` OAuth)        | `codex` / `—`; API credits `openai-api` / `codex_openai_api` |
+| `bedrock`    | `bedrock`        | —          | AWS Cost Explorer total account spend (not CodexBar's row)   | no clock; `↑ $` PAYG                                         |
 
 `omp` (displayed as `claude-api`) is Anthropic's API credits / cloud-session grant; it is not a Claude plan window, so it
 must not be folded into `claude`. (`omp_agent_db` is deprecated and disabled by default.) Details:
@@ -65,7 +65,7 @@ alone do not establish remaining prepaid credit.
 
 The `codex` provider splits into two routing families. The subscription windows (5-hour/weekly/monthly,
 pool family `default`) gate the ChatGPT-subscription models (e.g. gpt-6-luna); the Codex CLI's `credits`
-balance is surfaced as its own window (label `OpenAI API credits`, pool family `codex_api`), the OpenAI API
+balance is surfaced as its own window (label `OpenAI API credits`, pool family `openai_api`), the OpenAI API
 prepaid credits that gate API-only models (gpt-6.1-sol / gpt-6-astra). That balance reads exhausted at
 `$0`/negative and unknown when unmeasurable or when no limit is reported, so routing must fail closed on it
 instead of borrowing the subscription window's headroom.

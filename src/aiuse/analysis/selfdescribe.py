@@ -224,7 +224,7 @@ _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
         ),
         (
             "openai api credits",
-            "codex_api",
+            "openai_api",
             "Codex CLI OpenAI API prepaid credits (API-only models gpt-6.1-sol / gpt-6-astra); independent of the Codex subscription windows",
         ),
     ],
