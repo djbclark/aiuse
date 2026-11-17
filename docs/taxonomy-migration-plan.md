@@ -1,21 +1,22 @@
 # Plan: Migrating `aiuse` from TUI-Centric Display to the `djbclark-ade` 4-Axis Taxonomy
 
-**Status:** Proposed plan (2026-11-16)  
+**Status:** Phase 2 shipped (`Schema 1.6` additive fields + `POOL` / `SCOPE` display alignment); Phases 3–4 pending (2026-11-16)  
 **Sources:** `~/src/djbclark-ade` (`skills/model-routing/SKILL.md`, `config/routing.toml`, `docs/pi-services.md`, `docs/dynamic-model-effort.md`, `bin/route_agent.py`, `bin/quota_signals.py`, `bin/ade-net-resume`), `~/src/aiuse` (`src/aiuse/models.py`, `src/aiuse/report.py`, `src/aiuse/analysis/selfdescribe.py`, `docs/provider-identity.md`, `docs/json-contract.md`), and open issues/PRs in `djbclark/aiuse` and `djbclark/djbclark-ade`.
 
 ---
 
 ## 1. Why Change
 
-`aiuse` still presents and keys several quotas by **TUI / harness** rather than by **billing vendor/pool**:
+Before Phase 2 (Schema 1.6), `aiuse` presented and keyed several quotas by **TUI / harness** rather than by **billing vendor/pool**:
 
-- The matrix header prints `TUI` (`src/aiuse/report.py:2368`).
-- `PROVIDER_CLI_BINARIES` (`src/aiuse/models.py`) couples each provider to a single TUI binary.
-- Display names and canonical IDs still reflect retired or multi-purpose TUIs:
-  - `pi` (`SCOPE: codex-api`) for OpenAI organization API credits, even though **Pi** is now the general-purpose third-party TUI driving Cursor Composer, Z.ai, OpenCode Go, ClinePass, OpenAI API, and Anthropic API.
-  - `omp` (`SCOPE: claude-api`) for Anthropic API credits, named after the retired `omp` TUI.
+- The matrix header printed `TUI` (now `POOL` in `src/aiuse/report.py`).
+- `PROVIDER_CLI_BINARIES` (`src/aiuse/models.py`) coupled each provider to a single TUI binary.
+- Display names and canonical IDs reflected retired or multi-purpose TUIs:
+  - `pi` (display `pi`, `SCOPE: —` via internal pool key `pi_codex_api`; now `POOL: openai-api`, `SCOPE: —`) for OpenAI organization API credits, even though **Pi** is now the general-purpose third-party TUI driving Cursor Composer, Z.ai, OpenCode Go, ClinePass, OpenAI API, and Anthropic API.
+  - `omp` (now `POOL: claude-api`, `SCOPE: —`) for Anthropic API credits, named after the retired `omp` TUI.
   - `clinepass/cline` and `opencode` / `oc-zen` named after retired TUIs.
   - `hermes` listed as a provider even though Hermes is a client/assistant consuming `clinepass`, `opencode-go`, or `xai-oauth`.
+  - `codex` (OpenAI / ChatGPT Codex subscription; aliases `openai-codex`, `chatgpt`; now `POOL: openai`, `SCOPE: codex`).
 
 Meanwhile, `djbclark-ade` (`skills/model-routing/SKILL.md`, `docs/pi-services.md`, `config/routing.toml`) routes work along **4 independent axes**:
 

@@ -16,7 +16,6 @@ from aiuse.analysis.history import (
     should_learn_from_history,
 )
 from aiuse.analysis.pace import (
-    POOL_SCOPE_LABELS,
     format_pace,
     governing_partition,
     matrix_pool_scope,
@@ -1387,10 +1386,6 @@ def _clock_column_widths(rows: list[_MatrixRow], layout: _MatrixLayout) -> tuple
     return w_pct, w_spans
 
 
-# Sourced from the analysis layer so the chat format names pools identically.
-_POOL_SCOPE_LABELS = POOL_SCOPE_LABELS
-
-
 def render_status_line(
     snapshot: Snapshot,
     alerts: list[UseOrLoseAlert],
@@ -1975,6 +1970,8 @@ def _row_from_alert(
     band = alert_priority_band(alert)
     priority = _alert_queue_priority(alert, band, pricing)
     service = provider_display_name(alert.provider)
+    pool_id = _pool_id_for_label(alert.window_label, alert.provider)
+    scope_window = QuotaWindow(label=alert.window_label, remaining_percent=alert.remaining_percent)
     row = _MatrixRow(
         sort_key=_ladder_sort_key(band, priority, alert.provider, alert.account),
         band=band,
@@ -1982,7 +1979,7 @@ def _row_from_alert(
         service=service,
         account=_short_account(alert.account),
         account_full=alert.account,
-        scope=_POOL_SCOPE_LABELS.get(_pool_id_for_label(alert.window_label, alert.provider), "—"),
+        scope=matrix_pool_scope(pool_id, [scope_window], provider=alert.provider),
     )
     if alert.kind == "prepaid":
         label = alert.window_label

@@ -32,6 +32,7 @@ from aiuse.report import (
     _MatrixLayout,
     _physical_line_count,
     _render_brief_action_plan,
+    _row_from_alert,
     _sorted_accounts,
     _strip_ansi,
     _Style,
@@ -805,8 +806,8 @@ def test_default_report_is_clock_matrix():
     assert "\n\n" not in text
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
-    # No account here has independent pools, so SCOPE earns no column.
-    assert lines[0].split() == ["##", "POOL", "PACE", "5H", "WEEK", "MONTH"]
+    # The codex alert-only row carries SCOPE=codex (matching account rows), so SCOPE appears.
+    assert lines[0].split() == ["##", "POOL", "SCOPE", "PACE", "5H", "WEEK", "MONTH"]
     rows = [line for line in lines[1:] if line[:5].strip() in _BAND_TAGS]
     assert rows[0].startswith("error")
     assert "session expired" in rows[0]
@@ -2778,3 +2779,35 @@ def test_matrix_acct_column_capped_at_16_chars():
     assert "CODEXBAR_CLINEP…" in text
     assert "CODEXBAR_CLINEPASS_DJBCLARK_API_KEY" not in text
     assert "SHORT_ACCOUNT_OK" in text
+
+
+@pytest.mark.parametrize(
+    ("provider", "window_label", "expected_scope"),
+    [
+        ("codex", "Codex weekly", "codex"),
+        ("pi", "OpenAI API credits", "—"),
+        ("antigravity", "Gemini 4 Argon weekly", "gemini-argon"),
+        ("cursor", "Total", "total"),
+    ],
+)
+def test_alert_only_row_scope_matches_matrix_pool_scope(provider, window_label, expected_scope):
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc)
+    alert = UseOrLoseAlert(
+        kind="burn",
+        urgency=Urgency.HIGH,
+        provider=provider,
+        account="user@example.com",
+        window_label=window_label,
+        remaining_percent=80.0,
+        days_until_reset=1.0,
+        plan=None,
+        message="burn soon",
+        source="codexbar",
+        score=80.0,
+        window_minutes=10080,
+    )
+    row = _row_from_alert(alert, now=now)
+    assert row.scope == expected_scope
+    rendered = render_clock_matrix([alert], snapshot=Snapshot(collected_at=now, accounts=[]), color=False, width=140)
+    if expected_scope != "—":
+        assert expected_scope in rendered
