@@ -415,12 +415,14 @@ exhausted`, `reading frozen`, `no reading` or `not usable`. The other Claude
 
 #### Additive (2026-11-03, schema stays 1.5)
 
-- New provider `pi` (display `pi`, `cli_binary` `pi`): OpenAI API accounting from
-  CodexBar's `openai` source, independent of Codex subscription windows
+- New provider `pi` (`cli_binary` `pi`): OpenAI API accounting from CodexBar's
+  `openai` source, independent of Codex subscription windows
   ([`pi-openai-credits.md`](pi-openai-credits.md)). The id `openai` canonicalizes
-  to `pi`. The board's SCOPE column shows `codex-api` (internal pool key
-  `pi_codex_api`); omp's SCOPE is now `claude-api` (its JSON `pool_family` stays
-  `claude`).
+  to `pi`. At introduction (2026-11-03), the board showed display `pi` with
+  `SCOPE` `codex-api` (internal pool key `pi_codex_api`) and `omp` with
+  `SCOPE` `claude-api` (JSON `pool_family` `claude`); since Schema 1.6 (see
+  above), `pi` displays `POOL=openai-api, SCOPE=—` and `omp` displays
+  `POOL=claude-api, SCOPE=—`.
 - A pay-as-you-go `pi` meter (`billing_kind: "payg_api"`, no windows) now carries
   `spent_usd` (the organization's API spend) and `usage_credits.used`;
   `balance_usd` stays null until the operator records a verified grant.
@@ -1050,15 +1052,15 @@ pay-as-you-go.
 }
 ```
 
-| Field                        | Meaning                                                                                                                                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `balance_usd`                | dollars left of the plan grant (counts down)                                                                                                                                                                                |
-| `spent_usd`                  | dollars of that grant already used (counts up)                                                                                                                                                                              |
-| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)                                                                                                                                                                       |
-| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                                                                                                                                                                        |
-| `windows[0].window_minutes`  | 43800: one nominal month ending at the reset, so pace is ahead or behind even spend of that month                                                                                                                           |
-| `windows[0].pool_family`     | `claude` (JSON value; the board's SCOPE column shows `claude-api`; internal pool key `omp_claude`); `anthropic_api` on the key-pool row from `omp_agent_db`, which has no grant fields (see the 2026-11-07 changelog entry) |
-| `rate_gated_by`              | present while every observed Claude account's shared weekly/monthly window is exhausted with a future reset: credits cannot be spent until `resets_at` (see schema 1.4 above)                                               |
+| Field                        | Meaning                                                                                                                                                                                                                                                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balance_usd`                | dollars left of the plan grant (counts down)                                                                                                                                                                                                                               |
+| `spent_usd`                  | dollars of that grant already used (counts up)                                                                                                                                                                                                                             |
+| `windows[0].refill_capacity` | grant size in dollars (`refill_capacity_unit: "usd"`)                                                                                                                                                                                                                      |
+| `windows[0].resets_at`       | the grant's **expiry**, not a refill                                                                                                                                                                                                                                       |
+| `windows[0].window_minutes`  | 43800: one nominal month ending at the reset, so pace is ahead or behind even spend of that month                                                                                                                                                                          |
+| `windows[0].pool_family`     | `claude` (JSON value; since Schema 1.6, `POOL=claude-api` and `SCOPE=—`; pre-Schema 1.6 `SCOPE` was `claude-api`; internal pool key `omp_claude`); `anthropic_api` on the key-pool row from `omp_agent_db`, which has no grant fields (see the 2026-11-07 changelog entry) |
+| `rate_gated_by`              | present while every observed Claude account's shared weekly/monthly window is exhausted with a future reset: credits cannot be spent until `resets_at` (see schema 1.4 above)                                                                                              |
 
 Without a grant total the row falls back to `billing_kind: "prepaid_balance"`
 with no window, still carrying `balance_usd` (and `spent_usd` when CodexBar
