@@ -598,7 +598,7 @@ any non-200, an unexpected body) one stderr line is printed and the previous rea
 shows `(as of MM/DD H:MMam/pm)`. An Admin API reading may create the omp row when the collectors made none; an operator override
 may not.
 
-Hourly refresh with launchd (not loaded for you). The wrapper is copied out of the checkout so a branch switch cannot change what launchd runs:
+Hourly refresh with launchd (not loaded for you; refreshes both `claude-api` and `openai-api`). The wrapper is copied out of the checkout so a branch switch cannot change what launchd runs:
 
 ```
 mkdir -p ~/.local/bin ~/Library/LaunchAgents ~/Library/Logs/aiuse

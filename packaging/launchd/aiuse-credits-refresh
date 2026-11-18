@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# One refresh of the omp (Claude API credits) balance from the Anthropic Admin API cost report.
-# The admin key is injected by sudo-secretspec as ANTHROPIC_ADMIN_KEY; it never touches this
-# script, its arguments or its logs. Run by launchd (com.djbclark.aiuse-credits-refresh).
+# Refresh API credit balances (claude-api and openai-api) from vendor Admin API cost reports.
+# Admin keys are injected by sudo-secretspec as ANTHROPIC_ADMIN_KEY / OPENAI_ADMIN_KEY; they
+# never touch this script, its arguments or its logs. Run by launchd (com.djbclark.aiuse-credits-refresh).
 set -euo pipefail
 
 AIUSE_BIN="${AIUSE_BIN:-$(command -v aiuse)}"
-exec sudo-secretspec run --reason "aiuse cost report" -- "${AIUSE_BIN}" refresh-credits omp
+rc=0
+for pool in claude-api openai-api; do
+	status=0
+	sudo-secretspec run --reason "aiuse cost report" -- "${AIUSE_BIN}" refresh-credits "${pool}" || status=$?
+	if [[ "${status}" -ne 0 && "${rc}" -eq 0 ]]; then
+		rc="${status}"
+	fi
+done
+exit "${rc}"

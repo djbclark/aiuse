@@ -49,6 +49,8 @@ verified grant parameters, refresh through managed environment injection:
 sudo-secretspec run --reason "aiuse OpenAI cost report" -- aiuse refresh-credits pi
 ```
 
+The launchd wrapper `packaging/launchd/aiuse-credits-refresh` refreshes both `claude-api` and `openai-api` hourly when installed.
+
 The [official Costs endpoint](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs)
 reports organization costs, **not remaining prepaid cash**. The displayed figure
 is explicitly a conservative grant-derived estimate: the smaller of grant minus
