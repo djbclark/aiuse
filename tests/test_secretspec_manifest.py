@@ -58,3 +58,43 @@ def test_plist_substitution_leaves_valid_key_names(tmp_path):
     ).stdout
     assert "<key>AIUSE_BIN</key>" in out and "<string>/a/aiuse</string>" in out
     assert not re.search(r"<key>/", out) and "@" not in re.sub(r"<!--.*?-->", "", out, flags=re.S)
+
+
+def test_launchd_refresh_wrapper_runs_both_pools_even_when_first_fails(tmp_path):
+    """Hourly launchd wrapper refreshes both claude-api and openai-api independently."""
+    wrapper = ROOT / "packaging/launchd/aiuse-credits-refresh"
+    log = tmp_path / "calls.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    sudo_stub = bin_dir / "sudo-secretspec"
+    sudo_stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "args = sys.argv[1:]\n"
+        "with open(os.environ['CALL_LOG'], 'a', encoding='utf-8') as f:\n"
+        "    f.write(' '.join(args) + '\\n')\n"
+        "if os.environ.get('FAIL_POOL') and os.environ['FAIL_POOL'] in args:\n"
+        "    sys.exit(2)\n",
+        encoding="utf-8",
+    )
+    sudo_stub.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "AIUSE_BIN": "/a/aiuse", "CALL_LOG": str(log)}
+
+    res_ok = subprocess.run([str(wrapper)], env=env, capture_output=True, text=True, check=False)  # noqa: S603
+    assert res_ok.returncode == 0
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert lines == [
+        "run --reason aiuse cost report -- /a/aiuse refresh-credits claude-api",
+        "run --reason aiuse cost report -- /a/aiuse refresh-credits openai-api",
+    ]
+
+    log.unlink()
+    res_fail = subprocess.run(  # noqa: S603
+        [str(wrapper)],
+        env={**env, "FAIL_POOL": "claude-api"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res_fail.returncode == 2
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 2
