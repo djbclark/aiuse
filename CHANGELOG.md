@@ -10,6 +10,20 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [5.3.2] - 2026-11-21
+
+### Fixed
+
+- The live `codexbar usage` path now drops CodexBar's invented reset clock on a
+  0%-used window, as the widget-snapshot path has since 5.3.0. A window nobody
+  has used has no real clock (it starts on first use), but CodexBar fills
+  `resetsAt` with its snapshot time plus the window length (read live
+  2026-11-21 14:47Z: Claude/GPT 5-hour and weekly both one second short of
+  `updatedAt` plus 300 and 10080 minutes). The slots and `extraRateWindows`
+  are both covered; the cell reads `5h↻` until a real call starts the clock.
+  A used window keeps its real reset. See
+  [`docs/antigravity-pools.md`](docs/antigravity-pools.md).
+
 ## [5.3.1] - 2026-11-21
 
 ### Fixed
@@ -520,7 +534,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.3.1...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.3.2...HEAD
+[5.3.2]: https://github.com/djbclark/aiuse/compare/v5.3.1...v5.3.2
 [5.3.1]: https://github.com/djbclark/aiuse/compare/v5.3.0...v5.3.1
 [5.3.0]: https://github.com/djbclark/aiuse/compare/v5.2.1...v5.3.0
 [5.2.1]: https://github.com/djbclark/aiuse/compare/v5.2.0...v5.2.1

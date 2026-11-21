@@ -290,4 +290,7 @@ call per model with a read between each (15 minute gate) would show whether one 
 
 Placeholder resets: the 14:32Z live read still carried `Claude/GPT 5-hour` reset 19:32:13Z, which is
 the snapshot time plus 300 minutes on a 0%-used window, so the 5.3.0 drop-the-placeholder rule (widget
-snapshot path only) does not cover the live `codexbar usage` path. Not fixed yet.
+snapshot path only) did not cover the live `codexbar usage` path. Fixed in 5.3.2: the live parser applies
+the same rule to the slots and to `extraRateWindows` (the 14:47Z read showed the weekly window too:
+reset 2026-11-28T14:47:13Z, a week less one second after `updatedAt`), so both Claude/GPT windows read `↻`
+until a real call starts their clock.

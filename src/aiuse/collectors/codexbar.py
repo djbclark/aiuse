@@ -1438,6 +1438,10 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     rate_labels = row.get("rateWindowLabels")
     rate_labels = rate_labels if isinstance(rate_labels, dict) else None
 
+    # The live CLI carries the same invented clock as the widget snapshot
+    # (updatedAt + window length on a 0%-used window); drop it here too.
+    updated_at = parse_dt(usage.get("updatedAt"))
+
     windows: list[QuotaWindow] = []
     extra_windows: list[QuotaWindow] = []
     for extra in usage.get("extraRateWindows") or []:
@@ -1447,7 +1451,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         title = str(extra.get("title") or extra_id or "Unnamed CodexBar quota")
         if provider == "antigravity":
             title = canonical_gemini_label(title, extra_id or None)
-        window = _window(title, extra["window"], window_id=extra_id or None)
+        window = _window(title, _without_placeholder_reset(extra["window"], updated_at), window_id=extra_id or None)
         if window:
             if extra_id == "cursor-grok-bot":
                 window = QuotaWindow(
@@ -1464,7 +1468,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     windows.extend(extra_windows)
 
     for index, key in enumerate(("primary", "secondary", "tertiary"), start=1):
-        block = usage.get(key)
+        block = _without_placeholder_reset(usage.get(key), updated_at)
         if not isinstance(block, dict):
             continue
         label = _slot_label(provider, index, block, rate_labels=rate_labels)

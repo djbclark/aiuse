@@ -1406,3 +1406,85 @@ def test_antigravity_used_window_with_placeholder_shaped_reset_is_kept():
     (account,) = _parse_widget_snapshot_entry(entry, age_seconds=5)
     by_label = {w.label: w for w in account.windows}
     assert by_label["Claude/GPT 5-hour"].resets_at is not None
+
+
+def _live_antigravity_row(*, gemini_used: float, third_party_used: float, updated: datetime) -> dict:
+    """A `codexbar usage --provider antigravity` row as read live on 2026-11-21.
+
+    Unused windows carry resetsAt = updatedAt + window length - 1 s (the 5-hour
+    one 14:47:13Z for updatedAt 14:47:14Z, the weekly one a week out), which is
+    not a real clock: the clock starts on first use.
+    """
+
+    def stamp(value: datetime) -> str:
+        return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def block(used: float, minutes: int, resets: datetime) -> dict:
+        return {"usedPercent": used, "windowMinutes": minutes, "resetsAt": stamp(resets)}
+
+    placeholder_5h = updated + timedelta(minutes=300) - timedelta(seconds=1)
+    placeholder_week = updated + timedelta(minutes=10080) - timedelta(seconds=1)
+    gem_5h = block(gemini_used, 300, updated + timedelta(hours=4, minutes=30))
+    third_5h = block(third_party_used, 300, placeholder_5h if third_party_used == 0 else updated + timedelta(hours=2))
+    return {
+        "provider": "antigravity",
+        "source": "cli",
+        "usage": {
+            "updatedAt": stamp(updated),
+            "primary": gem_5h,
+            "secondary": third_5h,
+            "extraRateWindows": [
+                {"id": "antigravity-quota-summary-gemini-5h", "title": "Gemini 5-hour", "window": gem_5h},
+                {
+                    "id": "antigravity-quota-summary-gemini-weekly",
+                    "title": "Gemini weekly",
+                    "window": block(0.7, 10080, updated + timedelta(days=6, hours=23)),
+                },
+                {"id": "antigravity-quota-summary-3p-5h", "title": "Claude/GPT 5-hour", "window": third_5h},
+                {
+                    "id": "antigravity-quota-summary-3p-weekly",
+                    "title": "Claude/GPT weekly",
+                    "window": block(third_party_used, 10080, placeholder_week),
+                },
+            ],
+        },
+    }
+
+
+def test_live_cli_placeholder_reset_on_unused_windows_is_dropped():
+    """The live `codexbar usage` path drops the invented reset too (5.3.2).
+
+    5.3.0 fixed only the widget-snapshot path; the live read still showed
+    Claude/GPT 5-hour counting down to 19:32Z for a window nobody had started.
+    """
+    updated = datetime(2026, 11, 21, 14, 47, 14, tzinfo=UTC)
+    acc = _from_row(_live_antigravity_row(gemini_used=2.03, third_party_used=0.0, updated=updated))
+    by_label = {w.label: w for w in acc.windows}
+    assert by_label["Claude/GPT 5-hour"].resets_at is None
+    assert by_label["Claude/GPT weekly"].resets_at is None
+    assert by_label["Claude/GPT 5-hour"].window_minutes == 300
+    # the slot copy of the same measurement is not left behind with a clock
+    assert all(w.resets_at is None for w in acc.windows if w.label.startswith("Claude/GPT"))
+    # a used window keeps its real reset
+    assert by_label["Gemini 5-hour"].resets_at is not None
+    assert by_label["Gemini weekly"].resets_at is not None
+
+
+def test_live_cli_used_window_with_placeholder_shaped_reset_is_kept():
+    """Only a 0%-used window can carry a placeholder: a started one is real."""
+    updated = datetime(2026, 11, 21, 14, 47, 14, tzinfo=UTC)
+    row = _live_antigravity_row(gemini_used=2.03, third_party_used=0.0, updated=updated)
+    for extra in row["usage"]["extraRateWindows"]:
+        if extra["title"] == "Claude/GPT 5-hour":
+            extra["window"]["usedPercent"] = 4.0
+    acc = _from_row(row)
+    assert {w.label: w for w in acc.windows}["Claude/GPT 5-hour"].resets_at is not None
+
+
+def test_live_cli_row_without_updated_at_keeps_every_reset():
+    """No snapshot time, nothing to compare a reset against: leave it alone."""
+    updated = datetime(2026, 11, 21, 14, 47, 14, tzinfo=UTC)
+    row = _live_antigravity_row(gemini_used=2.03, third_party_used=0.0, updated=updated)
+    del row["usage"]["updatedAt"]
+    acc = _from_row(row)
+    assert {w.label: w for w in acc.windows}["Claude/GPT 5-hour"].resets_at is not None
