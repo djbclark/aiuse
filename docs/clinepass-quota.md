@@ -29,6 +29,10 @@ override `[plans.clinepass]` if yours differs).
   native `clinepass` collector).
 - Sources: CodexBar `api` (preferred) and native `GET …/plan/usage-limits`
   when `AIUSE_CLINE_API_KEY` or `sudo-secretspec get CLINE_API_KEY` is set.
+- An idle or freshly bought plan reads 0% on all three windows with no reset
+  time, because the API omits `resetsAt` at 0%. That is a real, usable plan, and
+  aiuse classes it as `subscription_window` (not `unknown`) from the provider
+  name alone (`SUBSCRIPTION_WINDOW_PROVIDERS`, 2026-11-21).
 - A fresh or lightly used month is `mid`/`slow` with all three clocks filled.
   Do not treat a low 5-hour % as a separate “burn this” pool.
 

@@ -293,6 +293,33 @@ def test_prepaid_hint_provider_with_real_window_is_subscription_window():
     assert acc.windows[0].remaining() == 95
 
 
+def test_idle_clinepass_plan_without_reset_times_is_subscription_window():
+    # ClinePass omits resetsAt while a window is at 0%, so a fresh or idle plan has
+    # no reset time on any window. It is still a subscription, not 'unknown'.
+    acc = _from_row(
+        {
+            "provider": "clinepass",
+            "usage": {
+                "primary": {"usedPercent": 0, "windowMinutes": 300},
+                "secondary": {"usedPercent": 0, "windowMinutes": 10080},
+                "tertiary": {"usedPercent": 0, "windowMinutes": 43200},
+            },
+        }
+    )
+    assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
+    assert len(acc.windows) == 3
+
+
+def test_unknown_provider_without_reset_times_stays_unknown():
+    acc = _from_row(
+        {
+            "provider": "glama",
+            "usage": {"primary": {"usedPercent": 0, "windowMinutes": 300}},
+        }
+    )
+    assert acc.billing_kind == BillingKind.UNKNOWN
+
+
 def test_dollar_rate_in_description_is_not_mistaken_for_a_balance():
     acc = _from_row(
         {

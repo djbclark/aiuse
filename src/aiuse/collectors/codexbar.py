@@ -67,6 +67,11 @@ PREPAID_HINTS = {
     "fireworks",
 }
 
+# Providers whose plan is always a subscription with rolling windows. Their API
+# omits `resetsAt` while a window sits at 0% (a fresh or idle plan), so the
+# "has a resets_at" test alone would call an unused plan `unknown`.
+SUBSCRIPTION_WINDOW_PROVIDERS = {"clinepass"}
+
 # CodexBar itself queries providers serially within a single invocation, so a
 # bundled "enabled providers" call costs the sum of every provider's latency.
 # Querying one provider per subprocess and running those concurrently instead
@@ -2075,6 +2080,8 @@ def _billing_kind(
     if usage and usage.get("openRouterUsage"):
         return BillingKind.PREPAID_BALANCE
     if windows and any(window.resets_at is not None for window in windows):
+        return BillingKind.SUBSCRIPTION_WINDOW
+    if windows and provider.lower() in SUBSCRIPTION_WINDOW_PROVIDERS:
         return BillingKind.SUBSCRIPTION_WINDOW
     if provider.lower() in PREPAID_HINTS:
         return BillingKind.PREPAID_BALANCE
