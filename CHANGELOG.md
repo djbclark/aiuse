@@ -10,6 +10,25 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [5.1.3] - 2026-11-21
+
+### Fixed
+
+- An idle or freshly bought ClinePass plan is now classed as
+  `subscription_window` instead of `unknown`. ClinePass omits `resetsAt` while a
+  window sits at 0%, so a plan with no usage yet had no reset time on any window
+  and fell through the reset-time test (seen on the second ClinePass account,
+  2026-11-21, checked against the live API and the Cline dashboard).
+  `SUBSCRIPTION_WINDOW_PROVIDERS` in `collectors/codexbar.py` now names providers
+  whose plan is always a subscription; noted in `docs/clinepass-quota.md`.
+- Codex: OpenAI API prepaid credits surface as their own fail-closed pool, with
+  the pool family named `openai_api` (matching the canary).
+- Report: alert-only rows use `matrix_pool_scope` for their POOL/SCOPE names.
+- launchd: the scheduled refresh now also refreshes `openai-api` credits
+  alongside `claude-api`.
+- Docs: `docs/json-contract.md` separates the pre-Schema-1.6 and Schema-1.6
+  POOL/SCOPE names.
+
 ## [Unreleased]
 
 ### Fixed
@@ -425,7 +444,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
 - Stale-window hygiene: reset-passed cached windows are dropped, old cswap
   hydration expires, and `watch` survives a `brew upgrade`.
 
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v4.1.1...HEAD
+[5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.1.3...HEAD
 [4.1.1]: https://github.com/djbclark/aiuse/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/djbclark/aiuse/compare/v4.0.3...v4.1.0
 [4.0.3]: https://github.com/djbclark/aiuse/compare/v4.0.0...v4.0.3
