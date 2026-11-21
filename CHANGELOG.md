@@ -143,6 +143,11 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- `next_query_at` (the throttle state behind `refreshable_at` /
+  `refresh_blocked_by_gate`) treats a future `queried_at` as clock skew, the way
+  `TimeoutBackoff.blocked_until` does and `QueryGate.__enter__` allows the query,
+  instead of reporting a closed gate for up to the whole interval (schema 1.8
+  adversary round 2, nit 4).
 - The Argon evidence store's load-modify-write now runs under an exclusive
   `flock` on `argon-evidence.json.lock` (same pattern as the query throttle and
   `TimeoutBackoff`), so a sampler and a CLI run that collect at once no longer lose

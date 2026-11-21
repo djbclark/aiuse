@@ -74,7 +74,8 @@ schema 1.8): the gate opens at the throttle's next allowed query time (the last
 query's own time plus the interval in force, which stretches to an hour after
 repeated empty answers, pushed back by a CodexBar timeout backoff; the reading's
 time plus the interval only when there is no throttle state, because a reading's
-`updatedAt` can lag the query by 15-30 minutes), and `--live` before then only
+`updatedAt` can lag the query by 15-30 minutes; a `queried_at` in the future is
+clock skew and is ignored, as the gate itself allows a query then), and `--live` before then only
 returns the same reused payload. A consumer that
 sees `refresh_blocked_by_gate: true` should wait until `refreshable_at` (or
 route on other pools) rather than loop on `--live`; `false` means a re-collect

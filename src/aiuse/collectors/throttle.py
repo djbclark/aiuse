@@ -248,6 +248,7 @@ def next_query_at(
     min_interval: float,
     timeout_backoff: float = 0.0,
     directory: Path | None = None,
+    now: datetime | None = None,
 ) -> datetime | None:
     """When a live query for ``provider`` is next allowed, read from the throttle state; None without any.
 
@@ -260,7 +261,12 @@ def next_query_at(
     """
     gate = QueryGate(provider, min_interval=min_interval, wait=0.0, directory=directory)
     gate.state = gate._read_state()
-    candidates = [t for t in (gate.next_allowed_at,) if t is not None]
+    last = gate.last_queried_at
+    # A ``queried_at`` in the future is clock skew: ``QueryGate.__enter__`` allows the
+    # query then (as ``TimeoutBackoff.blocked_until`` ignores a future timeout), so the
+    # gate must not report it closed.
+    skewed = last is not None and last > (now or utcnow())
+    candidates = [t for t in (None if skewed else gate.next_allowed_at,) if t is not None]
     if timeout_backoff > 0:
         until = TimeoutBackoff("codexbar", base=timeout_backoff, directory=directory).blocked_until(provider)
         if until is not None:

@@ -149,3 +149,27 @@ def test_validate_config_rejects_non_finite_and_absurd_intervals():
         issues = validate_config({"query_min_interval": {"antigravity": value}})
         assert any("query_min_interval.antigravity" in i and i.startswith("error") for i in issues), value
     assert validate_config({"query_min_interval": {"antigravity": 900, "codex": MAX_QUERY_MIN_INTERVAL}}) == []
+
+
+def test_a_future_queried_at_is_clock_skew_not_a_closed_gate():
+    """Review round 2, nit 4: QueryGate.__enter__ allows a query whose queried_at is in the future; so must this."""
+    from aiuse.models import utcnow
+
+    ahead = (utcnow() + timedelta(hours=1)).isoformat()
+    _state(queried_at=ahead)
+    assert next_query_at("antigravity", min_interval=900.0) is None
+    account = _run(timedelta(minutes=40))
+    assert account["refresh_blocked_by_gate"] is False
+
+
+def test_a_future_queried_at_still_honours_the_timeout_backoff():
+    from aiuse.models import utcnow
+
+    _state(queried_at=(utcnow() + timedelta(hours=1)).isoformat())
+    stamp = utcnow() - timedelta(minutes=1)
+    directory = throttle_dir()
+    (directory / "codexbar-timeouts.json").write_text(
+        json.dumps({"antigravity": {"timed_out_at": stamp.isoformat(), "count": 1, "timeout": 30.0}})
+    )
+    until = next_query_at("antigravity", min_interval=900.0, timeout_backoff=300.0)
+    assert until == stamp + timedelta(seconds=300)
