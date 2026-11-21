@@ -58,6 +58,9 @@ def _number(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+finite_number = _number
+
+
 def _positive(value: Any, default: float) -> float:
     number = _number(value)
     return number if number is not None and number > 0 else default

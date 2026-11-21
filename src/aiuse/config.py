@@ -17,7 +17,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from aiuse.models import canonical_provider, parse_dt, provider_config_key, utcnow
+from aiuse.models import (
+    PROVIDER_ID_ALIASES,
+    PROVIDER_TRANSPORTS,
+    PROVIDER_VENDORS,
+    canonical_provider,
+    parse_dt,
+    provider_config_key,
+    utcnow,
+)
 from aiuse.provider_select import get_selection, reenabled_by_include
 
 # Default wall-clock budget for every external CLI subprocess. Tools either
@@ -1075,8 +1083,25 @@ def _validate_floors(floors: Any) -> list[str]:
     if providers is not None and not isinstance(providers, dict):
         issues.append("error: floors.providers must be a provider -> table mapping")
     elif isinstance(providers, dict):
+        seen: dict[str, str] = {}
+        known_providers = (
+            set(PROVIDER_VENDORS)
+            | set(PROVIDER_TRANSPORTS)
+            | set(PROVIDER_ID_ALIASES.values())
+            | {canonical_provider(str(p)) for p in DEFAULT_CONFIG.get("plans", {})}
+        )
         for provider, entry in providers.items():
             where = f"floors.providers.{provider}"
+            canonical = canonical_provider(str(provider))
+            if canonical in seen:
+                issues.append(
+                    f"warning: {where} and floors.providers.{seen[canonical]} are the same provider "
+                    f"({canonical}): only the first in the table applies"
+                )
+            else:
+                seen[canonical] = str(provider)
+            if canonical not in known_providers:
+                issues.append(f"warning: {where}: unknown provider {str(provider)!r} (no effect)")
             if not isinstance(entry, dict):
                 issues.append(f"error: {where} must be a table with percent or reserve_usd")
                 continue

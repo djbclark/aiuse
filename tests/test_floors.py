@@ -486,3 +486,43 @@ def test_pool_family_floor_fields_are_documented():
     assert "pool_families" in SEMANTICS["floor_basis"]
     assert "openai_api" in SEMANTICS["floor_percent"]
     assert "floor_by_pool_family" in SEMANTICS
+
+
+# ── review nits 8 and 9: provider keys, free and non-numeric prices ──────────
+
+
+def test_floors_provider_aliases_with_two_values_are_flagged():
+    floors = {"providers": {"agy": {"percent": 3}, "antigravity": {"percent": 9}}}
+    issues = validate_config({"floors": floors})
+    (issue,) = [i for i in issues if "same provider" in i]
+    assert "floors.providers.antigravity" in issue and "floors.providers.agy" in issue
+    assert "only the first" in issue
+    assert resolve_floor(floors, "antigravity", 199.99) == (3.0, "config")  # the first one wins, as warned
+
+
+def test_floors_unknown_provider_key_is_flagged_but_real_ones_are_not():
+    issues = validate_config({"floors": {"providers": {"claudee": {"percent": 3}}}})
+    assert any("unknown provider 'claudee'" in i for i in issues), issues
+    real = ["antigravity", "agy", "gemini", "claude", "codex", "omp", "pi", "cursor", "zai", "grok", "copilot"]
+    real += ["opencode-go", "opencode", "clinepass", "deepseek", "bedrock", "muse", "qwencloud", "alibaba"]
+    floors = {"providers": {name: {"percent": 5} for name in real if name not in ("agy", "gemini", "opencode")}}
+    assert validate_config({"floors": floors}) == []
+    for alias in ("agy", "gemini", "opencode"):
+        assert validate_config({"floors": {"providers": {alias: {"percent": 5}}}}) == [], alias
+
+
+@pytest.mark.parametrize("price", [0, 0.0, -5, "20", True, None, float("nan")])
+def test_a_free_or_non_numeric_plan_price_gives_the_default_floor_and_no_headroom_usd(price):
+    account = _account("codex", 50.0)
+    account["monthly_price"] = price
+    snap = {"collected_at": NOW.isoformat(), "accounts": [account]}
+    (entry,) = pool_entries(snap, now=NOW)
+    assert (entry["floor_percent"], entry["floor_basis"]) == (10.0, "default")
+    if isinstance(price, (int, float)) and not isinstance(price, bool) and price == price:
+        return  # a numeric price keeps its headroom_usd
+    assert "headroom_usd" not in entry
+
+
+def test_the_floor_basis_wording_says_a_positive_numeric_price():
+    assert "positive numeric plan price" in SEMANTICS["floor_basis"]
+    assert "positive numeric plan price" in SEMANTICS["floor_percent"]

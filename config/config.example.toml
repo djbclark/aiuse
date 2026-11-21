@@ -355,19 +355,20 @@
 #   a 199.99 USD plan (Google AI Ultra) -> 10 / 199.99 * 100 = 5.0
 #   a 20 USD plan (Claude Pro, Codex Plus) -> 50, capped at max_percent -> 20.0
 #   a 1000 USD plan -> 1.0, raised to min_percent -> 2.0
-#   no plan price known for the provider -> default_percent (10.0)
+#   no positive numeric plan price known for the provider -> default_percent (10.0)
 #
 # floor_basis values:
 #   "reserve_usd"  the formula above gave the number (default reserve_usd, or a
 #                  provider's own reserve_usd), from a known plan price
 #   "config"       a [floors.providers.<provider>] `percent` fixed it
-#   "default"      no plan price is known, or the pool is prepaid (below), so
+#   "default"      no positive numeric plan price is known (none, 0 for a free
+#                  plan, or non-numeric), or the pool is prepaid (below), so
 #                  default_percent applies
 # [floors]
 # reserve_usd = 10.0      # USD to keep per month, must be > 0
 # min_percent = 2.0       # lowest floor_percent the formula may give (0-100)
 # max_percent = 20.0      # highest floor_percent the formula may give (0-100)
-# default_percent = 10.0  # floor_percent when no plan price is known (0-100)
+# default_percent = 10.0  # floor_percent when no positive plan price is known (0-100)
 # min_percent must not exceed max_percent. Both are checked against the EFFECTIVE
 # pair, the other one defaulting to 2.0 / 20.0: min_percent = 50 alone (max stays
 # 20.0) or max_percent = 1 alone (min stays 2.0) crosses it, the formula swaps
@@ -379,6 +380,8 @@
 #   reserve_usd  this provider's own reserve in the formula (> 0), still clamped
 #                to min_percent..max_percent, floor_basis "reserve_usd"
 # If both are set, percent wins (aiuse doctor warns).
+# Two spellings of one provider (agy and antigravity) are one key: only the first in
+# the table applies and aiuse doctor warns; an unknown provider id is flagged too.
 # [floors.providers.antigravity]
 # percent = 4.0
 # [floors.providers.codex]

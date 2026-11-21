@@ -10,7 +10,9 @@ whole pool is usable again.
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -26,6 +28,7 @@ from aiuse.analysis.selfdescribe import (
 from aiuse.models import parse_dt, utcnow
 
 NOW = utcnow()
+R_DOCS = Path(__file__).resolve().parents[1] / "docs"
 
 
 def _window(
@@ -237,8 +240,11 @@ def test_every_item_field_is_documented_in_the_semantics_map():
     text = SEMANTICS["unavailable"]
     keys = {key for item in unavailable_pools(snap, now=NOW) for key in item}
     assert {"provider", "account", "pool_family", "pool_id", "reason", "binding_window", "available_at"} <= keys
+    contract = (R_DOCS / "json-contract.md").read_text(encoding="utf-8")
+    section = contract[contract.index("### `unavailable[]`") : contract.index("### Headroom floors")]
     for key in keys:
-        assert key in text, key
+        assert re.search(rf"(?<![\w]){re.escape(key)}(?![\w])", text), key
+        assert f"`{key}`" in section, f"json-contract's unavailable[] section lacks `{key}`"
     for reason in UNAVAILABLE_REASONS:
         assert reason in SEMANTICS["unavailable_reason"]
 

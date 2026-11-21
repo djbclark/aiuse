@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Iterable, Mapping
 
 from aiuse.analysis.ceilings import window_is_ceiling
-from aiuse.analysis.floors import FLOOR_BASES, has_pool_family_rule, resolve_floor
+from aiuse.analysis.floors import FLOOR_BASES, finite_number, has_pool_family_rule, resolve_floor
 from aiuse.analysis.pace import (
     cursor_breakdown_window,
     format_pace,
@@ -133,10 +133,10 @@ SEMANTICS: dict[str, Any] = {
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
     "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs; Paseo agent 429s from the daemon's per-agent error files, short cooldown, never an exhaustion); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
-    "unavailable": "--available only: one item per routing entry that is NOT usable_now and is neither operator-excluded (those are dropped here and never listed twice) nor a hidden ceiling (total) row; the pools missing from 'available' because they are empty or blocked, so a consumer can tell 'empty until Monday' from 'not reported'. Item {provider, account, pool_family, pool_id (when the entry has one), reason, binding_window, available_at, headroom_percent, floor_percent, floor_basis, headroom_above_floor_percent, plus refreshable_at / refresh_blocked_by_gate / gate_remaining_seconds when the reading is stale and gated, and rate_gated_by when set}; soonest available_at first, nulls last. Additive, schema 1.8; [] when every pool is usable. Never route to an item before its available_at (null: unknown, re-collect with --live)",
+    "unavailable": "--available only: one item per routing entry that is NOT usable_now and is neither operator-excluded (those are dropped here; `excluded` holds only usable pools, so an excluded pool that is also unusable is listed in neither array) nor a hidden ceiling (total) row; the pools missing from 'available' because they are empty or blocked, so a consumer can tell 'empty until Monday' from 'not reported'. Item {provider, account, pool_family, pool_id (when the entry has one), reason, binding_window (here: the depleted window that resets LAST, not the least-headroom window that binding_window means on available[] entries and accounts[]), available_at, headroom_percent, then state / refusal_kind / operator_action_required on a blocked pool (an operator action, not a re-collect, clears it), floor_percent, floor_basis, headroom_above_floor_percent, plus refreshable_at / refresh_blocked_by_gate / gate_remaining_seconds when the reading is stale and gated, and rate_gated_by when set}; soonest available_at first, nulls last. Additive, schema 1.8; [] when every pool is usable. Never route to an item before its available_at (null: unknown, re-collect with --live, except a blocked pool with operator_action_required, which only the operator clears)",
     "unavailable_reason": "unavailable item reason, the first that holds: rate_gated (omp while the shared Claude window is exhausted, rate_gated_by names it; or an API key blocked until a known time) | exhausted (a window with <= 1% left, or marked exhausted or blocked, including a spent Cursor monthly ceiling) | near_empty (a window under 5% left, none exhausted: work cannot finish on it) | no_reading (no usable measurement: every window unknown, or the reading is frozen); the item's available_at is when the whole pool is usable again",
-    "floor_percent": "advisory headroom floor for a consumer, on every --available entry (available and unavailable), schema 1.8: clamp(reserve_usd / plan_monthly_price * 100, min_percent, max_percent) rounded to 1 decimal, plan_monthly_price from the account's [plans.<provider>] monthly_price; defaults reserve_usd 10.0, min 2.0, max 20.0 (a $199.99 plan gives 5.0, a $20 plan 20.0 via the cap); default_percent (10.0) when no plan price is known or the pool is prepaid (openai_api: the plan price does not price a dollar balance; override with [floors.pool_families.<family>]). headroom_percent, usable_now and the 5% near-empty rule are unchanged: a pool below its floor is still usable_now",
-    "floor_basis": "where floor_percent came from: reserve_usd (the formula, with the default reserve_usd or a provider's own) | config (a [floors.providers.<provider>] or [floors.pool_families.<family>] percent fixed it) | default (no plan price known, or a prepaid pool such as openai_api, so default_percent)",
+    "floor_percent": "advisory headroom floor for a consumer, on every --available entry (available and unavailable), schema 1.8: clamp(reserve_usd / plan_monthly_price * 100, min_percent, max_percent) rounded to 1 decimal, plan_monthly_price from the account's [plans.<provider>] monthly_price; defaults reserve_usd 10.0, min 2.0, max 20.0 (a $199.99 plan gives 5.0, a $20 plan 20.0 via the cap); default_percent (10.0) when no positive numeric plan price is known (none, 0 or non-numeric) or the pool is prepaid (openai_api: the plan price does not price a dollar balance; override with [floors.pool_families.<family>]). headroom_percent, usable_now and the 5% near-empty rule are unchanged: a pool below its floor is still usable_now",
+    "floor_basis": "where floor_percent came from: reserve_usd (the formula, with the default reserve_usd or a provider's own) | config (a [floors.providers.<provider>] or [floors.pool_families.<family>] percent fixed it) | default (no positive numeric plan price known, or a prepaid pool such as openai_api, so default_percent)",
     "floor_by_pool_family": "account level, only when one of its pool families has its own floor rule (a [floors.pool_families.<family>] override or a prepaid family such as openai_api): {pool_family: {floor_percent, floor_basis}}; the routing entries of those families take their floor from it, the account's floor_percent stays for its other pools",
     "headroom_above_floor_percent": "headroom_percent - floor_percent: how far the pool is above its advisory floor, negative below it; null when headroom_percent is null",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
@@ -1530,8 +1530,9 @@ def pool_entries(
             grant_expiry = _account_expiry(account) if account.get("spent_usd") is not None else None
             monthly_price = account.get("monthly_price")
             headroom_usd: float | None = None
+            price_value = finite_number(monthly_price)
             if (
-                monthly_price is not None
+                price_value is not None
                 and binding is not None
                 and isinstance(binding.get("window_minutes"), int)
                 and binding["window_minutes"] > 0
@@ -1542,7 +1543,7 @@ def pool_entries(
                     _compute_value_at_risk(
                         remaining=effective_headroom(binding),
                         window_minutes=int(binding["window_minutes"]),
-                        monthly_price=float(monthly_price),
+                        monthly_price=price_value,
                         waking_hours_per_day=float(account.get("_waking_hours_per_day", 16.0)),
                     ),
                     2,
@@ -2006,6 +2007,8 @@ def available_pools(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 _UNAVAILABLE_GATE_KEYS = _REFRESH_GATE_KEYS
+# A blocked pool (spend limit, operator action) never comes back by itself or by a re-collect.
+_UNAVAILABLE_BLOCKED_KEYS = ("state", "refusal_kind", "operator_action_required")
 
 
 def unavailable_pools(
@@ -2049,6 +2052,7 @@ def unavailable_pools(
                 "floor_percent": entry.get("floor_percent"),
                 "floor_basis": entry.get("floor_basis"),
                 "headroom_above_floor_percent": entry.get("headroom_above_floor_percent"),
+                **{key: entry[key] for key in _UNAVAILABLE_BLOCKED_KEYS if key in entry},
                 **{key: entry[key] for key in _UNAVAILABLE_GATE_KEYS if key in entry},
                 **({"rate_gated_by": entry["rate_gated_by"]} if entry.get("rate_gated_by") else {}),
             }

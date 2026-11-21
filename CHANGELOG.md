@@ -161,6 +161,14 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- Schema 1.8 review nits: a blocked pool's `unavailable[]` item carries `state`,
+  `refusal_kind` and `operator_action_required` (a re-collect cannot clear it);
+  `[floors.providers]` warns on two spellings of one provider and on an unknown provider;
+  `floor_basis: "default"` is documented as "no positive numeric plan price" and a
+  non-numeric `monthly_price` no longer yields `headroom_usd`; `accounts[]` documents
+  `floor_percent`, `floor_basis` and the refresh-gate fields; the two `binding_window`
+  meanings and the excluded-and-unusable gap are spelled out; new end-to-end tests for
+  every `unavailable[]` reason, and a frozen clock in the stale-pool age test.
 - Per-pool-family floors: `[floors.pool_families.<family>]` (`percent` or `reserve_usd`)
   overrides the provider's floor for one pool, and the prepaid `openai_api` pool (the
   Codex CLI's OpenAI API credits) now takes `default_percent` (`floor_basis` `default`)

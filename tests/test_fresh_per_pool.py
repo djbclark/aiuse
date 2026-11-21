@@ -202,8 +202,9 @@ def _available_payload(tmp_path, capsys):
     return json.loads(capsys.readouterr().out)
 
 
-def test_available_fresh_is_false_when_one_usable_pool_is_stale(tmp_path, capsys):
+def test_available_fresh_is_false_when_one_usable_pool_is_stale(tmp_path, capsys, monkeypatch):
     now = utcnow()
+    monkeypatch.setattr("aiuse.models.utcnow", lambda: now)  # the clock stands still while the run is queued
     agy = _fixture("antigravity")["accounts"][0]
     agy["collected_at"] = (now - timedelta(seconds=700)).isoformat()
     _write_cache([agy, _fixture("codex")["accounts"][0]])
@@ -211,9 +212,7 @@ def test_available_fresh_is_false_when_one_usable_pool_is_stale(tmp_path, capsys
     payload = _available_payload(tmp_path, capsys)
     assert payload["fresh"] is False
     assert [p["provider"] for p in payload["stale_pools"]] == ["antigravity"]
-    assert payload["stale_pools"][0]["age_seconds"] == pytest.approx(
-        700.0, abs=30.0
-    )  # wall clock moves while the run is queued
+    assert payload["stale_pools"][0]["age_seconds"] == pytest.approx(700.0, abs=1.0)
     assert {p["provider"] for p in payload["available"]} == {"antigravity", "codex"}
 
 
