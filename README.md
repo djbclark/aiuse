@@ -350,8 +350,10 @@ readings over 6 hours with no Argon window. That evidence lives in
 email) and is written only where a reading is first collected: the sampler
 (`aiuse sample`) and any run that collects and saves a snapshot (`aiuse`,
 `aiuse --json --live`, `aiuse watch` with persistence, `aiuse serve` live refresh).
-`aiuse --available`, a cache `--json`, `serve`'s cache endpoints and a screen-only
-`watch` only read it, so re-reading one cached snapshot never advances it. See
+cache `aiuse --available`, a cache `--json`, `serve`'s cache endpoints and a screen-only
+`watch` only read it, so re-reading one cached snapshot never advances it.
+`aiuse --available --live`, or `--available` with no `latest.json` yet, is a
+collection and writes it like any other collecting run. See
 [Antigravity pools](docs/antigravity-pools.md).
 
 ## Daily workflow

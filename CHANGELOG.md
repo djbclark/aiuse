@@ -143,6 +143,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- The docs no longer say `aiuse --available` only reads the Argon evidence store:
+  a cache `--available` does, but `--available --live`, or `--available` with no
+  `latest.json`, is a collection and writes it (README, `docs/json-contract.md`,
+  `docs/antigravity-pools.md`; schema 1.8 adversary round 3, nit 2).
 - The Argon evidence store's lock wait is bounded: the collection path polls the
   `flock` non-blocking for about 2 s and then goes without the lock, as the
   docstring always promised, instead of hanging behind a stopped holder (schema 1.8
@@ -191,7 +195,7 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   hours; a reading holding just the Claude/GPT window is skipped and neither
   extends nor resets the evidence.
 - The Argon evidence store is written only on the collection path (schema 1.8
-  adversary round 2, important B). `aiuse --available`, a cache `--json`, the serve
+  adversary round 2, important B). A cache `aiuse --available`, a cache `--json`, the serve
   endpoints and a screen-only `watch` used to write
   `~/.local/state/aiuse/argon-evidence.json` through `enrich_snapshot`, and
   re-reading one cached snapshot with a future `collected_at` could prove the

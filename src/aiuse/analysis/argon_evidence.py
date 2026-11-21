@@ -20,8 +20,9 @@ hash of the account name so the file holds no email address. The hash is
 unsalted: the key is pseudonymous, not anonymous (see ``account_key``).
 
 Only the COLLECTION path writes the store (``record_readings(record=True)``, reached
-from ``history.save_snapshot``). Every read path (``--available``, cache ``--json``,
-serve, watch) uses the read-only ``proven_absent``, which neither writes nor
+from ``history.save_snapshot``, so ``--available --live`` and ``--available`` with no
+``latest.json`` write it: they collect). Every read path (cache ``--available``, cache
+``--json``, serve, watch) uses the read-only ``proven_absent``, which neither writes nor
 creates the directory, so re-reading one cached snapshot cannot advance the
 evidence. A reading stamped in the future (clock skew) is skipped, never
 clamped. A corrupt or foreign-typed record resets to "no evidence"; nothing in
@@ -212,7 +213,7 @@ def record_readings(
     With ``record=True`` (the collection path only: ``history.save_snapshot``, where a
     reading is first collected) each new reading is also folded into the store,
     which is rewritten when it changed. With ``record=False`` (every read path:
-    ``--available``, cache ``--json``, serve, watch) the store is only read: nothing is
+    cache ``--available``, cache ``--json``, serve, watch) the store is only read: nothing is
     written and no directory is created, so re-reading one cached snapshot can
     never advance the evidence. See :func:`proven_absent`.
 

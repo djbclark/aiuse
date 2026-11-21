@@ -115,8 +115,9 @@ wrong (`available_at`, the Argon model map).
   `AIUSE_ARGON_EVIDENCE_STORE` overrides the path). Only the COLLECTION path
   writes that file: the sampler and any run that saves a snapshot
   (`history.save_snapshot`, which calls `enrich_snapshot(record_argon_evidence=True)`).
-  `--available`, a cache `--json`, the serve endpoints and a screen-only `watch`
-  read it without writing (and without creating its directory), a reading
+  A cache `--available`, a cache `--json`, the serve endpoints and a screen-only `watch`
+  read it without writing (`--available --live`, or `--available` with no `latest.json`, is a
+  collection and writes it) (and without creating its directory), a reading
   stamped in the future (clock skew) is skipped, and a corrupt record resets to
   "no evidence", so re-reading one cached snapshot never advances the evidence.
   A window that is hidden

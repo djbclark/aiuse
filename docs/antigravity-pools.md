@@ -294,7 +294,8 @@ its nominal `gemini_argon` family, is applied to `gemini` only on an account wit
 for Argon (a partial reading without the Gemini window is skipped), kept per account, hashed, in `~/.local/state/aiuse/argon-evidence.json`: the key is the first 16 hex characters of an unsalted
 sha256 of provider and lower-cased account, so it is pseudonymous, not anonymous (anyone with a candidate address can confirm
 a match; the file is 0600), and an unnamed account uses the fixed key `unnamed`). Only the collection path writes that file, under a `flock` on `argon-evidence.json.lock` (the
-sampler and any run that saves a snapshot, through `history.save_snapshot`); `--available`, a cache `--json`, the
+sampler and any run that saves a snapshot, through `history.save_snapshot`, which includes `--available --live` and `--available` with no
+`latest.json`, since those collect); a cache `--available`, a cache `--json`, the
 serve endpoints and a screen-only `watch` only read it, so re-reading one cached snapshot cannot advance the evidence, and
 a reading stamped in the future (clock skew) is skipped rather than counted. A window that is hidden by
 `[hidden_pools]`, unreadable or missing from one reading is never that evidence: a Pro account whose Argon window is hidden
