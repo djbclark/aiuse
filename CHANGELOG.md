@@ -10,6 +10,30 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [5.3.0] - 2026-11-21
+
+### Changed
+
+- A window under 5% left is no longer "usable": `usable_now` is false and the
+  window's reset becomes `available_at` (the window itself stays `tight`, not
+  `exhausted`; `NEAR_EMPTY_BELOW` in `analysis/selfdescribe.py`). On
+  2026-11-21 OpenCode Go's weekly window read 2% left and "usable", and the next
+  agent run hit `GoUsageLimitError` within minutes. Live test calls against
+  every pool (OpenCode Go, ClinePass, z.ai, antigravity) agreed with aiuse's
+  full/usable verdicts otherwise.
+- A new `client_limits` entry of `kind: "capacity"` on antigravity reports
+  Paseo agents' transient `Resource has been exhausted (e.g. check quota)`
+  errors from cloudcode-pa for 10 minutes: a short, model-level cooldown, never
+  an exhausted pool (`usable_now` stays quota-based). It names the models that
+  failed. See [`docs/antigravity-pools.md`](docs/antigravity-pools.md).
+
+### Fixed
+
+- Antigravity windows at 0% no longer show a made-up countdown. CodexBar sets
+  an unused window's reset to its own snapshot time plus the window length, so
+  `Claude/GPT 5-hour` read `4h56m` forever; the stamp is dropped and the cell
+  reads `5h↻` (clock not started) until the first call starts a real clock.
+
 ## [5.2.1] - 2026-11-21
 
 ### Changed
@@ -70,27 +94,7 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ## [Unreleased]
 
-### Changed
-
-- A window under 5% left is no longer "usable": `usable_now` is false and the
-  window's reset becomes `available_at` (the window itself stays `tight`, not
-  `exhausted`; `NEAR_EMPTY_BELOW` in `analysis/selfdescribe.py`). On
-  2026-11-21 OpenCode Go's weekly window read 2% left and "usable", and the next
-  agent run hit `GoUsageLimitError` within minutes. Live test calls against
-  every pool (OpenCode Go, ClinePass, z.ai, antigravity) agreed with aiuse's
-  full/usable verdicts otherwise.
-- A new `client_limits` entry of `kind: "capacity"` on antigravity reports
-  Paseo agents' transient `Resource has been exhausted (e.g. check quota)`
-  errors from cloudcode-pa for 10 minutes: a short, model-level cooldown, never
-  an exhausted pool (`usable_now` stays quota-based). It names the models that
-  failed. See [`docs/antigravity-pools.md`](docs/antigravity-pools.md).
-
 ### Fixed
-
-- Antigravity windows at 0% no longer show a made-up countdown. CodexBar sets
-  an unused window's reset to its own snapshot time plus the window length, so
-  `Claude/GPT 5-hour` read `4h56m` forever; the stamp is dropped and the cell
-  reads `5h↻` (clock not started) until the first call starts a real clock.
 
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global
@@ -504,7 +508,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.2.1...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.3.0...HEAD
+[5.3.0]: https://github.com/djbclark/aiuse/compare/v5.2.1...v5.3.0
 [5.2.1]: https://github.com/djbclark/aiuse/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/djbclark/aiuse/compare/v5.1.3...v5.2.0
 [4.1.1]: https://github.com/djbclark/aiuse/compare/v4.1.0...v4.1.1
