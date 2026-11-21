@@ -120,6 +120,17 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ## [Unreleased]
 
+### Added
+
+- `aiuse --available --json` gains a top-level `unavailable[]` (schema 1.8, bumped
+  from 1.7): one item per pool entry that is not usable now and is neither
+  operator-excluded nor a hidden ceiling row, with `reason` (`exhausted`,
+  `near_empty`, `rate_gated`, `no_reading`), `binding_window`, `available_at`,
+  `headroom_percent`, the refresh-gate fields and `rate_gated_by` when present.
+  A consumer can now tell "empty until Monday" from "not reported".
+  `available` and `excluded` are unchanged. Documented in
+  `docs/json-contract.md` and `semantics.unavailable`.
+
 ### Fixed
 
 - The Argon model-to-pool map no longer assumes every account has an Argon

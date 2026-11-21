@@ -1245,6 +1245,7 @@ def _run_available(args: argparse.Namespace) -> int:
         model_cap_line,
         sibling_pool_line,
         summary_line,
+        unavailable_pools,
     )
     from aiuse.models import canonical_provider, parse_dt, utcnow
     from aiuse.timefmt import format_as_of
@@ -1340,6 +1341,12 @@ def _run_available(args: argparse.Namespace) -> int:
     if filtered:
         candidates = [p for p in candidates if _wanted(str(p.get("provider") or ""))]
     pools, excluded = apply_exclusions(candidates, exclusions)
+    unavailable = unavailable_pools(
+        snap_dict,
+        show_total_rows=show_total,
+        exclusions=exclusions,
+        wanted=(lambda pool: _wanted(str(pool.get("provider") or ""))) if filtered else None,
+    )
     hidden_pools = snap_dict.get("hidden_pools") or {}
     # Top-level fresh is honest per pool: it is true only when the snapshot
     # itself is within the global limit AND every reported usable entry is
@@ -1361,6 +1368,7 @@ def _run_available(args: argparse.Namespace) -> int:
                     **fresh,
                     "available": pools,
                     "excluded": excluded,
+                    "unavailable": unavailable,
                     "hidden_pools": hidden_pools,
                     "disabled_services": snap_dict.get("disabled_services") or {},
                     "agent_notes": snap_dict.get("agent_notes", []),

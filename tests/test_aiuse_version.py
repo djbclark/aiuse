@@ -58,7 +58,7 @@ def _snap(version: str | None = None) -> Snapshot:
 
 
 def test_schema_is_1_7_and_semantics_describe_the_field():
-    assert SCHEMA_VERSION == "1.7"
+    assert SCHEMA_VERSION == "1.8"
     assert "COLLECTED" in SEMANTICS["aiuse_version"]
 
 
@@ -91,7 +91,7 @@ def test_save_snapshot_persists_the_version_in_every_copy(tmp_path):
     data = json.loads(path.read_text())
     assert data["aiuse_version"] == "5.1.3"
     assert data["snapshot"]["aiuse_version"] == "5.1.3"
-    assert data["schema_version"] == "1.7"
+    assert data["schema_version"] == "1.8"
     latest = json.loads((history.snapshot_dir() / "latest.json").read_text())
     assert latest["aiuse_version"] == "5.1.3"
     burst = history.save_snapshot(_snap("5.1.3"), [], partial_providers=["codex"])
@@ -162,7 +162,7 @@ def test_json_envelope_carries_the_collecting_build(monkeypatch, capsys):
     monkeypatch.setattr(cli, "should_persist_snapshots", lambda _config: False)
     assert cli.main(["--json", "-q"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == "1.7"
+    assert payload["schema_version"] == "1.8"
     assert payload["aiuse_version"] == "5.1.3"
     assert payload["snapshot"]["aiuse_version"] == "5.1.3"
 
@@ -187,7 +187,7 @@ def test_available_envelope_reports_the_cache_files_collector(tmp_path, monkeypa
     monkeypatch.setattr(history, "snapshot_dir", lambda: cache)
     assert cli.main(["--available", "--json", "-q"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == "1.7"
+    assert payload["schema_version"] == "1.8"
     assert payload["aiuse_version"] == "5.1.3"  # the collector's build, not the running one's
 
 

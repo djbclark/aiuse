@@ -80,6 +80,37 @@ pool's limit too, and `stale_pools` (additive, schema 1.5) names the usable
 entries that are not: do not route on a stale usable entry without
 re-collecting.
 
+## What's new in schema 1.8 (unreleased)
+
+Schema 1.8 is additive in shape; two values change meaning because they were
+wrong (`available_at`, the Argon model map).
+
+- **`available_at` is the latest depleted reset.** A pool with several
+  depleted windows (exhausted, or under 5% left) is usable again only when
+  every one has reset, so `available_at` is the LATEST `resets_at` among them
+  (1.1-1.7 reported the earliest, which named a time at which the pool was
+  still empty: OpenCode Go read the weekly reset 2026-11-23 while its monthly
+  window stayed out until 2026-11-27). A depleted window with no reset time is
+  ignored for the maximum; a healthy window with a later reset does not extend
+  the wait. omp combines its rate gate's reset (`rate_gated_by.resets_at`) with
+  its own depleted windows the same way, and a Cursor entry with the monthly
+  ceiling spent waits for the later of the ceiling and its own window.
+- **Model-to-pool map derived from the reported windows.** `gemini-4-argon*`
+  maps to `gemini_argon` only when the account reports an Argon-own window
+  (Google AI Pro did: "Gemini 4 Argon weekly"). On Google AI Ultra, Gemini 4
+  Carbon, Neon, Hydrogen and Argon share the one `gemini` pool and no
+  per-model window exists, so Argon maps to `gemini`. See
+  [antigravity-pools.md](antigravity-pools.md) and `semantics.model_pool_family`.
+- **`refreshable_at`, `refresh_blocked_by_gate`, `gate_remaining_seconds`** on
+  a stale reading from a gated provider (antigravity): see "How to read this"
+  above and the entry fields below.
+- **`unavailable[]` in the `--available` envelope** (described in full under
+  "`aiuse --available`" below): every routing entry that is not `usable_now`,
+  is not operator-excluded and is not a hidden ceiling row, with a closed
+  `reason` (`exhausted`, `near_empty`, `rate_gated`, `no_reading`), the
+  `binding_window`, `available_at` and `headroom_percent`. `available` and
+  `excluded` are unchanged.
+
 ## What's new in schema 1.7 (2026-11-21)
 
 Schema 1.7 is additive: one new field, `aiuse_version`, so data can be traced
@@ -294,6 +325,17 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
     `overall_pace_percent`, and `overall_pace_early`.
 
 ### Changelog
+
+#### Schema 1.8 (unreleased)
+
+- Bump `schema_version` to **1.8**.
+- Fix: `available_at` is the latest `resets_at` among depleted windows (was the
+  earliest), on accounts, routing entries and Cursor `sibling_pools`.
+- Fix: `gemini-4-argon*` -> `gemini_argon` only when the account reports an
+  Argon-own window; otherwise `gemini`.
+- Add (stale gated readings): `refreshable_at`, `refresh_blocked_by_gate`,
+  `gate_remaining_seconds`.
+- Add: top-level `unavailable[]` on `aiuse --available --json`.
 
 #### Schema 1.7 (2026-11-21)
 
@@ -618,7 +660,7 @@ Default `aiuse --json` stdout:
 
 ```json
 {
-  "schema_version": "1.7",
+  "schema_version": "1.8",
   "aiuse_version": "5.1.3",   // 1.7: the build that COLLECTED this data (null/absent = unknown)
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
@@ -686,7 +728,7 @@ operator script reads it). Enriched fields (`state`, `usable_now`,
 
 ```json
 {
-  "schema_version": "1.7",
+  "schema_version": "1.8",
   "aiuse_version": "5.1.3",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
@@ -790,13 +832,14 @@ sorted by headroom (most left first), each with `models_hint` and the local
 
 ```json
 {
-  "schema_version": "1.7",
+  "schema_version": "1.8",
   "aiuse_version": "5.1.3",   // the build that COLLECTED the readings (a cache keeps its collector's); null for an old cache
   "generated_at": "2026-10-03T23:05:00+00:00",
   "source": "cache",
   "age_seconds": 412.0,
   "fresh": true,
   "stale_pools": [],
+  "unavailable": [],
   "available": [
     {
       "provider": "antigravity",
@@ -835,6 +878,67 @@ top-level `excluded` array — `provider`, `account`, `pool_family`,
 `cli_binary`, `headroom_percent`, `reason` — so a reader can tell "ruled out"
 from "exhausted". Text mode prints one `excluded by operator: …` line per pool
 on stderr. The exit code counts only `available`.
+
+### `unavailable[]` — the pools that are not in `available` (schema 1.8)
+
+`available` lists only `usable_now` pools and `excluded` only the usable pools the
+operator ruled out, so an exhausted, near-empty or rate-gated pool appeared in
+neither: a consumer could not tell "empty until Monday" from "not reported".
+The top-level `unavailable` array has one item per routing entry (one per
+account and pool family, the same unit as `available`) whose `usable_now` is
+false, except entries the operator excluded (`analysis.excluded_pools`,
+`[disabled_services]`; they are not listed twice) and hidden ceiling rows (the
+Cursor `total` pool unless `analysis.show_total_rows`). It is `[]` when every
+pool is usable. Items are sorted by `available_at`, soonest first, unknown
+last. `available`, `excluded`, `fresh` and `stale_pools` are unchanged.
+
+- `provider`, `account`, `pool_family`: exactly as the same entry shows in
+  `available`.
+- `pool_id`: canonical `<vendor>:<pool_family>` id; omitted when the entry has none.
+- `reason`: why the pool is out, the first that holds of `rate_gated`,
+  `exhausted`, `near_empty`, `no_reading` (below).
+- `binding_window` (string | null): label of the window that decides when the
+  pool is usable again: the depleted window with the LATEST reset (the rate
+  gate's window when it resets later); with no reset known, the depleted window
+  with the least left; for `no_reading`, the least-left window, if any.
+- `available_at` (string | null): ISO time the whole pool is usable again, the
+  latest reset among its depleted windows ("What's new in schema 1.8"); null when
+  no reset time is known (re-collect with `--live`).
+- `headroom_percent` (number | null): smallest remaining percent across the
+  entry's applicable windows (Fable's cap scaled to shared-weekly units); null
+  when no window has a reading.
+- `refreshable_at`, `refresh_blocked_by_gate`, `gate_remaining_seconds`: only
+  when the reading is stale and its provider has a query gate (antigravity):
+  when a re-collect may refresh it, whether that is still blocked, and the
+  seconds left. Retry at `refreshable_at` instead of looping on `--live`.
+- `rate_gated_by`: only when set (omp while the shared Claude window is
+  exhausted): `{provider, account, window_label, resets_at, evidence}`.
+
+`reason` values (a closed set; `semantics.unavailable_reason` repeats them):
+
+- `rate_gated`: the pool is held by something other than its own windows: omp
+  while the shared Claude weekly/monthly window is exhausted (`rate_gated_by`
+  names it), or an API-key pool whose keys are all blocked until a known time.
+  `available_at` is that reset, or a later own reset.
+- `exhausted`: a window has 1% or less left, or is marked exhausted or blocked
+  (an agent note, a spend limit), including a spent Cursor monthly ceiling.
+- `near_empty`: a window has under 5% left but none is exhausted (work cannot
+  finish on it, so `usable_now` is false).
+- `no_reading`: nothing to route on: every window unknown, no data for the
+  family, or the reading is frozen (`measurement_frozen`).
+
+```json
+{
+  "provider": "opencode-go",
+  "account": "t-e",
+  "pool_family": null,
+  "pool_id": "opencode:go",
+  "reason": "exhausted",
+  "binding_window": "Monthly",
+  "available_at": "2026-11-27T00:00:00+00:00",
+  "headroom_percent": 0.0
+}
+```
 
 An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
 routing entry, so a reader sees the dollars without opening the account.

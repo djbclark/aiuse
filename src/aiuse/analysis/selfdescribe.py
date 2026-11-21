@@ -18,7 +18,7 @@ snapshot-shaped dicts (no I/O) so live ``--json``, the on-disk cache,
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from aiuse.analysis.ceilings import window_is_ceiling
 from aiuse.analysis.pace import (
@@ -52,7 +52,7 @@ from aiuse.models import (
 )
 from aiuse.timefmt import format_as_of, format_clock, format_lead
 
-SCHEMA_VERSION = "1.7"
+SCHEMA_VERSION = "1.8"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -131,6 +131,8 @@ SEMANTICS: dict[str, Any] = {
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
     "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs; Paseo agent 429s from the daemon's per-agent error files, short cooldown, never an exhaustion); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
+    "unavailable": "--available only: one item per routing entry that is NOT usable_now and is neither operator-excluded (those are dropped here and never listed twice) nor a hidden ceiling (total) row; the pools missing from 'available' because they are empty or blocked, so a consumer can tell 'empty until Monday' from 'not reported'. Item {provider, account, pool_family, pool_id (when the entry has one), reason, binding_window, available_at, headroom_percent, plus refreshable_at / refresh_blocked_by_gate / gate_remaining_seconds when the reading is stale and gated, and rate_gated_by when set}; soonest available_at first, nulls last. Additive, schema 1.8; [] when every pool is usable. Never route to an item before its available_at (null: unknown, re-collect with --live)",
+    "unavailable_reason": "unavailable item reason, the first that holds: rate_gated (omp while the shared Claude window is exhausted, rate_gated_by names it; or an API key blocked until a known time) | exhausted (a window with <= 1% left, or marked exhausted or blocked, including a spent Cursor monthly ceiling) | near_empty (a window under 5% left, none exhausted: work cannot finish on it) | no_reading (no usable measurement: every window unknown, or the reading is frozen); the item's available_at is when the whole pool is usable again",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
     "hidden_pools": "operator-hidden pools (config [hidden_pools]) with the reason; rows are dropped at collection and omitted from human outputs and --available by default",
@@ -1219,8 +1221,69 @@ def burn_before_reset(
     }
 
 
-def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> list[dict[str, Any]]:
-    """One entry per (account, pool_family) — the unit an orchestrator routes on."""
+UNAVAILABLE_REASONS = ("exhausted", "near_empty", "rate_gated", "no_reading")
+
+
+def _unavailable_detail(
+    *,
+    windows: list[dict[str, Any]],
+    ceiling: list[dict[str, Any]],
+    gate: Mapping[str, Any] | None,
+    key_pool: Any,
+    is_blocked: bool,
+    binding_label: str | None,
+) -> dict[str, Any]:
+    """Why a pool entry is not usable_now and which window binds, by the usable_now logic.
+
+    ``reason`` is the first that holds: ``rate_gated`` (the omp shared-Claude gate,
+    or an API key blocked until a known time), ``exhausted`` (a window at <= 1% left
+    or marked exhausted/blocked, including a spent Cursor monthly ceiling),
+    ``near_empty`` (a window under NEAR_EMPTY_BELOW left but none exhausted),
+    otherwise ``no_reading`` (no measurement to route on, or a frozen one).
+    The binding window is the depleted window that resets LAST (the one that
+    decides ``available_at``), the gate's window when the gate resets later.
+    """
+    depleted = [w for w in windows + ceiling if window_depleted(w)]
+    dated: list[tuple[datetime, str]] = []
+    for window in depleted:
+        reset = parse_dt(window.get("resets_at"))
+        if reset is not None:
+            dated.append((reset, str(window.get("label") or "")))
+    if gate:
+        gate_reset = parse_dt(gate.get("resets_at"))
+        if gate_reset is not None:
+            dated.append((gate_reset, str(gate.get("window_label") or "shared Claude window")))
+    if gate:
+        reason = "rate_gated"
+    elif is_blocked or any(w.get("state") in ("exhausted", "blocked") for w in depleted):
+        reason = "exhausted"
+    elif depleted:
+        reason = "near_empty"
+    elif isinstance(key_pool, dict) and not key_pool.get("usable") and parse_dt(key_pool.get("available_at")):
+        reason = "rate_gated"
+    else:
+        reason = "no_reading"
+    if dated:
+        binding_window: str | None = max(dated, key=lambda item: item[0])[1]
+    elif depleted:
+        binding_window = str(min(depleted, key=lambda w: window_remaining(w) or 0.0).get("label") or "")
+    else:
+        binding_window = binding_label
+    return {"reason": reason, "binding_window": binding_window}
+
+
+def pool_entries(
+    snap: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    details: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """One entry per (account, pool_family) — the unit an orchestrator routes on.
+
+    ``details``, when given, receives one dict per returned entry (same order):
+    ``{reason, binding_window}`` from ``_unavailable_detail``, for the entries whose
+    ``usable_now`` is false (see ``unavailable_pools``).
+    """
     now = now or utcnow()
     pools: list[dict[str, Any]] = []
     for account in snap.get("accounts") or []:
@@ -1332,6 +1395,19 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                         waking_hours_per_day=float(account.get("_waking_hours_per_day", 16.0)),
                     ),
                     2,
+                )
+            if details is not None:
+                details.append(
+                    _unavailable_detail(
+                        windows=windows,
+                        ceiling=ceiling,
+                        gate=gate if isinstance(gate, Mapping) else None,
+                        key_pool=key_pool,
+                        is_blocked=is_blocked,
+                        binding_label=str(binding.get("label") or "") if binding else None,
+                    )
+                    if not usable
+                    else {}
                 )
             pools.append(
                 {
@@ -1756,6 +1832,66 @@ def available_pools(snap: Mapping[str, Any]) -> list[dict[str, Any]]:
     pools = [p for p in pool_entries(snap) if p.get("usable_now")]
     pools.sort(key=lambda p: (-(p.get("headroom_percent") or 0.0), str(p.get("provider"))))
     return pools
+
+
+_UNAVAILABLE_GATE_KEYS = _REFRESH_GATE_KEYS
+
+
+def unavailable_pools(
+    snap: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+    show_total_rows: bool = False,
+    exclusions: Mapping[str, Any] | None = None,
+    wanted: Callable[[Mapping[str, Any]], bool] | None = None,
+) -> list[dict[str, Any]]:
+    """The pools ``--available`` does not list: one item per entry with ``usable_now`` false.
+
+    Mirrors the shortlist's filters so the two lists partition the routable
+    pools: hidden ceiling (``total``) rows are dropped unless
+    ``show_total_rows``, a pool the operator ruled out
+    (``analysis.excluded_pools``, ``[disabled_services]``) is dropped (it is
+    listed under ``excluded`` only when it is usable), and ``wanted`` applies the
+    caller's provider selection. Soonest ``available_at`` first, unknown last.
+    """
+    details: list[dict[str, Any]] = []
+    entries = pool_entries(snap, now=now, details=details)
+    detail_by_entry = {id(e): d for e, d in zip(entries, details) if not e.get("usable_now")}
+    candidates = [e for e in entries if id(e) in detail_by_entry]
+    candidates = filter_ceiling_pools(candidates, show_total_rows=show_total_rows)
+    if wanted is not None:
+        candidates = [e for e in candidates if wanted(e)]
+    kept, _excluded = apply_exclusions(candidates, exclusions)
+    items: list[dict[str, Any]] = []
+    for entry in kept:
+        detail = detail_by_entry[id(entry)]
+        items.append(
+            {
+                "provider": entry.get("provider"),
+                "account": entry.get("account"),
+                "pool_family": entry.get("pool_family"),
+                **({"pool_id": entry["pool_id"]} if entry.get("pool_id") else {}),
+                "reason": detail["reason"],
+                "binding_window": detail["binding_window"],
+                "available_at": entry.get("available_at"),
+                "headroom_percent": entry.get("headroom_percent"),
+                **{key: entry[key] for key in _UNAVAILABLE_GATE_KEYS if key in entry},
+                **({"rate_gated_by": entry["rate_gated_by"]} if entry.get("rate_gated_by") else {}),
+            }
+        )
+
+    def _order(item: Mapping[str, Any]) -> tuple[Any, ...]:
+        when = parse_dt(item.get("available_at"))
+        return (
+            when is None,
+            when.timestamp() if when is not None else 0.0,
+            str(item.get("provider") or ""),
+            str(item.get("account") or ""),
+            str(item.get("pool_family") or ""),
+        )
+
+    items.sort(key=_order)
+    return items
 
 
 def apply_exclusions(
