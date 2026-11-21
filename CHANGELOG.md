@@ -10,6 +10,27 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [5.2.0] - 2026-11-21
+
+### Added
+
+- `aiuse_version`, the aiuse build that collected the data, is recorded on every
+  persisted snapshot, burst sample and ledger sample and shown on the
+  `--json`, `--available --json` and serve envelopes (additive, JSON schema
+  1.7). Old records without it mean "unknown". A snapshot replayed from disk
+  shows its own recorded build. This lets history from a build later found buggy
+  be found and corrected ([`docs/data-corrections.md`](docs/data-corrections.md)).
+- Human output names the build: the meta line reads `Collected by aiuse X.Y.Z
+at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
+  `usage-sources`, `gate status` and the chat report show it once.
+
+### Changed
+
+- `aiuse watch` puts the `Collected by aiuse …` line on the same row as the AI
+  `--json` line, right-aligned, when the terminal is wide enough; narrower
+  terminals keep the two-row layout.
+- The plain `aiuse` hint reads `Detail: aiuse --full` (was `Detail: ai --full`).
+
 ## [5.1.3] - 2026-11-21
 
 ### Fixed
@@ -30,25 +51,6 @@ Releases before 3.9.0 are in the
   POOL/SCOPE names.
 
 ## [Unreleased]
-
-### Added
-
-- `aiuse_version`, the aiuse build that collected the data, is recorded on every
-  persisted snapshot, burst sample and ledger sample and shown on the
-  `--json`, `--available --json` and serve envelopes (additive, JSON schema
-  1.7). Old records without it mean "unknown". A snapshot replayed from disk
-  shows its own recorded build. This lets history from a build later found buggy
-  be found and corrected ([`docs/data-corrections.md`](docs/data-corrections.md)).
-- Human output names the build: the meta line reads `Collected by aiuse X.Y.Z
-at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
-  `usage-sources`, `gate status` and the chat report show it once.
-
-### Changed
-
-- `aiuse watch` puts the `Collected by aiuse …` line on the same row as the AI
-  `--json` line, right-aligned, when the terminal is wide enough; narrower
-  terminals keep the two-row layout.
-- The plain `aiuse` hint reads `Detail: aiuse --full` (was `Detail: ai --full`).
 
 ### Fixed
 
@@ -464,7 +466,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.1.3...HEAD
+[5.2.0]: https://github.com/djbclark/aiuse/compare/v5.1.3...v5.2.0
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.2.0...HEAD
 [4.1.1]: https://github.com/djbclark/aiuse/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/djbclark/aiuse/compare/v4.0.3...v4.1.0
 [4.0.3]: https://github.com/djbclark/aiuse/compare/v4.0.0...v4.0.3
