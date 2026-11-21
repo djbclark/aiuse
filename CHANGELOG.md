@@ -10,6 +10,18 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [5.3.1] - 2026-11-21
+
+### Fixed
+
+- The antigravity capacity signal added in 5.3.0 never fired on real data: Paseo
+  marks an agent that hit the error `lastStatus: "closed"`, and the scan only
+  read `error` agents. It now reads `lastError` from agents in any status
+  (verified on the 2026-11-19 and 2026-11-21 agent files); the z.ai throttle and
+  refusal scans keep their error-only reading.
+- README: `--json` is schema 1.7 (it said 1.4) and says what makes `usable_now`
+  false.
+
 ## [5.3.0] - 2026-11-21
 
 ### Changed
@@ -508,7 +520,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.3.0...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.3.1...HEAD
+[5.3.1]: https://github.com/djbclark/aiuse/compare/v5.3.0...v5.3.1
 [5.3.0]: https://github.com/djbclark/aiuse/compare/v5.2.1...v5.3.0
 [5.2.1]: https://github.com/djbclark/aiuse/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/djbclark/aiuse/compare/v5.1.3...v5.2.0

@@ -419,6 +419,21 @@ def test_antigravity_capacity_error_is_a_cooldown_never_an_exhaustion():
     assert parse_dt(entry["cooldown_until"]) == event + timedelta(minutes=10)
 
 
+def test_antigravity_capacity_error_is_seen_when_the_agent_is_closed():
+    """Real 2026-11-19/21 shape: the error text stays in lastError but lastStatus is 'closed'."""
+    from aiuse.paseo_refusals import scan_antigravity_capacity
+
+    now = utcnow()
+    doc = _agent("pi", "antigravity/gemini-3.8-flash", AGY_CAPACITY, now=now, status="closed")
+    _write_agent("proj", "cap-closed", doc)
+    entry = scan_antigravity_capacity(now=now)
+    assert entry is not None
+    assert entry["kind"] == "capacity"
+    assert entry["evidence"].endswith("cap-closed.json")
+    # The z.ai throttle and refusal scans keep their error-status-only reading.
+    assert scan_paseo_throttle(now=now) is None
+
+
 def test_antigravity_capacity_error_ages_out_of_the_cooldown():
     from aiuse.paseo_refusals import scan_antigravity_capacity
 

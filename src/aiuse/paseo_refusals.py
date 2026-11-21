@@ -161,9 +161,19 @@ def _recent_files(root: Path, since: datetime, limit: int) -> list[Path]:
 
 
 def _iter_error_docs(
-    agents_dir: Path, *, lookback: timedelta, now: datetime, limit: int = _MAX_FILES
+    agents_dir: Path,
+    *,
+    lookback: timedelta,
+    now: datetime,
+    limit: int = _MAX_FILES,
+    any_status: bool = False,
 ) -> list[tuple[Path, dict[str, Any]]]:
-    """``(path, doc)`` per recent Paseo agent state file whose last run errored."""
+    """``(path, doc)`` per recent Paseo agent state file whose last run errored.
+
+    ``any_status`` also takes a file whose ``lastError`` is set but whose
+    ``lastStatus`` has moved on (a Pi agent that hit the Antigravity capacity
+    error reads ``closed``, never ``error``: 2026-11-19 and 2026-11-21 files).
+    """
     docs: list[tuple[Path, dict[str, Any]]] = []
     for path in _recent_files(agents_dir, now - lookback, limit):
         try:
@@ -172,7 +182,7 @@ def _iter_error_docs(
             continue
         if not isinstance(doc, dict):
             continue
-        if str(doc.get("lastStatus") or "") != "error":
+        if not any_status and str(doc.get("lastStatus") or "") != "error":
             continue
         error = doc.get("lastError")
         if not isinstance(error, str) or not error.strip():
@@ -335,7 +345,7 @@ def scan_antigravity_capacity(
     best: tuple[datetime, Path, dict[str, Any]] | None = None
     failed = 0
     models: dict[str, None] = {}
-    for path, doc in _iter_error_docs(root, lookback=cooldown, now=now):
+    for path, doc in _iter_error_docs(root, lookback=cooldown, now=now, any_status=True):
         text = str(doc.get("lastError") or "")
         low = text.casefold()
         if _CAPACITY_MARKER not in low or not any(ctx in low for ctx in _CAPACITY_CONTEXT):
