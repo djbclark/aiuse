@@ -1105,13 +1105,11 @@ def enrich_snapshot(
         if isinstance(analysis_cfg, Mapping):
             threshold_by_provider = analysis_cfg.get("fresh_threshold_seconds_by_provider")
     if query_interval_by_provider is None:
-        from aiuse.config import DEFAULT_QUERY_MIN_INTERVAL
+        from aiuse.collectors.throttle import min_intervals
 
-        configured = config.get("query_min_interval") if isinstance(config, Mapping) else None
-        query_interval_by_provider = {
-            **DEFAULT_QUERY_MIN_INTERVAL,
-            **({str(k).lower(): v for k, v in configured.items()} if isinstance(configured, Mapping) else {}),
-        }
+        # The very table the throttle enforces, so the refresh-gate fields can never
+        # disagree with the real gate (an invalid value falls back to the default).
+        query_interval_by_provider = min_intervals(config)
     throttle_next_query = _throttle_lookup(config)
     if credit_overrides is not None or any(
         isinstance(a, dict) and a.get("provider") in ("omp", "pi") for a in snap.get("accounts") or []

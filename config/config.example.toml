@@ -189,6 +189,8 @@
 # per further empty answer (cap 1h); one usable answer resets it.
 # Values must be finite and at most 604800 (7 days): inf, nan and absurdly large
 # numbers are config errors (validate_config), and are clamped if one slips through.
+# So are text, true/false and nan: the provider's default (900 for antigravity)
+# applies instead, in the gate AND in the refresh-gate fields.
 # The same state also says when a stale reading can be re-collected:
 # refreshable_at / refresh_blocked_by_gate in --json and --available.
 # antigravity = 900  # agy 429s on quota probes in quick succession

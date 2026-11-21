@@ -143,6 +143,13 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- A boolean `query_min_interval` (`antigravity = true`) is now a `validate_config`
+  error instead of passing as a 1 s gate, and an invalid value (nan, text, a
+  boolean, a list) leaves the refresh-gate fields on the same default the throttle
+  enforces (900 s for antigravity) instead of dropping `refreshable_at`,
+  `refresh_blocked_by_gate` and `gate_remaining_seconds`, which read as "no query
+  gate" (schema 1.8 adversary round 2, nit 5). `enrich_snapshot` now takes its
+  intervals from `collectors.throttle.min_intervals`, the table the gate enforces.
 - `next_query_at` (the throttle state behind `refreshable_at` /
   `refresh_blocked_by_gate`) treats a future `queried_at` as clock skew, the way
   `TimeoutBackoff.blocked_until` does and `QueryGate.__enter__` allows the query,

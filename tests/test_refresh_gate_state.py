@@ -126,8 +126,22 @@ def test_an_infinite_or_huge_interval_does_not_crash_enrichment():
         assert parse_dt(account["refreshable_at"]) > NOW + timedelta(days=6)
 
 
-def test_a_nan_interval_leaves_the_gate_fields_off_instead_of_crashing():
-    account = _run(timedelta(minutes=40), {"query_min_interval": {"antigravity": float("nan")}})
+def test_an_invalid_interval_falls_back_to_the_default_the_throttle_enforces():
+    """Review round 2, nit 5: NaN, text or a boolean made the gate fields vanish while the throttle used 900 s."""
+    from aiuse.collectors.throttle import min_intervals
+
+    for value in (float("nan"), "abc", True, False, None, [900]):
+        config = {"query_min_interval": {"antigravity": value}}
+        assert min_intervals(config) == {"antigravity": 900.0}, value
+        account = _run(timedelta(seconds=700), config)
+        assert account["stale"] is True, value
+        assert account["refresh_blocked_by_gate"] is True, value
+        assert account["gate_remaining_seconds"] == 200.0, value  # reading + the 900 s default
+        assert parse_dt(account["refreshable_at"]) == NOW + timedelta(seconds=200), value
+
+
+def test_a_disabled_interval_still_leaves_the_gate_fields_off():
+    account = _run(timedelta(minutes=40), {"query_min_interval": {"antigravity": 0}})
     assert account["stale"] is True
     assert "refreshable_at" not in account
 
@@ -149,6 +163,15 @@ def test_validate_config_rejects_non_finite_and_absurd_intervals():
         issues = validate_config({"query_min_interval": {"antigravity": value}})
         assert any("query_min_interval.antigravity" in i and i.startswith("error") for i in issues), value
     assert validate_config({"query_min_interval": {"antigravity": 900, "codex": MAX_QUERY_MIN_INTERVAL}}) == []
+
+
+def test_validate_config_rejects_boolean_intervals():
+    """float(True) is 1.0, so `antigravity = true` used to pass as a 1 s gate."""
+    from aiuse.config import validate_config
+
+    for value in (True, False):
+        issues = validate_config({"query_min_interval": {"antigravity": value}})
+        assert any("query_min_interval.antigravity" in i and i.startswith("error") for i in issues), value
 
 
 def test_a_future_queried_at_is_clock_skew_not_a_closed_gate():

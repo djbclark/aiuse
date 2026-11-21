@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from aiuse.analysis import history
 from aiuse.config import DEFAULT_QUERY_MIN_INTERVAL, MAX_QUERY_MIN_INTERVAL
@@ -49,12 +49,19 @@ def throttle_dir() -> Path:
     return history.snapshot_dir().parent / "query-throttle"
 
 
-def min_intervals(config: dict[str, Any] | None) -> dict[str, float]:
-    """Provider -> minimum seconds between live queries (config over defaults)."""
+def min_intervals(config: Mapping[str, Any] | None) -> dict[str, float]:
+    """Provider -> minimum seconds between live queries (config over defaults).
+
+    An invalid value (NaN, text, a boolean, a list) leaves that provider on its
+    default, and this table is the one the refresh-gate fields also use, so
+    ``refreshable_at`` always agrees with what the gate really enforces.
+    """
     table = dict(DEFAULT_QUERY_MIN_INTERVAL)
     configured = (config or {}).get("query_min_interval")
-    if isinstance(configured, dict):
+    if isinstance(configured, Mapping):
         for provider, value in configured.items():
+            if isinstance(value, bool):
+                continue  # float(True) is 1.0: a typo would pass as a 1 s gate
             try:
                 seconds = float(value)
             except (TypeError, ValueError):

@@ -414,7 +414,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # winner; "acp" is context fill, not the 5h/weekly window.
     "usage_sources": {},
     # Provider id -> minimum seconds between live quota queries, across all aiuse
-    # processes (CLI, `aiuse sample`, watch, serve). 0 disables the limit.
+    # processes (CLI, `aiuse sample`, watch, serve). 0 disables the limit. An
+    # invalid value (text, true/false, nan) is a config error and the default applies.
     "query_min_interval": dict(DEFAULT_QUERY_MIN_INTERVAL),
     # Source-specific local account ids can be mapped to the account label used
     # by other collectors.  Normally this stays empty: runner.py automatically
@@ -1269,6 +1270,9 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
         issues.append("error: query_min_interval must be a provider -> seconds mapping")
     elif isinstance(query_min_interval, dict):
         for provider, value in query_min_interval.items():
+            if isinstance(value, bool):
+                issues.append(f"error: query_min_interval.{provider} must be a number of seconds, not {value!r}")
+                continue
             try:
                 seconds = float(value)
             except (TypeError, ValueError):
