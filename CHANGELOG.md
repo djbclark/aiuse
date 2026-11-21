@@ -157,7 +157,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   reset) while its monthly window stayed out until 2026-11-27. Applies to the
   account's and the routing entry's `available_at` and to Cursor sibling pools;
   the omp shared-Claude gate now combines with the entry's own depleted windows
-  the same way (schema 1.8; `docs/json-contract.md`).
+  the same way (schema 1.8; `docs/json-contract.md`). When any depleted window
+  has no parseable reset time, `available_at` is null (and the unavailable
+  item's `binding_window` names that window) instead of naming another
+  window's reset while the undated one is still empty.
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global
   limit — `analysis.fresh_threshold_seconds_by_provider` ships `antigravity =

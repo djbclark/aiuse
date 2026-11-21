@@ -113,7 +113,7 @@ SEMANTICS: dict[str, Any] = {
     "state": "exhausted (<=1% left) | tight (<15% left) | ok | unknown (no data); never compute it yourself",
     "usable_now": "false if any applicable window is exhausted or has under 5% left (near empty: work cannot finish on it; available_at is then the latest reset among the depleted windows) or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
-    "available_at": "when the whole pool is usable again: the LATEST resets_at among its depleted windows (exhausted, or under 5% left), because every one must reset first (before schema 1.8 this was the earliest, which named a reset after which the pool was still out); null when nothing is depleted or no reset time is known; for omp, the later of the shared Claude window's reset (rate_gated_by) and its own depleted windows",
+    "available_at": "when the whole pool is usable again: the LATEST resets_at among its depleted windows (exhausted, or under 5% left), because every one must reset first (before schema 1.8 this was the earliest, which named a reset after which the pool was still out); null when nothing is depleted, or when any depleted window has no reset time (the return time is then unknown, so no other window's reset is named; binding_window on an unavailable item is that window); for omp, the later of the shared Claude window's reset (rate_gated_by) and its own depleted windows",
     "pool_family": "routing family, not necessarily independent quota: antigravity gemini (every Gemini model that has no window of its own), gemini_argon (Gemini 4 Argon, only on plans that report an Argon-own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
     "model_pool_family": "antigravity model id -> pool_family, for dispatchers (aiuse.quota_refusals.pool_family_for_acp_model; schema 1.5, derived from the reported windows since 1.8): claude-* / gpt-* -> claude_gpt; gemini-4-argon* -> gemini_argon only when the account reports an Argon-own window (Google AI Pro did: 'Gemini 4 Argon weekly'); every other gemini-* -> gemini, and so is Argon when no such window is reported (Google AI Ultra: Carbon, Neon, Hydrogen and Argon share the one Gemini pool). Read the families an account actually has from its routing entries' pool_family",
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
@@ -572,12 +572,16 @@ def enrich_account(
         account["binding_window"] = None
         account["binding_headroom_percent"] = None
 
-    reset_times = [parse_dt(w.get("resets_at")) for w in applicable if window_depleted(w) and w.get("resets_at")]
-    reset_times = [t for t in reset_times if t is not None]
+    depleted_resets = [parse_dt(w.get("resets_at")) for w in applicable if window_depleted(w)]
+    reset_times = [t for t in depleted_resets if t is not None]
     if blocked_note is not None:
         account["available_at"] = None
     elif isinstance(key_pool, dict):
         account["available_at"] = key_pool.get("available_at")
+    elif len(reset_times) < len(depleted_resets):
+        # A depleted window with no parseable reset keeps the pool out for an
+        # unknown time: naming another window's reset would claim it is back.
+        account["available_at"] = None
     elif reset_times:
         account["available_at"] = max(reset_times).isoformat()
     else:
@@ -1274,8 +1278,13 @@ def _unavailable_detail(
         reason = "rate_gated"
     else:
         reason = "no_reading"
-    if dated:
-        binding_window: str | None = max(dated, key=lambda item: item[0])[1]
+    undated = [w for w in depleted if parse_dt(w.get("resets_at")) is None]
+    if undated:
+        # A depleted window with no reset time decides when the pool is back
+        # (never): available_at is null and this is the window to blame.
+        binding_window: str | None = str(min(undated, key=lambda w: window_remaining(w) or 0.0).get("label") or "")
+    elif dated:
+        binding_window = max(dated, key=lambda item: item[0])[1]
     elif depleted:
         binding_window = str(min(depleted, key=lambda w: window_remaining(w) or 0.0).get("label") or "")
     else:
@@ -1353,8 +1362,12 @@ def pool_entries(
                 usable = True
             else:
                 usable = False
-            resets = [parse_dt(w.get("resets_at")) for w in windows if window_depleted(w) and w.get("resets_at")]
-            resets = [t for t in resets if t is not None]
+            depleted_resets = [parse_dt(w.get("resets_at")) for w in windows if window_depleted(w)]
+            resets = [t for t in depleted_resets if t is not None]
+            # A depleted window (own or ceiling) with no parseable reset: unknown.
+            undated_depleted = len(resets) < len(depleted_resets) or any(
+                window_depleted(w) and parse_dt(w.get("resets_at")) is None for w in ceiling
+            )
             ceiling_resets = [parse_dt(w.get("resets_at")) for w in ceiling if w.get("resets_at")]
             ceiling_resets = [t for t in ceiling_resets if t is not None]
             # The pool is usable again only when EVERY depleted window (its own, the
@@ -1363,7 +1376,7 @@ def pool_entries(
             # while the monthly window stayed out until 11-27).
             gate_reset = parse_dt(gate.get("resets_at")) if gate else None
             pending = resets + ceiling_resets + ([gate_reset] if gate_reset is not None else [])
-            if is_blocked:
+            if is_blocked or undated_depleted:
                 pool_available: datetime | None = None
             elif pending:
                 pool_available = max(pending)

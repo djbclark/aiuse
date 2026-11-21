@@ -94,9 +94,36 @@ def test_nothing_depleted_has_no_available_at():
     assert account["available_at"] is None
 
 
-def test_depleted_window_without_a_reset_time_is_ignored_for_the_latest():
+def test_depleted_window_without_a_reset_time_makes_available_at_unknown():
+    """A depleted window with no reset time keeps the pool out for an unknown time.
+
+    Naming the other window's reset would claim the pool is back while the
+    undated one is still empty (adversary review of 1.8, finding 1).
+    """
     weekly = _window("Weekly", 0.0, 2, 10080)
-    monthly = _window("Monthly", 0.0, 6, 43200)
+    monthly = _window("Monthly", 0.5, 6, 43200)
     monthly.pop("resets_at")
-    _, entry = _run(_opencode(weekly, monthly))
+    account, entry = _run(_opencode(weekly, monthly))
+    assert entry["usable_now"] is False
+    assert entry["available_at"] is None
+    assert account["available_at"] is None
+
+
+def test_undated_depleted_window_is_the_unavailable_binding_window():
+    weekly = _window("Weekly", 0.0, 2, 10080)
+    monthly = _window("Monthly", 0.5, 6, 43200)
+    monthly.pop("resets_at")
+    details: list[dict] = []
+    enriched = enrich_snapshot(_opencode(weekly, monthly), now=NOW)
+    pool_entries(enriched, now=NOW, details=details)
+    assert details[0]["binding_window"] == "Monthly"
+    assert details[0]["reason"] == "exhausted"
+
+
+def test_undated_window_that_is_healthy_does_not_hide_the_depleted_reset():
+    weekly = _window("Weekly", 0.0, 2, 10080)
+    monthly = _window("Monthly", 60.0, 6, 43200)
+    monthly.pop("resets_at")
+    account, entry = _run(_opencode(weekly, monthly))
     assert _same_instant(entry["available_at"], weekly["resets_at"])
+    assert _same_instant(account["available_at"], weekly["resets_at"])
