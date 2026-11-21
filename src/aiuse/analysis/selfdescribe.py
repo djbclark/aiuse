@@ -124,6 +124,7 @@ SEMANTICS: dict[str, Any] = {
     "fresh": "age_seconds <= the pool's fresh limit (analysis.fresh_threshold_seconds, default 1800s; analysis.fresh_threshold_seconds_by_provider overrides per provider — antigravity ships at 600s because its pools drain fast and its collector reuses payloads up to its 900s query gate); when false, re-collect before trusting ok states. In --available/serve envelopes the top-level fresh is true only when every usable entry is fresh too",
     "stale": "age_seconds > the pool's fresh limit (per-provider, see fresh); the reading is old enough to hide a fresh exhaustion — re-collect before trusting an ok state",
     "stale_reason": "present on a stale pool/account: why the reading is old — its age against the pool's fresh limit, plus the collector's own note when a throttled (query_min_interval) or backed-off query reused an earlier payload; dispatchers quote it when they refuse a stale pool",
+    "refresh_blocked_by_gate": "present on a stale pool/account of a gated provider (antigravity: one live query per 15 minutes, query_min_interval): true while the next live query is not yet allowed, so --live would only return the same reused reading; false once a re-collect can refresh it. refreshable_at is when the gate opens (the reading's own time plus the interval) and gate_remaining_seconds counts down to it (0 once open). A stale entry with refresh_blocked_by_gate true is waiting on the gate, not abandoned: retry at refreshable_at instead of looping on --live. Absent for providers with no query gate",
     "sibling_pools": "on every Cursor routing entry: the account's other pools, whatever their state {pool_family (total | auto | third_party | on_demand | grok_bot), kind, label, state, usable_now, reason (only when usable_now is false), headroom_percent, available_at}. --available lists only usable pools, so with the monthly auto / third_party pools exhausted the shortlist kept cursor/grok_bot at ~80% headroom while cursor-agent's own models were plan-rejected; this field is where the exhausted pools show. The grok_bot entry is the Grok Bot weekly allowance, not cursor-agent headroom: its cli_binary is null and its models_hint names the monthly pools that are out. A spent total ceiling makes the auto and third_party entries usable_now false too (reason monthly total exhausted, available_at the ceiling's reset, the later of the two when the entry's own window is out too). Omitted when the account reports a single pool",
     "stale_pools": "--available and serve /v1/snapshot envelopes: usable_now entries whose own reading is past their pool's fresh limit; the envelope's top-level fresh is true only when this list is empty and the snapshot itself is fresh. Do not route on a stale usable entry without re-collecting (--live): a burst drain or a reused query can have emptied it between reads",
     "summary_lines": "one human line per pool; always shows used AND left, never a bare percentage",
@@ -423,8 +424,15 @@ def enrich_account(
     notes: list[Mapping[str, Any]] | None = None,
     threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
     threshold_by_provider: Mapping[str, float] | None = None,
+    query_interval_by_provider: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     """Add self-describing fields to one account dict (windows enriched too).
+
+    ``query_interval_by_provider`` (provider id -> seconds) is the minimum gap
+    between live queries (collectors/throttle.py). A stale reading from a gated
+    provider then carries ``refreshable_at``, ``refresh_blocked_by_gate`` and
+    ``gate_remaining_seconds``, so a consumer can tell "cannot be re-collected
+    yet" from "re-collect now".
 
     ``threshold_by_provider`` (provider id -> seconds) overrides the global
     ``threshold_seconds`` per provider: a fast-draining pool (antigravity) must
@@ -535,8 +543,11 @@ def enrich_account(
             account["stale"] = age > limit
             if account["stale"]:
                 account["stale_reason"] = _stale_reason(account, age, limit)
+                _apply_refresh_gate(account, provider, dt, now, query_interval_by_provider)
             else:
                 account.pop("stale_reason", None)
+                for key in _REFRESH_GATE_KEYS:
+                    account.pop(key, None)
         else:
             account["age_seconds"] = None
             account["fresh"] = False
@@ -548,6 +559,41 @@ def enrich_account(
 
     _apply_ceiling_caps(provider, windows)
     return account
+
+
+_REFRESH_GATE_KEYS = ("refreshable_at", "refresh_blocked_by_gate", "gate_remaining_seconds")
+
+
+def _apply_refresh_gate(
+    account: dict[str, Any],
+    provider: str,
+    read_at: datetime,
+    now: datetime,
+    intervals: Mapping[str, float] | None,
+) -> None:
+    """Say whether a stale reading can be re-collected yet.
+
+    A gated provider (antigravity: one live query per 15 minutes) serves reused
+    payloads, and a reused row keeps its original reading time, so the next
+    allowed query is that time plus the interval. Before then ``--live`` only
+    returns the same payload; after, it can refresh. No interval for the
+    provider: the fields stay absent (an ungated provider is simply stale).
+    """
+    for key in _REFRESH_GATE_KEYS:
+        account.pop(key, None)
+    if not intervals:
+        return
+    try:
+        interval = float(intervals.get(provider.strip().lower(), 0.0))
+    except (TypeError, ValueError):
+        return
+    if interval <= 0:
+        return
+    refreshable_at = read_at + timedelta(seconds=interval)
+    remaining = (refreshable_at - now).total_seconds()
+    account["refreshable_at"] = refreshable_at.isoformat()
+    account["refresh_blocked_by_gate"] = remaining > 0
+    account["gate_remaining_seconds"] = round(max(0.0, remaining), 1)
 
 
 def _provider_fresh_limit(
@@ -857,6 +903,7 @@ def enrich_snapshot(
     client_limits: Mapping[str, list[dict[str, Any]]] | None = None,
     threshold_seconds: float = FRESH_THRESHOLD_SECONDS_DEFAULT,
     threshold_by_provider: Mapping[str, float] | None = None,
+    query_interval_by_provider: Mapping[str, float] | None = None,
     history: list[Mapping[str, Any]] | None = None,
     min_frozen_seconds: float | None = None,
     check_frozen: bool = False,
@@ -887,6 +934,14 @@ def enrich_snapshot(
         analysis_cfg = config.get("analysis")
         if isinstance(analysis_cfg, Mapping):
             threshold_by_provider = analysis_cfg.get("fresh_threshold_seconds_by_provider")
+    if query_interval_by_provider is None:
+        from aiuse.config import DEFAULT_QUERY_MIN_INTERVAL
+
+        configured = config.get("query_min_interval") if isinstance(config, Mapping) else None
+        query_interval_by_provider = {
+            **DEFAULT_QUERY_MIN_INTERVAL,
+            **({str(k).lower(): v for k, v in configured.items()} if isinstance(configured, Mapping) else {}),
+        }
     if credit_overrides is not None or any(
         isinstance(a, dict) and a.get("provider") in ("omp", "pi") for a in snap.get("accounts") or []
     ):
@@ -925,6 +980,7 @@ def enrich_snapshot(
             notes=notes,
             threshold_seconds=threshold_seconds,
             threshold_by_provider=threshold_by_provider,
+            query_interval_by_provider=query_interval_by_provider,
         )
         if client_limits is not None:
             limits = client_limits.get(str(account.get("provider") or ""))
@@ -1043,6 +1099,9 @@ def stale_pool_summaries(entries: list[Mapping[str, Any]]) -> list[dict[str, Any
         }
         if entry.get("stale_reason"):
             summary["stale_reason"] = entry["stale_reason"]
+        for key in _REFRESH_GATE_KEYS:
+            if key in entry:
+                summary[key] = entry[key]
         out.append(summary)
     return out
 
@@ -1287,6 +1346,7 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                     "fresh": False if frozen else account.get("fresh"),
                     "stale": True if frozen else account.get("stale"),
                     **({"stale_reason": account["stale_reason"]} if account.get("stale_reason") else {}),
+                    **{key: account[key] for key in _REFRESH_GATE_KEYS if key in account},
                     **({"collected_at": account["collected_at"]} if account.get("collected_at") else {}),
                     **({"measurement_frozen": True} if frozen else {}),
                     **({"client_limits": account["client_limits"]} if account.get("client_limits") else {}),

@@ -67,7 +67,14 @@ A future `collected_at` is clock skew, clamped to age 0, never a negative age.
 A stale pool or account also carries `stale_reason` (additive, schema 1.5): the
 age against the pool's fresh limit plus, when a throttled query reused an earlier
 payload, the collector's own note. Dispatchers should quote it when they
-refuse a stale pool. In the `--available` and serve `/v1/snapshot` envelopes,
+refuse a stale pool. A stale reading from a gated provider (antigravity: one
+live query per 15 minutes) also carries `refreshable_at`,
+`refresh_blocked_by_gate` and `gate_remaining_seconds` (additive, ships with
+schema 1.8): the gate opens at the reading's own time plus the query interval,
+and `--live` before then only returns the same reused payload. A consumer that
+sees `refresh_blocked_by_gate: true` should wait until `refreshable_at` (or
+route on other pools) rather than loop on `--live`; `false` means a re-collect
+can refresh the reading now. In the `--available` and serve `/v1/snapshot` envelopes,
 top-level `fresh` is true only when every usable entry is within its own
 pool's limit too, and `stale_pools` (additive, schema 1.5) names the usable
 entries that are not: do not route on a stale usable entry without
@@ -345,7 +352,8 @@ exhausted)` line per unusable sibling per account (the on-demand cap only when e
   within the global limit AND every usable entry is within its own pool's
   limit. New additive envelope field `stale_pools`: one compact row per
   usable-now entry past its pool's limit
-  (`{provider, account, pool_family, age_seconds, stale_reason?}`). A stale
+  (`{provider, account, pool_family, age_seconds, stale_reason?, refreshable_at?,
+refresh_blocked_by_gate?, gate_remaining_seconds?}`). A stale
   usable entry still reports `usable_now: true` (quota-based) but always with
   its own `stale: true` / `stale_reason`; consumers must treat it as
   unverified and re-collect before routing on it.
@@ -805,7 +813,8 @@ sorted by headroom (most left first), each with `models_hint` and the local
 that age is within the global limit AND no entry in `available` is past its
 own pool's fresh limit. When `fresh` is `false` because of per-pool staleness,
 `stale_pools` carries one compact row per offending pool —
-`{provider, account, pool_family, age_seconds, stale_reason?}` — so a
+`{provider, account, pool_family, age_seconds, stale_reason?, refreshable_at?,
+refresh_blocked_by_gate?, gate_remaining_seconds?}` — so a
 dispatcher can re-collect just those (`--live`) instead of distrusting the
 whole envelope.
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
+import pytest
+
 from aiuse import cli
 from aiuse.analysis import history
 from aiuse.analysis.selfdescribe import (
@@ -22,7 +24,7 @@ from aiuse.analysis.selfdescribe import (
     pool_entries,
 )
 from aiuse.config import DEFAULT_CONFIG, validate_config
-from aiuse.models import utcnow
+from aiuse.models import parse_dt, utcnow
 
 
 def _fixture(provider: str, *, age: timedelta | None = None) -> dict:
@@ -219,3 +221,78 @@ def test_available_fresh_when_every_pool_is_fresh(tmp_path, capsys):
     payload = _available_payload(tmp_path, capsys)
     assert payload["fresh"] is True
     assert payload["stale_pools"] == []
+
+
+# ── refresh gate (a stale reading that cannot be re-collected yet) ───────────
+
+INTERVALS = {"antigravity": 900.0}
+
+
+def test_stale_gated_reading_inside_the_query_gate_says_so():
+    now = utcnow()
+    account = enrich_account(
+        _fixture("antigravity", age=timedelta(seconds=700))["accounts"][0],
+        collected_at=None,
+        now=now,
+        threshold_seconds=1800.0,
+        threshold_by_provider=BY_PROVIDER,
+        query_interval_by_provider=INTERVALS,
+    )
+    assert account["stale"] is True
+    assert account["refresh_blocked_by_gate"] is True
+    assert account["gate_remaining_seconds"] == pytest.approx(200.0, abs=1.0)
+    expected = now + timedelta(seconds=200)
+    assert abs((parse_dt(account["refreshable_at"]) - expected).total_seconds()) < 1.0
+
+
+def test_stale_gated_reading_past_the_gate_can_be_refreshed():
+    now = utcnow()
+    account = enrich_account(
+        _fixture("antigravity", age=timedelta(seconds=1000))["accounts"][0],
+        collected_at=None,
+        now=now,
+        threshold_seconds=1800.0,
+        threshold_by_provider=BY_PROVIDER,
+        query_interval_by_provider=INTERVALS,
+    )
+    assert account["stale"] is True
+    assert account["refresh_blocked_by_gate"] is False
+    assert account["gate_remaining_seconds"] == 0.0
+
+
+def test_fresh_and_ungated_readings_carry_no_gate_fields():
+    now = utcnow()
+    fresh = enrich_account(
+        _fixture("antigravity", age=timedelta(seconds=100))["accounts"][0],
+        collected_at=None,
+        now=now,
+        threshold_seconds=1800.0,
+        threshold_by_provider=BY_PROVIDER,
+        query_interval_by_provider=INTERVALS,
+    )
+    ungated = enrich_account(
+        _fixture("codex", age=timedelta(seconds=2400))["accounts"][0],
+        collected_at=None,
+        now=now,
+        threshold_seconds=1800.0,
+        threshold_by_provider=BY_PROVIDER,
+        query_interval_by_provider=INTERVALS,
+    )
+    assert ungated["stale"] is True
+    for account in (fresh, ungated):
+        assert not {"refreshable_at", "refresh_blocked_by_gate", "gate_remaining_seconds"} & set(account)
+
+
+def test_stale_pools_envelope_row_names_the_gate():
+    now = utcnow()
+    snap = enrich_snapshot(
+        _fixture("antigravity", age=timedelta(seconds=700)),
+        now=now,
+        config={"analysis": {"fresh_threshold_seconds_by_provider": BY_PROVIDER}},
+    )
+    entries = pool_entries(snap)
+    envelope = envelope_freshness(snap["collected_at"], entries, now=now)
+    (row,) = envelope["stale_pools"]
+    assert row["refresh_blocked_by_gate"] is True
+    assert row["gate_remaining_seconds"] == pytest.approx(200.0, abs=1.0)
+    assert row["refreshable_at"]
