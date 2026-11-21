@@ -10,6 +10,24 @@ Releases before 3.9.0 are in the
 [GitHub releases](https://github.com/djbclark/aiuse/releases) and the git log
 (`git log v3.8.0`). From 3.12.1 on, every release adds an entry here.
 
+## [5.2.1] - 2026-11-21
+
+### Changed
+
+- The `Detail: aiuse --full` hint line is gone from the default stderr header,
+  the TUI footer and `aiuse watch` (the header already carries the AI
+  `--json` line; `aiuse --help` and the README still describe `--full`).
+  Watch gains a row back.
+- The ACCT column caps labels at 9 characters (was 16), cut with `…`;
+  `[account_aliases]` still shortens a long name.
+
+### Fixed
+
+- z.ai's Chinese "no coding plan" reply (`当前用户不存在coding plan`) now reads
+  `z.ai: this account has no coding plan` instead of the raw plugin error. The
+  account really has no active plan then; the original text is kept in the row's
+  `notes` ([`docs/zai-quota.md`](docs/zai-quota.md)).
+
 ## [5.2.0] - 2026-11-21
 
 ### Added
@@ -52,21 +70,8 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ## [Unreleased]
 
-### Changed
-
-- The `Detail: aiuse --full` hint line is gone from the default stderr header,
-  the TUI footer and `aiuse watch` (the header already carries the AI
-  `--json` line; `aiuse --help` and the README still describe `--full`).
-  Watch gains a row back.
-- The ACCT column caps labels at 9 characters (was 16), cut with `…`;
-  `[account_aliases]` still shortens a long name.
-
 ### Fixed
 
-- z.ai's Chinese "no coding plan" reply (`当前用户不存在coding plan`) now reads
-  `z.ai: this account has no coding plan` instead of the raw plugin error. The
-  account really has no active plan then; the original text is kept in the row's
-  `notes` ([`docs/zai-quota.md`](docs/zai-quota.md)).
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global
   limit — `analysis.fresh_threshold_seconds_by_provider` ships `antigravity =
@@ -479,8 +484,9 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.2.1...HEAD
+[5.2.1]: https://github.com/djbclark/aiuse/compare/v5.2.0...v5.2.1
 [5.2.0]: https://github.com/djbclark/aiuse/compare/v5.1.3...v5.2.0
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.2.0...HEAD
 [4.1.1]: https://github.com/djbclark/aiuse/compare/v4.1.0...v4.1.1
 [4.1.0]: https://github.com/djbclark/aiuse/compare/v4.0.3...v4.1.0
 [4.0.3]: https://github.com/djbclark/aiuse/compare/v4.0.0...v4.0.3
