@@ -384,6 +384,7 @@
 # If both are set, percent wins (aiuse doctor warns).
 # Two spellings of one provider (agy and antigravity) are one key: only the first in
 # the table applies and aiuse doctor warns; an unknown provider id is flagged too.
+# The same holds for [floors.pool_families]: openai_api and OPENAI_API are one family.
 # [floors.providers.antigravity]
 # percent = 4.0
 # [floors.providers.codex]

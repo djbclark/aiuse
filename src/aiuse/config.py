@@ -1122,8 +1122,17 @@ def _validate_floors(floors: Any) -> list[str]:
         issues.append("error: floors.pool_families must be a pool_family -> table mapping")
     elif isinstance(families, dict):
         known = _known_pool_families()
+        seen_families: dict[str, str] = {}
         for family, entry in families.items():
             where = f"floors.pool_families.{family}"
+            folded = str(family).strip().casefold()
+            if folded in seen_families:
+                issues.append(
+                    f"warning: {where} and floors.pool_families.{seen_families[folded]} are the same pool family "
+                    f"(names match ignoring case): only the first in the table applies"
+                )
+            else:
+                seen_families[folded] = str(family)
             if not isinstance(entry, dict):
                 issues.append(f"error: {where} must be a table with percent or reserve_usd")
                 continue

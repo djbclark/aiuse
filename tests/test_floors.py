@@ -526,3 +526,19 @@ def test_a_free_or_non_numeric_plan_price_gives_the_default_floor_and_no_headroo
 def test_the_floor_basis_wording_says_a_positive_numeric_price():
     assert "positive numeric plan price" in SEMANTICS["floor_basis"]
     assert "positive numeric plan price" in SEMANTICS["floor_percent"]
+
+
+def test_pool_family_duplicate_spellings_with_two_values_are_flagged():
+    """Review round 2, nit 6: openai_api and OPENAI_API both configured, the first silently won."""
+    floors = {"pool_families": {"openai_api": {"percent": 3}, "OPENAI_API": {"percent": 9}}}
+    issues = validate_config({"floors": floors})
+    (issue,) = [i for i in issues if "same pool family" in i]
+    assert issue.startswith("warning")
+    assert "floors.pool_families.OPENAI_API" in issue and "floors.pool_families.openai_api" in issue
+    assert "only the first" in issue
+    assert resolve_floor(floors, "codex", 200.0, "openai_api") == (3.0, "config")  # the first one wins, as warned
+    swapped = {"pool_families": {"OPENAI_API": {"percent": 9}, "openai_api": {"percent": 3}}}
+    assert resolve_floor(swapped, "codex", 200.0, "openai_api") == (9.0, "config")
+    assert not [
+        i for i in validate_config({"floors": {"pool_families": {"openai_api": {"percent": 3}}}}) if "same" in i
+    ]

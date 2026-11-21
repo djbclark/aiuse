@@ -143,6 +143,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- `validate_config` warns when `[floors.pool_families]` carries two spellings of one
+  family (`openai_api` and `OPENAI_API`), as it already did for
+  `[floors.providers]`; the first in the table applies (schema 1.8 adversary round 2,
+  nit 6).
 - A boolean `query_min_interval` (`antigravity = true`) is now a `validate_config`
   error instead of passing as a 1 s gate, and an invalid value (nan, text, a
   boolean, a list) leaves the refresh-gate fields on the same default the throttle
