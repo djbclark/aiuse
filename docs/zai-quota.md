@@ -29,6 +29,16 @@ price used for value-at-risk is **$18/mo** (promos exist).
   Z.ai by default, so the row names the default client for this quota.
   Crush (uninstalled 2026-10-08) is not the Z.ai client either.
 
+## No coding plan
+
+If z.ai answers `当前用户不存在coding plan` ("the current user has no coding plan"),
+the account has no active plan: lapsed, cancelled or never bought, or the key
+belongs to another account. CodexBar passes the text through, and the row reads
+`z.ai: this account has no coding plan` (the original is kept in the
+row's `notes`). Nothing in aiuse is wrong; renew or fix the key at z.ai, or list `zai`
+under `[disabled_services]` to stop checking. Seen 2026-11-20 at about 22:20Z,
+ten minutes after a normal reading (5-hour 0%, weekly 20% used).
+
 MCP monthly time markers that CodexBar sometimes attaches as a 1-minute
 `TIME_LIMIT` are not a third burn pool we invent — they stay on the weekly
 slot when that is the time window the API sent.

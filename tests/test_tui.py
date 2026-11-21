@@ -61,9 +61,9 @@ def test_build_report_sections_default_is_glance_first():
     assert "providers" not in kinds
     assert "plan" not in kinds
     assert "plan-glance" in kinds
-    assert "footer" in kinds
-    assert kinds[-2] == "plan-glance"
-    assert any("Detail: aiuse --full" in line for s in sections for line in s.lines)
+    assert "footer" not in kinds
+    assert kinds[-1] == "plan-glance"
+    assert not any("Detail:" in line for s in sections for line in s.lines)
 
 
 def test_build_report_sections_full_includes_providers():
@@ -179,7 +179,6 @@ def test_run_usage_app_default_prints_usage_table(capsys):
     assert "codex" in out
     assert "WEEK" in out  # the table header, not the long report
     assert "Per-provider usage" not in out
-    assert "Detail: aiuse --full" not in out
 
 
 def test_run_usage_app_full_includes_providers(capsys):
@@ -188,4 +187,3 @@ def test_run_usage_app_full_includes_providers(capsys):
     run_usage_app(_snap_with_account(), [_burn_alert()], full=True)
     out = capsys.readouterr().out
     assert "Per-provider usage" in out
-    assert "Detail: aiuse --full" not in out

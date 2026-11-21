@@ -146,10 +146,12 @@ def test_chat_header_shows_the_build():
     assert "aiuse ?" in render_chat_report(_snap(), []).splitlines()[0]
 
 
-def test_hint_says_aiuse_full_not_ai_full():
+def test_stderr_meta_has_no_detail_hint():
+    # The "Detail: aiuse --full" line was dropped: it was a second sample
+    # command in the header and took a whole row.
     meta = render_stderr_meta(_snap("5.1.3"), [], color=False)
-    assert "Detail: aiuse --full" in meta
-    assert "Detail: ai --full" not in meta
+    assert "Detail:" not in meta
+    assert "--full" not in meta
 
 
 def test_json_envelope_carries_the_collecting_build(monkeypatch, capsys):

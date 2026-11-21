@@ -35,6 +35,23 @@ def test_parse_clinepass_named_windows():
     assert acc.billing_kind == BillingKind.SUBSCRIPTION_WINDOW
 
 
+def test_zai_no_coding_plan_error_reads_in_english_and_keeps_the_original():
+    message = "Provider plugin script failed: z.ai quota API error: 当前用户不存在coding plan"
+    acc = _from_row({"provider": "zai", "source": "api", "error": {"kind": "provider", "message": message}})
+    assert acc.error == "z.ai: this account has no coding plan"
+    assert acc.windows == []
+    assert acc.notes == [f"provider message: {message}"]  # the provider's own text is kept
+    assert acc.raw["error"]["message"] == message
+
+
+def test_other_provider_errors_pass_through_unchanged():
+    acc = _from_row({"provider": "zai", "source": "api", "error": {"kind": "provider", "message": "HTTP 500"}})
+    assert acc.error == "HTTP 500"
+    assert acc.notes == []
+    other = _from_row({"provider": "grok", "error": {"message": "当前用户不存在coding plan"}})
+    assert other.error == "当前用户不存在coding plan"  # the table is per provider
+
+
 def test_parse_devin_daily_and_weekly_windows():
     acc = _from_row(
         {

@@ -52,8 +52,21 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ## [Unreleased]
 
+### Changed
+
+- The `Detail: aiuse --full` hint line is gone from the default stderr header,
+  the TUI footer and `aiuse watch` (the header already carries the AI
+  `--json` line; `aiuse --help` and the README still describe `--full`).
+  Watch gains a row back.
+- The ACCT column caps labels at 9 characters (was 16), cut with `…`;
+  `[account_aliases]` still shortens a long name.
+
 ### Fixed
 
+- z.ai's Chinese "no coding plan" reply (`当前用户不存在coding plan`) now reads
+  `z.ai: this account has no coding plan` instead of the raw plugin error. The
+  account really has no active plan then; the original text is kept in the row's
+  `notes` ([`docs/zai-quota.md`](docs/zai-quota.md)).
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global
   limit — `analysis.fresh_threshold_seconds_by_provider` ships `antigravity =

@@ -100,7 +100,7 @@ stdout report.
   Top to bottom: the header line, the `sampler:` line, any `collect error:`
   line, then one block over the table (the AI line
   ``AI: Use `aiuse --json` for machine-readable output``, the legend lines,
-  then `Collected by aiuse X.Y.Z at …` and `Detail: aiuse --full` with any
+  then `Collected by aiuse X.Y.Z at …` with any
   collector errors), and the table last. When the AI line and the `Collected by
 aiuse …` meta line both fit on the terminal they share one row: AI flush
   left, meta flush right at the table's width, or just far enough right to keep
@@ -138,7 +138,7 @@ aiuse …` meta line both fit on the terminal they share one row: AI flush
   (omp) shows `(AI: Do not use without asking operator)` centered across its
   empty 5H and WEEK cells instead of arrows
   ([`omp-cloud-credits.md`](omp-cloud-credits.md#operator-gate)).
-- `render_stderr_meta` content (collection time and collecting build, capacity blurb, `Detail: aiuse --full`)
+- `render_stderr_meta` content (collection time and collecting build, capacity blurb, collector errors)
   goes **inside the screen, above the table**, not to stderr (stderr would
   corrupt the alternate-screen layout). `-q` suppresses it; the AI line stays,
   exactly once.

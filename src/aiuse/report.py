@@ -246,7 +246,7 @@ _OTHER_CUT_SCISSORS = "✂"
 _OTHER_CUT_WIDTH = len(_OTHER_CUT_ELLIPSIS) + len(_OTHER_CUT_SCISSORS)
 # OTHER is trimmed no narrower than its own header; past that the PACE columns give way.
 _OTHER_MIN_WIDTH = len("OTHER")
-_ACCOUNT_MAX_WIDTH = 16
+_ACCOUNT_MAX_WIDTH = 9
 _OPERATOR_GATE_TEXT = f"({OPERATOR_APPROVAL_NOTICE})"
 # Shorter wording for terminals too narrow for the full text; keeps the instruction readable.
 _OPERATOR_GATE_SHORT = "(AI: ask operator)"
@@ -416,7 +416,7 @@ def render_report(
 
     **Default** (and ``brief=True``): the clock matrix only (stdout), via
     ``render_clock_matrix`` — one row per account/pool, one column per reset
-    clock. Meta / errors / ``aiuse --full`` hint belong on stderr via
+    clock. Meta and collector errors belong on stderr via
     ``render_stderr_meta``.
 
     **Full** (``full=True``): long report with per-provider detail.
@@ -2674,7 +2674,7 @@ def render_stderr_meta(
     color: bool | None = None,
     ai_note: bool = True,
 ) -> str:
-    """Collection meta, errors, and ``aiuse --full`` hint for stderr (default mode).
+    """Collection meta and collector errors for stderr (default mode).
 
     With ``ai_note`` the AI ``--json`` line leads, so an AI reader meets it
     before the table; pair it with ``render_clock_matrix(ai_note=False)``.
@@ -2693,7 +2693,6 @@ def render_stderr_meta(
     if snapshot.uninstalled_tools:
         # Optional tools the operator never installed: expected, so dim, not red.
         lines.append(s.dim(f"Optional, not installed (expected): {', '.join(snapshot.uninstalled_tools)}"))
-    lines.append(s.dim("Detail: aiuse --full"))
     return "\n".join(lines)
 
 

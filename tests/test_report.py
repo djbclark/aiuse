@@ -802,7 +802,6 @@ def test_default_report_is_clock_matrix():
     text = render_report(snap, [empty, burn], config={}, color=False)
     assert "(full)" not in text
     assert "## Per-provider usage" not in text
-    assert "Detail: aiuse --full" not in text
     assert "\n\n" not in text
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
@@ -822,7 +821,7 @@ def test_default_report_is_clock_matrix():
     meta = render_stderr_meta(snap, [empty, burn], color=False)
     assert "Collected by aiuse ? at" in meta  # hand-built snapshot: no recorded build
     assert "tokscale: boom" in meta
-    assert "Detail: aiuse --full" in meta
+    assert "Detail:" not in meta
 
 
 def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
@@ -1646,7 +1645,6 @@ def test_full_report_includes_providers():
     assert "(full)" in text
     assert "## Per-provider usage" in text
     assert "## Tips" in text
-    assert "Detail: aiuse --full" not in text
     assert "History:" in text
     assert "learning" in text
 
@@ -2034,9 +2032,11 @@ def test_clock_matrix_keeps_full_account_when_short_names_collide():
         ],
     )
     text = render_clock_matrix([], snapshot=snap, color=False)
-    # Both would shorten to "gmail", so neither may.
-    assert "a@gmail.com" in text
-    assert "b@gmail.com" in text
+    # Both would shorten to "gmail", so neither may: each keeps its full address,
+    # cut to the 9-character ACCT cap, which still tells them apart.
+    assert "a@gmail.…" in text
+    assert "b@gmail.…" in text
+    assert "gmail " not in text
 
 
 @pytest.mark.parametrize(
@@ -2744,7 +2744,7 @@ def test_fold_mark_hangs_after_the_pair_so_the_l_column_stays_aligned():
     assert "+ = >1 window, most-used shown" in text
 
 
-def test_matrix_acct_column_capped_at_16_chars():
+def test_matrix_acct_column_capped_at_9_chars():
     now = datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)
 
     def weekly(label: str, pct: float) -> QuotaWindow:
@@ -2769,16 +2769,17 @@ def test_matrix_acct_column_capped_at_16_chars():
             AccountUsage(
                 provider="clinepass",
                 source="codexbar",
-                account="SHORT_ACCOUNT_OK",
+                account="NINE_CHAR",
                 billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
                 windows=[weekly("ClinePass weekly", 0.0)],
             ),
         ],
     )
     text = render_clock_matrix([], snapshot=snap, color=False, width=160)
-    assert "CODEXBAR_CLINEP…" in text
+    assert "CODEXBAR…" in text  # 8 characters and the ellipsis make 9
     assert "CODEXBAR_CLINEPASS_DJBCLARK_API_KEY" not in text
-    assert "SHORT_ACCOUNT_OK" in text
+    assert "NINE_CHAR" in text  # exactly 9: not cut
+    assert "NINE_CH…" not in text
 
 
 @pytest.mark.parametrize(

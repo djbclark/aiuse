@@ -301,7 +301,6 @@ def test_default_pretty_is_clock_matrix(monkeypatch, capsys):
     assert "WEEK" in captured.out
     assert "Weekly" not in captured.out
     assert "## Per-provider usage" not in captured.out
-    assert "Detail: aiuse --full" not in captured.out  # quiet suppresses stderr meta
 
 
 def test_full_mode_includes_providers(monkeypatch, capsys):

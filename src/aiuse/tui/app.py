@@ -35,12 +35,6 @@ def _body_group(lines: list[str]) -> Group:
 
 
 def _print_section(console: Console, section: ReportSection) -> None:
-    if section.kind == "footer":
-        for line in section.lines:
-            console.print(_as_text(line) if isinstance(line, str) else line)
-        console.print()
-        return
-
     title = _as_text(section.title_ansi or section.title)
     body = _body_group(section.lines)
 

@@ -113,7 +113,7 @@ The score uses shared action-state thresholds, while sorting retains the
 category-specific evidence needed to order unlike states honestly. The matrix
 uses the same queue keys as the retained priority-ladder renderer.
 
-Collection time and collecting build (`Collected by aiuse X.Y.Z at …`), capacity blurb, and `Detail: aiuse --full` go to **stderr**
+Collection time and collecting build (`Collected by aiuse X.Y.Z at …`), capacity blurb and collector errors go to **stderr**
 (`render_stderr_meta`, suppressed with `-q`), so stdout stays pipeable.
 
 ### Width adaptation

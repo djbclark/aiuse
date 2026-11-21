@@ -301,7 +301,7 @@ guess:
 
 `aiuse --full` prints this exact table when a multi-account source cannot be
 matched safely. Explicit mappings take precedence over automatic normalization,
-and the `ACCT` column caps displayed labels at 16 characters (longer names are
+and the `ACCT` column caps displayed labels at 9 characters (longer names are
 truncated with `…`), so `[account_aliases]` is also the place to shorten long
 token-account names.
 

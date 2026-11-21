@@ -288,9 +288,9 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
   `gate status` JSON (see "What's new in schema 1.7"). Old records lack it and
   mean "unknown".
 - Human output: the meta line is now `Collected by aiuse X.Y.Z at …` (was
-  `Collected at …`), the version shows once on every other screen, and the hint
-  reads `Detail: aiuse --full` (was `Detail: ai --full`). Layout strings are not
-  a contract.
+  `Collected at …`), the version shows once on every other screen, and the
+  `Detail: …` hint line is gone (it read `Detail: ai --full` before 5.2.0, then
+  `Detail: aiuse --full`). Layout strings are not a contract.
 
 #### Additive (2026-11-13, Cursor `sibling_pools` — schema stays 1.5)
 

@@ -407,6 +407,29 @@ def collect_codexbar(
         _CODEXBAR_HTTP.reset(reset)
 
 
+# CodexBar passes a provider's own error text through unchanged. Some providers
+# answer in another language; a known "this account has no plan" reply is
+# restated in English so the row reads as what it is. The original text stays
+# in the row's ``notes``. Keys: canonical provider -> (required fragments, message).
+_KNOWN_NO_PLAN_ERRORS: dict[str, tuple[tuple[str, ...], str]] = {
+    # z.ai answers 当前用户不存在coding plan ("the current user has no coding plan")
+    # when the account has no active GLM coding plan (lapsed, cancelled or never bought).
+    "zai": (("不存在", "coding plan"), "z.ai: this account has no coding plan"),
+}
+
+
+def _known_provider_error(provider: str, message: str) -> str:
+    """Restate a known provider "no plan" error in English; anything else unchanged."""
+    entry = _KNOWN_NO_PLAN_ERRORS.get(provider.lower())
+    if entry is None:
+        return message
+    fragments, english = entry
+    lowered = message.lower()
+    if all(fragment.lower() in lowered for fragment in fragments):
+        return english
+    return message
+
+
 def _is_error_only_row(account: AccountUsage) -> bool:
     """True when a row carries only an error and no usable quota or balance."""
     return bool(
@@ -1365,11 +1388,13 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     if isinstance(err, dict):
         err = err.get("message") or str(err)
     if isinstance(err, str):
+        friendly = _known_provider_error(provider, err)
         return AccountUsage(
             source="codexbar",
             provider=provider,
             account=_display_account(row.get("account")),
-            error=err,
+            error=friendly,
+            notes=[f"provider message: {err}"] if friendly != err else [],
             # Bedrock is pay-as-you-go even when the row is an error (UNKNOWN
             # stands in for a $0 Cost Explorer total).
             billing_kind=BillingKind.PAYG_API if provider == "bedrock" else _billing_kind(provider, None),

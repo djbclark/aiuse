@@ -196,14 +196,6 @@ def build_report_sections(
             kind="plan-glance",
         )
     )
-    if not full:
-        sections.append(
-            ReportSection(
-                title="",
-                lines=[s.dim("Detail: aiuse --full")],
-                kind="footer",
-            )
-        )
     return sections
 
 

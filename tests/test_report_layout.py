@@ -226,7 +226,8 @@ def test_ai_line_leads_the_stderr_meta():
     meta = render_stderr_meta(_snapshot(errors=["tokscale: boom"]), [], color=False).splitlines()
     assert meta[0] == AI_JSON_NOTE
     assert meta[1].startswith("Collected by aiuse ? at")
-    assert meta[-1] == "Detail: aiuse --full"
+    assert meta[-1] == "  - tokscale: boom"
+    assert not any("Detail:" in line for line in meta)
     assert AI_JSON_NOTE not in render_stderr_meta(_snapshot(), [], color=False, ai_note=False)
 
 
@@ -266,9 +267,9 @@ def test_watch_board_puts_ai_legend_and_footer_above_the_table():
     header = _table_header(board)
     ai = next(i for i, line in enumerate(board) if AI_JSON_NOTE in line)
     collected = next(i for i, line in enumerate(board) if "Collected by aiuse" in line)
-    detail = next(i for i, line in enumerate(board) if line.strip() == "Detail: aiuse --full")
     legend = next(i for i, line in enumerate(board) if "u/l = percent used" in line)
-    assert 0 < ai < legend < detail < header
+    assert 0 < ai < legend < header
+    assert not any("Detail:" in line for line in board)
     assert collected < header
     # Nothing below the table: the last line is a table row.
     assert board[-1].split()[0] in {"error", "empty", "n/a", "slow", "mid", "use"} or board[-1].startswith("     ")
@@ -320,11 +321,10 @@ def test_side_by_side_right_aligns_to_the_board_width_and_ignores_ansi():
     assert ClockMatrixParts(table=[], center_width=0, avail=60).side_by_side("a", "b") is None
 
 
-def test_watch_board_wide_keeps_collector_errors_and_detail_in_the_footer():
+def test_watch_board_wide_keeps_collector_errors_above_the_table():
     board = _board(200, errors=["tokscale: boom"])
     header = _table_header(board)
     assert any("tokscale: boom" in line for line in board[:header])
-    assert any(line.strip() == "Detail: aiuse --full" for line in board[:header])
     assert sum("Collected by aiuse" in line for line in board) == 1
 
 
