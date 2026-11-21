@@ -44,6 +44,10 @@ FLOOR_BASES = ("reserve_usd", "config", "default")
 # price them, so they take default_percent unless a pool-family override is set.
 PREPAID_POOL_FAMILIES = frozenset({"openai_api"})
 
+# Providers whose accounts report a prepaid pool family, for the validate_config hint
+# that a provider override does not reach that pool.
+PREPAID_FAMILY_PROVIDERS: dict[str, frozenset[str]] = {"openai_api": frozenset({"codex", "omp"})}
+
 DEFAULT_RESERVE_USD = 10.0
 DEFAULT_MIN_PERCENT = 2.0
 DEFAULT_MAX_PERCENT = 20.0

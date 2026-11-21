@@ -402,4 +402,6 @@
 # percent = 10.0
 # Precedence: pool-family override, built-in prepaid default, provider override,
 # the plan-price formula, default_percent. A family name no pool reports draws a
-# validate_config warning (no effect).
+# validate_config warning (no effect). A [floors.providers.codex] (or omp) override
+# does not reach the prepaid openai_api pool, and aiuse doctor says so unless
+# [floors.pool_families.openai_api] is set: the pool-family default still applies.

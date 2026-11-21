@@ -1027,7 +1027,9 @@ priced by the plan: `openai_api` takes `default_percent` with `floor_basis: "def
 whatever `[plans.codex]` says. `[floors.pool_families.<family>]` (`percent` or
 `reserve_usd`) overrides it, and any other family, and beats the provider override.
 Precedence: pool-family override, built-in prepaid default, provider override,
-plan-price formula, `default_percent`. An account whose pools include such a family
+plan-price formula, `default_percent`. So a `[floors.providers.codex]` (or `omp`) override
+never reaches the `openai_api` pool; `aiuse doctor` warns about that until
+`[floors.pool_families.openai_api]` is set. An account whose pools include such a family
 carries `floor_by_pool_family` (`{family: {floor_percent, floor_basis}}`), which the
 routing entries read; the account's own `floor_percent` keeps describing its other
 pools.

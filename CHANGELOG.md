@@ -143,6 +143,12 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- `validate_config` (and so `aiuse doctor`) warns when a `[floors.providers.<p>]`
+  override exists for a provider that has a built-in prepaid pool-family default
+  (`codex` and `omp` with `openai_api`): the provider's percent or reserve does
+  not reach that pool, whose pool-family default (`default_percent`, basis
+  `default`) still applies unless `[floors.pool_families.openai_api]` is set. A
+  warning only; precedence is unchanged (schema 1.8 adversary round 2, nit 7).
 - `validate_config` warns when `[floors.pool_families]` carries two spellings of one
   family (`openai_api` and `OPENAI_API`), as it already did for
   `[floors.providers]`; the first in the table applies (schema 1.8 adversary round 2,

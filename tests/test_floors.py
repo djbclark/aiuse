@@ -265,6 +265,7 @@ def test_validate_config_accepts_a_full_floors_table():
         "max_percent": 25.5,
         "default_percent": 12,
         "providers": {"antigravity": {"percent": 4}, "codex": {"reserve_usd": 30}},
+        "pool_families": {"openai_api": {"percent": 4}},  # else codex's override draws the prepaid hint
     }
     assert validate_config({"floors": floors}) == []
 
@@ -506,7 +507,8 @@ def test_floors_unknown_provider_key_is_flagged_but_real_ones_are_not():
     real = ["antigravity", "agy", "gemini", "claude", "codex", "omp", "pi", "cursor", "zai", "grok", "copilot"]
     real += ["opencode-go", "opencode", "clinepass", "deepseek", "bedrock", "muse", "qwencloud", "alibaba"]
     floors = {"providers": {name: {"percent": 5} for name in real if name not in ("agy", "gemini", "opencode")}}
-    assert validate_config({"floors": floors}) == []
+    # codex and omp each draw the prepaid-pool hint (see test_a_provider_floor_on_a_provider_with_a_prepaid_default)
+    assert [i for i in validate_config({"floors": floors}) if "prepaid" not in i] == []
     for alias in ("agy", "gemini", "opencode"):
         assert validate_config({"floors": {"providers": {alias: {"percent": 5}}}}) == [], alias
 
@@ -542,3 +544,26 @@ def test_pool_family_duplicate_spellings_with_two_values_are_flagged():
     assert not [
         i for i in validate_config({"floors": {"pool_families": {"openai_api": {"percent": 3}}}}) if "same" in i
     ]
+
+
+def test_a_provider_floor_on_a_provider_with_a_prepaid_default_draws_a_hint():
+    """Review round 2, nit 7: [floors.providers.codex] percent = 3 leaves openai_api at 10.0 default, silently."""
+    floors = {"providers": {"codex": {"percent": 3}}}
+    (issue,) = [i for i in validate_config({"floors": floors}) if "openai_api" in i]
+    assert issue.startswith("warning")
+    assert "floors.providers.codex" in issue
+    assert "pool-family default still applies" in issue
+    assert "floors.pool_families.openai_api" in issue
+    assert resolve_floor(floors, "codex", 200.0, "openai_api") == (10.0, "default")  # what the warning says
+    reserve = {"providers": {"codex": {"reserve_usd": 25.0}}}
+    assert any("openai_api" in i for i in validate_config({"floors": reserve}))
+    assert any("openai_api" in i for i in validate_config({"floors": {"providers": {"omp": {"percent": 3}}}}))
+
+
+def test_no_prepaid_hint_when_the_family_is_configured_or_the_provider_has_none():
+    configured = {"providers": {"codex": {"percent": 3}}, "pool_families": {"OpenAI_API": {"percent": 4}}}
+    assert not [i for i in validate_config({"floors": configured}) if "openai_api" in i.lower()]
+    assert not [
+        i for i in validate_config({"floors": {"providers": {"antigravity": {"percent": 3}}}}) if "prepaid" in i
+    ]
+    assert not [i for i in validate_config({"floors": {"providers": {"codex": {}}}}) if "prepaid" in i]

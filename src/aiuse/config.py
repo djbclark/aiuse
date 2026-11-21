@@ -1117,6 +1117,8 @@ def _validate_floors(floors: Any) -> list[str]:
                 issues.append(f"warning: {where} sets both percent and reserve_usd (percent wins)")
             if not entry:
                 issues.append(f"warning: {where} sets neither percent nor reserve_usd (no effect)")
+            elif "percent" in entry or "reserve_usd" in entry:
+                issues.extend(_prepaid_family_hints(where, canonical, floors.get("pool_families")))
     families = floors.get("pool_families")
     if families is not None and not isinstance(families, dict):
         issues.append("error: floors.pool_families must be a pool_family -> table mapping")
@@ -1156,6 +1158,23 @@ def _validate_floors(floors: Any) -> list[str]:
             if not entry:
                 issues.append(f"warning: {where} sets neither percent nor reserve_usd (no effect)")
     return issues
+
+
+def _prepaid_family_hints(where: str, provider: str, families: Any) -> list[str]:
+    """Warn that a provider floor does not reach the provider's prepaid pool: its built-in default still applies."""
+    from aiuse.analysis.floors import PREPAID_FAMILY_PROVIDERS
+
+    configured = (
+        {str(k).strip().casefold() for k, v in families.items() if isinstance(v, dict) and v}
+        if isinstance(families, dict)
+        else set()
+    )
+    return [
+        f"warning: {where} does not apply to the prepaid {family} pool: its built-in pool-family default still "
+        f"applies (default_percent, floor_basis 'default'); set floors.pool_families.{family} to change it"
+        for family, providers in sorted(PREPAID_FAMILY_PROVIDERS.items())
+        if provider in providers and family not in configured
+    ]
 
 
 def _known_pool_families() -> frozenset[str]:
