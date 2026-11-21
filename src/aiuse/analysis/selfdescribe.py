@@ -17,6 +17,7 @@ snapshot-shaped dicts (no I/O) so live ``--json``, the on-disk cache,
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import Any, Callable, Iterable, Mapping
 
@@ -670,8 +671,12 @@ def _apply_refresh_gate(
         interval = float(intervals.get(provider.strip().lower(), 0.0))
     except (TypeError, ValueError):
         return
-    if interval <= 0:
+    if math.isnan(interval) or interval <= 0:
         return
+    # inf / 1e20 in query_min_interval would overflow timedelta in every enrichment path.
+    from aiuse.config import MAX_QUERY_MIN_INTERVAL
+
+    interval = min(interval, MAX_QUERY_MIN_INTERVAL)
     try:
         refreshable_at = next_query_at(provider.strip().lower(), interval) if next_query_at is not None else None
     except (OSError, OverflowError, ValueError):

@@ -37,6 +37,11 @@ CAAM_TIMEOUT = 90.0
 # process (collectors/throttle.py). agy answers probes in quick succession with
 # 429s on every model, so its quota is read at most once per 15 minutes.
 DEFAULT_QUERY_MIN_INTERVAL: dict[str, float] = {"antigravity": 900.0}
+# The longest minimum gap between live queries a config may ask for (7 days). A
+# larger or non-finite value is a typo (inf made timedelta overflow in every
+# enrichment path): validate_config rejects it, and the throttle and the
+# refresh-gate fields clamp whatever slips through.
+MAX_QUERY_MIN_INTERVAL = 7 * 24 * 3600.0
 
 # Per-provider fresh limits (seconds) that override analysis.fresh_threshold_seconds.
 # Fast-draining pools need a shorter limit than the 30-min global: on 2026-11-12 a
@@ -1182,8 +1187,18 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
             except (TypeError, ValueError):
                 issues.append(f"error: query_min_interval.{provider} must be a number of seconds (got {value!r})")
                 continue
-            if seconds < 0:
+            if not math.isfinite(seconds):
+                issues.append(
+                    f"error: query_min_interval.{provider} must be a finite number of seconds (got {value!r}); "
+                    "0 disables the gate"
+                )
+            elif seconds < 0:
                 issues.append(f"error: query_min_interval.{provider} must not be negative (got {seconds:g})")
+            elif seconds > MAX_QUERY_MIN_INTERVAL:
+                issues.append(
+                    f"error: query_min_interval.{provider} must be at most {MAX_QUERY_MIN_INTERVAL:g} seconds "
+                    f"(7 days; got {seconds:g})"
+                )
 
     issues.extend(_validate_floors(cfg.get("floors")))
 

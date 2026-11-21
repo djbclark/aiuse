@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import os
 import time
 from collections.abc import Callable
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.analysis import history
-from aiuse.config import DEFAULT_QUERY_MIN_INTERVAL
+from aiuse.config import DEFAULT_QUERY_MIN_INTERVAL, MAX_QUERY_MIN_INTERVAL
 from aiuse.models import parse_dt, utcnow
 
 from .base import CollectorError
@@ -55,9 +56,12 @@ def min_intervals(config: dict[str, Any] | None) -> dict[str, float]:
     if isinstance(configured, dict):
         for provider, value in configured.items():
             try:
-                table[str(provider).strip().lower()] = max(0.0, float(value))
+                seconds = float(value)
             except (TypeError, ValueError):
                 continue
+            if math.isnan(seconds):
+                continue
+            table[str(provider).strip().lower()] = min(max(0.0, seconds), MAX_QUERY_MIN_INTERVAL)
     return {provider: seconds for provider, seconds in table.items() if seconds > 0}
 
 

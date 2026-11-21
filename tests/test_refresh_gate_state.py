@@ -113,3 +113,39 @@ def test_next_query_at_reports_none_without_any_state_and_the_later_of_gate_and_
     _state(queried_at=(NOW - timedelta(minutes=2)).isoformat())
     gate_only = next_query_at("antigravity", min_interval=900.0)
     assert gate_only == NOW - timedelta(minutes=2) + timedelta(seconds=900)
+
+
+# ── absurd query_min_interval values (finding 5) ────────────────────────────
+
+
+def test_an_infinite_or_huge_interval_does_not_crash_enrichment():
+    for value in (float("inf"), 1e20, 1e300):
+        account = _run(timedelta(minutes=40), {"query_min_interval": {"antigravity": value}})
+        assert account["stale"] is True
+        assert account["refresh_blocked_by_gate"] is True
+        assert parse_dt(account["refreshable_at"]) > NOW + timedelta(days=6)
+
+
+def test_a_nan_interval_leaves_the_gate_fields_off_instead_of_crashing():
+    account = _run(timedelta(minutes=40), {"query_min_interval": {"antigravity": float("nan")}})
+    assert account["stale"] is True
+    assert "refreshable_at" not in account
+
+
+def test_throttle_intervals_are_capped_and_non_finite_values_dropped():
+    from aiuse.collectors.throttle import MAX_QUERY_MIN_INTERVAL, min_intervals
+
+    table = min_intervals({"query_min_interval": {"antigravity": float("inf"), "x": 1e20, "y": float("nan"), "z": 30}})
+    assert table["antigravity"] == MAX_QUERY_MIN_INTERVAL
+    assert table["x"] == MAX_QUERY_MIN_INTERVAL
+    assert "y" not in table
+    assert table["z"] == 30.0
+
+
+def test_validate_config_rejects_non_finite_and_absurd_intervals():
+    from aiuse.config import MAX_QUERY_MIN_INTERVAL, validate_config
+
+    for value in (float("inf"), float("nan"), 1e20, MAX_QUERY_MIN_INTERVAL + 1):
+        issues = validate_config({"query_min_interval": {"antigravity": value}})
+        assert any("query_min_interval.antigravity" in i and i.startswith("error") for i in issues), value
+    assert validate_config({"query_min_interval": {"antigravity": 900, "codex": MAX_QUERY_MIN_INTERVAL}}) == []

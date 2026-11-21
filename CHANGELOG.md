@@ -161,6 +161,12 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- `query_min_interval.<provider> = inf` (or 1e20) no longer crashes every
+  enrichment path with `OverflowError`: `validate_config` rejects non-finite
+  values and anything above 7 days (`MAX_QUERY_MIN_INTERVAL`), and the
+  throttle and the refresh-gate fields clamp what slips through. The example
+  config's "cap 6h" for the empty-answer backoff said 6h where the code caps
+  it at 1h.
 - `refreshable_at` / `refresh_blocked_by_gate` / `gate_remaining_seconds` now come
   from the throttle state (`collectors/throttle.py` `next_query_at`: the last
   query's `queried_at` plus the interval in force, including the empty-answer
