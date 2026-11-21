@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Iterable, Mapping
 
 from aiuse.analysis.ceilings import window_is_ceiling
-from aiuse.analysis.floors import FLOOR_BASES, resolve_floor
+from aiuse.analysis.floors import FLOOR_BASES, has_pool_family_rule, resolve_floor
 from aiuse.analysis.pace import (
     cursor_breakdown_window,
     format_pace,
@@ -135,8 +135,9 @@ SEMANTICS: dict[str, Any] = {
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs; Paseo agent 429s from the daemon's per-agent error files, short cooldown, never an exhaustion); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
     "unavailable": "--available only: one item per routing entry that is NOT usable_now and is neither operator-excluded (those are dropped here and never listed twice) nor a hidden ceiling (total) row; the pools missing from 'available' because they are empty or blocked, so a consumer can tell 'empty until Monday' from 'not reported'. Item {provider, account, pool_family, pool_id (when the entry has one), reason, binding_window, available_at, headroom_percent, floor_percent, floor_basis, headroom_above_floor_percent, plus refreshable_at / refresh_blocked_by_gate / gate_remaining_seconds when the reading is stale and gated, and rate_gated_by when set}; soonest available_at first, nulls last. Additive, schema 1.8; [] when every pool is usable. Never route to an item before its available_at (null: unknown, re-collect with --live)",
     "unavailable_reason": "unavailable item reason, the first that holds: rate_gated (omp while the shared Claude window is exhausted, rate_gated_by names it; or an API key blocked until a known time) | exhausted (a window with <= 1% left, or marked exhausted or blocked, including a spent Cursor monthly ceiling) | near_empty (a window under 5% left, none exhausted: work cannot finish on it) | no_reading (no usable measurement: every window unknown, or the reading is frozen); the item's available_at is when the whole pool is usable again",
-    "floor_percent": "advisory headroom floor for a consumer, on every --available entry (available and unavailable), schema 1.8: clamp(reserve_usd / plan_monthly_price * 100, min_percent, max_percent) rounded to 1 decimal, plan_monthly_price from the account's [plans.<provider>] monthly_price; defaults reserve_usd 10.0, min 2.0, max 20.0 (a $199.99 plan gives 5.0, a $20 plan 20.0 via the cap); default_percent (10.0) when no plan price is known. headroom_percent, usable_now and the 5% near-empty rule are unchanged: a pool below its floor is still usable_now",
-    "floor_basis": "where floor_percent came from: reserve_usd (the formula, with the default reserve_usd or a provider's own) | config (a [floors.providers.<provider>] percent fixed it) | default (no plan price known, so default_percent)",
+    "floor_percent": "advisory headroom floor for a consumer, on every --available entry (available and unavailable), schema 1.8: clamp(reserve_usd / plan_monthly_price * 100, min_percent, max_percent) rounded to 1 decimal, plan_monthly_price from the account's [plans.<provider>] monthly_price; defaults reserve_usd 10.0, min 2.0, max 20.0 (a $199.99 plan gives 5.0, a $20 plan 20.0 via the cap); default_percent (10.0) when no plan price is known or the pool is prepaid (openai_api: the plan price does not price a dollar balance; override with [floors.pool_families.<family>]). headroom_percent, usable_now and the 5% near-empty rule are unchanged: a pool below its floor is still usable_now",
+    "floor_basis": "where floor_percent came from: reserve_usd (the formula, with the default reserve_usd or a provider's own) | config (a [floors.providers.<provider>] or [floors.pool_families.<family>] percent fixed it) | default (no plan price known, or a prepaid pool such as openai_api, so default_percent)",
+    "floor_by_pool_family": "account level, only when one of its pool families has its own floor rule (a [floors.pool_families.<family>] override or a prepaid family such as openai_api): {pool_family: {floor_percent, floor_basis}}; the routing entries of those families take their floor from it, the account's floor_percent stays for its other pools",
     "headroom_above_floor_percent": "headroom_percent - floor_percent: how far the pool is above its advisory floor, negative below it; null when headroom_percent is null",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
@@ -1115,6 +1116,7 @@ def enrich_snapshot(
     if plans_cfg is not None:
         from aiuse.config import plan_monthly_price
     _apply_argon_evidence(snap, accounts, collected, now=now)
+    floors_cfg = config.get("floors") if isinstance(config, Mapping) else None
     for account in accounts:
         account.pop("measurement_frozen", None)
         if plans_cfg is not None:
@@ -1130,7 +1132,7 @@ def enrich_snapshot(
             else:
                 account.pop("monthly_price", None)
         floor_percent, floor_basis = resolve_floor(
-            config.get("floors") if isinstance(config, Mapping) else None,
+            floors_cfg,
             str(account.get("provider") or ""),
             account.get("monthly_price"),
         )
@@ -1146,6 +1148,7 @@ def enrich_snapshot(
             query_interval_by_provider=query_interval_by_provider,
             next_query_at=throttle_next_query,
         )
+        _apply_family_floors(account, floors_cfg)
         if client_limits is not None:
             limits = client_limits.get(str(account.get("provider") or ""))
             if limits:
@@ -1391,6 +1394,31 @@ def _unavailable_detail(
     return {"reason": reason, "binding_window": binding_window}
 
 
+def _apply_family_floors(account: dict[str, Any], floors_cfg: Mapping[str, Any] | None) -> None:
+    """``floor_by_pool_family``: the floors of the account's pool families that have their own rule.
+
+    A family has its own rule when ``[floors.pool_families.<family>]`` names it or it is a
+    prepaid family (``PREPAID_POOL_FAMILIES``); the other families use the account's
+    ``floor_percent``, so the map is absent for most accounts.
+    """
+    account.pop("floor_by_pool_family", None)
+    provider = str(account.get("provider") or "")
+    families = sorted(
+        {
+            str(w["pool_family"])
+            for w in account.get("windows") or []
+            if isinstance(w, Mapping) and w.get("pool_family") and w.get("pool_family") != "default"
+        }
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for family in families:
+        if has_pool_family_rule(floors_cfg, family):
+            percent, basis = resolve_floor(floors_cfg, provider, account.get("monthly_price"), family)
+            out[family] = {"floor_percent": percent, "floor_basis": basis}
+    if out:
+        account["floor_by_pool_family"] = out
+
+
 def pool_entries(
     snap: Mapping[str, Any],
     *,
@@ -1524,6 +1552,16 @@ def pool_entries(
             floor_basis = account.get("floor_basis")
             if not isinstance(floor_percent, (int, float)) or floor_basis not in FLOOR_BASES:
                 floor_percent, floor_basis = resolve_floor(None, provider, monthly_price)
+            family_floors = account.get("floor_by_pool_family")
+            own = family_floors.get(family) if isinstance(family_floors, Mapping) else None
+            if (
+                isinstance(own, Mapping)
+                and isinstance(own.get("floor_percent"), (int, float))
+                and own.get("floor_basis") in FLOOR_BASES
+            ):
+                floor_percent, floor_basis = own["floor_percent"], own["floor_basis"]
+            elif has_pool_family_rule(None, family):
+                floor_percent, floor_basis = resolve_floor(None, provider, monthly_price, family)
             if details is not None:
                 details.append(
                     _unavailable_detail(

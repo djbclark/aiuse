@@ -361,7 +361,8 @@
 #   "reserve_usd"  the formula above gave the number (default reserve_usd, or a
 #                  provider's own reserve_usd), from a known plan price
 #   "config"       a [floors.providers.<provider>] `percent` fixed it
-#   "default"      no plan price is known, so default_percent applies
+#   "default"      no plan price is known, or the pool is prepaid (below), so
+#                  default_percent applies
 # [floors]
 # reserve_usd = 10.0      # USD to keep per month, must be > 0
 # min_percent = 2.0       # lowest floor_percent the formula may give (0-100)
@@ -382,3 +383,17 @@
 # percent = 4.0
 # [floors.providers.codex]
 # reserve_usd = 25.0
+#
+# Per-pool-family overrides, keyed by the entry's pool_family (the `pool_family`
+# of an `--available` entry: openai_api, gemini_argon, claude_gpt, fable, ...),
+# same two keys as a provider override, and they beat it. One provider can run
+# pools of very different cost: the Codex plan price (say 200 USD) buys the
+# subscription windows, not the prepaid OpenAI API credits (pool_family
+# openai_api, a dollar balance billed per token). So a prepaid pool is never
+# priced by the plan: built in, openai_api takes default_percent with floor_basis
+# "default", whatever the account's [plans.codex] says. Override it here:
+# [floors.pool_families.openai_api]
+# percent = 10.0
+# Precedence: pool-family override, built-in prepaid default, provider override,
+# the plan-price formula, default_percent. A family name no pool reports draws a
+# validate_config warning (no effect).

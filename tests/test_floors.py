@@ -117,6 +117,7 @@ def _entries(config: dict | None, *accounts: dict) -> dict[str, dict]:
 
 
 PLANS = {"plans": {"antigravity": {"monthly_price": 199.99}, "codex": {"monthly_price": 20}}}
+PLANS_200 = {"plans": {"codex": {"monthly_price": 200}}}
 
 
 def test_entries_carry_floor_fields_from_the_configured_plan_price():
@@ -225,9 +226,11 @@ def test_default_config_floors_are_valid_and_match_the_documented_defaults():
         "max_percent": 20.0,
         "default_percent": 10.0,
         "providers": {},
+        "pool_families": {},
     }
     assert validate_config(DEFAULT_CONFIG) == []
     assert load_config()["floors"]["providers"] == {}
+    assert load_config()["floors"]["pool_families"] == {}
 
 
 @pytest.mark.parametrize(
@@ -288,7 +291,9 @@ def _all_keys(table: dict) -> set[str]:
 def test_example_config_mentions_every_default_floors_key_with_a_comment():
     section = _example_floors_section()
     for key in _all_keys(DEFAULT_CONFIG["floors"]) | {"percent", "reserve_usd"}:
-        assert re.search(rf"^# {re.escape(key)} = ", section, re.MULTILINE) or key == "providers", key
+        assert re.search(rf"^# {re.escape(key)} = ", section, re.MULTILINE) or key in ("providers", "pool_families"), (
+            key
+        )
         assert re.search(
             rf"\b{re.escape(key)}\b", re.sub(rf"^# {re.escape(key)} = .*$", "", section, flags=re.MULTILINE)
         ), key
@@ -311,7 +316,8 @@ def test_example_floors_lines_parse_and_validate_when_uncommented():
             lines.append(match.group(1))
     parsed = tomllib.loads("\n".join(lines))
     floors = parsed["floors"]
-    assert {"reserve_usd", "min_percent", "max_percent", "default_percent", "providers"} <= set(floors)
+    assert {"reserve_usd", "min_percent", "max_percent", "default_percent", "providers", "pool_families"} <= set(floors)
+    assert floors["pool_families"]["openai_api"] == {"percent": 10.0}
     assert validate_config({"floors": floors}) == []
     assert floors["reserve_usd"] == DEFAULT_CONFIG["floors"]["reserve_usd"]
     assert floors["min_percent"] == DEFAULT_CONFIG["floors"]["min_percent"]
@@ -355,3 +361,128 @@ def test_resolve_floor_swaps_defensively_when_the_bounds_cross():
     # A $199.99 plan: reserve 10 -> 5.0; min_percent=50 alone swaps the clamp to 20..50.
     assert resolve_floor({"min_percent": 50}, "claude", 199.99) == (20.0, "reserve_usd")
     assert resolve_floor({"max_percent": 1}, "claude", 20.0) == (2.0, "reserve_usd")
+
+
+# ── per-pool-family floors (schema 1.8, operator-chosen) ─────────────────────
+
+
+def _codex_with_api_credits(remaining_api: float = 60.0) -> dict:
+    account = _account("codex", 70.0)
+    credits = _window("OpenAI API credits", remaining_api)
+    credits["window_id"] = "codex-api-credits"
+    account["windows"].append(credits)
+    return account
+
+
+def _by_family(config: dict | None, account: dict) -> dict[str, dict]:
+    snap = enrich_snapshot({"collected_at": NOW.isoformat(), "accounts": [account]}, now=NOW, config=config)
+    return {e["pool_family"]: e for e in pool_entries(snap, now=NOW)}
+
+
+def test_prepaid_openai_api_pool_ignores_the_plan_price_and_takes_the_default_percent():
+    assert resolve_floor(None, "codex", 200.0, "openai_api") == (10.0, "default")
+    assert resolve_floor({"default_percent": 7}, "codex", 200.0, "openai_api") == (7.0, "default")
+    # the subscription pools of the same provider still scale by plan value
+    assert resolve_floor(None, "codex", 200.0, "default") == (5.0, "reserve_usd")
+    assert resolve_floor(None, "codex", 200.0) == (5.0, "reserve_usd")
+
+
+def test_pool_family_override_takes_percent_or_reserve_usd():
+    floors = {"pool_families": {"openai_api": {"percent": 3}}}
+    assert resolve_floor(floors, "codex", 200.0, "openai_api") == (3.0, "config")
+    floors = {"pool_families": {"openai_api": {"reserve_usd": 25}}}
+    assert resolve_floor(floors, "codex", 200.0, "openai_api") == (12.5, "reserve_usd")
+    assert resolve_floor(floors, "codex", None, "openai_api") == (10.0, "default")
+    # percent wins over reserve_usd, as for providers
+    both = {"pool_families": {"openai_api": {"percent": 3, "reserve_usd": 25}}}
+    assert resolve_floor(both, "codex", 200.0, "openai_api") == (3.0, "config")
+
+
+def test_pool_family_override_beats_the_provider_override_and_leaves_other_pools_alone():
+    floors = {
+        "providers": {"codex": {"percent": 4}},
+        "pool_families": {"openai_api": {"percent": 8}},
+    }
+    assert resolve_floor(floors, "codex", 200.0, "openai_api") == (8.0, "config")
+    assert resolve_floor(floors, "codex", 200.0, "default") == (4.0, "config")
+    assert resolve_floor(floors, "codex", 200.0) == (4.0, "config")
+
+
+def test_pool_family_override_matches_the_family_name_case_insensitively_and_by_family_only():
+    floors = {"pool_families": {"Gemini_Argon": {"percent": 6}}}
+    assert resolve_floor(floors, "antigravity", 199.99, "gemini_argon") == (6.0, "config")
+    assert resolve_floor(floors, "antigravity", 199.99, "gemini") == (5.0, "reserve_usd")
+
+
+def test_malformed_pool_family_values_fall_back_instead_of_raising():
+    for bad in ("nope", {"openai_api": "nope"}, {"openai_api": {"percent": "x"}}, {"openai_api": {"percent": 500}}):
+        assert resolve_floor({"pool_families": bad}, "codex", 200.0, "openai_api") == (10.0, "default")
+        assert resolve_floor({"pool_families": bad}, "codex", 200.0, "default") == (5.0, "reserve_usd")
+
+
+def test_codex_api_credits_entry_gets_the_prepaid_default_and_the_subscription_entry_keeps_the_plan_floor():
+    rows = _by_family(PLANS_200, _codex_with_api_credits())
+    assert (rows["openai_api"]["floor_percent"], rows["openai_api"]["floor_basis"]) == (10.0, "default")
+    assert rows["openai_api"]["headroom_above_floor_percent"] == pytest.approx(50.0)
+    default_row = rows["default"]
+    assert (default_row["floor_percent"], default_row["floor_basis"]) == (5.0, "reserve_usd")
+
+
+def test_pool_family_config_reaches_the_codex_api_credits_entry():
+    config = {**PLANS_200, "floors": {"pool_families": {"openai_api": {"percent": 3.5}}}}
+    rows = _by_family(config, _codex_with_api_credits())
+    assert (rows["openai_api"]["floor_percent"], rows["openai_api"]["floor_basis"]) == (3.5, "config")
+    assert rows["default"]["floor_basis"] == "reserve_usd"
+
+
+def test_unenriched_snapshots_still_get_the_prepaid_default_on_the_entry():
+    account = _codex_with_api_credits()
+    account["monthly_price"] = 200.0
+    account["windows"][1]["pool_family"] = "openai_api"
+    rows = {
+        e["pool_family"]: e for e in pool_entries({"collected_at": NOW.isoformat(), "accounts": [account]}, now=NOW)
+    }
+    assert (rows["openai_api"]["floor_percent"], rows["openai_api"]["floor_basis"]) == (10.0, "default")
+
+
+@pytest.mark.parametrize(
+    ("floors", "needle"),
+    [
+        ({"pool_families": []}, "floors.pool_families must be"),
+        ({"pool_families": {"openai_api": 5}}, "floors.pool_families.openai_api must be a table"),
+        (
+            {"pool_families": {"openai_api": {"percent": 150}}},
+            "floors.pool_families.openai_api.percent must be between",
+        ),
+        (
+            {"pool_families": {"openai_api": {"reserve_usd": -2}}},
+            "floors.pool_families.openai_api.reserve_usd must be greater",
+        ),
+        ({"pool_families": {"openai_api": {"pct": 1}}}, "unknown floors.pool_families.openai_api key 'pct'"),
+        ({"pool_families": {"openai_api": {"percent": 5, "reserve_usd": 5}}}, "percent wins"),
+        ({"pool_families": {"openai_api": {}}}, "neither percent nor reserve_usd"),
+        ({"pool_families": {"opnai_api": {"percent": 5}}}, "no pool reports the family 'opnai_api'"),
+        ({"pool_families": {"default": {"percent": 5}}}, "every provider's default pool"),
+    ],
+)
+def test_validate_config_reports_bad_pool_family_floors(floors, needle):
+    issues = validate_config({"floors": floors})
+    assert any(needle in issue for issue in issues), issues
+
+
+def test_validate_config_accepts_known_pool_families():
+    floors = {
+        "pool_families": {
+            "openai_api": {"percent": 4},
+            "gemini_argon": {"reserve_usd": 5},
+            "anthropic_api": {"percent": 10},
+            "fable": {"percent": 6},
+        }
+    }
+    assert validate_config({"floors": floors}) == []
+
+
+def test_pool_family_floor_fields_are_documented():
+    assert "pool_families" in SEMANTICS["floor_basis"]
+    assert "openai_api" in SEMANTICS["floor_percent"]
+    assert "floor_by_pool_family" in SEMANTICS

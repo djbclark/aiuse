@@ -161,6 +161,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- Per-pool-family floors: `[floors.pool_families.<family>]` (`percent` or `reserve_usd`)
+  overrides the provider's floor for one pool, and the prepaid `openai_api` pool (the
+  Codex CLI's OpenAI API credits) now takes `default_percent` (`floor_basis` `default`)
+  instead of the Codex plan-price formula. New account field `floor_by_pool_family`.
 - `[floors]` `min_percent` or `max_percent` set alone, crossing the other's
   default (`min_percent = 50`, `max_percent = 1`), now draws a `validate_config`
   warning that names which way the bounds are swapped; both set and crossed stays an

@@ -984,7 +984,8 @@ min_percent, max_percent)`, rounded to 1 decimal. `plan_monthly_price` is the
 - `floor_basis` (enum `reserve_usd` | `config` | `default`): `reserve_usd` = the
   formula gave the number (default reserve, or the provider's own
   `reserve_usd`); `config` = a `[floors.providers.<provider>] percent` fixed it;
-  `default` = no plan price is known, so `default_percent` (10.0) applies.
+  `default` = no plan price is known, or the pool is prepaid (`openai_api`) and has no
+  override, so `default_percent` (10.0) applies.
 - `headroom_above_floor_percent` (number | null): `headroom_percent -
 floor_percent`; negative when below the floor, null when `headroom_percent` is
   null.
@@ -993,13 +994,26 @@ floor_percent`; negative when below the floor, null when `headroom_percent` is
 pool below its floor is still `usable_now`; the floor is advice, and the
 consumer's own policy decides. Configure it with the `[floors]` table
 (`reserve_usd`, `min_percent`, `max_percent`, `default_percent`, and per-provider
-`[floors.providers.<provider>]` with `percent` or `reserve_usd`); each setting
+`[floors.providers.<provider>]` and `[floors.pool_families.<family>]` with `percent`
+or `reserve_usd`); each setting
 is explained in `config/config.example.toml`. The same fields are documented in
 `semantics.floor_percent`, `semantics.floor_basis` and
 `semantics.headroom_above_floor_percent`. `min_percent` must not exceed
 `max_percent`; `validate_config` checks the effective pair (the unset one at its
 default 2.0 / 20.0), so `min_percent = 50` alone or `max_percent = 1` alone warns
 that the bounds are swapped (floors run 20..50 / 1..2) instead of passing silently.
+
+Per-pool-family floors (schema 1.8): one provider can run pools of very different
+cost. The Codex plan price buys the subscription windows, not the prepaid OpenAI API
+credits (`pool_family: "openai_api"`, a dollar balance), so a prepaid pool is not
+priced by the plan: `openai_api` takes `default_percent` with `floor_basis: "default"`
+whatever `[plans.codex]` says. `[floors.pool_families.<family>]` (`percent` or
+`reserve_usd`) overrides it, and any other family, and beats the provider override.
+Precedence: pool-family override, built-in prepaid default, provider override,
+plan-price formula, `default_percent`. An account whose pools include such a family
+carries `floor_by_pool_family` (`{family: {floor_percent, floor_basis}}`), which the
+routing entries read; the account's own `floor_percent` keeps describing its other
+pools.
 
 An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
 routing entry, so a reader sees the dollars without opening the account.

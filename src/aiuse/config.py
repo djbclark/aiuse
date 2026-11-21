@@ -330,12 +330,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
     #   providers        per-provider overrides, [floors.providers.<provider>]:
     #                    `percent` = a fixed floor (floor_basis "config"), or
     #                    `reserve_usd` = this provider's own reserve in the formula
+    #   pool_families    per-pool-family overrides, [floors.pool_families.<family>],
+    #                    same two keys, beat the provider's. Prepaid pools
+    #                    (openai_api: the Codex CLI's OpenAI API credits) are not
+    #                    priced by the plan: built in, they take default_percent
+    #                    (floor_basis "default") unless overridden here.
     "floors": {
         "reserve_usd": 10.0,
         "min_percent": 2.0,
         "max_percent": 20.0,
         "default_percent": 10.0,
         "providers": {},
+        "pool_families": {},
     },
     "collectors": {
         "cswap": {"enabled": True},
@@ -468,7 +474,9 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "floors",
     }
 )
-KNOWN_FLOORS_KEYS = frozenset({"reserve_usd", "min_percent", "max_percent", "default_percent", "providers"})
+KNOWN_FLOORS_KEYS = frozenset(
+    {"reserve_usd", "min_percent", "max_percent", "default_percent", "providers", "pool_families"}
+)
 KNOWN_FLOORS_PROVIDER_KEYS = frozenset({"percent", "reserve_usd"})
 KNOWN_TIMEOUT_KEYS = frozenset(
     {
@@ -1083,7 +1091,44 @@ def _validate_floors(floors: Any) -> list[str]:
                 issues.append(f"warning: {where} sets both percent and reserve_usd (percent wins)")
             if not entry:
                 issues.append(f"warning: {where} sets neither percent nor reserve_usd (no effect)")
+    families = floors.get("pool_families")
+    if families is not None and not isinstance(families, dict):
+        issues.append("error: floors.pool_families must be a pool_family -> table mapping")
+    elif isinstance(families, dict):
+        known = _known_pool_families()
+        for family, entry in families.items():
+            where = f"floors.pool_families.{family}"
+            if not isinstance(entry, dict):
+                issues.append(f"error: {where} must be a table with percent or reserve_usd")
+                continue
+            name = str(family).strip().casefold()
+            if name == "default":
+                issues.append(
+                    f"warning: {where} names no real pool family: 'default' is every provider's default pool "
+                    "(use [floors.providers.<provider>] for those)"
+                )
+            elif name not in known and not name.startswith("gemini_"):
+                issues.append(f"warning: {where}: no pool reports the family {str(family)!r} (no effect)")
+            for key in entry:
+                if key not in KNOWN_FLOORS_PROVIDER_KEYS:
+                    issues.append(f"warning: unknown {where} key {key!r} (ignored)")
+            if "percent" in entry:
+                number(f"{where}.percent", entry["percent"], lo=0.0, hi=100.0)
+            if "reserve_usd" in entry:
+                number(f"{where}.reserve_usd", entry["reserve_usd"], lo=0.0, hi=None)
+            if "percent" in entry and "reserve_usd" in entry:
+                issues.append(f"warning: {where} sets both percent and reserve_usd (percent wins)")
+            if not entry:
+                issues.append(f"warning: {where} sets neither percent nor reserve_usd (no effect)")
     return issues
+
+
+def _known_pool_families() -> frozenset[str]:
+    """Pool families the routing entries can carry (Claude model families are open-ended: the common ones)."""
+    from aiuse.analysis.selfdescribe import _FAMILY_RULES
+
+    names = {family for rules in _FAMILY_RULES.values() for _needle, family, _hint in rules}
+    return frozenset(names | {"gemini_argon", "fable", "opus", "sonnet", "haiku"})
 
 
 def validate_config(config: dict[str, Any] | None) -> list[str]:
