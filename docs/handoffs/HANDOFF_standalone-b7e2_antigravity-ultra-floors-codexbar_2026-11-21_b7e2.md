@@ -94,6 +94,20 @@ Keep aiuse's picture of the operator's quotas true and usable: 5.3.0/5.3.1 fixes
 - Checks at 16:20Z: HTTP server /health 200; `codexbar usage --provider antigravity` works and now carries real windows (Claude/GPT unused windows still show the placeholder reset, which aiuse 5.3.2 drops); `aiuse --json` collected 14 accounts, no errors, no collector_errors; the Claude CodexBar row is source admin-api with no plan windows in BOTH 0.84.1 and 0.85.0 (so not a regression; aiuse's Claude windows come from cswap).
 - Open: the 0.85.0 app had not rewritten widget-snapshot.json or usage-history.jsonl 7 minutes after launch (refreshFrequency fiveMinutes; the old app wrote both at 11:12:20). The app is alive and its app-group lookups succeed. Possible cause: a Keychain or permission prompt waiting on screen after the ad-hoc signature change, or a slow first refresh. aiuse does not depend on the snapshot file today (rows come from the CLI/HTTP). Operator is checking the UI (reported claude monthly missing). If it is still stale after a prompt is cleared, roll back.
 
+## Update 2026-11-21 (schema 1.8 implementation, unreleased)
+
+Shipped on `main`, pushed, **not released** (no version bump beyond `SCHEMA_VERSION = "1.8"`; the operator releases with `just release`):
+
+- 720cf95 refresh-gate fields on stale gated readings (`refreshable_at`, `refresh_blocked_by_gate`, `gate_remaining_seconds`).
+- 36c76ef `available_at` is the LATEST reset among depleted windows (was the earliest): accounts, routing entries, Cursor siblings; omp gate and Cursor ceiling combine by the same rule. Tests: `tests/test_available_at_latest.py`.
+- 23cb0d2 Argon model-to-pool map derived from the reported windows (`pool_family_for_acp_model(provider, model, reported_families)`; `nominal_pool_family_for_acp_model` for discovery sites; `collapse_gemini_family` in `analysis/pace.py` folds an unreported `gemini_<name>` into `gemini` when applying notes and frozen-pool activity). Ultra has no per-model window, so Argon maps to `gemini`.
+- d799b44 `unavailable[]` in the `--available` envelope (`unavailable_pools`, reasons `exhausted`, `near_empty`, `rate_gated`, `no_reading`), schema 1.8. Tests: `tests/test_unavailable_pools.py`.
+- 73d38ce per-service floors: `analysis/floors.py`, `[floors]` config (`reserve_usd` 10, `min_percent` 2, `max_percent` 20, `default_percent` 10, per-provider `percent` or `reserve_usd`), fields `floor_percent`, `floor_basis`, `headroom_above_floor_percent` on every `--available` entry. Tests: `tests/test_floors.py` (includes a check that `config/config.example.toml` documents every floors key). `headroom_percent`, `usable_now` and the 5% rule are unchanged.
+
+Docs: `docs/json-contract.md` ("What's new in schema 1.8", "`unavailable[]`", "Headroom floors", Changelog), `README.md` (config section, flag table), `config/config.example.toml` (`[floors]` comments), `config.py` DEFAULT_CONFIG comment, `semantics` map in `selfdescribe.py`, `docs/antigravity-pools.md`, `CHANGELOG.md` [Unreleased].
+
+Open: tell the ADE lead (3b88cf33-1ddf-46ec-8ab6-594db3449c40) the release that carries the floors once the operator cuts it. Floors on the `codex/openai_api` pool (prepaid API credits) use the codex plan price, which is arguably wrong (live: 5.0 on a $200 plan); a per-pool-family override would fix it if it matters. Live `--available --json` after the changes: OpenCode Go account t-e now reads `available_at` 2026-11-27 (monthly) instead of 2026-11-23.
+
 ## Detached jobs
 
 none
