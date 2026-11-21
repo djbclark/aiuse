@@ -43,6 +43,9 @@ def test_payload_from_disk_row_picks_suggestion():
 
 
 def test_serve_state_live_collect(monkeypatch):
+    # The in-memory cache stamp includes the current minute; a test that straddles a
+    # minute boundary (a loaded machine, 2026-11-21 release run) re-collected and failed.
+    monkeypatch.setattr("aiuse.serve._clock", lambda: 1_800_000_000.0)
     snap = Snapshot(
         collected_at=utcnow(),
         accounts=[
