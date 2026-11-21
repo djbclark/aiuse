@@ -443,6 +443,10 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
             account for account in snapshot.accounts if canonical_provider(account.provider) in provider_filter
         ]
 
+    from aiuse.openai_cost import refresh_during_collection
+
+    refresh_during_collection(snapshot, config)
+
     snapshot.hidden_pools = _apply_hidden_pools(snapshot.accounts, config)
 
     _merge_grok_extra_credits(snapshot.accounts)

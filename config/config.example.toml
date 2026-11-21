@@ -331,3 +331,7 @@
 # Optional macOS codesign identity for `aiuse trust sign-caut`.
 # [macos]
 # codesign_identity = "aiuse-local-codesign"
+
+# Opt-in: grant-derived OpenAI balance refresh, external OPENAI_ADMIN_KEY injection only.
+[collectors.openai_cost]
+enabled = false

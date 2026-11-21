@@ -16,13 +16,14 @@ import json
 import math
 import os
 import sys
+import time
 import urllib.parse
 from datetime import datetime
 from typing import Any
 
 from aiuse import credits_override as co
 from aiuse.anthropic_cost import CostReportError, Fetch, _http_get
-from aiuse.models import utcnow
+from aiuse.models import Snapshot, canonical_provider, utcnow
 
 COST_REPORT_URL = "https://api.openai.com/v1/organization/costs"
 KEY_ENV = "OPENAI_ADMIN_KEY"
@@ -120,6 +121,8 @@ def refresh(*, now: datetime | None = None, fetch: Fetch | None = None) -> dict[
     observed = co.parse_dt(console.get("observed_at"))
     if granted >= now or observed is None or observed > now or (expires is not None and expires <= now):
         raise CostReportError("grant or console timestamps are not usable")
+    if now - observed > co.OVERRIDE_MAX_AGE:
+        raise CostReportError("console observation older than 7 days; record a new verified cash observation")
     spent, post_console = fetch_spend_usd(key, granted, ending_at=now, after=observed, fetch=fetch)
     remaining = max(0.0, min(total - spent, float(console["remaining_usd"]) - post_console))
     entry = {
@@ -148,3 +151,62 @@ def run_refresh_credits() -> int:
         return 1
     print(f"pi: ${entry['remaining_usd']:.2f} of ${entry['total_usd']:.2f} grant-derived estimate")
     return 0
+
+
+def refresh_during_collection(snapshot: Snapshot, config: dict[str, Any]) -> None:
+    """Opt-in refresh before the normal credit overlay; never resolve credentials."""
+    from aiuse.collectors.throttle import QueryGate
+    from aiuse.config import requested_providers
+    from aiuse.usage_sources import pinned_usage_source
+
+    section = (config.get("collectors") or {}).get("openai_cost")
+    enabled = section is True or (isinstance(section, dict) and section.get("enabled") is True)
+    if not enabled or co._config_hides_omp(config, "pi"):
+        return
+    providers = requested_providers(config)
+    if providers is not None and "pi" not in providers:
+        return
+    pin = pinned_usage_source(config.get("usage_sources"), "pi")
+    if pin and pin != "admin-api":
+        return
+    rows = [a for a in snapshot.accounts if canonical_provider(a.provider) == "pi"]
+    if len(rows) > 1:
+        snapshot.collector_errors.append("openai_cost: refresh withheld: ambiguous unbound Pi funding")
+        return
+
+    def note(message: str) -> None:
+        for row in rows:
+            row.notes.append(message)
+
+    try:
+        # QueryGate serializes automatic callers, including failures. No response
+        # bodies or credentials enter its state. Explicit refresh remains manual.
+        with QueryGate("pi-openai-cost", min_interval=900, wait=0) as gate:
+            if not gate.allowed:
+                note("OpenAI credit refresh deferred by shared attempt throttle; balance observation unchanged")
+                return
+            now = utcnow()
+            current = co.load_overrides(config, now=now).get("pi")
+            observed = co.parse_dt(current.get("observed_at")) if current else None
+            if observed is not None and 0 <= (now - observed).total_seconds() < 900:
+                note("OpenAI credit observation younger than 15 minutes; refresh not needed")
+                return
+            deadline = time.monotonic() + 45
+
+            def bounded_fetch(url: str, headers: Any, timeout: float) -> tuple[int, bytes]:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise CostReportError("automatic refresh deadline exceeded")
+                result = _http_get(url, headers, min(timeout, remaining))
+                if time.monotonic() > deadline:
+                    raise CostReportError("automatic refresh deadline exceeded")
+                return result
+
+            gate.reserve("openai_cost")
+            refresh(now=now, fetch=bounded_fetch)
+            note("OpenAI costs refreshed; conservative grant-derived estimate, not live cash; costs may lag")
+    except (CostReportError, OSError) as exc:
+        detail = str(exc) if isinstance(exc, CostReportError) else exc.__class__.__name__
+        message = f"openai_cost: refresh unavailable: {detail}; balance observation unchanged"
+        snapshot.collector_errors.append(message)
+        note(message)

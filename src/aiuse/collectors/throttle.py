@@ -172,6 +172,32 @@ class QueryGate:
             return {}
         return data if isinstance(data, dict) else {}
 
+    def reserve(self, source: str) -> None:
+        """Durably reserve an uncertain attempt BEFORE I/O; storage errors propagate.
+
+        Opt-in API: existing post-query ``record`` callers retain their behavior.
+        A reservation survives process death; its normal interval bounds retry.
+        """
+        if not self.locked or not self.allowed:
+            raise OSError("query reservation requires an allowed locked gate")
+        state = {**self.state, "queried_at": utcnow().isoformat(), "queried_by": source}
+        tmp = self._state_path.with_suffix(f".reserve.{os.getpid()}.tmp")
+        try:
+            with tmp.open("w", encoding="utf-8") as stream:
+                stream.write(json.dumps(state))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, self._state_path)
+            directory_fd = os.open(self.directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            self.state = state
+            self.allowed = False
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def record(self, source: str, outcome: Any = None, *, store: bool = True, usable: bool | None = None) -> None:
         """Mark a live query by ``source`` as of now (after it ran); optionally keep its outcome.
 

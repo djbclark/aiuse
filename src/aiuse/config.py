@@ -300,6 +300,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "collectors": {
+        "openai_cost": {"enabled": False},
         "cswap": {"enabled": True},
         "codexbar": {
             "enabled": True,
@@ -456,6 +457,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
 )
 KNOWN_COLLECTOR_KEYS = frozenset(
     {
+        "openai_cost",
         "cswap",
         "codexbar",
         "caut",
@@ -516,6 +518,7 @@ KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
 # Lives here (not collectors/runner.py) so validate_config can check for
 # redundant collector overrides against it without an import cycle.
 SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
+    "openai_cost": "pi",
     "cswap": "claude",
     "grok_billing": "grok",
     "muse": "muse",
