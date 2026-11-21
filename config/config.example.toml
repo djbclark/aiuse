@@ -367,6 +367,10 @@
 # min_percent = 2.0       # lowest floor_percent the formula may give (0-100)
 # max_percent = 20.0      # highest floor_percent the formula may give (0-100)
 # default_percent = 10.0  # floor_percent when no plan price is known (0-100)
+# min_percent must not exceed max_percent. Both are checked against the EFFECTIVE
+# pair, the other one defaulting to 2.0 / 20.0: min_percent = 50 alone (max stays
+# 20.0) or max_percent = 1 alone (min stays 2.0) crosses it, the formula swaps
+# the pair to 20..50 / 1..2, and aiuse doctor warns which way it went. Set both.
 #
 # Per-provider overrides, keyed by provider id (aliases accepted: gemini and
 # antigravity are the same provider). Each takes ONE of:

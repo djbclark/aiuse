@@ -1046,6 +1046,23 @@ def _validate_floors(floors: Any) -> list[str]:
     low, high = bounds["min_percent"], bounds["max_percent"]
     if low is not None and high is not None and low > high:
         issues.append(f"error: floors.min_percent ({low:g}) must not exceed floors.max_percent ({high:g})")
+    elif (low is None) != (high is None):
+        # One bound set alone crosses the other's DEFAULT: resolve_floor swaps the pair
+        # silently, so the table does not say what the operator meant.
+        from aiuse.analysis.floors import DEFAULT_MAX_PERCENT, DEFAULT_MIN_PERCENT
+
+        if low is not None and low > DEFAULT_MAX_PERCENT:
+            issues.append(
+                f"warning: floors.min_percent ({low:g}) exceeds the effective floors.max_percent "
+                f"({DEFAULT_MAX_PERCENT:g}, the default): the bounds are swapped and floors run "
+                f"{DEFAULT_MAX_PERCENT:g}..{low:g}; set floors.max_percent too"
+            )
+        elif high is not None and high < DEFAULT_MIN_PERCENT:
+            issues.append(
+                f"warning: floors.max_percent ({high:g}) is below the effective floors.min_percent "
+                f"({DEFAULT_MIN_PERCENT:g}, the default): the bounds are swapped and floors run "
+                f"{high:g}..{DEFAULT_MIN_PERCENT:g}; set floors.min_percent too"
+            )
     providers = floors.get("providers")
     if providers is not None and not isinstance(providers, dict):
         issues.append("error: floors.providers must be a provider -> table mapping")

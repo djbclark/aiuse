@@ -317,3 +317,41 @@ def test_example_floors_lines_parse_and_validate_when_uncommented():
     assert floors["min_percent"] == DEFAULT_CONFIG["floors"]["min_percent"]
     assert floors["max_percent"] == DEFAULT_CONFIG["floors"]["max_percent"]
     assert floors["default_percent"] == DEFAULT_CONFIG["floors"]["default_percent"]
+
+
+# ── bounds crossing the other's default (schema 1.8 review, finding 6) ──────
+
+
+def test_min_percent_alone_above_the_default_max_is_flagged_with_the_swap_direction():
+    issues = validate_config({"floors": {"min_percent": 50}})
+    (issue,) = [i for i in issues if "min_percent" in i]
+    assert "floors.min_percent (50)" in issue
+    assert "max_percent (20" in issue
+    assert "swapped" in issue
+    assert "20..50" in issue
+
+
+def test_max_percent_alone_below_the_default_min_is_flagged_with_the_swap_direction():
+    issues = validate_config({"floors": {"max_percent": 1}})
+    (issue,) = [i for i in issues if "max_percent" in i]
+    assert "floors.max_percent (1)" in issue
+    assert "min_percent (2" in issue
+    assert "swapped" in issue
+    assert "1..2" in issue
+
+
+def test_both_bounds_given_crossed_stays_an_error():
+    issues = validate_config({"floors": {"min_percent": 30, "max_percent": 10}})
+    assert any(i.startswith("error:") and "min_percent" in i for i in issues)
+
+
+def test_bounds_that_agree_with_the_defaults_are_clean():
+    assert validate_config({"floors": {"min_percent": 5}}) == []
+    assert validate_config({"floors": {"max_percent": 40}}) == []
+    assert validate_config({"floors": {"min_percent": 2, "max_percent": 2}}) == []
+
+
+def test_resolve_floor_swaps_defensively_when_the_bounds_cross():
+    # A $199.99 plan: reserve 10 -> 5.0; min_percent=50 alone swaps the clamp to 20..50.
+    assert resolve_floor({"min_percent": 50}, "claude", 199.99) == (20.0, "reserve_usd")
+    assert resolve_floor({"max_percent": 1}, "claude", 20.0) == (2.0, "reserve_usd")

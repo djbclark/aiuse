@@ -161,6 +161,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- `[floors]` `min_percent` or `max_percent` set alone, crossing the other's
+  default (`min_percent = 50`, `max_percent = 1`), now draws a `validate_config`
+  warning that names which way the bounds are swapped; both set and crossed stays an
+  error, and `resolve_floor` still swaps defensively.
 - `query_min_interval.<provider> = inf` (or 1e20) no longer crashes every
   enrichment path with `OverflowError`: `validate_config` rejects non-finite
   values and anything above 7 days (`MAX_QUERY_MIN_INTERVAL`), and the

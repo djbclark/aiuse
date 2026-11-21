@@ -996,7 +996,10 @@ consumer's own policy decides. Configure it with the `[floors]` table
 `[floors.providers.<provider>]` with `percent` or `reserve_usd`); each setting
 is explained in `config/config.example.toml`. The same fields are documented in
 `semantics.floor_percent`, `semantics.floor_basis` and
-`semantics.headroom_above_floor_percent`.
+`semantics.headroom_above_floor_percent`. `min_percent` must not exceed
+`max_percent`; `validate_config` checks the effective pair (the unset one at its
+default 2.0 / 20.0), so `min_percent = 50` alone or `max_percent = 1` alone warns
+that the bounds are swapped (floors run 20..50 / 1..2) instead of passing silently.
 
 An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
 routing entry, so a reader sees the dollars without opening the account.
