@@ -271,3 +271,23 @@ and Ultra 20x at $199.99, with Antigravity agent requests "Highest" on the 20x t
   the plans page is Google Flow credits, not Antigravity.
 - aiuse does not read either balance; the Cloud credit is a prepaid-style pool worth tracking only
   if a Cloud billing collector is added.
+
+## Gemini 4 model lineup and per-model pools (checked 2026-11-21)
+
+Google's [models page](https://antigravity.google/docs/models) lists Gemini 4 Neon, Carbon, Argon and
+Hydrogen as the current Gemini models (Carbon is Ultra-only, Argon and Neon need paid Pro or Ultra),
+with Gemini 3.8 Flash for every plan; 3.7 Flash, 3.6 Flash and 3.1 Pro are Enterprise-only, and the
+Claude 4.6 and GPT-OSS entries end on 2026-11-30. The in-app usage panel shows only two meters:
+"Gemini Models" and "Claude and GPT models".
+
+Live test on the Ultra 20x plan: one `agy --model gemini-4-<name> -p=...` call each to carbon, neon,
+hydrogen and argon (14:20Z) all answered. CodexBar's next read (14:32Z) showed only the shared
+`Gemini 5-hour` (+1.97 points) and `Gemini weekly` (+0.68) windows moving; the Claude/GPT windows
+stayed at 0 and no per-model window (no `...-gemini-argon-wtu-weekly`, no Carbon window) was reported at all.
+On the Ultra plan, then, no Gemini 4 model has its own quota window; Carbon is not special, and the
+`gemini_argon` family only matters if CodexBar again reports an Argon window. Open: a single
+call per model with a read between each (15 minute gate) would show whether one of them draws a different share.
+
+Placeholder resets: the 14:32Z live read still carried `Claude/GPT 5-hour` reset 19:32:13Z, which is
+the snapshot time plus 300 minutes on a 0%-used window, so the 5.3.0 drop-the-placeholder rule (widget
+snapshot path only) does not cover the live `codexbar usage` path. Not fixed yet.
