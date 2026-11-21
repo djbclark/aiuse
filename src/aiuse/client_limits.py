@@ -165,4 +165,12 @@ def load_client_limits(config: dict[str, Any] | None = None) -> dict[str, list[d
     throttle = scan_paseo_throttle()
     if throttle is not None:
         limits["pi"] = [throttle]
+    # Antigravity's per-model capacity error (cloudcode-pa "Resource has been
+    # exhausted", 2026-11-21): a short cooldown on the antigravity pool, never
+    # an exhaustion; it rides beside the agy CLI entry.
+    from aiuse.paseo_refusals import scan_antigravity_capacity
+
+    capacity = scan_antigravity_capacity()
+    if capacity is not None:
+        limits.setdefault("antigravity", []).append(capacity)
     return limits

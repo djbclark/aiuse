@@ -23,7 +23,9 @@ it. Or skip all of it and call `aiuse --available`.
    `remaining_percent` (or its alias `headroom_percent`), or better from the
    explicit `state` — here `state: "exhausted"`, `usable_now: false`,
    `available_at` set to the reset time. Every window in 1.1 carries `state`:
-   `exhausted` (≤1% left) | `tight` (<15% left) | `ok` | `unknown`.
+   `exhausted` (≤1% left) | `tight` (<15% left) | `ok` | `unknown`. A window
+   under 5% left stays `tight` but also makes `usable_now` false (near empty:
+   work cannot finish on it) and its reset becomes `available_at`.
 
 2. **One vendor can hold several independent pools by model family.** agy
    (provider `antigravity`) has a Gemini pool and a separate Claude/GPT pool.

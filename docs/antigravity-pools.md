@@ -226,3 +226,29 @@ every measured Antigravity row since CodexBar v0.77.0
 merged 2026-10-16); aiuse reads it when present and the slot-matching rule is
 the fallback for snapshots written by an older build (on 2026-10-17 the
 running app was a pre-0.77.0 local build, not the installed cask).
+
+## Capacity errors and placeholder clocks (2026-11-21)
+
+Two things the quota windows cannot show, both checked with live calls
+(`agy -p`, one per model, 12:13Z: claude-sonnet-5-5, gpt-oss-120b,
+gemini-3.8-flash and gemini-4-argon all answered, and the windows moved by the
+plausible 0.4 to 5 points, so the numbers track real use).
+
+- **Capacity error.** A Pi agent got `This model is unavailable right now
+(Resource has been exhausted (e.g. check quota).)` from cloudcode-pa for
+  claude-sonnet-5-5 and gemini-3.8-flash at about 12:06Z while every window
+  showed headroom; the same models worked seven minutes later. The text itself
+  says "not necessarily an account quota wall". aiuse reads such an error from
+  a Paseo agent's state file (`scan_antigravity_capacity`) and adds a
+  `client_limits` entry with `kind: "capacity"`, `state: "limited"`, a 10 minute
+  cooldown and the failing model names. It never marks a pool exhausted and
+  never touches `usable_now`. `Individual quota reached` / `QUOTA_EXHAUSTED`
+  with a multi-day reset is a different thing and still becomes an exhaustion
+  note.
+- **Placeholder reset.** An unused window has no real clock (it starts on first
+  use), but CodexBar fills `resetsAt` with its snapshot time plus the window
+  length, so a 0% Claude/GPT 5-hour window showed `4h56m` for hours and slid
+  forward at every refresh. The parser drops a reset that is within two minutes
+  of `updatedAt + windowMinutes` on a 0%-used window; the cell reads `5h↻`
+  until a real call starts the clock (the first test call turned it into a real
+  17:12:52Z reset).

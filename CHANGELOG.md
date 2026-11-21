@@ -70,7 +70,27 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ## [Unreleased]
 
+### Changed
+
+- A window under 5% left is no longer "usable": `usable_now` is false and the
+  window's reset becomes `available_at` (the window itself stays `tight`, not
+  `exhausted`; `NEAR_EMPTY_BELOW` in `analysis/selfdescribe.py`). On
+  2026-11-21 OpenCode Go's weekly window read 2% left and "usable", and the next
+  agent run hit `GoUsageLimitError` within minutes. Live test calls against
+  every pool (OpenCode Go, ClinePass, z.ai, antigravity) agreed with aiuse's
+  full/usable verdicts otherwise.
+- A new `client_limits` entry of `kind: "capacity"` on antigravity reports
+  Paseo agents' transient `Resource has been exhausted (e.g. check quota)`
+  errors from cloudcode-pa for 10 minutes: a short, model-level cooldown, never
+  an exhausted pool (`usable_now` stays quota-based). It names the models that
+  failed. See [`docs/antigravity-pools.md`](docs/antigravity-pools.md).
+
 ### Fixed
+
+- Antigravity windows at 0% no longer show a made-up countdown. CodexBar sets
+  an unused window's reset to its own snapshot time plus the window length, so
+  `Claude/GPT 5-hour` read `4h56m` forever; the stamp is dropped and the cell
+  reads `5h↻` (clock not started) until the first call starts a real clock.
 
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global

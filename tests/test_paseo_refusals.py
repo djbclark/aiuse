@@ -386,3 +386,65 @@ def test_note_is_pruned_when_a_fresh_probe_succeeds():
     notes = load_active_notes(now=now + timedelta(minutes=6))
     assert not any(n.get("pool_family") == "openai_api" for n in notes)
     assert not (agent_notes.notes_dir() / "pi-openai_api.json").exists()
+
+
+# ── antigravity per-model capacity error (2026-11-21) ───────────────────────
+
+AGY_CAPACITY = (
+    "Antigravity API error (request-failed, endpoint=https://cloudcode-pa.googleapis.com, "
+    "project=aicode-consumers, runtimeModel=claude-sonnet-5-5-low, matched=static:claude-sonnet-5-5-high): "
+    "This model is unavailable right now (Resource has been exhausted (e.g. check quota).). "
+    "Next: switch to gemini-3.8-flash or another Flash model. This is not necessarily an account quota wall. "
+    "(stopReason=error, model=antigravity/claude-sonnet-5-5)"
+)
+
+
+def test_antigravity_capacity_error_is_a_cooldown_never_an_exhaustion():
+    from aiuse.paseo_refusals import scan_antigravity_capacity
+
+    now = utcnow()
+    _write_agent("proj", "cap-1", _agent("pi", "antigravity/claude-sonnet-5-5", AGY_CAPACITY, now=now))
+    # Not a pool exhaustion note, and not the z.ai 1302 throttle either.
+    assert scan_paseo_quota_refusals(now=now) == []
+    assert scan_paseo_throttle(now=now) is None
+    entry = scan_antigravity_capacity(now=now)
+    assert entry is not None
+    assert entry["state"] == "limited"
+    assert entry["kind"] == "capacity"
+    assert entry["provider_hint"] == "antigravity"
+    assert entry["models"] == ["claude-sonnet-5-5"]
+    assert "not necessarily an account quota wall" in entry["message"]
+    event = parse_dt(entry["last_limited_at"])
+    assert event is not None
+    assert parse_dt(entry["cooldown_until"]) == event + timedelta(minutes=10)
+
+
+def test_antigravity_capacity_error_ages_out_of_the_cooldown():
+    from aiuse.paseo_refusals import scan_antigravity_capacity
+
+    now = utcnow()
+    _write_agent(
+        "proj",
+        "cap-2",
+        _agent("pi", "antigravity/gemini-3.8-flash", AGY_CAPACITY, now=now, age=timedelta(minutes=45)),
+    )
+    assert scan_antigravity_capacity(now=now) is None
+
+
+def test_antigravity_quota_refusal_is_not_a_capacity_error():
+    from aiuse.paseo_refusals import scan_antigravity_capacity
+
+    now = utcnow()
+    _write_agent("proj", "cap-3", _agent("antigravity", "claude-sonnet-5-5-medium", AGY_GPT, now=now))
+    assert scan_antigravity_capacity(now=now) is None
+
+
+def test_load_client_limits_surfaces_the_antigravity_capacity_error():
+    now = utcnow()
+    _write_agent("proj", "cap-4", _agent("pi", "antigravity/claude-sonnet-5-5", AGY_CAPACITY, now=now))
+    limits = load_client_limits({})
+    entries = limits.get("antigravity", [])
+    assert [entry["kind"] for entry in entries if entry.get("kind")] == ["capacity"]
+    # Quota-based fields stay untouched: the entry never carries usable_now.
+    assert all("usable_now" not in entry for entry in entries)
+    assert "pi" not in limits

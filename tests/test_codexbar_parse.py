@@ -1343,3 +1343,66 @@ def test_copilot_slot_label_with_rate_labels_and_window_kinds():
     assert _slot_label("copilot", 3, {}, rate_labels={"tertiary": "Session"}) == "GitHub Copilot session quota"
     assert _slot_label("copilot", 2, {"windowMinutes": 10080}) == "GitHub Copilot weekly quota"
     assert _slot_label("copilot", 3, {"windowMinutes": 300}) == "GitHub Copilot session quota"
+
+
+def _antigravity_entry(secondary_reset_offset_minutes: float, *, secondary_used: float = 0.0) -> dict:
+    """A widget-snapshot antigravity entry updated at 12:02:22Z (2026-11-21 shape)."""
+    from datetime import datetime, timedelta, timezone
+
+    updated = datetime(2026, 11, 21, 12, 2, 22, tzinfo=timezone.utc)
+
+    def stamp(moment: datetime) -> str:
+        return moment.isoformat().replace("+00:00", "Z")
+
+    return {
+        "provider": "antigravity",
+        "updatedAt": stamp(updated),
+        "primary": {
+            "usedPercent": 8.3,
+            "windowMinutes": 300,
+            "resetsAt": stamp(updated + timedelta(hours=2, minutes=11)),
+        },
+        "secondary": {
+            "usedPercent": secondary_used,
+            "windowMinutes": 300,
+            "resetsAt": stamp(updated + timedelta(minutes=secondary_reset_offset_minutes)),
+        },
+    }
+
+
+def test_antigravity_placeholder_reset_on_an_unused_window_is_dropped():
+    """CodexBar sets an unused window's reset to updatedAt + window length.
+
+    2026-11-21: Claude/GPT 5-hour read 0% with a reset exactly 300 minutes after
+    the snapshot, sliding forward at every refresh; shown as `4h56m` it counted
+    down to nothing. The stamp is dropped so the cell reads `5h↻` (clock not
+    started); a used window keeps its real reset.
+    """
+    from aiuse.collectors.codexbar import _parse_widget_snapshot_entry
+
+    (account,) = _parse_widget_snapshot_entry(_antigravity_entry(300), age_seconds=5)
+    by_label = {w.label: w for w in account.windows}
+    unused = by_label["Claude/GPT 5-hour"]
+    assert unused.resets_at is None
+    assert unused.window_minutes == 300
+    assert unused.used_percent == 0.0
+    assert by_label["Gemini 5-hour"].resets_at is not None
+
+
+def test_antigravity_real_reset_on_an_unused_window_is_kept():
+    """A reset that is not snapshot time + window length is a real clock: keep it."""
+    from aiuse.collectors.codexbar import _parse_widget_snapshot_entry
+
+    (account,) = _parse_widget_snapshot_entry(_antigravity_entry(212), age_seconds=5)
+    by_label = {w.label: w for w in account.windows}
+    assert by_label["Claude/GPT 5-hour"].resets_at is not None
+
+
+def test_antigravity_used_window_with_placeholder_shaped_reset_is_kept():
+    """Only a 0%-used window can have a placeholder clock: a started window is real."""
+    from aiuse.collectors.codexbar import _parse_widget_snapshot_entry
+
+    entry = _antigravity_entry(300, secondary_used=5.2)
+    (account,) = _parse_widget_snapshot_entry(entry, age_seconds=5)
+    by_label = {w.label: w for w in account.windows}
+    assert by_label["Claude/GPT 5-hour"].resets_at is not None

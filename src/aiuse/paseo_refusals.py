@@ -299,6 +299,87 @@ def scan_paseo_quota_refusals(
     return [refusal for _event, refusal in ordered]
 
 
+# Antigravity's transient per-model capacity error, seen by Pi agents on
+# 2026-11-21 at about 12:06Z while every quota window showed headroom and the
+# same models answered 7 minutes later: "Antigravity API error (request-failed,
+# endpoint=https://cloudcode-pa.googleapis.com, ...): This model is unavailable
+# right now (Resource has been exhausted (e.g. check quota).) ... This is not
+# necessarily an account quota wall." It has no reset time and is never a pool
+# exhaustion; it is a short cooldown like the z.ai 1302 rate limit.
+CAPACITY_COOLDOWN_MINUTES = 10.0
+_CAPACITY_COOLDOWN = timedelta(minutes=CAPACITY_COOLDOWN_MINUTES)
+_CAPACITY_MARKER = "resource has been exhausted"
+_CAPACITY_CONTEXT = ("unavailable right now", "antigravity api error", "not necessarily an account quota wall")
+_ERROR_MODEL = re.compile(r"model=(?P<model>[A-Za-z0-9._/+-]+)")
+
+
+def scan_antigravity_capacity(
+    *,
+    agents_dir: str | Path | None = None,
+    cooldown: timedelta = _CAPACITY_COOLDOWN,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """A recent Antigravity per-model capacity error as one ``client_limits`` entry.
+
+    ``Resource has been exhausted (e.g. check quota)`` from cloudcode-pa with
+    "This model is unavailable right now" is a service-side capacity signal,
+    not the account's quota: the windows keep their numbers and ``usable_now``
+    stays quota-based, so the entry only warns that a client failed lately and
+    ages out after the cooldown. A real quota refusal (``Individual quota
+    reached``, ``QUOTA_EXHAUSTED``) is the refusal scan's job and is skipped.
+    """
+    now = now or utcnow()
+    root = Path(agents_dir).expanduser() if agents_dir else paseo_agents_dir()
+    if not root.is_dir() or cooldown.total_seconds() <= 0:
+        return None
+    best: tuple[datetime, Path, dict[str, Any]] | None = None
+    failed = 0
+    models: dict[str, None] = {}
+    for path, doc in _iter_error_docs(root, lookback=cooldown, now=now):
+        text = str(doc.get("lastError") or "")
+        low = text.casefold()
+        if _CAPACITY_MARKER not in low or not any(ctx in low for ctx in _CAPACITY_CONTEXT):
+            continue
+        if any(marker in low for marker in _EXHAUSTED_MARKERS):
+            continue
+        event = _event_time(doc)
+        if event is None or event < now - cooldown:
+            continue
+        failed += 1
+        named = _ERROR_MODEL.search(text)
+        model = named["model"] if named else _model_of(doc)
+        if model:
+            models[model.removeprefix("antigravity/")] = None
+        if best is None or event > best[0]:
+            best = (event, path, doc)
+    if best is None:
+        return None
+    event, path, doc = best
+    cooldown_until = event + cooldown
+    minutes_ago = max(0, int((now - event).total_seconds() // 60))
+    model_text = ", ".join(models) if models else "an antigravity model"
+    return {
+        "client": "paseo-agent",
+        "kind": "capacity",
+        "state": "limited",
+        "source": "paseo-agent-error",
+        "provider_hint": "antigravity",
+        "last_limited_at": event.astimezone().isoformat(),
+        "cooldown_until": cooldown_until.astimezone().isoformat(),
+        "cooldown_minutes": round(cooldown.total_seconds() / 60, 1),
+        "failed_attempts": failed,
+        "models": list(models),
+        "error": str(doc.get("lastError"))[:240],
+        "evidence": str(path),
+        "message": (
+            f"a paseo agent got Antigravity's 'Resource has been exhausted' capacity error on {model_text} "
+            f"{minutes_ago}m ago (limited until {cooldown_until.astimezone().isoformat()}); the service said "
+            "this is not necessarily an account quota wall: the pool's quota numbers and usable_now are untouched; "
+            "retry a different model or wait for the cooldown"
+        ),
+    }
+
+
 def paseo_note_evidence_gone(evidence: str) -> bool:
     """True when a note's Paseo evidence file no longer shows the refusal.
 

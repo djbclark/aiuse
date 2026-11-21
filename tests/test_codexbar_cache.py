@@ -352,7 +352,9 @@ def _antigravity_rows(percent_left: float) -> list[dict[str, object]]:
 def test_widget_rows_keep_their_own_clock_when_every_pool_is_unused():
     # Both slots are 5-hour blocks and every pool sits at 0%: a weekly row must
     # not borrow the 5-hour slot's clock just because the percents agree.
-    five_hour = {"usedPercent": 0, "windowMinutes": 300, "resetsAt": "2026-10-18T07:24:46Z"}
+    # 4.5 h after updatedAt: a real clock. A reset of exactly updatedAt + 300 min on a
+    # 0% window is CodexBar's placeholder and is dropped (test_codexbar_parse).
+    five_hour = {"usedPercent": 0, "windowMinutes": 300, "resetsAt": "2026-10-18T06:54:46Z"}
     entry = {
         "provider": "antigravity",
         "updatedAt": "2026-10-18T02:24:48Z",
@@ -368,7 +370,7 @@ def test_widget_rows_keep_their_own_clock_when_every_pool_is_unused():
         assert by_id[weekly].resets_at is None
     for short in ("antigravity-quota-summary-gemini-5h", "antigravity-quota-summary-3p-5h"):
         assert by_id[short].window_minutes == 300
-        assert by_id[short].resets_at == datetime(2026, 10, 18, 7, 24, 46, tzinfo=timezone.utc)
+        assert by_id[short].resets_at == datetime(2026, 10, 18, 6, 54, 46, tzinfo=timezone.utc)
 
 
 def test_widget_rows_borrow_only_their_own_pool_slot():

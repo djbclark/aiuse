@@ -57,6 +57,12 @@ SCHEMA_VERSION = "1.7"
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
 TIGHT_BELOW = 15.0  # remaining < 15 -> tight
+# A window this close to empty is a wall, not headroom: an agent starting work
+# on it fails within minutes (2026-11-21: OpenCode Go weekly read 98% used,
+# 2% left, "usable"; the next agent run hit GoUsageLimitError). It stays
+# state "tight" in the window, but `usable_now` is false and its reset time
+# becomes the pool's available_at, exactly as for an exhausted window.
+NEAR_EMPTY_BELOW = 5.0  # remaining < 5 -> not usable_now
 
 # age threshold for the read-time `fresh` flag (config: analysis.fresh_threshold_seconds)
 FRESH_THRESHOLD_SECONDS_DEFAULT = 1800.0  # 30 min
@@ -104,7 +110,7 @@ SEMANTICS: dict[str, Any] = {
     "remaining_percent": "share still available; decide from this",
     "headroom_percent": "window: alias of remaining_percent; routing entry: least applicable headroom, with Fable's cap scaled to shared-weekly units",
     "state": "exhausted (<=1% left) | tight (<15% left) | ok | unknown (no data); never compute it yourself",
-    "usable_now": "false if any applicable window is exhausted or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
+    "usable_now": "false if any applicable window is exhausted or has under 5% left (near empty: work cannot finish on it; available_at is then that window's reset) or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
     "available_at": "earliest resets_at among exhausted windows; null when nothing is exhausted or no reset time is known; for omp, the shared Claude window's reset while rate_gated_by is set",
     "pool_family": "routing family, not necessarily independent quota: antigravity gemini (Flash), gemini_argon (Gemini 4 Argon, its own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
@@ -253,6 +259,14 @@ def window_remaining(window: Mapping[str, Any]) -> float | None:
     if used is not None:
         return max(0.0, 100.0 - float(used))
     return None
+
+
+def window_depleted(window: Mapping[str, Any]) -> bool:
+    """True when the window is exhausted, or so near empty that work cannot finish on it."""
+    if window.get("state") in ("exhausted", "blocked"):
+        return True
+    rem = window_remaining(window)
+    return rem is not None and rem < NEAR_EMPTY_BELOW
 
 
 def window_state(window: Mapping[str, Any]) -> str:
@@ -457,7 +471,11 @@ def enrich_account(
         (n for n in (notes or []) if _is_blocked_note(n) and _note_matches_account(n, provider, account)),
         None,
     )
-    if blocked_note is not None or any(s in ("exhausted", "blocked") for s in states):
+    if (
+        blocked_note is not None
+        or any(s in ("exhausted", "blocked") for s in states)
+        or any(window_depleted(w) for w in applicable)
+    ):
         usable_now: bool | None = False
     elif applicable and any(s != "unknown" for s in states):
         usable_now = True
@@ -491,9 +509,7 @@ def enrich_account(
         account["binding_window"] = None
         account["binding_headroom_percent"] = None
 
-    reset_times = [
-        parse_dt(w.get("resets_at")) for w in applicable if w.get("state") == "exhausted" and w.get("resets_at")
-    ]
+    reset_times = [parse_dt(w.get("resets_at")) for w in applicable if window_depleted(w) and w.get("resets_at")]
     reset_times = [t for t in reset_times if t is not None]
     if blocked_note is not None:
         account["available_at"] = None
@@ -1141,7 +1157,13 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             gate = account.get("rate_gated_by")
             key_pool = account.get("api_key_pool")
             is_blocked = account.get("state") == "blocked" or any(s == "blocked" for s in states)
-            if is_blocked or any(s == "exhausted" for s in states) or frozen or gate:
+            if (
+                is_blocked
+                or any(s == "exhausted" for s in states)
+                or any(window_depleted(w) for w in windows)
+                or frozen
+                or gate
+            ):
                 usable: bool | None = False
             elif isinstance(key_pool, dict):
                 usable = bool(key_pool.get("usable"))
@@ -1149,9 +1171,7 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
                 usable = True
             else:
                 usable = False
-            resets = [
-                parse_dt(w.get("resets_at")) for w in windows if w.get("state") == "exhausted" and w.get("resets_at")
-            ]
+            resets = [parse_dt(w.get("resets_at")) for w in windows if window_depleted(w) and w.get("resets_at")]
             resets = [t for t in resets if t is not None]
             ceiling_resets = [parse_dt(w.get("resets_at")) for w in ceiling if w.get("resets_at")]
             ceiling_resets = [t for t in ceiling_resets if t is not None]
@@ -1587,9 +1607,10 @@ def summary_line(pool: Mapping[str, Any]) -> str:
     for limit in pool.get("client_limits") or []:
         if isinstance(limit, dict) and limit.get("state") == "limited":
             client = limit.get("cli_binary") or limit.get("client") or "client"
-            line += (
-                f" [{client} {limit.get('client') or 'client'} rate-limited: 429 x{limit.get('failed_attempts', '?')}"
-            )
+            if limit.get("kind") == "capacity":
+                line += f" [{client} model capacity error x{limit.get('failed_attempts', '?')}"
+            else:
+                line += f" [{client} {limit.get('client') or 'client'} rate-limited: 429 x{limit.get('failed_attempts', '?')}"
             when = parse_dt(limit.get("last_limited_at"))
             if when is not None:
                 line += f", last {max(0, int((utcnow() - when).total_seconds() // 60))}m ago"

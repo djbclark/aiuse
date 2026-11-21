@@ -60,3 +60,13 @@ Use the CodexBar token-account names as native labels. Selection then runs per
 account (an account only native reports keeps its row), and the cross-check
 compares only rows whose labels match case-insensitively; an account one source
 lacks is noted as unavailable, not as a disagreement.
+
+## Live check (2026-11-21)
+
+An idle account (t-e, 0% on all windows) answered a chat completion with HTTP
+200, and the reset clocks filled in afterwards. A drained account (djbclark,
+weekly 100%) refused with HTTP 429 `INFERENCE_CAP_ERROR` "You have reached your
+weekly Clinepass limit. The limit resets in 2d 9h", exactly aiuse's weekly
+reset. A tiny `max_tokens` (8) on the reasoning model returns a misleading 500
+`empty response content` while the reasoning spends the budget: it is not a
+quota signal, so probe with 64 or more.

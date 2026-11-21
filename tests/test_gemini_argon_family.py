@@ -148,7 +148,14 @@ def test_live_shape_flash_tight_argon_half():
     snap = enrich_snapshot(_snapshot(flash_weekly=96.0, argon=49.0, argon_label="Gemini weekly"))
     rows = {p["pool_family"]: p for p in available_pools(snap)}
     assert rows["gemini_argon"]["headroom_percent"] == pytest.approx(51.0)
-    assert rows["gemini"]["headroom_percent"] == pytest.approx(4.0)
+    # 4% left is under NEAR_EMPTY_BELOW: Flash is no longer offered, and Argon is unaffected.
+    assert "gemini" not in rows
+
+    # 10% left is tight but still workable: Flash stays listed with its own headroom.
+    snap = enrich_snapshot(_snapshot(flash_weekly=90.0, argon=49.0, argon_label="Gemini weekly"))
+    rows = {p["pool_family"]: p for p in available_pools(snap)}
+    assert rows["gemini_argon"]["headroom_percent"] == pytest.approx(51.0)
+    assert rows["gemini"]["headroom_percent"] == pytest.approx(10.0)
 
 
 def test_argon_exhaustion_note_does_not_mark_flash():

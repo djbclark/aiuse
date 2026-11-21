@@ -206,11 +206,38 @@ def _row_slot_candidates(provider: str, title: str, slots: tuple[Any, ...]) -> l
     return [block for block in slots if isinstance(block, dict)]
 
 
+_PLACEHOLDER_RESET_TOLERANCE_SECONDS = 120.0
+
+
+def _without_placeholder_reset(block: Any, updated_at: datetime | None) -> Any:
+    """Drop a reset clock CodexBar invented for a window nobody has used.
+
+    A rolling window's clock starts on first use, so a window at 0% has no real
+    ``resetsAt``. CodexBar still fills one in for antigravity: its snapshot time
+    plus the window length (2026-11-21: Claude/GPT 5-hour read 0% with a reset
+    exactly 300 minutes after ``updatedAt``, and slid forward at every refresh
+    until a real call started the clock). Shown as ``4h56m`` it counts down to
+    nothing; with the stamp dropped the window reads ``5h↻`` (not started).
+    """
+    if updated_at is None or not isinstance(block, dict):
+        return block
+    used = _f(block.get("usedPercent"))
+    minutes = _int_or_none(block.get("windowMinutes"))
+    resets = parse_dt(block.get("resetsAt") or block.get("resets_at"))
+    if used is None or used != 0.0 or not minutes or resets is None:
+        return block
+    expected = updated_at.timestamp() + minutes * 60.0
+    if abs(resets.timestamp() - expected) > _PLACEHOLDER_RESET_TOLERANCE_SECONDS:
+        return block
+    return {k: v for k, v in block.items() if k not in ("resetsAt", "resets_at")}
+
+
 def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -> list[AccountUsage]:
     provider = str(entry.get("provider") or "").lower()
-    primary = entry.get("primary")
-    secondary = entry.get("secondary")
-    tertiary = entry.get("tertiary")
+    updated_at = parse_dt(entry.get("updatedAt"))
+    primary = _without_placeholder_reset(entry.get("primary"), updated_at)
+    secondary = _without_placeholder_reset(entry.get("secondary"), updated_at)
+    tertiary = _without_placeholder_reset(entry.get("tertiary"), updated_at)
 
     extra_windows: list[dict[str, Any]] = []
     for r in entry.get("usageRows") or []:
@@ -222,7 +249,7 @@ def _parse_widget_snapshot_entry(entry: dict[str, Any], *, age_seconds: float) -
         w_dict: dict[str, Any]
         row_window = r.get("window")
         if isinstance(row_window, dict):
-            w_dict = dict(row_window)
+            w_dict = dict(_without_placeholder_reset(row_window, updated_at))
         else:
             # The snapshot gives these rows a percent and a title only; the
             # clock (length, reset) has to come from the slot block that is the

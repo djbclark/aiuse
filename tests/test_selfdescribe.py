@@ -181,6 +181,34 @@ def test_codex_fixture_golden():
     assert snap["semantics"]["used_percent"].startswith("share CONSUMED")
 
 
+def test_near_empty_window_is_not_usable_and_reports_its_reset():
+    """2026-11-21: OpenCode Go weekly read 2% left and "usable"; the next run hit the wall.
+
+    Under 5% left the window stays `tight` but the pool is not usable_now, and
+    that window's reset is when it becomes available again. 5% and above is
+    still usable.
+    """
+    from aiuse.analysis.selfdescribe import enrich_snapshot, window_depleted
+
+    fixture = _codex_fixture()
+    weekly_reset = fixture["accounts"][0]["windows"][1]["resets_at"]
+    fixture["accounts"][0]["windows"][0].update(used_percent=10.0, remaining_percent=90.0)
+    fixture["accounts"][0]["windows"][1].update(used_percent=98.0, remaining_percent=2.0)
+    account = enrich_snapshot(fixture)["accounts"][0]
+    states = {w["label"]: w["state"] for w in account["windows"]}
+    assert states["Codex weekly quota (2)"] == "tight"
+    assert account["usable_now"] is False
+    assert account["binding_window"] == "Codex weekly quota (2)"
+    assert account["available_at"] == weekly_reset
+
+    fixture["accounts"][0]["windows"][1].update(used_percent=95.0, remaining_percent=5.0)
+    assert enrich_snapshot(fixture)["accounts"][0]["usable_now"] is True
+
+    assert window_depleted({"remaining_percent": 4.9}) is True
+    assert window_depleted({"remaining_percent": 5.0}) is False
+    assert window_depleted({"remaining_percent": None, "used_percent": None}) is False
+
+
 # ── golden: antigravity family split (failure mode 2) ───────────────────────
 
 

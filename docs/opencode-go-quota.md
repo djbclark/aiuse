@@ -187,3 +187,18 @@ After a renew (operator, 2026-08-19), expect:
 - Brief table: `mid opencode … 0% 0% 0%` (fresh allotment; next reset is the 5h bar)
 - Live proof is the returned `access.meters` object from `/console/api/go/status`
 - Native and CodexBar percentages should agree; do not keep the expired label
+
+## Live refusal check (2026-11-21)
+
+One raw request per key against `https://opencode.ai/zen/go/v1/` agreed with
+the usage page for all three accounts: djbclark and dclark refused with
+`GoUsageLimitError (weekly, resets in 1d 11h)` (Retry-After 128782 s, the
+weekly reset), t-e with `(monthly, resets in 6d)`. The refusal names the full
+window, and a refused request moves no usage number.
+
+- A raw probe must send an `x-opencode-session` header: without it the gateway
+  answers 400 `MissingSessionID` before any quota check, which says nothing
+  about quota.
+- A weekly window at 2% left was reported "usable" and failed minutes later.
+  A window under 5% left now makes the pool `usable_now: false` (see
+  [`docs/json-contract.md`](json-contract.md)).

@@ -37,7 +37,10 @@ belongs to another account. CodexBar passes the text through, and the row reads
 `z.ai: this account has no coding plan` (the original is kept in the
 row's `notes`). Nothing in aiuse is wrong; renew or fix the key at z.ai, or list `zai`
 under `[disabled_services]` to stop checking. Seen 2026-11-20 at about 22:20Z,
-ten minutes after a normal reading (5-hour 0%, weekly 20% used).
+ten minutes after a normal reading (5-hour 0%, weekly 20% used). A live chat
+call with the vault key on the coding endpoint (2026-11-21) answered HTTP 429
+code 1113 "Insufficient balance or no resource package": a missing plan, not an
+invalid key.
 
 MCP monthly time markers that CodexBar sometimes attaches as a 1-minute
 `TIME_LIMIT` are not a third burn pool we invent — they stay on the weekly
