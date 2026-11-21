@@ -122,6 +122,57 @@ def test_rate_gate_suppresses_burn_before_reset_nudge():
     assert "burn_before_reset" not in pool
 
 
+def _depleted_omp(resets_in_days: float | None) -> dict:
+    omp = _omp_account()
+    window = omp["windows"][0]
+    window["used_percent"] = 100.0
+    window["remaining_percent"] = 0.0
+    if resets_in_days is None:
+        window.pop("resets_at")
+    else:
+        window["resets_at"] = (utcnow() + timedelta(days=resets_in_days)).isoformat()
+    return omp
+
+
+def test_gate_earlier_than_an_own_depleted_window_keeps_the_later_reset():
+    """available_at is the LATER of the gate and omp's own depleted windows.
+
+    Account-level and routing-entry values must agree (adversary review of 1.8,
+    finding 2: the account kept the gate's earlier reset).
+    """
+    from aiuse.models import parse_dt
+
+    snap = enrich_snapshot(_snap(_claude_account(100.0), _depleted_omp(10.0)))
+    omp = _omp_of(snap)
+    own_reset = omp["windows"][0]["resets_at"]
+    gate_reset = omp["rate_gated_by"]["resets_at"]
+    assert parse_dt(gate_reset) < parse_dt(own_reset)
+    assert parse_dt(omp["available_at"]) == parse_dt(own_reset)
+    pool = next(p for p in pool_entries(snap) if p["provider"] == "omp")
+    assert pool["usable_now"] is False
+    assert parse_dt(pool["available_at"]) == parse_dt(own_reset)
+    assert parse_dt(pool["available_at"]) == parse_dt(omp["available_at"])
+
+
+def test_gate_later_than_an_own_depleted_window_keeps_the_gate_reset():
+    from aiuse.models import parse_dt
+
+    snap = enrich_snapshot(_snap(_claude_account(100.0), _depleted_omp(0.5)))
+    omp = _omp_of(snap)
+    assert parse_dt(omp["available_at"]) == parse_dt(omp["rate_gated_by"]["resets_at"])
+    pool = next(p for p in pool_entries(snap) if p["provider"] == "omp")
+    assert parse_dt(pool["available_at"]) == parse_dt(omp["available_at"])
+
+
+def test_gate_with_an_own_depleted_window_of_unknown_reset_is_unknown():
+    snap = enrich_snapshot(_snap(_claude_account(100.0), _depleted_omp(None)))
+    omp = _omp_of(snap)
+    assert omp["usable_now"] is False
+    assert omp["available_at"] is None
+    pool = next(p for p in pool_entries(snap) if p["provider"] == "omp")
+    assert pool["available_at"] is None
+
+
 def test_5h_exhaustion_alone_does_not_gate():
     snap = enrich_snapshot(_snap(_claude_account(30.0, with_5h=100.0), _omp_account()))
     omp = _omp_of(snap)

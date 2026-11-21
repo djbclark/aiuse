@@ -257,7 +257,7 @@ shared Claude account window is exhausted:
   through the account's Claude API access, so an exhausted weekly/monthly shared
   Claude window blocks it via HTTP 429 regardless of dollars left
   (`retry-after` equals the window reset; observed 2026-10-21).
-- While gated: `usable_now` is `false`, `available_at` is the gate's reset, the
+- While gated: `usable_now` is `false`, `available_at` is the gate's reset or a later reset of omp's own depleted windows (null when one of them has no reset time), the
   summary line says `credits: GATED` instead of `credits: ok`, then
   `-> NOT usable now [rate-gated: shared Claude <window> exhausted, unlocks
 <time>; credits cannot be spent before it resets]`, and `--available` omits

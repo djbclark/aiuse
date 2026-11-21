@@ -833,12 +833,30 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
             "evidence": evidence_text,
         }
         account["usable_now"] = False
-        account["available_at"] = reset_iso
+        account["available_at"] = _gated_available_at(account, gate_reset)
         account.setdefault("notes", []).insert(
             0,
             f"{_GATE_NOTE_PREFIX}: the shared Claude account window ({gate_label}) is exhausted until {until} — "
             "omp spends through the same Claude API account, so credits cannot be used before it resets.",
         )
+
+
+def _gated_available_at(account: Mapping[str, Any], gate_reset: datetime) -> str | None:
+    """A gated account is usable again when the gate AND its own depleted windows reset.
+
+    The later of the gate's reset and the account's own ``available_at`` (set by
+    ``enrich_account`` from its depleted windows), the same maximum the routing
+    entry takes. A depleted own window with no reset time leaves it unknown.
+    """
+    own_windows = [
+        w
+        for w in account.get("windows") or []
+        if isinstance(w, dict) and w.get("quota_scope") != "model_sublimit" and w.get("pool_family") != "on_demand"
+    ]
+    if any(window_depleted(w) and parse_dt(w.get("resets_at")) is None for w in own_windows):
+        return None
+    own = parse_dt(account.get("available_at"))
+    return (max(gate_reset, own) if own is not None else gate_reset).isoformat()
 
 
 def apply_shared_rate_gate_to_snapshot(snapshot: Snapshot, *, now: datetime | None = None) -> bool:

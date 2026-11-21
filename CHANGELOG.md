@@ -161,6 +161,9 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- omp's account-level `available_at` (`aiuse --json` `accounts[]`) is now the later
+  of the shared-Claude gate's reset and its own depleted windows, matching the
+  routing entry; it used to keep the gate's earlier reset alone (schema 1.8).
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global
   limit — `analysis.fresh_threshold_seconds_by_provider` ships `antigravity =
