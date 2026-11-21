@@ -143,6 +143,11 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- `QueryGate.interval` no longer overflows on a long empty-answer streak: the
+  `4.0 ** n` exponent is capped, so a streak of 515 or more (or a corrupt
+  `empty_streak` of `1e400`) stays at the 1 h cap instead of raising
+  `OverflowError` out of every collection (pre-existing; schema 1.8 adversary
+  round 2, nit 9).
 - `validate_config` (and so `aiuse doctor`) warns when a `[floors.providers.<p>]`
   override exists for a provider that has a built-in prepaid pool-family default
   (`codex` and `omp` with `openai_api`): the provider's percent or reserve does

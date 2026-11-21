@@ -43,6 +43,7 @@ from .base import CollectorError
 EMPTY_STREAK_LIMIT = 3
 EMPTY_BACKOFF_FACTOR = 4.0
 EMPTY_BACKOFF_CAP = 3600.0
+_MAX_BACKOFF_STEPS = 64
 
 
 def throttle_dir() -> Path:
@@ -131,7 +132,7 @@ class QueryGate:
     def empty_streak(self) -> int:
         try:
             return max(0, int(self.state.get("empty_streak") or 0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return 0
 
     @property
@@ -140,7 +141,9 @@ class QueryGate:
         streak = self.empty_streak
         if streak < EMPTY_STREAK_LIMIT:
             return self.min_interval
-        stretched = self.min_interval * EMPTY_BACKOFF_FACTOR ** (streak - EMPTY_STREAK_LIMIT + 1)
+        # Cap the exponent: 4.0 ** 515 overflows a float, and 4 ** 64 already exceeds any cap.
+        steps = min(streak - EMPTY_STREAK_LIMIT + 1, _MAX_BACKOFF_STEPS)
+        stretched = self.min_interval * EMPTY_BACKOFF_FACTOR**steps
         return max(self.min_interval, min(stretched, EMPTY_BACKOFF_CAP))
 
     @property

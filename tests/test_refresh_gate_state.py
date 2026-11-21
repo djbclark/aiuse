@@ -196,3 +196,22 @@ def test_a_future_queried_at_still_honours_the_timeout_backoff():
     )
     until = next_query_at("antigravity", min_interval=900.0, timeout_backoff=300.0)
     assert until == stamp + timedelta(seconds=300)
+
+
+def test_a_huge_empty_streak_cannot_overflow_the_interval():
+    """Review round 2, nit 9: 4.0 ** 600 raised OverflowError in QueryGate.__enter__ on every collection."""
+    from aiuse.collectors.throttle import EMPTY_BACKOFF_CAP, QueryGate
+
+    for streak in (515, 600, 10**6, 10**30):
+        gate = QueryGate("antigravity", min_interval=900.0, wait=0.0)
+        gate.state = {"empty_streak": streak, "queried_at": (NOW - timedelta(minutes=5)).isoformat()}
+        assert gate.interval == EMPTY_BACKOFF_CAP == 3600.0, streak
+        assert gate.next_allowed_at is not None
+    below = QueryGate("antigravity", min_interval=900.0, wait=0.0)
+    below.state = {"empty_streak": 3}
+    assert below.interval == 3600.0
+    for junk in (float("inf"), float("nan"), "x", [1], None):
+        gate = QueryGate("antigravity", min_interval=900.0, wait=0.0)
+        gate.state = {"empty_streak": junk}
+        assert gate.interval == 900.0, junk
+    assert next_query_at("antigravity", min_interval=900.0) is None  # no state: nothing raises either
