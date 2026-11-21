@@ -143,6 +143,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- The Argon evidence store's lock wait is bounded: the collection path polls the
+  `flock` non-blocking for about 2 s and then goes without the lock, as the
+  docstring always promised, instead of hanging behind a stopped holder (schema 1.8
+  adversary round 3, nit 1).
 - The Argon evidence store's account key is documented as pseudonymous, not
   anonymous (an unsalted sha256 prefix: a candidate address can be confirmed), and an
   account that is None or blank now uses the fixed key `unnamed` instead of the hash

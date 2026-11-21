@@ -35,11 +35,14 @@ import fcntl
 import hashlib
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
 
 from aiuse.models import parse_dt
+
+LOCK_WAIT_SECONDS = 2.0  # longest the collection path waits for the store lock before going without
 
 ARGON_FAMILY = "gemini_argon"
 GEMINI_FAMILY = "gemini"
@@ -229,15 +232,26 @@ def record_readings(
 def _store_lock(path: Path) -> Iterator[None]:
     """Hold an exclusive ``flock`` on ``<store>.lock`` for a load-modify-write, as the throttle does.
 
-    A lock that cannot be taken (read-only directory, odd filesystem) degrades to
-    no lock: the evidence is durability only and heals at the next reading.
+    The wait is bounded (:data:`LOCK_WAIT_SECONDS`, polled non-blocking, like
+    ``QueryGate``): a lock that cannot be taken in time (a holder stopped inside its
+    window, a read-only directory, an odd filesystem) degrades to no lock, so the
+    collection path never hangs. The evidence is durability only and heals at the
+    next reading.
     """
     fd: int | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(path.with_name(path.name + ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-    except OSError:
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
+    except OSError:  # includes BlockingIOError once the deadline passes
         if fd is not None:
             os.close(fd)
             fd = None

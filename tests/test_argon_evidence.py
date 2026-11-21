@@ -400,6 +400,45 @@ def test_the_lock_file_sits_beside_the_store_and_is_private():
     assert os.stat(lock).st_mode & 0o777 == 0o600
 
 
+def test_a_held_lock_delays_the_collection_path_by_a_bounded_wait_then_degrades_to_no_lock():
+    """Round 3, nit 1: a stopped holder must not hang the sampler or save_snapshot."""
+    import fcntl
+    import os
+    import threading
+    import time
+
+    _feed(0, FLASH)  # creates the store and the lock file
+    lock = store_path().with_name(store_path().name + ".lock")
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold() -> None:
+        fd = os.open(lock, os.O_RDWR)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            held.set()
+            release.wait(15)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    try:
+        assert held.wait(5)
+        started = time.monotonic()
+        key = account_key("antigravity", "acct")
+        proven = record_readings([_reading(1, FLASH)], now=T0 + timedelta(hours=1))
+        elapsed = time.monotonic() - started
+        assert elapsed < 3.5, elapsed  # holder keeps the lock for up to 15 s
+        assert elapsed >= 1.0, elapsed  # it did wait for the lock first
+        assert key in proven
+        assert json.loads(store_path().read_text())["accounts"][key]  # degraded to no lock, still recorded
+    finally:
+        release.set()
+        holder.join()
+
+
 def test_unnamed_accounts_get_a_distinct_sentinel_key_never_shared_with_a_real_account():
     """Review round 2, nit 3: None and an empty name hashed to one ordinary-looking record."""
     import re
