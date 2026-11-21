@@ -24,6 +24,13 @@ ARGON = {
 }
 
 
+CLAUDE_GPT = {
+    "label": "Claude/GPT weekly",
+    "used_percent": 3.0,
+    "window_id": "antigravity-quota-summary-claude-gpt-weekly",
+}
+
+
 def _reading(hours: float, *windows: dict, account: str = "acct") -> dict:
     return {
         "provider": "antigravity",
@@ -324,3 +331,29 @@ def test_save_snapshot_is_the_collection_path_that_writes_the_store():
     reading = _reading(0, FLASH)
     reading["collected_at"] = now.isoformat()
     assert proven_absent([reading], now=now)[key] is True
+
+
+def test_a_partial_reading_without_a_shared_gemini_window_is_not_evidence_of_absence():
+    """Review round 2, nit 1: readings holding only the Claude/GPT window proved absence."""
+    for hours in (0, 4, 8):
+        assert _feed(hours, CLAUDE_GPT) is False
+    assert not store_path().exists()  # nothing was recorded, so nothing can later count
+    assert _feed(9, FLASH) is False  # the first reading that shows the Flash window starts the clock
+
+
+def test_partial_readings_do_not_extend_or_reset_real_evidence():
+    for hours in (0, 4):
+        _feed(hours, FLASH)
+    before = store_path().read_text()
+    assert _feed(7, CLAUDE_GPT) is False  # this reading says nothing about Gemini
+    assert store_path().read_text() == before
+    assert _feed(8, FLASH) is True  # and the third real reading still proves it
+
+
+def test_has_gemini_window_reads_label_id_and_family():
+    from aiuse.analysis.argon_evidence import has_gemini_window
+
+    assert has_gemini_window([FLASH])
+    assert has_gemini_window([{"label": "x", "pool_family": "gemini"}])
+    assert not has_gemini_window([CLAUDE_GPT])
+    assert not has_gemini_window([ARGON])

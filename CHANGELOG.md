@@ -143,6 +143,11 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- A partial Antigravity reading is not evidence that the plan has no Argon window
+  (schema 1.8 adversary round 2, nit 1). Only a reading that shows the shared
+  Gemini (Flash) window and no Argon window counts toward the 3 readings over 6
+  hours; a reading holding just the Claude/GPT window is skipped and neither
+  extends nor resets the evidence.
 - The Argon evidence store is written only on the collection path (schema 1.8
   adversary round 2, important B). `aiuse --available`, a cache `--json`, the serve
   endpoints and a screen-only `watch` used to write

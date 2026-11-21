@@ -108,7 +108,8 @@ wrong (`available_at`, the Argon model map).
   per-model window exists, so Argon maps to `gemini`. A recorded Argon refusal
   or ACP turn is folded into `gemini` only on POSITIVE evidence that the account
   has no Argon window: at least 3 consecutive readings over at least 6 hours
-  with antigravity windows and none of them an Argon window, kept in
+  that show the shared Gemini (Flash) window and no Argon window (a partial
+  reading without the Gemini window is skipped), kept in
   `~/.local/state/aiuse/argon-evidence.json` (hashed account keys, no emails;
   `AIUSE_ARGON_EVIDENCE_STORE` overrides the path). Only the COLLECTION path
   writes that file: the sampler and any run that saves a snapshot

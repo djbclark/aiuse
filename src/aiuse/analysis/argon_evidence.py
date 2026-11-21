@@ -10,8 +10,8 @@ window. One reading without the window proves nothing: the window can be hidden
 then turns an Argon refusal into a false exhaustion of the whole Flash pool
 (schema 1.8 adversary review, finding 3).
 
-This module keeps a small per-account record of consecutive readings with
-Antigravity windows and no Argon window. The fold is proven only after
+This module keeps a small per-account record of consecutive readings that show
+the shared Gemini (Flash) window and no Argon window. The fold is proven only after
 ``MIN_ABSENT_SECONDS`` and ``MIN_ABSENT_READINGS`` of such readings; one reading
 that shows an Argon window resets the record. Everything else, including a
 hidden Argon family and a missing or corrupt store, reads as "Argon may exist":
@@ -39,6 +39,7 @@ from typing import Any, Iterable, Mapping
 from aiuse.models import parse_dt
 
 ARGON_FAMILY = "gemini_argon"
+GEMINI_FAMILY = "gemini"
 # Consecutive no-Argon readings must span this long, and number at least this many.
 MIN_ABSENT_SECONDS = 6 * 3600.0
 MIN_ABSENT_READINGS = 3
@@ -148,19 +149,28 @@ def argon_hidden(hidden_pools: object) -> bool:
     )
 
 
-def has_argon_window(windows: Iterable[Any], provider: str = "antigravity") -> bool:
-    """True when any window is (or names itself) an Argon-own window, whatever its reading."""
+def _has_family_window(windows: Iterable[Any], family: str, provider: str) -> bool:
     from aiuse.analysis.pace import independent_pool_key
 
     for window in windows:
         if not isinstance(window, Mapping):
             continue
-        if window.get("pool_family") == ARGON_FAMILY:
+        if window.get("pool_family") == family:
             return True
         wid = str(window.get("window_id") or "").strip().casefold() or None
-        if independent_pool_key(str(window.get("label") or ""), window_id=wid, provider=provider) == ARGON_FAMILY:
+        if independent_pool_key(str(window.get("label") or ""), window_id=wid, provider=provider) == family:
             return True
     return False
+
+
+def has_argon_window(windows: Iterable[Any], provider: str = "antigravity") -> bool:
+    """True when any window is (or names itself) an Argon-own window, whatever its reading."""
+    return _has_family_window(windows, ARGON_FAMILY, provider)
+
+
+def has_gemini_window(windows: Iterable[Any], provider: str = "antigravity") -> bool:
+    """True when any window is (or names itself) the shared Gemini (Flash) window, whatever its reading."""
+    return _has_family_window(windows, GEMINI_FAMILY, provider)
 
 
 def record_readings(
@@ -173,6 +183,10 @@ def record_readings(
     record: bool = True,
 ) -> dict[str, bool]:
     """Judge this snapshot's antigravity readings against the store; return ``account key -> proven``.
+
+    Evidence of absence is a reading that shows the shared Gemini (Flash) window
+    and no Argon window. A reading without the Gemini window (a partial one) is
+    skipped: nothing recorded, nothing proven.
 
     With ``record=True`` (the collection path only: ``history.save_snapshot``, where a
     reading is first collected) each new reading is also folded into the store,
@@ -203,6 +217,11 @@ def record_readings(
             proven[key] = False
             continue
         argon = has_argon_window(windows)
+        if not argon and not has_gemini_window(windows):
+            # A partial reading (say, only the Claude/GPT window) says nothing about
+            # Gemini: it is neither evidence of absence nor a reason to reset.
+            proven[key] = False
+            continue
         if not record:
             proven[key] = not argon and _span_proves(records.get(key, {}))
             continue
