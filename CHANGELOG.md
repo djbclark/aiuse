@@ -147,7 +147,9 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   anonymous (an unsalted sha256 prefix: a candidate address can be confirmed), and an
   account that is None or blank now uses the fixed key `unnamed` instead of the hash
   of an empty name, so it can never be mistaken for a real account's record. The
-  hashing is otherwise unchanged (schema 1.8 adversary round 2, nit 3).
+  hashing is otherwise unchanged (schema 1.8 adversary round 2, nit 3). An unnamed
+  account's existing record (keyed by the old hash of an empty name) is orphaned
+  and pruned after 30 days, so its evidence clock restarts once at this upgrade.
 - `QueryGate.interval` no longer overflows on a long empty-answer streak: the
   `4.0 ** n` exponent is capped, so a streak of 515 or more (or a corrupt
   `empty_streak` of `1e400`) stays at the 1 h cap instead of raising
