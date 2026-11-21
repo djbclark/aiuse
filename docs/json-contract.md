@@ -111,7 +111,7 @@ wrong (`available_at`, the Argon model map).
   has no Argon window: at least 3 consecutive readings over at least 6 hours
   that show the shared Gemini (Flash) window and no Argon window (a partial
   reading without the Gemini window is skipped), kept in
-  `~/.local/state/aiuse/argon-evidence.json` (hashed account keys, no emails;
+  `~/.local/state/aiuse/argon-evidence.json` (unsalted-hash account keys, pseudonymous not anonymous, no emails;
   `AIUSE_ARGON_EVIDENCE_STORE` overrides the path). Only the COLLECTION path
   writes that file: the sampler and any run that saves a snapshot
   (`history.save_snapshot`, which calls `enrich_snapshot(record_argon_evidence=True)`).

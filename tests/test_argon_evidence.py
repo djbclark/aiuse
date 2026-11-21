@@ -398,3 +398,28 @@ def test_the_lock_file_sits_beside_the_store_and_is_private():
     lock = store_path().with_name(store_path().name + ".lock")
     assert lock.exists()
     assert os.stat(lock).st_mode & 0o777 == 0o600
+
+
+def test_unnamed_accounts_get_a_distinct_sentinel_key_never_shared_with_a_real_account():
+    """Review round 2, nit 3: None and an empty name hashed to one ordinary-looking record."""
+    import re
+
+    sentinel = account_key("antigravity", None)
+    assert account_key("antigravity", "") == account_key("antigravity", "   ") == sentinel
+    assert not re.fullmatch(r"[0-9a-f]{16}", sentinel)  # a real account's key is always 16 hex characters
+    for real in ("acct", "none", "None", "null", "unnamed", "unknown", "default", "antigravity", "a|b"):
+        key = account_key("antigravity", real)
+        assert key != sentinel
+        assert re.fullmatch(r"[0-9a-f]{16}", key), real
+    assert account_key("antigravity", "Acct") == account_key(
+        "antigravity", " acct "
+    )  # case and padding fold, as before
+
+
+def test_an_unnamed_account_and_a_named_one_keep_separate_records():
+    _feed(0, FLASH, account="acct")
+    record_readings([{**_reading(0, FLASH), "account": None}], now=T0)
+    record_readings([{**_reading(0, FLASH), "account": ""}], now=T0 + timedelta(minutes=1))
+    records = json.loads(store_path().read_text())["accounts"]
+    assert set(records) == {account_key("antigravity", "acct"), account_key("antigravity", None)}
+    assert records[account_key("antigravity", None)]["readings_absent"] == 1  # same reading time: counted once

@@ -16,7 +16,8 @@ the shared Gemini (Flash) window and no Argon window. The fold is proven only af
 that shows an Argon window resets the record. Everything else, including a
 hidden Argon family and a missing or corrupt store, reads as "Argon may exist":
 the family is treated as reported and nothing folds. The record is keyed by a
-hash of the account name so the file holds no email address.
+hash of the account name so the file holds no email address. The hash is
+unsalted: the key is pseudonymous, not anonymous (see ``account_key``).
 
 Only the COLLECTION path writes the store (``record_readings(record=True)``, reached
 from ``history.save_snapshot``). Every read path (``--available``, cache ``--json``,
@@ -55,9 +56,24 @@ def store_path() -> Path:
     return Path(override) if override else Path(os.path.expanduser(_DEFAULT_STORE))
 
 
+UNNAMED_ACCOUNT_KEY = "unnamed"
+
+
 def account_key(provider: str, account: object) -> str:
-    """Stable, email-free key for one account of a provider."""
-    raw = f"{provider.strip().lower()}|{str(account or '').strip().lower()}"
+    """Stable, email-free key for one account of a provider.
+
+    A key is the first 16 hex characters of an UNSALTED sha256 of
+    ``provider|account`` (lower-cased, stripped), so it is pseudonymous, not
+    anonymous: anyone holding a candidate address can confirm a match, and
+    accounts differing only by case or padding share one record. The store file
+    is 0600 in the user's state directory. An account that is None or blank has
+    no name to hash and gets the fixed non-hex ``UNNAMED_ACCOUNT_KEY``, which no
+    real account's 16-hex key can equal.
+    """
+    name = str(account or "").strip().lower()
+    if not name:
+        return UNNAMED_ACCOUNT_KEY
+    raw = f"{provider.strip().lower()}|{name}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
