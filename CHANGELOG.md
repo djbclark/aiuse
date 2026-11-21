@@ -161,6 +161,13 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- `refreshable_at` / `refresh_blocked_by_gate` / `gate_remaining_seconds` now come
+  from the throttle state (`collectors/throttle.py` `next_query_at`: the last
+  query's `queried_at` plus the interval in force, including the empty-answer
+  backoff, and the CodexBar timeout backoff) instead of the reading's own time
+  plus the interval, which could read "open" while `--live` was still refused
+  (CodexBar's `updatedAt` lags the query by 15-30 minutes). The reading time is
+  only the fallback when no state exists.
 - The Argon fold needs positive evidence (schema 1.8). A `gemini_argon` refusal
   note or ACP turn folds into the shared `gemini` pool only when the account has
   had no Argon window across at least 3 consecutive readings over at least

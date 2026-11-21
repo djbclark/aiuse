@@ -70,8 +70,12 @@ payload, the collector's own note. Dispatchers should quote it when they
 refuse a stale pool. A stale reading from a gated provider (antigravity: one
 live query per 15 minutes) also carries `refreshable_at`,
 `refresh_blocked_by_gate` and `gate_remaining_seconds` (additive, ships with
-schema 1.8): the gate opens at the reading's own time plus the query interval,
-and `--live` before then only returns the same reused payload. A consumer that
+schema 1.8): the gate opens at the throttle's next allowed query time (the last
+query's own time plus the interval in force, which stretches to an hour after
+repeated empty answers, pushed back by a CodexBar timeout backoff; the reading's
+time plus the interval only when there is no throttle state, because a reading's
+`updatedAt` can lag the query by 15-30 minutes), and `--live` before then only
+returns the same reused payload. A consumer that
 sees `refresh_blocked_by_gate: true` should wait until `refreshable_at` (or
 route on other pools) rather than loop on `--live`; `false` means a re-collect
 can refresh the reading now. In the `--available` and serve `/v1/snapshot` envelopes,

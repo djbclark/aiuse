@@ -238,6 +238,32 @@ class QueryGate:
         return None
 
 
+def next_query_at(
+    provider: str,
+    *,
+    min_interval: float,
+    timeout_backoff: float = 0.0,
+    directory: Path | None = None,
+) -> datetime | None:
+    """When a live query for ``provider`` is next allowed, read from the throttle state; None without any.
+
+    A read-only view of what ``QueryGate`` and ``TimeoutBackoff`` will enforce: the
+    later of the gate's ``queried_at`` plus its interval in force (``min_interval``
+    stretched by the empty-answer streak) and the end of the provider's
+    timeout backoff (``timeout_backoff`` seconds base; 0 skips that part). It takes no
+    lock and never writes. A reading's own time is only a lower bound for this:
+    CodexBar's ``updatedAt`` can lag the query by many minutes.
+    """
+    gate = QueryGate(provider, min_interval=min_interval, wait=0.0, directory=directory)
+    gate.state = gate._read_state()
+    candidates = [t for t in (gate.next_allowed_at,) if t is not None]
+    if timeout_backoff > 0:
+        until = TimeoutBackoff("codexbar", base=timeout_backoff, directory=directory).blocked_until(provider)
+        if until is not None:
+            candidates.append(until)
+    return max(candidates) if candidates else None
+
+
 class TimeoutBackoff:
     """Cross-process memory of providers whose live query hung until killed.
 
@@ -308,6 +334,22 @@ class TimeoutBackoff:
 
     def _window(self, count: int) -> float:
         return min(self.cap, self.base * (2 ** max(0, count - 1)))
+
+    def blocked_until(self, provider: str) -> datetime | None:
+        """When ``provider``'s timeout backoff ends, or None when it has none (a future timestamp is skew)."""
+        if not self.enabled:
+            return None
+        entry = self._read().get(provider.lower())
+        if not isinstance(entry, dict):
+            return None
+        last = parse_dt(entry.get("timed_out_at"))
+        if last is None or last > utcnow():
+            return None
+        try:
+            count = int(entry.get("count") or 1)
+        except (TypeError, ValueError):
+            count = 1
+        return last + timedelta(seconds=self._window(count))
 
     def blocked(self, provider: str) -> str | None:
         """Why ``provider`` is skipped right now, or None when it may be queried."""
