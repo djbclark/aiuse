@@ -122,6 +122,16 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ### Added
 
+- Per-service headroom floors (schema 1.8, additive and advisory): every
+  `--available` entry (`available[]` and `unavailable[]`) carries
+  `floor_percent`, `floor_basis` (`reserve_usd`, `config`, `default`) and
+  `headroom_above_floor_percent`. `floor_percent = clamp(reserve_usd /
+plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
+  gives 5.0 and a $20 plan 20.0; `default_percent` (10.0) when no plan price is
+  known. New `[floors]` config table with per-provider `percent` or
+  `reserve_usd` overrides, validated by `validate_config` and explained in
+  `config/config.example.toml`. `headroom_percent`, `usable_now` and the 5%
+  near-empty rule are unchanged.
 - `aiuse --available --json` gains a top-level `unavailable[]` (schema 1.8, bumped
   from 1.7): one item per pool entry that is not usable now and is neither
   operator-excluded nor a hidden ceiling row, with `reason` (`exhausted`,

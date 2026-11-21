@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import sys
 from collections.abc import Mapping
@@ -300,6 +301,37 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "notes": "Free unlimited MIT SIPB endpoint; slow — use sparingly / last resort.",
         },
     },
+    # Per-service headroom floors (schema 1.8): an ADVISORY reserve a consumer
+    # keeps unspent, shown on every `aiuse --available --json` entry (available[]
+    # and unavailable[]) as floor_percent, floor_basis and
+    # headroom_above_floor_percent (headroom_percent - floor_percent; negative
+    # below the floor, null when headroom is unknown). It varies per service by
+    # what the plan costs, so a flat dollar reserve protects a cheap plan more:
+    #   floor_percent = clamp(reserve_usd / plan_monthly_price * 100,
+    #                         min_percent, max_percent), rounded to 1 decimal
+    # where plan_monthly_price is the account's [plans.*] monthly_price. Examples
+    # with the defaults: a 199.99 USD plan -> 5.0; a 20 USD plan -> 50 clamped
+    # to the 20.0 cap; a 1000 USD plan -> 1.0 raised to the 2.0 minimum; no
+    # known price -> default_percent (10.0).
+    # floor_basis says where the number came from: "reserve_usd" (the formula,
+    # with this reserve_usd or a provider's own), "config" (a provider's fixed
+    # `percent`), "default" (no plan price known: default_percent).
+    # headroom_percent, usable_now and the 5% near-empty rule do NOT change:
+    # floors are advice for consumers, not a routing gate inside aiuse.
+    #   reserve_usd      USD to keep per month (> 0)
+    #   min_percent      lowest floor_percent the formula may give (0-100)
+    #   max_percent      highest floor_percent the formula may give (0-100)
+    #   default_percent  floor_percent when the plan price is unknown (0-100)
+    #   providers        per-provider overrides, [floors.providers.<provider>]:
+    #                    `percent` = a fixed floor (floor_basis "config"), or
+    #                    `reserve_usd` = this provider's own reserve in the formula
+    "floors": {
+        "reserve_usd": 10.0,
+        "min_percent": 2.0,
+        "max_percent": 20.0,
+        "default_percent": 10.0,
+        "providers": {},
+    },
     "collectors": {
         "cswap": {"enabled": True},
         "codexbar": {
@@ -428,8 +460,11 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "disabled_services",
         "hidden_pools",
         "usage_sources",
+        "floors",
     }
 )
+KNOWN_FLOORS_KEYS = frozenset({"reserve_usd", "min_percent", "max_percent", "default_percent", "providers"})
+KNOWN_FLOORS_PROVIDER_KEYS = frozenset({"percent", "reserve_usd"})
 KNOWN_TIMEOUT_KEYS = frozenset(
     {
         "default",
@@ -974,6 +1009,61 @@ def timeout_for(config: dict[str, Any] | None, name: str) -> float:
     return default
 
 
+def _validate_floors(floors: Any) -> list[str]:
+    """Problems in the ``[floors]`` table (see DEFAULT_CONFIG's comment)."""
+    if floors is None:
+        return []
+    if not isinstance(floors, dict):
+        return ["error: floors must be a mapping"]
+    issues: list[str] = []
+
+    def number(where: str, value: Any, *, lo: float, hi: float | None) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            issues.append(f"error: {where} must be a number (got {value!r})")
+            return None
+        num = float(value)
+        if hi is not None and not lo <= num <= hi:
+            issues.append(f"error: {where} must be between {lo:g} and {hi:g} (got {num:g})")
+            return None
+        if hi is None and num <= lo:
+            issues.append(f"error: {where} must be greater than {lo:g} (got {num:g})")
+            return None
+        return num
+
+    for key in floors:
+        if key not in KNOWN_FLOORS_KEYS:
+            issues.append(f"warning: unknown floors key {key!r} (ignored)")
+    if "reserve_usd" in floors:
+        number("floors.reserve_usd", floors["reserve_usd"], lo=0.0, hi=None)
+    bounds: dict[str, float | None] = {}
+    for key in ("min_percent", "max_percent", "default_percent"):
+        bounds[key] = number(f"floors.{key}", floors[key], lo=0.0, hi=100.0) if key in floors else None
+    low, high = bounds["min_percent"], bounds["max_percent"]
+    if low is not None and high is not None and low > high:
+        issues.append(f"error: floors.min_percent ({low:g}) must not exceed floors.max_percent ({high:g})")
+    providers = floors.get("providers")
+    if providers is not None and not isinstance(providers, dict):
+        issues.append("error: floors.providers must be a provider -> table mapping")
+    elif isinstance(providers, dict):
+        for provider, entry in providers.items():
+            where = f"floors.providers.{provider}"
+            if not isinstance(entry, dict):
+                issues.append(f"error: {where} must be a table with percent or reserve_usd")
+                continue
+            for key in entry:
+                if key not in KNOWN_FLOORS_PROVIDER_KEYS:
+                    issues.append(f"warning: unknown {where} key {key!r} (ignored)")
+            if "percent" in entry:
+                number(f"{where}.percent", entry["percent"], lo=0.0, hi=100.0)
+            if "reserve_usd" in entry:
+                number(f"{where}.reserve_usd", entry["reserve_usd"], lo=0.0, hi=None)
+            if "percent" in entry and "reserve_usd" in entry:
+                issues.append(f"warning: {where} sets both percent and reserve_usd (percent wins)")
+            if not entry:
+                issues.append(f"warning: {where} sets neither percent nor reserve_usd (no effect)")
+    return issues
+
+
 def validate_config(config: dict[str, Any] | None) -> list[str]:
     """Return human-readable config problems/warnings (empty = clean).
 
@@ -1094,6 +1184,8 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 continue
             if seconds < 0:
                 issues.append(f"error: query_min_interval.{provider} must not be negative (got {seconds:g})")
+
+    issues.extend(_validate_floors(cfg.get("floors")))
 
     aliases = cfg.get("account_aliases")
     if aliases is not None and not isinstance(aliases, dict):

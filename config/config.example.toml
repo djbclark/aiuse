@@ -331,3 +331,46 @@
 # Optional macOS codesign identity for `aiuse trust sign-caut`.
 # [macos]
 # codesign_identity = "aiuse-local-codesign"
+
+# ── Per-service headroom floors (schema 1.8, advisory) ───────────────────────
+# A floor is how much headroom a CONSUMER (an orchestrator, an agent
+# dispatcher) should leave unspent on a pool. aiuse only reports it: every entry
+# of `aiuse --available --json` (both `available[]` and `unavailable[]`) gains
+#   floor_percent                  the floor, in percent of the window
+#   floor_basis                    where that number came from (below)
+#   headroom_above_floor_percent   headroom_percent - floor_percent (negative
+#                                  below the floor; null when headroom is unknown)
+# headroom_percent, usable_now and the 5% near-empty rule are UNCHANGED: a pool
+# below its floor is still usable_now. The consumer applies its own policy.
+#
+# The floor varies per service by plan value: a fixed dollar reserve is a small
+# share of a big plan and a large share of a small one.
+#   floor_percent := clamp(reserve_usd / plan_monthly_price * 100, min_percent, max_percent)
+# rounded to 1 decimal; plan_monthly_price is the account's [plans.<provider>]
+# monthly_price (per-account prices and phases included). With the defaults:
+#   a 199.99 USD plan (Google AI Ultra) -> 10 / 199.99 * 100 = 5.0
+#   a 20 USD plan (Claude Pro, Codex Plus) -> 50, capped at max_percent -> 20.0
+#   a 1000 USD plan -> 1.0, raised to min_percent -> 2.0
+#   no plan price known for the provider -> default_percent (10.0)
+#
+# floor_basis values:
+#   "reserve_usd"  the formula above gave the number (default reserve_usd, or a
+#                  provider's own reserve_usd), from a known plan price
+#   "config"       a [floors.providers.<provider>] `percent` fixed it
+#   "default"      no plan price is known, so default_percent applies
+# [floors]
+# reserve_usd = 10.0      # USD to keep per month, must be > 0
+# min_percent = 2.0       # lowest floor_percent the formula may give (0-100)
+# max_percent = 20.0      # highest floor_percent the formula may give (0-100)
+# default_percent = 10.0  # floor_percent when no plan price is known (0-100)
+#
+# Per-provider overrides, keyed by provider id (aliases accepted: gemini and
+# antigravity are the same provider). Each takes ONE of:
+#   percent      a fixed floor_percent, used as given (0-100), floor_basis "config"
+#   reserve_usd  this provider's own reserve in the formula (> 0), still clamped
+#                to min_percent..max_percent, floor_basis "reserve_usd"
+# If both are set, percent wins (aiuse doctor warns).
+# [floors.providers.antigravity]
+# percent = 4.0
+# [floors.providers.codex]
+# reserve_usd = 25.0

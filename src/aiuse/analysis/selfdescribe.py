@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Iterable, Mapping
 
 from aiuse.analysis.ceilings import window_is_ceiling
+from aiuse.analysis.floors import FLOOR_BASES, resolve_floor
 from aiuse.analysis.pace import (
     cursor_breakdown_window,
     format_pace,
@@ -131,8 +132,11 @@ SEMANTICS: dict[str, Any] = {
     "agent_notes": "exhaustion overrides reported by agents (source: agent-reported); expire at their reset time, after which a live collector reading wins; also auto-persisted from recent acp-run logs that show Individual quota / QUOTA_EXHAUSTED with a multi-day reset",
     "measurement_frozen": "used_percent identical across recent snapshots for longer than analysis.frozen_quota_seconds (default 45m) AND an acp-run turn spent that provider/pool_family during the flat span; idle flats stay routable; usable_now is false so --available will not route on a spent-but-stuck reading",
     "client_limits": "per-client rate limits the quota windows cannot show, read passively (e.g. agy CLI 429s from its own logs; Paseo agent 429s from the daemon's per-agent error files, short cooldown, never an exhaustion); state limited means that client is failing now while another client (agy ACP) may still work; usable_now stays quota-based",
-    "unavailable": "--available only: one item per routing entry that is NOT usable_now and is neither operator-excluded (those are dropped here and never listed twice) nor a hidden ceiling (total) row; the pools missing from 'available' because they are empty or blocked, so a consumer can tell 'empty until Monday' from 'not reported'. Item {provider, account, pool_family, pool_id (when the entry has one), reason, binding_window, available_at, headroom_percent, plus refreshable_at / refresh_blocked_by_gate / gate_remaining_seconds when the reading is stale and gated, and rate_gated_by when set}; soonest available_at first, nulls last. Additive, schema 1.8; [] when every pool is usable. Never route to an item before its available_at (null: unknown, re-collect with --live)",
+    "unavailable": "--available only: one item per routing entry that is NOT usable_now and is neither operator-excluded (those are dropped here and never listed twice) nor a hidden ceiling (total) row; the pools missing from 'available' because they are empty or blocked, so a consumer can tell 'empty until Monday' from 'not reported'. Item {provider, account, pool_family, pool_id (when the entry has one), reason, binding_window, available_at, headroom_percent, floor_percent, floor_basis, headroom_above_floor_percent, plus refreshable_at / refresh_blocked_by_gate / gate_remaining_seconds when the reading is stale and gated, and rate_gated_by when set}; soonest available_at first, nulls last. Additive, schema 1.8; [] when every pool is usable. Never route to an item before its available_at (null: unknown, re-collect with --live)",
     "unavailable_reason": "unavailable item reason, the first that holds: rate_gated (omp while the shared Claude window is exhausted, rate_gated_by names it; or an API key blocked until a known time) | exhausted (a window with <= 1% left, or marked exhausted or blocked, including a spent Cursor monthly ceiling) | near_empty (a window under 5% left, none exhausted: work cannot finish on it) | no_reading (no usable measurement: every window unknown, or the reading is frozen); the item's available_at is when the whole pool is usable again",
+    "floor_percent": "advisory headroom floor for a consumer, on every --available entry (available and unavailable), schema 1.8: clamp(reserve_usd / plan_monthly_price * 100, min_percent, max_percent) rounded to 1 decimal, plan_monthly_price from the account's [plans.<provider>] monthly_price; defaults reserve_usd 10.0, min 2.0, max 20.0 (a $199.99 plan gives 5.0, a $20 plan 20.0 via the cap); default_percent (10.0) when no plan price is known. headroom_percent, usable_now and the 5% near-empty rule are unchanged: a pool below its floor is still usable_now",
+    "floor_basis": "where floor_percent came from: reserve_usd (the formula, with the default reserve_usd or a provider's own) | config (a [floors.providers.<provider>] percent fixed it) | default (no plan price known, so default_percent)",
+    "headroom_above_floor_percent": "headroom_percent - floor_percent: how far the pool is above its advisory floor, negative below it; null when headroom_percent is null",
     "excluded": "--available only: usable pools the operator ruled out (analysis.excluded_pools), with the reason; never route to them",
     "disabled_services": "operator-disabled providers (config [disabled_services]) with the reason; no rows are collected for them — do not route to or spend them until the operator removes the entry",
     "hidden_pools": "operator-hidden pools (config [hidden_pools]) with the reason; rows are dropped at collection and omitted from human outputs and --available by default",
@@ -1024,6 +1028,13 @@ def enrich_snapshot(
                 account["_waking_hours_per_day"] = waking_hours
             else:
                 account.pop("monthly_price", None)
+        floor_percent, floor_basis = resolve_floor(
+            config.get("floors") if isinstance(config, Mapping) else None,
+            str(account.get("provider") or ""),
+            account.get("monthly_price"),
+        )
+        account["floor_percent"] = floor_percent
+        account["floor_basis"] = floor_basis
         enrich_account(
             account,
             collected_at=collected,
@@ -1396,6 +1407,11 @@ def pool_entries(
                     ),
                     2,
                 )
+            headroom_percent = effective_headroom(binding) if binding else None
+            floor_percent = account.get("floor_percent")
+            floor_basis = account.get("floor_basis")
+            if not isinstance(floor_percent, (int, float)) or floor_basis not in FLOOR_BASES:
+                floor_percent, floor_basis = resolve_floor(None, provider, monthly_price)
             if details is not None:
                 details.append(
                     _unavailable_detail(
@@ -1431,7 +1447,12 @@ def pool_entries(
                     "cli_binary": account.get("cli_binary"),
                     "usable_now": usable,
                     "binding_window": str(binding.get("label") or "") if binding else None,
-                    "headroom_percent": effective_headroom(binding) if binding else None,
+                    "headroom_percent": headroom_percent,
+                    "floor_percent": floor_percent,
+                    "floor_basis": floor_basis,
+                    "headroom_above_floor_percent": (
+                        round(headroom_percent - floor_percent, 6) if headroom_percent is not None else None
+                    ),
                     **({"monthly_price": monthly_price} if monthly_price is not None else {}),
                     **({"headroom_usd": headroom_usd} if headroom_usd is not None else {}),
                     **(
@@ -1875,6 +1896,9 @@ def unavailable_pools(
                 "binding_window": detail["binding_window"],
                 "available_at": entry.get("available_at"),
                 "headroom_percent": entry.get("headroom_percent"),
+                "floor_percent": entry.get("floor_percent"),
+                "floor_basis": entry.get("floor_basis"),
+                "headroom_above_floor_percent": entry.get("headroom_above_floor_percent"),
                 **{key: entry[key] for key in _UNAVAILABLE_GATE_KEYS if key in entry},
                 **({"rate_gated_by": entry["rate_gated_by"]} if entry.get("rate_gated_by") else {}),
             }

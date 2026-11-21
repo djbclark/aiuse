@@ -104,6 +104,11 @@ wrong (`available_at`, the Argon model map).
 - **`refreshable_at`, `refresh_blocked_by_gate`, `gate_remaining_seconds`** on
   a stale reading from a gated provider (antigravity): see "How to read this"
   above and the entry fields below.
+- **Per-service floors** (`floor_percent`, `floor_basis`,
+  `headroom_above_floor_percent`) on every `--available` entry, `available[]` and
+  `unavailable[]` alike: an advisory reserve a consumer keeps unspent, scaled by
+  plan value ("Headroom floors" below). `headroom_percent`, `usable_now` and the
+  5% near-empty rule are unchanged.
 - **`unavailable[]` in the `--available` envelope** (described in full under
   "`aiuse --available`" below): every routing entry that is not `usable_now`,
   is not operator-excluded and is not a hidden ceiling row, with a closed
@@ -336,6 +341,8 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
 - Add (stale gated readings): `refreshable_at`, `refresh_blocked_by_gate`,
   `gate_remaining_seconds`.
 - Add: top-level `unavailable[]` on `aiuse --available --json`.
+- Add: `floor_percent`, `floor_basis`, `headroom_above_floor_percent` on every
+  `--available` entry; new `[floors]` config table.
 
 #### Schema 1.7 (2026-11-21)
 
@@ -849,6 +856,9 @@ sorted by headroom (most left first), each with `models_hint` and the local
       "usable_now": true,
       "binding_window": "Gemini weekly",
       "headroom_percent": 70.6,
+      "floor_percent": 5.0,
+      "floor_basis": "reserve_usd",
+      "headroom_above_floor_percent": 65.6,
       "available_at": null,
       "models_hint": "agy models — gemini-* models draw this pool",
       "age_seconds": 412.0,
@@ -907,6 +917,8 @@ last. `available`, `excluded`, `fresh` and `stale_pools` are unchanged.
 - `headroom_percent` (number | null): smallest remaining percent across the
   entry's applicable windows (Fable's cap scaled to shared-weekly units); null
   when no window has a reading.
+- `floor_percent`, `floor_basis`, `headroom_above_floor_percent`: the entry's
+  advisory floor (see "Headroom floors" below).
 - `refreshable_at`, `refresh_blocked_by_gate`, `gate_remaining_seconds`: only
   when the reading is stale and its provider has a query gate (antigravity):
   when a re-collect may refresh it, whether that is still blocked, and the
@@ -939,6 +951,34 @@ last. `available`, `excluded`, `fresh` and `stale_pools` are unchanged.
   "headroom_percent": 0.0
 }
 ```
+
+### Headroom floors (schema 1.8)
+
+Every entry of `available[]` and `unavailable[]` carries an advisory floor, how
+much headroom a consumer should leave unspent on that pool:
+
+- `floor_percent` (number): `clamp(reserve_usd / plan_monthly_price * 100,
+min_percent, max_percent)`, rounded to 1 decimal. `plan_monthly_price` is the
+  entry's `monthly_price` (the account's `[plans.<provider>] monthly_price`,
+  honoring per-account prices and phases). Defaults: `reserve_usd` 10.0,
+  `min_percent` 2.0, `max_percent` 20.0, so a $199.99 plan gives 5.0, a $20 plan
+  gives 50 capped to 20.0, a $1000 plan gives 1.0 raised to 2.0.
+- `floor_basis` (enum `reserve_usd` | `config` | `default`): `reserve_usd` = the
+  formula gave the number (default reserve, or the provider's own
+  `reserve_usd`); `config` = a `[floors.providers.<provider>] percent` fixed it;
+  `default` = no plan price is known, so `default_percent` (10.0) applies.
+- `headroom_above_floor_percent` (number | null): `headroom_percent -
+floor_percent`; negative when below the floor, null when `headroom_percent` is
+  null.
+
+`headroom_percent`, `usable_now` and the 5% near-empty rule are unchanged. A
+pool below its floor is still `usable_now`; the floor is advice, and the
+consumer's own policy decides. Configure it with the `[floors]` table
+(`reserve_usd`, `min_percent`, `max_percent`, `default_percent`, and per-provider
+`[floors.providers.<provider>]` with `percent` or `reserve_usd`); each setting
+is explained in `config/config.example.toml`. The same fields are documented in
+`semantics.floor_percent`, `semantics.floor_basis` and
+`semantics.headroom_above_floor_percent`.
 
 An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
 routing entry, so a reader sees the dollars without opening the account.
