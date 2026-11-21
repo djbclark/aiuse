@@ -29,6 +29,7 @@ project's guides by the job they help you do; most people only need one or two.
 
 - [`provider-identity.md`](provider-identity.md) — canonical provider id vs config key, and window identity across collectors that label the same window differently.
 - [`cswap-reliability.md`](cswap-reliability.md) — Claude multi-account source reliability.
+- [`codexbar-debugging.md`](codexbar-debugging.md) — CodexBar file log, levels, Debug-screen sections, stale widget snapshot.
 - [`opencode-go-quota.md`](opencode-go-quota.md) — authoritative OpenCode Go web data and shared quota behavior.
 - [`opencode-zen-balance.md`](opencode-zen-balance.md) — Zen-balance source audit, SecretSpec setup, and Chrome credential refresh.
 - [`omp-cloud-credits.md`](omp-cloud-credits.md) — Claude cloud-session credits (an expiring dollar grant) reported as the `omp` provider, in the board, `--json` and `--for-chat`.

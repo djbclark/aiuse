@@ -22,6 +22,7 @@ grouping see [`index.md`](index.md).
 - `docs/collector-concurrency.md` — How collectors run in parallel and timeout (45s; CodexBar opencodego 60s; cswap, caam and openusage_sh 90s). **Read when:** Perf / hang questions.
 - `completions/` — bash/zsh completion scripts. **Read when:** Shell UX.
 - `https://github.com/djbclark/aiuse/issues/1` — Tracks consuming cswap#170 last-good JSON (Step 33). **Read when:** When #170 merges or when checking upstream status.
+- `docs/codexbar-debugging.md` — CodexBar file log (Debug > Logging, levels incl. Trace), log categories, Debug-screen sections, the silent widget-snapshot failure. **Read when:** A CodexBar row or widget file is stale or wrong.
 - `docs/cswap-reliability.md` — Claude/cswap reliability: decision-stale JSON, cache hydration, fallbacks. **Read when:** When Claude rows go missing or multi-account looks wrong.
 - `docs/opencode-go-quota.md` — OpenCode Go: web vs local estimate; shared allotment; **Go ≠ Zen**. **Read when:** When Go % disagrees with the OpenCode TUI / short windows look open.
 - `docs/opencode-zen-balance.md` — OpenCode Zen prepaid wallet (separate billing from Go). **Read when:** Zen balance / credential refresh / empty Zen.
