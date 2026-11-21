@@ -180,24 +180,114 @@ def test_flash_exhaustion_note_does_not_mark_argon():
     assert pools["gemini_argon"]["usable_now"] is True
 
 
+PRO_FAMILIES = {"gemini", "gemini_argon", "claude_gpt"}  # Pro reports an Argon-own window
+ULTRA_FAMILIES = {"gemini", "claude_gpt"}  # Ultra: one shared Gemini pool, no per-model window
+
+
 @pytest.mark.parametrize(
-    ("model", "family"),
+    ("model", "pro", "ultra"),
     [
-        ("gemini-4-argon", "gemini_argon"),
-        ("gemini-4-argon-preview", "gemini_argon"),
-        ("Gemini-4-Argon", "gemini_argon"),
-        ("gemini-3-flash", "gemini"),
-        ("gemini-3.1-pro", "gemini"),
-        ("claude-opus-5-5", "claude_gpt"),
-        ("gpt-6-astra", "claude_gpt"),
-        (None, None),
+        ("gemini-4-argon", "gemini_argon", "gemini"),
+        ("gemini-4-argon-preview", "gemini_argon", "gemini"),
+        ("Gemini-4-Argon", "gemini_argon", "gemini"),
+        ("gemini-4-carbon", "gemini", "gemini"),
+        ("gemini-4-neon", "gemini", "gemini"),
+        ("gemini-4-hydrogen", "gemini", "gemini"),
+        ("gemini-3-flash", "gemini", "gemini"),
+        ("gemini-3.1-pro", "gemini", "gemini"),
+        ("claude-opus-5-5", "claude_gpt", "claude_gpt"),
+        ("gpt-6-astra", "claude_gpt", "claude_gpt"),
+        (None, None, None),
     ],
 )
-def test_model_to_family_mapping(model, family):
+def test_model_to_family_is_derived_from_the_reported_windows(model, pro, ultra):
     from aiuse.quota_refusals import pool_family_for_acp_model
 
-    assert pool_family_for_acp_model("antigravity", model) == family
-    assert pool_family_for_acp_model("codex", model) is None
+    assert pool_family_for_acp_model("antigravity", model, PRO_FAMILIES) == pro
+    assert pool_family_for_acp_model("antigravity", model, ULTRA_FAMILIES) == ultra
+    # No windows known: the shared pool, never an Argon family nobody reports.
+    assert pool_family_for_acp_model("antigravity", model) == ultra
+    assert pool_family_for_acp_model("codex", model, PRO_FAMILIES) is None
+
+
+def test_nominal_family_keeps_argon_for_later_resolution():
+    from aiuse.quota_refusals import nominal_pool_family_for_acp_model
+
+    assert nominal_pool_family_for_acp_model("antigravity", "gemini-4-argon") == "gemini_argon"
+    assert nominal_pool_family_for_acp_model("antigravity", "gemini-3-flash") == "gemini"
+
+
+def _ultra_snapshot(*, gemini_weekly: float = 10.0) -> dict:
+    """Ultra shape: the shared Gemini windows and Claude/GPT, no Argon-own window."""
+    snap = _snapshot(flash_weekly=gemini_weekly)
+    windows = snap["accounts"][0]["windows"]
+    snap["accounts"][0]["windows"] = [w for w in windows if w["window_id"] != ARGON_ID]
+    return snap
+
+
+def test_ultra_account_reports_no_argon_family_and_a_plain_gemini_hint():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    rows = _families(enrich_snapshot(_ultra_snapshot()))
+    assert set(rows) == {"gemini", "claude_gpt"}
+    assert rows["gemini"]["models_hint"] == "agy models — gemini-* models draw this pool"
+
+
+def test_pro_account_keeps_argon_own_family_and_carves_it_out_of_the_gemini_hint():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    rows = _families(enrich_snapshot(_snapshot()))
+    assert set(rows) == {"gemini", "gemini_argon", "claude_gpt"}
+    assert "except gemini-4-argon*" in rows["gemini"]["models_hint"]
+    assert rows["gemini_argon"]["models_hint"] == "gemini-4-argon* draws this pool"
+
+
+def test_argon_refusal_note_marks_the_shared_pool_on_an_ultra_account():
+    """gemini-4-argon's refusal names gemini_argon; without an Argon window it spent the shared pool."""
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    snap = enrich_snapshot(_ultra_snapshot(), notes=[_note("gemini_argon")])
+    pools = _families(snap)
+    assert pools["gemini"]["usable_now"] is False
+    assert pools["claude_gpt"]["usable_now"] is True
+    assert "gemini_argon" not in pools
+
+
+def test_argon_refusal_note_still_marks_only_argon_on_a_pro_account():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    snap = enrich_snapshot(_snapshot(), notes=[_note("gemini_argon")])
+    pools = _families(snap)
+    assert pools["gemini_argon"]["usable_now"] is False
+    assert pools["gemini"]["usable_now"] is True
+
+
+def test_frozen_argon_activity_covers_the_shared_pool_on_an_ultra_account(tmp_path):
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    def ultra(t):
+        snap = _flat_snapshot(t)
+        for account in snap["accounts"]:
+            account["windows"] = [w for w in account["windows"] if w.get("window_id") != ARGON_ID]
+        return snap
+
+    times = [datetime(2026, 10, 18, h, m, tzinfo=timezone.utc) for h, m in ((12, 1), (13, 14), (13, 34))]
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(log_dir, model="gemini-4-argon")
+    snap = enrich_snapshot(
+        ultra(times[-1]),
+        now=FROZEN_NOW,
+        history=[ultra(t) for t in times],
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+    pools = _families(snap)
+    assert "gemini_argon" not in pools
+    # An Argon turn spent the shared Gemini pool: its flat windows freeze, Claude/GPT stays usable.
+    assert pools["gemini"]["usable_now"] is False
+    assert pools["claude_gpt"]["usable_now"] is True
 
 
 def test_reenriching_a_stored_snapshot_replaces_the_old_gemini_hint():
@@ -480,5 +570,6 @@ def test_schema_semantics_publish_the_model_family_mapping():
 
     text = SEMANTICS["model_pool_family"]
     for prefix, name in GEMINI_FRONTIER_MODEL_PREFIXES.items():
-        assert f"{prefix}* -> gemini_{name}" in text
-        assert pool_family_for_acp_model("antigravity", prefix) == f"gemini_{name}"
+        assert f"{prefix}* -> gemini_{name} only when" in text
+        assert pool_family_for_acp_model("antigravity", prefix, {f"gemini_{name}"}) == f"gemini_{name}"
+        assert pool_family_for_acp_model("antigravity", prefix) == "gemini"

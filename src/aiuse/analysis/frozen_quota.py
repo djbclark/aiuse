@@ -12,7 +12,8 @@ aiuse cannot fix Google's endpoint. Fail closed only when **both** hold:
    ``min_frozen_seconds`` of recent snapshot history, and
 2. An acp-run log under ``~/.local/state/acp-run/`` shows a turn for that
    provider whose applied model belongs to that pool family **during** the
-   flat span (claude-*/gpt-* → ``claude_gpt``, gemini-4-argon* → ``gemini_argon``, other
+   flat span (claude-*/gpt-* → ``claude_gpt``, gemini-4-argon* → ``gemini_argon`` when the
+   account reports an Argon-own window, else the shared ``gemini``; other
    gemini-* → ``gemini``).
 
 Idle flat pools (overnight Gemini, unused grok/copilot reserves, quiet
@@ -29,10 +30,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from aiuse.analysis.pace import independent_pool_key
+from aiuse.analysis.pace import collapse_gemini_family, independent_pool_key
 from aiuse.collectors.acp_usage import ACP_AGENT_PROVIDERS, default_acp_log_dir
 from aiuse.models import parse_dt, utcnow
-from aiuse.quota_refusals import pool_family_for_acp_model
+from aiuse.quota_refusals import nominal_pool_family_for_acp_model
 
 DEFAULT_MIN_FROZEN_SECONDS = 2700.0  # 45 minutes
 DEFAULT_HISTORY_HOURS = 6.0
@@ -220,9 +221,24 @@ def scan_acp_pool_activity(
             active.add((provider, None))
             continue
         for model in models:
-            family = pool_family_for_acp_model(provider, model)
+            family = nominal_pool_family_for_acp_model(provider, model)
             active.add((provider, family))
     return active
+
+
+def _collapse_activity(
+    active: set[tuple[str, str | None]], reported: Mapping[str, set[str]]
+) -> set[tuple[str, str | None]]:
+    """Fold a nominal Gemini frontier family into ``gemini`` where the account has no own window.
+
+    The ACP scan records the family a model draws when its plan carves out its
+    own window (``gemini_argon``); on a plan with one shared Gemini pool that
+    activity spent ``gemini``.
+    """
+    return {
+        (prov, collapse_gemini_family(fam, reported.get(prov, set())) if prov == "antigravity" else fam)
+        for prov, fam in active
+    }
 
 
 def _usage_covers(
@@ -293,6 +309,10 @@ def apply_frozen_measurements(
     if not candidate_fps:
         return snap
 
+    reported: dict[str, set[str]] = {}
+    for fp_key in current_fps:
+        if isinstance(fp_key[1], str):
+            reported.setdefault(str(fp_key[0]), set()).add(fp_key[1])
     frozen_fps: set[tuple[Any, ...]] = set()
     for fp in candidate_fps:
         provider = str(fp[0])
@@ -304,10 +324,12 @@ def apply_frozen_measurements(
             # during an earlier 20%→21% span marked codex's later flat 25%
             # window "spent" even though no codex activity fell inside it.
             oldest, newest = spans[fp]
-            fp_activity = scan_acp_pool_activity(since=oldest, until=newest, log_dir=log_dir)
+            fp_activity = _collapse_activity(
+                scan_acp_pool_activity(since=oldest, until=newest, log_dir=log_dir), reported
+            )
             covered = _usage_covers(fp_activity, provider=provider, family=family)
         else:
-            covered = _usage_covers(activity, provider=provider, family=family)
+            covered = _usage_covers(_collapse_activity(activity, reported), provider=provider, family=family)
         if covered:
             frozen_fps.add(fp)
     if not frozen_fps:

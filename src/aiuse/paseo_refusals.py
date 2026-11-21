@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from aiuse.models import parse_dt, utcnow
-from aiuse.quota_refusals import pool_family_for_acp_model
+from aiuse.quota_refusals import nominal_pool_family_for_acp_model
 
 # How far back an error still counts as evidence for its pool. The note itself
 # expires at its own reset time, so the lookback only bounds scan cost and
@@ -100,10 +100,10 @@ def refusal_target(provider: str, model: str | None) -> tuple[str, str | None]:
         if namespace == "openai":
             return "pi", "openai_api"
         if namespace in ("zai", "cursor", "antigravity", "xai-oauth"):
-            return namespace, pool_family_for_acp_model(namespace, rest or None)
+            return namespace, nominal_pool_family_for_acp_model(namespace, rest or None)
     if provider == "claude" and model and "fable" in model.casefold():
         return provider, "fable"
-    return provider, pool_family_for_acp_model(provider, model)
+    return provider, nominal_pool_family_for_acp_model(provider, model)
 
 
 def paseo_agents_dir() -> Path:

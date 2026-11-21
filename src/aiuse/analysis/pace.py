@@ -4,6 +4,7 @@ analyze_use_or_lose (see use_or_lose.py)."""
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime, timedelta
 
@@ -351,6 +352,23 @@ def canonical_gemini_label(label: str, window_id: str | None) -> str:
     version = match.group("version") or _GEMINI_FRONTIER_VERSIONS.get(name)
     span = _GEMINI_SPAN_LABELS.get(match.group("span"), match.group("span"))
     return " ".join(part for part in ("Gemini", version, name.capitalize(), span) if part)
+
+
+def collapse_gemini_family(family: str | None, reported_families: Iterable[str] | None) -> str | None:
+    """Fold a Gemini frontier family the account does not report into the shared ``gemini`` pool.
+
+    Whether a model draws its own pool is a fact about the account, not about
+    the model: Google AI Pro reported "Gemini 4 Argon weekly" as its own window
+    (family ``gemini_argon``), but on Google AI Ultra Carbon, Neon, Hydrogen and
+    Argon all draw the one shared Gemini pool and no per-model window exists
+    (2026-11-21). A ``gemini_<name>`` family therefore only stands when
+    ``reported_families`` (the pool families of the account's windows) holds it;
+    otherwise it is ``gemini``. ``None`` for ``reported_families`` leaves the
+    family alone (the caller has not looked at the account yet).
+    """
+    if family is None or reported_families is None or not family.startswith("gemini_"):
+        return family
+    return family if family in set(reported_families) else "gemini"
 
 
 def gemini_pool_family(label: str | None, window_id: str | None = None) -> str:

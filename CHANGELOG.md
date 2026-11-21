@@ -122,6 +122,14 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ### Fixed
 
+- The Argon model-to-pool map no longer assumes every account has an Argon
+  window. `gemini-4-argon*` maps to `gemini_argon` only when the account
+  reports an Argon-own window (Google AI Pro did); on Google AI Ultra, where
+  Carbon, Neon, Hydrogen and Argon draw the one shared Gemini pool, it maps to
+  `gemini`, the Gemini `models_hint` drops its "except gemini-4-argon*", and an
+  Argon refusal note or ACP turn applies to the shared pool instead of a pool
+  that does not exist (schema 1.8; `docs/antigravity-pools.md`).
+
 - `available_at` is the LATEST reset among a pool's depleted windows (exhausted,
   or under 5% left), not the earliest: every depleted window must reset before
   the pool works again. OpenCode Go account `t-e` read 2026-11-23 (the weekly

@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from aiuse.agent_notes import load_active_notes
-from aiuse.analysis.pace import GEMINI_FRONTIER_MODEL_PREFIXES
+from aiuse.analysis.pace import GEMINI_FRONTIER_MODEL_PREFIXES, collapse_gemini_family
 from aiuse.collectors.acp_usage import ACP_AGENT_PROVIDERS, default_acp_log_dir
 from aiuse.models import parse_dt, utcnow
 
@@ -75,12 +76,32 @@ def _agent_of(name: str) -> str | None:
     return match.group(3) if match else None
 
 
-def pool_family_for_acp_model(provider: str, model: str | None) -> str | None:
+def pool_family_for_acp_model(
+    provider: str, model: str | None, reported_families: Iterable[str] | None = ()
+) -> str | None:
     """Map an ACP agent model id to an aiuse pool_family for split vendors.
 
-    Antigravity: ``claude-*`` / ``gpt-*`` → ``claude_gpt``; ``gemini-4-argon*``
-    → ``gemini_argon`` (its own weekly window); other ``gemini-*`` → ``gemini``.
+    Antigravity: ``claude-*`` / ``gpt-*`` → ``claude_gpt``; every ``gemini-*`` →
+    ``gemini``, except that a Gemini frontier model (``gemini-4-argon*``) maps to
+    its own ``gemini_<name>`` family only when ``reported_families`` (the pool
+    families of the account's windows) holds it, because only some plans report a
+    per-model window (Pro did for Argon; Ultra shares one Gemini pool across
+    Carbon, Neon, Hydrogen and Argon). The default ``()`` reports none, so
+    callers that have not read an account get the shared ``gemini`` family; a
+    caller that wants the model's nominal family (``nominal_pool_family_for_acp_model``)
+    to resolve it later against an account passes ``None``.
     Other providers return ``None`` (one residual pool).
+    """
+    return collapse_gemini_family(nominal_pool_family_for_acp_model(provider, model), reported_families)
+
+
+def nominal_pool_family_for_acp_model(provider: str, model: str | None) -> str | None:
+    """The family a model draws when its account reports an own window for it.
+
+    Discovery sites (refusal logs, ACP activity) have no account in hand; they
+    record this nominal family and the consumer folds it with
+    ``aiuse.analysis.pace.collapse_gemini_family`` against the windows the
+    account actually reports.
     """
     if provider != "antigravity" or not model:
         return None
@@ -96,7 +117,7 @@ def pool_family_for_acp_model(provider: str, model: str | None) -> str | None:
 
 
 def _family_for(provider: str, model: str | None) -> str | None:
-    return pool_family_for_acp_model(provider, model)
+    return nominal_pool_family_for_acp_model(provider, model)
 
 
 def _extract_refusal(text: str, *, now: datetime, provider: str | None = None) -> dict[str, Any] | None:

@@ -163,7 +163,14 @@ the Flash `gemini` pool.
   longer includes the Argon window, so an Argon dispatch gated on the `gemini`
   row is gated by Flash headroom, not Argon's. Any consumer that maps a model
   id to `("antigravity", "gemini")` must map `gemini-4-argon*` to `gemini_argon`
-  (the Flash `models_hint` now says "except gemini-4-argon*"). The mapping is
+  (the Flash `models_hint` now says "except gemini-4-argon*") **when the account
+  reports an Argon-own window**. Since schema 1.8 that mapping is derived from
+  the windows an account actually reports, not fixed: on Google AI Ultra no
+  Gemini 4 model has a window of its own (Carbon, Neon, Hydrogen and Argon draw
+  the one shared `gemini` pool, checked 2026-11-21), so `gemini-4-argon*` maps
+  to `gemini` there and the `gemini` entry's `models_hint` has no exception.
+  An Argon refusal or ACP turn recorded as `gemini_argon` is applied to
+  `gemini` on such an account. The mapping is
   published in `aiuse schema` under `semantics.model_pool_family` so consumers
   need not hard-code it. An operator `[hidden_pools]` / `excluded_pools` rule
   for `antigravity/gemini` no longer covers Argon; add `antigravity/gemini_argon`.

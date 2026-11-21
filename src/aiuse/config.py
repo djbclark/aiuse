@@ -215,7 +215,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "Google AI Pro / Ultra",
             "notes": (
                 "Antigravity / Gemini CLI (Pro $20, Ultra $199.99). Independent pools: "
-                "gemini (Flash), gemini_argon (Gemini 4 Argon), and claude_gpt. "
+                "gemini (every Gemini model without its own window), gemini_argon (Gemini 4 Argon, "
+                "only on plans that report an Argon-own window; Ultra shares one Gemini pool), and claude_gpt. "
                 "Claude/GPT here is Google-sold, not Anthropic Claude Code."
             ),
             "monthly_price": 20,

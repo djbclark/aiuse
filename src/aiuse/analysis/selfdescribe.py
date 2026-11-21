@@ -113,8 +113,8 @@ SEMANTICS: dict[str, Any] = {
     "usable_now": "false if any applicable window is exhausted or has under 5% left (near empty: work cannot finish on it; available_at is then the latest reset among the depleted windows) or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
     "available_at": "when the whole pool is usable again: the LATEST resets_at among its depleted windows (exhausted, or under 5% left), because every one must reset first (before schema 1.8 this was the earliest, which named a reset after which the pool was still out); null when nothing is depleted or no reset time is known; for omp, the later of the shared Claude window's reset (rate_gated_by) and its own depleted windows",
-    "pool_family": "routing family, not necessarily independent quota: antigravity gemini (Flash), gemini_argon (Gemini 4 Argon, its own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
-    "model_pool_family": "antigravity model id -> pool_family, for dispatchers (aiuse.quota_refusals.pool_family_for_acp_model; schema 1.5): claude-* / gpt-* -> claude_gpt; gemini-4-argon* -> gemini_argon; every other gemini-* -> gemini. Do not map gemini-* to gemini wholesale: Argon draws its own window",
+    "pool_family": "routing family, not necessarily independent quota: antigravity gemini (every Gemini model that has no window of its own), gemini_argon (Gemini 4 Argon, only on plans that report an Argon-own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
+    "model_pool_family": "antigravity model id -> pool_family, for dispatchers (aiuse.quota_refusals.pool_family_for_acp_model; schema 1.5, derived from the reported windows since 1.8): claude-* / gpt-* -> claude_gpt; gemini-4-argon* -> gemini_argon only when the account reports an Argon-own window (Google AI Pro did: 'Gemini 4 Argon weekly'); every other gemini-* -> gemini, and so is Argon when no such window is reported (Google AI Ultra: Carbon, Neon, Hydrogen and Argon share the one Gemini pool). Read the families an account actually has from its routing entries' pool_family",
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
     "shared_pool_family": "parent routing family whose windows also constrain this model sublimit",
     "max_share_of_parent_percent": "model cap as a share of the shared weekly budget; Fable <=50%, not an extra 50%",
@@ -158,12 +158,14 @@ SEMANTICS: dict[str, Any] = {
     "resets_at_carried_from": "present only when resets_at was not measured by this collection: the source dropped the reset, so aiuse carried forward the last one an earlier reading measured ({source, collected_at} of that reading); an estimate, shown as ~. Only carried while still in the future and usage has not fallen since",
 }
 
+_GEMINI_SHARED_HINT = "agy models — gemini-* models draw this pool"
+
 # (substring, family, models_hint) matched against the lowercased window label,
 # first hit wins. Claude families are routing views of one shared pool.
 _FAMILY_RULES: dict[str, list[tuple[str, str, str]]] = {
     "antigravity": [
         ("claude/gpt", "claude_gpt", "agy models — claude-* / gpt-* models draw this pool"),
-        ("gemini", "gemini", "agy models — gemini-* models (except gemini-4-argon*) draw this pool"),
+        ("gemini", "gemini", _GEMINI_SHARED_HINT),
     ],
     # z.ai credits nest: the 5-hour window refreshes on its own clock inside the
     # weekly, so a 5-hour refusal (429 code 1308) must exhaust only that window.
@@ -396,21 +398,65 @@ def _apply_note_to_window(window: dict[str, Any], note: Mapping[str, Any]) -> bo
     return True
 
 
+def _tune_gemini_hints(windows: list[dict[str, Any]]) -> None:
+    """Word the shared Gemini hint after the Gemini frontier windows the account reports.
+
+    A frontier model (Argon) is carved out of ``gemini`` only when the account
+    reports its own window; without one (Google AI Ultra) every gemini-* model,
+    Argon included, draws the shared pool.
+    """
+    from aiuse.analysis.pace import GEMINI_FRONTIER_MODEL_PREFIXES
+
+    carved = sorted(
+        prefix
+        for prefix, name in GEMINI_FRONTIER_MODEL_PREFIXES.items()
+        if any(w.get("pool_family") == f"gemini_{name}" for w in windows)
+    )
+    if not carved:
+        return
+    hint = f"agy models — gemini-* models (except {', '.join(p + '*' for p in carved)}) draw this pool"
+    for window in windows:
+        if window.get("pool_family") == "gemini":
+            window["models_hint"] = hint
+
+
+def _reported_families(windows: Iterable[Any]) -> set[str]:
+    return {str(w["pool_family"]) for w in windows if isinstance(w, Mapping) and w.get("pool_family")}
+
+
+def _note_family(note: Mapping[str, Any], provider: str, reported: set[str]) -> Any:
+    """The pool family a note applies to on an account reporting ``reported`` families.
+
+    A refusal log names the model's nominal family (``gemini_argon`` for
+    ``gemini-4-argon``); on a plan with no Argon window that model draws the
+    shared Gemini pool, so the note belongs to ``gemini`` there.
+    """
+    family = note.get("pool_family")
+    if provider == "antigravity" and isinstance(family, str):
+        from aiuse.analysis.pace import collapse_gemini_family
+
+        return collapse_gemini_family(family, reported)
+    return family
+
+
 def _note_matches_account(note: Mapping[str, Any], provider: str, account: Mapping[str, Any]) -> bool:
     if str(note.get("provider") or "") != provider:
         return False
-    family = note.get("pool_family")
+    windows = account.get("windows") or []
+    family = _note_family(note, provider, _reported_families(windows))
     if not family:
         return True
     if provider == "pi" and family == "openai_api" and account.get("source") == OMP_OPENAI_SOURCE:
         return True
-    return any(w.get("pool_family") == family for w in account.get("windows") or [] if isinstance(w, Mapping))
+    return any(w.get("pool_family") == family for w in windows if isinstance(w, Mapping))
 
 
-def _note_matches(note: Mapping[str, Any], provider: str, window: Mapping[str, Any]) -> bool:
+def _note_matches(
+    note: Mapping[str, Any], provider: str, window: Mapping[str, Any], reported: set[str] | None = None
+) -> bool:
     if str(note.get("provider") or "") != provider:
         return False
-    family = note.get("pool_family")
+    family = _note_family(note, provider, reported if reported is not None else {str(window.get("pool_family"))})
     if not family:
         return True
     return window.get("pool_family") == family
@@ -465,10 +511,13 @@ def enrich_account(
             if uc.get("resets_at") and not window.get("resets_at"):
                 window["resets_at"] = uc["resets_at"]
     account["windows"] = windows
+    if provider == "antigravity":
+        _tune_gemini_hints(windows)
 
+    reported_families = _reported_families(windows)
     for note in notes or []:
         for window in windows:
-            if _note_matches(note, provider, window):
+            if _note_matches(note, provider, window, reported_families):
                 _apply_note_to_window(window, note)
 
     applicable = [

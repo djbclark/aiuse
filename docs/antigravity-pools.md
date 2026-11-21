@@ -285,7 +285,11 @@ hydrogen and argon (14:20Z) all answered. CodexBar's next read (14:32Z) showed o
 `Gemini 5-hour` (+1.97 points) and `Gemini weekly` (+0.68) windows moving; the Claude/GPT windows
 stayed at 0 and no per-model window (no `...-gemini-argon-wtu-weekly`, no Carbon window) was reported at all.
 On the Ultra plan, then, no Gemini 4 model has its own quota window; Carbon is not special, and the
-`gemini_argon` family only matters if CodexBar again reports an Argon window. Open: a single
+`gemini_argon` family only matters if CodexBar again reports an Argon window. Since schema 1.8 the model-to-family
+mapping follows that: `gemini-4-argon*` maps to `gemini_argon` only on an account whose windows include an
+Argon-own window (Google AI Pro reported "Gemini 4 Argon weekly"), and to the shared `gemini` family otherwise
+(`pool_family_for_acp_model(provider, model, reported_families)`). An Argon refusal note or ACP turn, recorded under
+its nominal `gemini_argon` family, is applied to `gemini` on an Ultra-shaped account. Open: a single
 call per model with a read between each (15 minute gate) would show whether one of them draws a different share.
 
 Placeholder resets: the 14:32Z live read still carried `Claude/GPT 5-hour` reset 19:32:13Z, which is
