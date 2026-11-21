@@ -134,3 +134,7 @@ One commit per item on main, test first: 126ed23 (Argon store: a corrupt record 
 Operator-visible: after upgrading, an existing Ultra account folds nothing for at least 6 h and 3 collected readings, and meanwhile an Argon refusal leaves the shared `gemini` pool `usable_now: true` (fails open). Only the sampler and runs that save a snapshot write `argon-evidence.json`; `--available`, cache `--json`, serve and screen-only watch only read it. The operator's antigravity account is unnamed (account null), so its evidence record is re-keyed to `unnamed` and its clock restarts once at this upgrade. A `[floors.providers.codex]` override now draws a doctor warning that it does not reach `openai_api`.
 
 Open: nothing from the review. The key stays an unsalted hash (pseudonymous); a salt would need a per-install secret.
+
+## Follow-up: adversary round 3 of schema 1.8 (1ad3be3, APPROVE with 3 nits) fixed
+
+One commit per nit on main, test first: 15ce595 (Argon store lock wait bounded at about 2 s via `LOCK_NB` polling, then no lock), e0b43bc (docs: only a cache `--available` reads the store; `--available --live` and a cold `--available` collect and write it), 97a4981 (a 309-plus-digit integer `query_min_interval` is clamped by `min_intervals` and an error in `validate_config` instead of an OverflowError). Not changed: other float-of-config sites (for example `analysis.fresh_threshold_seconds_by_provider`, `collectors.codexbar.timeout_backoff`) would raise the same OverflowError for a 309-plus-digit int; no review finding covers them.
