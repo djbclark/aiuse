@@ -65,6 +65,8 @@ def min_intervals(config: Mapping[str, Any] | None) -> dict[str, float]:
                 continue  # float(True) is 1.0: a typo would pass as a 1 s gate
             try:
                 seconds = float(value)
+            except OverflowError:  # an int of 309+ digits: too large for a float, so clamp (or disable if negative)
+                seconds = math.inf if value > 0 else 0.0
             except (TypeError, ValueError):
                 continue
             if math.isnan(seconds):

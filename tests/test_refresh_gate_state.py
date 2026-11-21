@@ -140,6 +140,26 @@ def test_an_invalid_interval_falls_back_to_the_default_the_throttle_enforces():
         assert parse_dt(account["refreshable_at"]) == NOW + timedelta(seconds=200), value
 
 
+def test_a_400_digit_integer_interval_is_too_large_not_a_crash():
+    """Round 3, nit 3: tomllib accepts a 400-digit int; float() of it raises OverflowError."""
+    from aiuse.collectors.throttle import MAX_QUERY_MIN_INTERVAL, min_intervals
+    from aiuse.config import validate_config
+
+    huge = 10**400
+    config = {"query_min_interval": {"antigravity": huge, "grok": -huge, "z": 30}}
+    table = min_intervals(config)
+    assert table["antigravity"] == MAX_QUERY_MIN_INTERVAL
+    assert "grok" not in table  # a huge negative value disables, as -1 does
+    assert table["z"] == 30.0
+    issues = validate_config(config)
+    assert any("query_min_interval.antigravity" in i and i.startswith("error") and "too large" in i for i in issues)
+    assert any("query_min_interval.grok" in i and i.startswith("error") for i in issues)
+    account = _run(timedelta(minutes=40), {"query_min_interval": {"antigravity": huge}})
+    assert account["stale"] is True
+    assert account["refresh_blocked_by_gate"] is True
+    assert parse_dt(account["refreshable_at"]) > NOW + timedelta(days=6)
+
+
 def test_a_disabled_interval_still_leaves_the_gate_fields_off():
     account = _run(timedelta(minutes=40), {"query_min_interval": {"antigravity": 0}})
     assert account["stale"] is True

@@ -143,6 +143,11 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- A 309-plus-digit integer `query_min_interval` (valid TOML) no longer crashes
+  `throttle.min_intervals`, `validate_config` (so `aiuse doctor`) or
+  `enrich_snapshot` with an `OverflowError`: the throttle clamps it to the 7-day
+  cap (a huge negative one disables the gate, as `-1` does) and `validate_config`
+  reports it as too large (schema 1.8 adversary round 3, nit 3).
 - The docs no longer say `aiuse --available` only reads the Argon evidence store:
   a cache `--available` does, but `--available --live`, or `--available` with no
   `latest.json`, is a collection and writes it (README, `docs/json-contract.md`,

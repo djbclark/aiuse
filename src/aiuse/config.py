@@ -1303,6 +1303,12 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 continue
             try:
                 seconds = float(value)
+            except OverflowError:  # an int of 309+ digits does not fit a float
+                issues.append(
+                    f"error: query_min_interval.{provider} is too large a number of seconds "
+                    f"(at most {MAX_QUERY_MIN_INTERVAL:g}, 7 days)"
+                )
+                continue
             except (TypeError, ValueError):
                 issues.append(f"error: query_min_interval.{provider} must be a number of seconds (got {value!r})")
                 continue
