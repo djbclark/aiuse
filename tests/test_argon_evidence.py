@@ -357,3 +357,44 @@ def test_has_gemini_window_reads_label_id_and_family():
     assert has_gemini_window([{"label": "x", "pool_family": "gemini"}])
     assert not has_gemini_window([CLAUDE_GPT])
     assert not has_gemini_window([ARGON])
+
+
+def test_concurrent_writers_lose_no_record(monkeypatch):
+    """Review round 2, nit 2: the load-modify-write was unlocked, so a concurrent writer overwrote another's record."""
+    import threading
+    import time
+
+    from aiuse.analysis import argon_evidence
+
+    real_load = argon_evidence._load
+
+    def slow_load(path, now):
+        records = real_load(path, now)
+        time.sleep(0.15)  # widen the window between read and write
+        return records
+
+    monkeypatch.setattr(argon_evidence, "_load", slow_load)
+    errors: list[BaseException] = []
+
+    def feed(name: str) -> None:
+        try:
+            record_readings([_reading(0, FLASH, account=name)], now=T0)
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=feed, args=(f"acct-{i}",)) for i in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert len(json.loads(store_path().read_text())["accounts"]) == 4
+
+
+def test_the_lock_file_sits_beside_the_store_and_is_private():
+    import os
+
+    _feed(0, FLASH)
+    lock = store_path().with_name(store_path().name + ".lock")
+    assert lock.exists()
+    assert os.stat(lock).st_mode & 0o777 == 0o600

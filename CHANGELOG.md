@@ -143,6 +143,10 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- The Argon evidence store's load-modify-write now runs under an exclusive
+  `flock` on `argon-evidence.json.lock` (same pattern as the query throttle and
+  `TimeoutBackoff`), so a sampler and a CLI run that collect at once no longer lose
+  an increment or an "Argon window seen" reset (schema 1.8 adversary round 2, nit 2).
 - A partial Antigravity reading is not evidence that the plan has no Argon window
   (schema 1.8 adversary round 2, nit 1). Only a reading that shows the shared
   Gemini (Flash) window and no Argon window counts toward the 3 readings over 6

@@ -29,12 +29,14 @@ this module raises on a damaged store.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 from aiuse.models import parse_dt
 
@@ -203,6 +205,42 @@ def record_readings(
     snapshot count as a fresh reading on every re-read.
     """
     target = Path(path) if path is not None else store_path()
+    with _store_lock(target) if record else contextlib.nullcontext():
+        return _judge(accounts, collected_at, hidden_pools, now, target, record)
+
+
+@contextlib.contextmanager
+def _store_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive ``flock`` on ``<store>.lock`` for a load-modify-write, as the throttle does.
+
+    A lock that cannot be taken (read-only directory, odd filesystem) degrades to
+    no lock: the evidence is durability only and heals at the next reading.
+    """
+    fd: int | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path.with_name(path.name + ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+    except OSError:
+        if fd is not None:
+            os.close(fd)
+            fd = None
+    try:
+        yield
+    finally:
+        if fd is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+
+def _judge(
+    accounts: Iterable[Mapping[str, Any]],
+    collected_at: object,
+    hidden_pools: object,
+    now: datetime,
+    target: Path,
+    record: bool,
+) -> dict[str, bool]:
     hidden = argon_hidden(hidden_pools)
     records = _load(target, now)
     before = json.dumps(records, sort_keys=True)
