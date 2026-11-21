@@ -101,7 +101,17 @@ wrong (`available_at`, the Argon model map).
   maps to `gemini_argon` only when the account reports an Argon-own window
   (Google AI Pro did: "Gemini 4 Argon weekly"). On Google AI Ultra, Gemini 4
   Carbon, Neon, Hydrogen and Argon share the one `gemini` pool and no
-  per-model window exists, so Argon maps to `gemini`. See
+  per-model window exists, so Argon maps to `gemini`. A recorded Argon refusal
+  or ACP turn is folded into `gemini` only on POSITIVE evidence that the account
+  has no Argon window: at least 3 consecutive readings over at least 6 hours
+  with antigravity windows and none of them an Argon window, kept in
+  `~/.local/state/aiuse/argon-evidence.json` (hashed account keys, no emails;
+  `AIUSE_ARGON_EVIDENCE_STORE` overrides the path). A window that is hidden
+  (`[hidden_pools]`), unreadable or missing from one reading is never that
+  evidence, and a hidden `gemini_argon` family counts as reported: until the
+  evidence exists the note matches nothing (it never exhausts Flash), and the
+  evidence is judged per account, so a Pro account's Argon window does not
+  change how an Ultra account folds. See
   [antigravity-pools.md](antigravity-pools.md) and `semantics.model_pool_family`.
 - **`refreshable_at`, `refresh_blocked_by_gate`, `gate_remaining_seconds`** on
   a stale reading from a gated provider (antigravity): see "How to read this"
@@ -208,7 +218,9 @@ the Flash `gemini` pool.
   the one shared `gemini` pool, checked 2026-11-21), so `gemini-4-argon*` maps
   to `gemini` there and the `gemini` entry's `models_hint` has no exception.
   An Argon refusal or ACP turn recorded as `gemini_argon` is applied to
-  `gemini` on such an account. The mapping is
+  `gemini` on such an account once the evidence above exists (the dispatcher's
+  model map only needs the account's entries; `pool_family_for_acp_model` without
+  the account's families returns the nominal `gemini_argon`). The mapping is
   published in `aiuse schema` under `semantics.model_pool_family` so consumers
   need not hard-code it. An operator `[hidden_pools]` / `excluded_pools` rule
   for `antigravity/gemini` no longer covers Argon; add `antigravity/gemini_argon`.

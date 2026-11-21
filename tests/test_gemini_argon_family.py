@@ -205,8 +205,8 @@ def test_model_to_family_is_derived_from_the_reported_windows(model, pro, ultra)
 
     assert pool_family_for_acp_model("antigravity", model, PRO_FAMILIES) == pro
     assert pool_family_for_acp_model("antigravity", model, ULTRA_FAMILIES) == ultra
-    # No windows known: the shared pool, never an Argon family nobody reports.
-    assert pool_family_for_acp_model("antigravity", model) == ultra
+    # No account read yet: the nominal family, never a fold on missing evidence.
+    assert pool_family_for_acp_model("antigravity", model) == pro
     assert pool_family_for_acp_model("codex", model, PRO_FAMILIES) is None
 
 
@@ -215,6 +215,26 @@ def test_nominal_family_keeps_argon_for_later_resolution():
 
     assert nominal_pool_family_for_acp_model("antigravity", "gemini-4-argon") == "gemini_argon"
     assert nominal_pool_family_for_acp_model("antigravity", "gemini-3-flash") == "gemini"
+
+
+def _prove_argon_absent(account: str | None = None, *, end: datetime | None = None) -> None:
+    """Seed the durable evidence that this account has had no Argon window for 8 hours.
+
+    Folding gemini_argon into the shared gemini pool needs positive evidence the
+    plan has no Argon window (aiuse.analysis.argon_evidence); one reading without
+    the window is never enough.
+    """
+    from aiuse.analysis.argon_evidence import record_readings
+
+    end = end or utcnow()
+    for hours in (8, 4, 0):
+        reading = {
+            "provider": "antigravity",
+            "account": account,
+            "collected_at": (end - timedelta(hours=hours)).isoformat(),
+            "windows": [_window("Gemini weekly", 10.0, 10080, window_id="antigravity-quota-summary-gemini-weekly")],
+        }
+        record_readings([reading], now=end)
 
 
 def _ultra_snapshot(*, gemini_weekly: float = 10.0) -> dict:
@@ -246,11 +266,55 @@ def test_argon_refusal_note_marks_the_shared_pool_on_an_ultra_account():
     """gemini-4-argon's refusal names gemini_argon; without an Argon window it spent the shared pool."""
     from aiuse.analysis.selfdescribe import enrich_snapshot
 
+    _prove_argon_absent()
     snap = enrich_snapshot(_ultra_snapshot(), notes=[_note("gemini_argon")])
     pools = _families(snap)
     assert pools["gemini"]["usable_now"] is False
     assert pools["claude_gpt"]["usable_now"] is True
     assert "gemini_argon" not in pools
+
+
+def test_argon_refusal_note_without_proof_does_not_exhaust_the_shared_pool():
+    """One reading with no Argon window is not evidence the plan has none (review of 1.8, finding 3)."""
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    snap = enrich_snapshot(_ultra_snapshot(), notes=[_note("gemini_argon")])
+    pools = _families(snap)
+    assert pools["gemini"]["usable_now"] is True
+    assert pools["claude_gpt"]["usable_now"] is True
+
+
+def test_hidden_argon_window_is_never_proof_of_absence():
+    """A Pro account with its Argon window hidden keeps Flash usable under an Argon refusal note."""
+    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, enrich_snapshot
+
+    _prove_argon_absent()  # even earlier evidence cannot fold a family the operator hid
+    snap = _snapshot()
+    apply_hidden_pools_dict(snap, {"hidden_pools": {"antigravity/gemini_argon": "operator hides Argon"}})
+    assert all(w["window_id"] != ARGON_ID for w in snap["accounts"][0]["windows"])
+    assert snap["hidden_pools"] == {"antigravity/gemini_argon": "operator hides Argon"}
+    enriched = enrich_snapshot(snap, notes=[_note("gemini_argon")])
+    pools = _families(enriched)
+    assert pools["gemini"]["usable_now"] is True
+    assert pools["claude_gpt"]["usable_now"] is True
+
+
+def test_pro_and_ultra_accounts_fold_independently():
+    """The Pro account keeps Argon as its own pool while the proven-Ultra account folds it."""
+    from aiuse.analysis.selfdescribe import enrich_snapshot, pool_entries
+
+    _prove_argon_absent("acct-ultra")
+    pro = _snapshot()["accounts"][0]
+    pro["account"] = "acct-pro"
+    ultra = _ultra_snapshot()["accounts"][0]
+    ultra["account"] = "acct-ultra"
+    snap = {"collected_at": utcnow().isoformat(), "accounts": [pro, ultra]}
+    enriched = enrich_snapshot(snap, notes=[{**_note("gemini_argon"), "account": None}])
+    rows = {(p["account"], p["pool_family"]): p for p in pool_entries(enriched)}
+    assert ("acct-ultra", "gemini_argon") not in rows
+    assert rows[("acct-ultra", "gemini")]["usable_now"] is False
+    assert rows[("acct-pro", "gemini_argon")]["usable_now"] is False
+    assert rows[("acct-pro", "gemini")]["usable_now"] is True
 
 
 def test_argon_refusal_note_still_marks_only_argon_on_a_pro_account():
@@ -275,6 +339,7 @@ def test_frozen_argon_activity_covers_the_shared_pool_on_an_ultra_account(tmp_pa
     log_dir = tmp_path / "acp-run"
     log_dir.mkdir()
     _write_agy_turn(log_dir, model="gemini-4-argon")
+    _prove_argon_absent(end=times[-1])
     snap = enrich_snapshot(
         ultra(times[-1]),
         now=FROZEN_NOW,
@@ -572,4 +637,80 @@ def test_schema_semantics_publish_the_model_family_mapping():
     for prefix, name in GEMINI_FRONTIER_MODEL_PREFIXES.items():
         assert f"{prefix}* -> gemini_{name} only when" in text
         assert pool_family_for_acp_model("antigravity", prefix, {f"gemini_{name}"}) == f"gemini_{name}"
-        assert pool_family_for_acp_model("antigravity", prefix) == "gemini"
+        assert pool_family_for_acp_model("antigravity", prefix) == f"gemini_{name}"
+
+
+def _two_account_flat_snapshot(collected: datetime, *, ultra_name: str, pro_name: str, unreadable_argon: bool) -> dict:
+    snap = _flat_snapshot(collected)
+    pro = snap["accounts"][0]
+    pro["account"] = pro_name
+    if unreadable_argon:
+        for window in pro["windows"]:
+            if window.get("window_id") == ARGON_ID:
+                window["used_percent"] = None
+                window["remaining_percent"] = None
+    ultra = json.loads(json.dumps(pro))
+    ultra["account"] = ultra_name
+    ultra["windows"] = [w for w in ultra["windows"] if w.get("window_id") != ARGON_ID]
+    snap["accounts"] = [pro, ultra]
+    return snap
+
+
+def test_frozen_argon_turn_does_not_freeze_flash_when_the_argon_window_is_unreadable(tmp_path):
+    """An Argon window that is unreadable in one reading is not evidence that the plan has none."""
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    times = [datetime(2026, 10, 18, h, m, tzinfo=timezone.utc) for h, m in ((12, 1), (13, 14), (13, 34))]
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(log_dir, model="gemini-4-argon")
+    snap = _flat_snapshot(times[-1])
+    for window in snap["accounts"][0]["windows"]:
+        if window.get("window_id") == ARGON_ID:
+            window["used_percent"] = None
+            window["remaining_percent"] = None
+    enriched = enrich_snapshot(
+        snap,
+        now=FROZEN_NOW,
+        history=[_flat_snapshot(t) for t in times],
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+    assert not _frozen_labels(enriched) & {"Gemini 5-hour", "Gemini weekly"}
+
+
+def test_frozen_argon_activity_folds_per_account_not_per_provider(tmp_path):
+    """Pro (Argon window) and Ultra (proven none): the Ultra account folds, the Pro one does not."""
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    times = [datetime(2026, 10, 18, h, m, tzinfo=timezone.utc) for h, m in ((12, 1), (13, 14), (13, 34))]
+    log_dir = tmp_path / "acp-run"
+    log_dir.mkdir()
+    _write_agy_turn(log_dir, model="gemini-4-argon")
+    _prove_argon_absent("acct-ultra", end=times[-1])
+
+    def snap_at(t):
+        return _two_account_flat_snapshot(t, ultra_name="acct-ultra", pro_name="acct-pro", unreadable_argon=False)
+
+    enriched = enrich_snapshot(
+        snap_at(times[-1]),
+        now=FROZEN_NOW,
+        history=[snap_at(t) for t in times],
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+    by_name = {a["account"]: a for a in enriched["accounts"]}
+    # Identical flat fingerprints are shared by both accounts, so the Ultra account's
+    # fold covers them; the proof is that the unproven Pro account alone never would:
+    pro_only = enrich_snapshot(
+        _flat_snapshot(times[-1]),
+        now=FROZEN_NOW,
+        history=[_flat_snapshot(t) for t in times],
+        check_frozen=True,
+        min_frozen_seconds=2700,
+        acp_log_dir=str(log_dir),
+    )
+    assert not _frozen_labels(pro_only) & {"Gemini 5-hour", "Gemini weekly"}
+    assert any(w.get("measurement_frozen") for w in by_name["acct-ultra"]["windows"])

@@ -115,7 +115,7 @@ SEMANTICS: dict[str, Any] = {
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
     "available_at": "when the whole pool is usable again: the LATEST resets_at among its depleted windows (exhausted, or under 5% left), because every one must reset first (before schema 1.8 this was the earliest, which named a reset after which the pool was still out); null when nothing is depleted, or when any depleted window has no reset time (the return time is then unknown, so no other window's reset is named; binding_window on an unavailable item is that window); for omp, the later of the shared Claude window's reset (rate_gated_by) and its own depleted windows",
     "pool_family": "routing family, not necessarily independent quota: antigravity gemini (every Gemini model that has no window of its own), gemini_argon (Gemini 4 Argon, only on plans that report an Argon-own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
-    "model_pool_family": "antigravity model id -> pool_family, for dispatchers (aiuse.quota_refusals.pool_family_for_acp_model; schema 1.5, derived from the reported windows since 1.8): claude-* / gpt-* -> claude_gpt; gemini-4-argon* -> gemini_argon only when the account reports an Argon-own window (Google AI Pro did: 'Gemini 4 Argon weekly'); every other gemini-* -> gemini, and so is Argon when no such window is reported (Google AI Ultra: Carbon, Neon, Hydrogen and Argon share the one Gemini pool). Read the families an account actually has from its routing entries' pool_family",
+    "model_pool_family": "antigravity model id -> pool_family, for dispatchers (aiuse.quota_refusals.pool_family_for_acp_model; schema 1.5, derived from the reported windows since 1.8): claude-* / gpt-* -> claude_gpt; gemini-4-argon* -> gemini_argon only when the account reports an Argon-own window (Google AI Pro did: 'Gemini 4 Argon weekly'); every other gemini-* -> gemini, and so is Argon on an account with no Argon window (Google AI Ultra: Carbon, Neon, Hydrogen and Argon share the one Gemini pool). Read the families an account actually has from its routing entries' pool_family. Without an account's families the function returns the nominal gemini_argon. A recorded Argon refusal or ACP turn is folded into gemini only on positive evidence the account has no Argon window (3+ consecutive readings over 6+ hours, none with one; a hidden or unreadable window is never evidence), judged per account",
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
     "shared_pool_family": "parent routing family whose windows also constrain this model sublimit",
     "max_share_of_parent_percent": "model cap as a share of the shared weekly budget; Fable <=50%, not an extra 50%",
@@ -430,6 +430,21 @@ def _reported_families(windows: Iterable[Any]) -> set[str]:
     return {str(w["pool_family"]) for w in windows if isinstance(w, Mapping) and w.get("pool_family")}
 
 
+def _account_reported_families(account: Mapping[str, Any], windows: Iterable[Any]) -> set[str]:
+    """The pool families this ACCOUNT may have: its windows' families, plus Argon unless proven absent.
+
+    ``gemini_argon`` folds into the shared ``gemini`` pool only on positive
+    evidence the plan has no Argon window (``aiuse.analysis.argon_evidence``,
+    set by ``enrich_snapshot`` as ``_argon_proven_absent``). A window that is
+    hidden, unreadable or missing from one reading is not that evidence, so
+    an unproven account keeps Argon as a family it may report.
+    """
+    families = _reported_families(windows)
+    if str(account.get("provider") or "") == "antigravity" and not account.get("_argon_proven_absent"):
+        families.add("gemini_argon")
+    return families
+
+
 def _note_family(note: Mapping[str, Any], provider: str, reported: set[str]) -> Any:
     """The pool family a note applies to on an account reporting ``reported`` families.
 
@@ -449,7 +464,7 @@ def _note_matches_account(note: Mapping[str, Any], provider: str, account: Mappi
     if str(note.get("provider") or "") != provider:
         return False
     windows = account.get("windows") or []
-    family = _note_family(note, provider, _reported_families(windows))
+    family = _note_family(note, provider, _account_reported_families(account, windows))
     if not family:
         return True
     if provider == "pi" and family == "openai_api" and account.get("source") == OMP_OPENAI_SOURCE:
@@ -520,7 +535,7 @@ def enrich_account(
     if provider == "antigravity":
         _tune_gemini_hints(windows)
 
-    reported_families = _reported_families(windows)
+    reported_families = _account_reported_families(account, windows)
     for note in notes or []:
         for window in windows:
             if _note_matches(note, provider, window, reported_families):
@@ -841,6 +856,29 @@ def _apply_shared_rate_gate(accounts: list[dict[str, Any]], *, now: datetime) ->
         )
 
 
+def _apply_argon_evidence(
+    snap: Mapping[str, Any], accounts: list[dict[str, Any]], collected: object, *, now: datetime
+) -> None:
+    """Mark antigravity accounts whose plan is PROVEN to have no Argon-own window.
+
+    Records this snapshot's readings in the durable evidence store and sets the
+    private ``_argon_proven_absent`` marker ``enrich_account`` and the frozen-quota
+    pass read; removed again at the end of ``enrich_snapshot``.
+    """
+    from aiuse.analysis.argon_evidence import account_key, record_readings
+
+    for account in accounts:
+        account.pop("_argon_proven_absent", None)
+    if not any(str(a.get("provider") or "") == "antigravity" for a in accounts):
+        return
+    proven = record_readings(accounts, collected_at=collected, hidden_pools=snap.get("hidden_pools"), now=now)
+    for account in accounts:
+        if str(account.get("provider") or "") == "antigravity" and proven.get(
+            account_key("antigravity", account.get("account"))
+        ):
+            account["_argon_proven_absent"] = True
+
+
 def _gated_available_at(account: Mapping[str, Any], gate_reset: datetime) -> str | None:
     """A gated account is usable again when the gate AND its own depleted windows reset.
 
@@ -1036,6 +1074,7 @@ def enrich_snapshot(
     waking_hours = float(analysis_cfg_map.get("waking_hours_per_day", 16.0)) if analysis_cfg_map else 16.0
     if plans_cfg is not None:
         from aiuse.config import plan_monthly_price
+    _apply_argon_evidence(snap, accounts, collected, now=now)
     for account in accounts:
         account.pop("measurement_frozen", None)
         if plans_cfg is not None:
@@ -1126,6 +1165,7 @@ def enrich_snapshot(
     snap["summary_lines"] = summary_lines(pool_entries(snap))
     for account in accounts:
         account.pop("_waking_hours_per_day", None)
+        account.pop("_argon_proven_absent", None)
     snap["semantics"] = dict(SEMANTICS)
     # Snapshots written before this field existed have no key; every reader
     # can rely on it being present (empty = nothing disabled).

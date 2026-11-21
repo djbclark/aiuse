@@ -1,0 +1,176 @@
+"""Durable evidence that an Antigravity account has no Argon-own quota window.
+
+Whether ``gemini-4-argon`` draws its own pool is a fact about the account's
+plan (Google AI Pro reported "Gemini 4 Argon weekly"; Google AI Ultra shares
+one Gemini pool across Carbon, Neon, Hydrogen and Argon), and CodexBar gives no
+plan field. Folding the ``gemini_argon`` family into the shared ``gemini``
+pool is therefore only safe on POSITIVE evidence that the plan has no Argon
+window. One reading without the window proves nothing: the window can be hidden
+(``[hidden_pools]``), unreadable, or missing from a partial reading, and folding
+then turns an Argon refusal into a false exhaustion of the whole Flash pool
+(schema 1.8 adversary review, finding 3).
+
+This module keeps a small per-account record of consecutive readings with
+Antigravity windows and no Argon window. The fold is proven only after
+``MIN_ABSENT_SECONDS`` and ``MIN_ABSENT_READINGS`` of such readings; one reading
+that shows an Argon window resets the record. Everything else, including a
+hidden Argon family and a missing or corrupt store, reads as "Argon may exist":
+the family is treated as reported and nothing folds. The record is keyed by a
+hash of the account name so the file holds no email address.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+from aiuse.models import parse_dt
+
+ARGON_FAMILY = "gemini_argon"
+# Consecutive no-Argon readings must span this long, and number at least this many.
+MIN_ABSENT_SECONDS = 6 * 3600.0
+MIN_ABSENT_READINGS = 3
+_PRUNE_AFTER = timedelta(days=30)
+_MAX_RECORDS = 50
+_DEFAULT_STORE = "~/.local/state/aiuse/argon-evidence.json"
+
+
+def store_path() -> Path:
+    override = os.environ.get("AIUSE_ARGON_EVIDENCE_STORE")
+    return Path(override) if override else Path(os.path.expanduser(_DEFAULT_STORE))
+
+
+def account_key(provider: str, account: object) -> str:
+    """Stable, email-free key for one account of a provider."""
+    raw = f"{provider.strip().lower()}|{str(account or '').strip().lower()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _load(path: Path) -> dict[str, dict[str, Any]]:
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    records = data.get("accounts") if isinstance(data, dict) else None
+    return {k: v for k, v in records.items() if isinstance(v, dict)} if isinstance(records, dict) else {}
+
+
+def _write(path: Path, records: Mapping[str, Any]) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"schema_version": 1, "accounts": records}, indent=1, sort_keys=True) + "\n", "utf-8")
+        os.replace(tmp, path)
+        os.chmod(path, 0o600)
+    except OSError:
+        return False  # durability only: the in-process decision still applies
+    return True
+
+
+def _aware(value: object) -> datetime | None:
+    parsed = parse_dt(value) if isinstance(value, str) else None
+    if parsed is not None and parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def argon_hidden(hidden_pools: object) -> bool:
+    """True when ``[hidden_pools]`` hides the antigravity Argon family (``snap["hidden_pools"]`` keys)."""
+    if not isinstance(hidden_pools, Mapping):
+        return False
+    return any(
+        str(key).strip().lower() in ("antigravity/gemini_argon", "antigravity", "antigravity/*") for key in hidden_pools
+    )
+
+
+def has_argon_window(windows: Iterable[Any], provider: str = "antigravity") -> bool:
+    """True when any window is (or names itself) an Argon-own window, whatever its reading."""
+    from aiuse.analysis.pace import independent_pool_key
+
+    for window in windows:
+        if not isinstance(window, Mapping):
+            continue
+        if window.get("pool_family") == ARGON_FAMILY:
+            return True
+        wid = str(window.get("window_id") or "").strip().casefold() or None
+        if independent_pool_key(str(window.get("label") or ""), window_id=wid, provider=provider) == ARGON_FAMILY:
+            return True
+    return False
+
+
+def record_readings(
+    accounts: Iterable[Mapping[str, Any]],
+    *,
+    collected_at: object = None,
+    hidden_pools: object = None,
+    now: datetime,
+    path: str | Path | None = None,
+) -> dict[str, bool]:
+    """Fold this snapshot's antigravity readings into the store; return ``account key -> proven``.
+
+    A reading counts only when the account has antigravity windows. A hidden
+    Argon family is never evidence of absence (the window was dropped before
+    this reading), so nothing is recorded and nothing is proven. A reading
+    older than the stored one is ignored, so re-enriching a cached snapshot
+    cannot advance the evidence.
+    """
+    target = Path(path) if path is not None else store_path()
+    hidden = argon_hidden(hidden_pools)
+    records = _load(target)
+    before = json.dumps(records, sort_keys=True)
+    proven: dict[str, bool] = {}
+    for account in accounts:
+        if str(account.get("provider") or "") != "antigravity":
+            continue
+        windows = [w for w in (account.get("windows") or []) if isinstance(w, Mapping)]
+        key = account_key("antigravity", account.get("account"))
+        read_at = _aware(account.get("collected_at")) or _aware(collected_at)
+        if not windows or read_at is None or hidden:
+            proven[key] = False
+            continue
+        read_at = min(read_at, now)
+        record = records.setdefault(key, {})
+        last = _aware(record.get("last_reading"))
+        if last is None or read_at > last:
+            if has_argon_window(windows):
+                record.update(
+                    argon_last_seen=read_at.isoformat(),
+                    absent_since=None,
+                    readings_absent=0,
+                    last_reading=read_at.isoformat(),
+                )
+            else:
+                since = _aware(record.get("absent_since"))
+                record.update(
+                    absent_since=(since or read_at).isoformat(),
+                    readings_absent=int(record.get("readings_absent") or 0) + 1,
+                    last_reading=read_at.isoformat(),
+                )
+        proven[key] = not has_argon_window(windows) and _span_proves(record)
+    cutoff = now - _PRUNE_AFTER
+    for key in [k for k, r in records.items() if (_aware(r.get("last_reading")) or cutoff) < cutoff]:
+        records.pop(key)
+    if len(records) > _MAX_RECORDS:
+        for key in sorted(records, key=lambda k: str(records[k].get("last_reading") or ""))[
+            : len(records) - _MAX_RECORDS
+        ]:
+            records.pop(key)
+    if json.dumps(records, sort_keys=True) != before:
+        _write(target, records)
+    return proven
+
+
+def _span_proves(record: Mapping[str, Any]) -> bool:
+    since = _aware(record.get("absent_since"))
+    last = _aware(record.get("last_reading"))
+    if since is None or last is None:
+        return False
+    try:
+        readings = int(record.get("readings_absent") or 0)
+    except (TypeError, ValueError):
+        return False
+    return readings >= MIN_ABSENT_READINGS and (last - since).total_seconds() >= MIN_ABSENT_SECONDS

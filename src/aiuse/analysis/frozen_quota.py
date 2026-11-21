@@ -241,6 +241,38 @@ def _collapse_activity(
     }
 
 
+def _reported_by_fingerprint(snap: Mapping[str, Any]) -> dict[tuple[Any, ...], list[set[str]]]:
+    """Fingerprint -> the pool families each account holding that window may have.
+
+    Per account, never per provider: one account's Argon window must not decide
+    how another account's Argon activity folds. An antigravity account counts
+    ``gemini_argon`` as a family it may have unless ``enrich_snapshot`` proved it has
+    no Argon window (``_argon_proven_absent``: hidden, unreadable or missing
+    windows are not proof).
+    """
+    out: dict[tuple[Any, ...], list[set[str]]] = {}
+    for account in snap.get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        provider = str(account.get("provider") or "")
+        held: dict[tuple[Any, ...], None] = {}
+        families: set[str] = set()
+        for window in account.get("windows") or []:
+            if not isinstance(window, dict):
+                continue
+            fp = _window_fingerprint(provider, window)
+            if fp is None:
+                continue
+            held[fp] = None
+            if isinstance(fp[1], str):
+                families.add(fp[1])
+        if provider == "antigravity" and not account.get("_argon_proven_absent"):
+            families.add("gemini_argon")
+        for fp in held:
+            out.setdefault(fp, []).append(families)
+    return out
+
+
 def _usage_covers(
     active: set[tuple[str, str | None]],
     *,
@@ -309,10 +341,7 @@ def apply_frozen_measurements(
     if not candidate_fps:
         return snap
 
-    reported: dict[str, set[str]] = {}
-    for fp_key in current_fps:
-        if isinstance(fp_key[1], str):
-            reported.setdefault(str(fp_key[0]), set()).add(fp_key[1])
+    reported_by_fp = _reported_by_fingerprint(snap)
     frozen_fps: set[tuple[Any, ...]] = set()
     for fp in candidate_fps:
         provider = str(fp[0])
@@ -324,12 +353,17 @@ def apply_frozen_measurements(
             # during an earlier 20%→21% span marked codex's later flat 25%
             # window "spent" even though no codex activity fell inside it.
             oldest, newest = spans[fp]
-            fp_activity = _collapse_activity(
-                scan_acp_pool_activity(since=oldest, until=newest, log_dir=log_dir), reported
-            )
-            covered = _usage_covers(fp_activity, provider=provider, family=family)
+            raw_activity = scan_acp_pool_activity(since=oldest, until=newest, log_dir=log_dir)
         else:
-            covered = _usage_covers(_collapse_activity(activity, reported), provider=provider, family=family)
+            raw_activity = activity
+        # Each ACCOUNT holding this window folds the activity by its own families: an
+        # Argon turn spent the shared pool only where that plan is proven to have no
+        # Argon window, and a Pro account's Argon window must not stop an Ultra
+        # account from folding (or the reverse).
+        covered = any(
+            _usage_covers(_collapse_activity(raw_activity, {provider: held}), provider=provider, family=family)
+            for held in reported_by_fp.get(fp, [])
+        )
         if covered:
             frozen_fps.add(fp)
     if not frozen_fps:

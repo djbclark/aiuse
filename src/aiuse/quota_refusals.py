@@ -77,7 +77,7 @@ def _agent_of(name: str) -> str | None:
 
 
 def pool_family_for_acp_model(
-    provider: str, model: str | None, reported_families: Iterable[str] | None = ()
+    provider: str, model: str | None, reported_families: Iterable[str] | None = None
 ) -> str | None:
     """Map an ACP agent model id to an aiuse pool_family for split vendors.
 
@@ -86,10 +86,12 @@ def pool_family_for_acp_model(
     its own ``gemini_<name>`` family only when ``reported_families`` (the pool
     families of the account's windows) holds it, because only some plans report a
     per-model window (Pro did for Argon; Ultra shares one Gemini pool across
-    Carbon, Neon, Hydrogen and Argon). The default ``()`` reports none, so
-    callers that have not read an account get the shared ``gemini`` family; a
-    caller that wants the model's nominal family (``nominal_pool_family_for_acp_model``)
-    to resolve it later against an account passes ``None``.
+    Carbon, Neon, Hydrogen and Argon). The default ``None`` means "no account read
+    yet" and returns the model's NOMINAL family (``gemini_argon``), never the shared
+    ``gemini``: folding needs positive evidence about the account (a window
+    missing from one reading is not that evidence; see
+    ``aiuse.analysis.argon_evidence``), so only a caller that holds an account's
+    reported families passes them here.
     Other providers return ``None`` (one residual pool).
     """
     return collapse_gemini_family(nominal_pool_family_for_acp_model(provider, model), reported_families)

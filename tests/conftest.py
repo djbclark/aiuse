@@ -43,6 +43,9 @@ def isolate_rate_gate_state(tmp_path, monkeypatch):
     live Anthropic refusals — the exact flakiness the latch exists to remove.
     """
     monkeypatch.setenv("AIUSE_RATE_GATE_STORE", str(tmp_path / "rate-gates.json"))
+    # The durable "this plan has no Argon window" record is hermetic too: folding
+    # gemini_argon into gemini needs hours of evidence a test must seed on purpose.
+    monkeypatch.setenv("AIUSE_ARGON_EVIDENCE_STORE", str(tmp_path / "argon-evidence.json"))
     monkeypatch.setenv("AIUSE_OMP_LOG_DIR", str(tmp_path / "omp-logs"))
     monkeypatch.setenv("AIUSE_OMP_AGENT_DB", str(tmp_path / "omp-agent.db"))
     monkeypatch.setenv("AIUSE_OMP_MODELS_YML", str(tmp_path / "omp-models.yml"))

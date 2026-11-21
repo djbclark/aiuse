@@ -161,6 +161,16 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
   has no parseable reset time, `available_at` is null (and the unavailable
   item's `binding_window` names that window) instead of naming another
   window's reset while the undated one is still empty.
+- The Argon fold needs positive evidence (schema 1.8). A `gemini_argon` refusal
+  note or ACP turn folds into the shared `gemini` pool only when the account has
+  had no Argon window across at least 3 consecutive readings over at least
+  6 hours (new `aiuse.analysis.argon_evidence`, per account, hashed, in
+  `~/.local/state/aiuse/argon-evidence.json`); a hidden, unreadable or
+  one-reading-missing Argon window never folds, a hidden `gemini_argon` family
+  counts as reported, and the frozen-quota pass and the note matcher now judge
+  each account on its own families instead of the provider-wide union.
+  `pool_family_for_acp_model` without families now returns the nominal
+  `gemini_argon`.
 - omp's account-level `available_at` (`aiuse --json` `accounts[]`) is now the later
   of the shared-Claude gate's reset and its own depleted windows, matching the
   routing entry; it used to keep the gate's earlier reset alone (schema 1.8).

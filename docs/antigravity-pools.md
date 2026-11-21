@@ -289,7 +289,12 @@ On the Ultra plan, then, no Gemini 4 model has its own quota window; Carbon is n
 mapping follows that: `gemini-4-argon*` maps to `gemini_argon` only on an account whose windows include an
 Argon-own window (Google AI Pro reported "Gemini 4 Argon weekly"), and to the shared `gemini` family otherwise
 (`pool_family_for_acp_model(provider, model, reported_families)`). An Argon refusal note or ACP turn, recorded under
-its nominal `gemini_argon` family, is applied to `gemini` on an Ultra-shaped account. Open: a single
+its nominal `gemini_argon` family, is applied to `gemini` only on an account with positive evidence of no Argon window
+(`aiuse.analysis.argon_evidence`: at least 3 consecutive readings over at least 6 hours with antigravity windows and none
+for Argon, kept per account, hashed, in `~/.local/state/aiuse/argon-evidence.json`). A window that is hidden by
+`[hidden_pools]`, unreadable or missing from one reading is never that evidence: a Pro account whose Argon window is hidden
+keeps Flash usable under an Argon refusal note, and a Pro and an Ultra account fold independently. Until the evidence
+exists (a fresh install, 6 hours after a Pro-to-Ultra move) the note matches nothing, as before schema 1.8. Open: a single
 call per model with a read between each (15 minute gate) would show whether one of them draws a different share.
 
 Placeholder resets: the 14:32Z live read still carried `Claude/GPT 5-hour` reset 19:32:13Z, which is
