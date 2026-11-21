@@ -688,6 +688,8 @@ def _main_inner(argv: list[str] | None = None) -> int:
     insights = history_insights(snapshot, analysis_cfg=analysis_cfg)
     payload = {
         "schema_version": SCHEMA_VERSION,
+        # The build that collected this data (here: this process, which just collected it).
+        "aiuse_version": snap_dict.get("aiuse_version"),
         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
         "contract_command": "aiuse schema",
         "snapshot": snap_dict,
@@ -728,6 +730,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
                 json.dumps(
                     {
                         "schema_version": SCHEMA_VERSION,
+                        "aiuse_version": payload["aiuse_version"],
                         "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
                         "contract_command": "aiuse schema",
                         "alerts": payload["alerts"],
@@ -742,6 +745,7 @@ def _main_inner(argv: list[str] | None = None) -> int:
             json_payload = payload
             if args.flatten:
                 json_payload = {
+                    "aiuse_version": payload["aiuse_version"],
                     "collected_at": snapshot.collected_at.isoformat(),
                     "accounts": snap_dict["accounts"],
                     "alerts": payload["alerts"],
@@ -1304,6 +1308,9 @@ def _run_available(args: argparse.Namespace) -> int:
     from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, filter_ceiling_pools
     from aiuse.client_limits import load_client_limits
 
+    recorded_version = snap_dict.get("aiuse_version")
+    collected_by = recorded_version if isinstance(recorded_version, str) and recorded_version else None
+
     # A shared cache can contain every provider, even for a restricted request.
     # Filter before enrichment so unrelated subscription capacity cannot enter
     # this routing view (Pi API spend is never Codex subscription allowance).
@@ -1344,6 +1351,9 @@ def _run_available(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "schema_version": SCHEMA_VERSION,
+                    # The build that COLLECTED the readings (a cache file keeps its
+                    # collector's version); null when the cache was written by 5.1.3 or earlier.
+                    "aiuse_version": collected_by,
                     "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
                     "contract_command": "aiuse schema",
                     "generated_at": utcnow().isoformat(),
@@ -1406,7 +1416,10 @@ def _run_available(args: argparse.Namespace) -> int:
             age_note = format_as_of(taken)
         else:
             age_note = f"age {fresh['age_seconds']:.0f}s"
-    print(f"(source: {source} · {age_note} · --live forces a collect)", file=sys.stderr)
+    print(
+        f"(source: {source} · {age_note} · collected by aiuse {collected_by or '?'} · --live forces a collect)",
+        file=sys.stderr,
+    )
     return EXIT_OK if pools else EXIT_NO_POOLS
 
 

@@ -265,8 +265,12 @@ def gate_status(
             entry["note"] = active.get("note")
             entry["grace_seconds"] = active.get("grace_seconds")
         providers[provider] = entry
+    from aiuse import __version__
+
     return {
         "schema_version": 1,
+        # The build that evaluated these gates (a live read, not a stored collection).
+        "aiuse_version": __version__,
         "evaluated_at": moment.isoformat(),
         "store_path": str(Path(path) if path is not None else store_path()),
         "gates": providers,
@@ -316,6 +320,9 @@ def run_gate_command(argv: list[str] | None = None) -> int:
                 )
             else:
                 print(f"aiuse gate: {entry['provider']} not gated (evidence expired or cleared)")
+    if not args.json:
+        # stderr keeps stdout's line format stable for the spend-path tools that parse it.
+        print(f"aiuse {payload['aiuse_version']}", file=sys.stderr)
     return 1 if any(e["gated"] for e in entries) else 0
 
 

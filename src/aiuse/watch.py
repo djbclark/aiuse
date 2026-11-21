@@ -269,8 +269,15 @@ def render_watch_board(
     sample_schedule: tuple[datetime, datetime, str] | None = None,
     all_providers: bool = False,
     key_note: str | None = None,
+    width: int | None = None,
 ) -> str:
     """Header, then one centered block (AI line, legend, collection footer), then the table.
+
+    When the AI line and the ``Collected by aiuse …`` meta line both fit on the
+    terminal they share one row (AI flush left, meta flush right at the table's
+    width, or as far right as the two need); otherwise they stack, each
+    centered, as before. ``width`` overrides the
+    terminal width (tests).
 
     Nothing follows the table, so its last rows stay on screen.
 
@@ -311,13 +318,22 @@ def render_watch_board(
     if error:
         lines.append(f"collect error: {error}")
     if snapshot is not None:
-        parts = render_clock_matrix_parts(alerts, snapshot=snapshot, config=config, color=color)
-        if parts.ai_line is not None:
-            lines.append(parts.ai_line)
-        lines.extend(parts.legend)
+        parts = render_clock_matrix_parts(alerts, snapshot=snapshot, config=config, color=color, width=width)
+        footer_rows: list[str] = []
         if not quiet:
             footer = render_stderr_meta(snapshot, alerts, color=color, ai_note=False).rstrip()
-            lines.extend(parts.center(row) for row in footer.splitlines())
+            footer_rows = footer.splitlines()
+        # The footer's first row is the "Collected by aiuse X at …" meta line.
+        joined = None
+        if parts.ai_text is not None and footer_rows:
+            joined = parts.side_by_side(parts.ai_text, footer_rows[0])
+        if joined is not None:
+            lines.append(joined)
+            footer_rows = footer_rows[1:]
+        elif parts.ai_line is not None:
+            lines.append(parts.ai_line)
+        lines.extend(parts.legend)
+        lines.extend(parts.center(row) for row in footer_rows)
         lines.extend(parts.table)
     else:
         lines.append("waiting for first collection…")

@@ -6,6 +6,7 @@ project's guides by the job they help you do; most people only need one or two.
 ## Automation and agents
 
 - [`json-contract.md`](json-contract.md) — stable `aiuse --json` fields and exit codes for scripts, cron, and agents.
+- [`data-corrections.md`](data-corrections.md) — which aiuse build collected a record (`aiuse_version`), and how to find and correct history from a buggy build.
 - [`agent-api.md`](agent-api.md) — `aiuse serve` loopback HTTP API for long-lived local agents.
 - [`shared-quota-semantics/`](shared-quota-semantics/) — language-neutral schemas, enums, pace formulas, and golden fixtures that another project can reuse without importing `aiuse`.
 - [`shared-quota-semantics.md`](shared-quota-semantics.md) — rationale and design notes for the shared semantics package.

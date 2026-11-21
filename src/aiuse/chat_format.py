@@ -1018,7 +1018,7 @@ def render_chat_report(
 
     # --- Header ---
     ts = format_clock(snapshot.collected_at, date=True)
-    sections.append(f"🤖 **AI USAGE · {ts}**\n━━━━━━━━━━━━━━━━━━━━")
+    sections.append(f"🤖 **AI USAGE · {ts} · aiuse {snapshot.aiuse_version or '?'}**\n━━━━━━━━━━━━━━━━━━━━")
 
     for provider, reason in sorted((getattr(snapshot, "disabled_services", None) or {}).items()):
         sections.append(f"🚫 **Disabled by operator:** {provider_display_name(provider)} — {reason}")

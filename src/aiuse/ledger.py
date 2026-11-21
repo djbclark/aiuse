@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from aiuse import __version__
 from aiuse.analysis import history
 from aiuse.collectors.base import CollectorError, run_json, which
 from aiuse.models import canonical_provider, parse_dt, utcnow
@@ -161,6 +162,7 @@ def capture_tokscale_ledger(
     if can_reuse_previous and prev_days is not None and all(d.isoformat() in prev_days for d in days):
         return {
             "schema_version": LEDGER_SCHEMA_VERSION,
+            "aiuse_version": __version__,
             "source": "tokscale",
             "captured_at": now.isoformat(),
             "days": {d.isoformat(): list(prev_days[d.isoformat()]) for d in days},
@@ -180,6 +182,7 @@ def capture_tokscale_ledger(
         by_day[iso] = [_row(e) for e in (entries or []) if isinstance(e, dict)]
     return {
         "schema_version": LEDGER_SCHEMA_VERSION,
+        "aiuse_version": __version__,
         "source": "tokscale",
         "captured_at": now.isoformat(),
         "days": by_day,

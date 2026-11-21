@@ -150,6 +150,7 @@ def run_serve(
                     self._json(
                         200,
                         {
+                            "aiuse_version": snap.get("aiuse_version"),
                             "snapshot": snap,
                             "source": payload["source"],
                             # Top-level fresh is honest per pool: usable entries
@@ -363,6 +364,8 @@ def _payload_from_disk_row(row: dict[str, Any], *, config: dict[str, Any]) -> di
         "disabled_services": row.get("disabled_services") or {},
         "hidden_pools": row.get("hidden_pools") or {},
     }
+    if isinstance(row.get("aiuse_version"), str) and row["aiuse_version"]:
+        snap["aiuse_version"] = row["aiuse_version"]
     apply_hidden_pools_dict(snap, config)
     snap = enrich_snapshot(
         snap,
@@ -542,7 +545,13 @@ def _snapshot_from_accounts_dict(snap: dict[str, Any]) -> Snapshot:
             )
         )
     collected = parse_dt(snap.get("collected_at")) or utcnow()
-    return Snapshot(collected_at=collected, accounts=accounts)
+    # The build that collected it, as recorded; absent in records written by 5.1.3 or earlier.
+    recorded = snap.get("aiuse_version")
+    return Snapshot(
+        collected_at=collected,
+        accounts=accounts,
+        aiuse_version=recorded if isinstance(recorded, str) and recorded else None,
+    )
 
 
 def _snapshot_from_payload(payload: dict[str, Any]) -> Snapshot:

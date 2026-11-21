@@ -301,7 +301,7 @@ def test_default_pretty_is_clock_matrix(monkeypatch, capsys):
     assert "WEEK" in captured.out
     assert "Weekly" not in captured.out
     assert "## Per-provider usage" not in captured.out
-    assert "Detail: ai --full" not in captured.out  # quiet suppresses stderr meta
+    assert "Detail: aiuse --full" not in captured.out  # quiet suppresses stderr meta
 
 
 def test_full_mode_includes_providers(monkeypatch, capsys):
@@ -386,6 +386,7 @@ def test_json_keeps_nested_live_envelope(monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert set(payload) == {
         "schema_version",
+        "aiuse_version",
         "contract_url",
         "contract_command",
         "alerts",
@@ -397,7 +398,7 @@ def test_json_keeps_nested_live_envelope(monkeypatch, capsys):
         "summary_lines",
         "semantics",
     }
-    assert payload["schema_version"] == "1.6"
+    assert payload["schema_version"] == "1.7"
     assert payload["snapshot"]["accounts"] == []
     assert "used_percent" in payload["semantics"]
 
@@ -411,7 +412,8 @@ def test_json_flatten_matches_cached_snapshot_shape(monkeypatch, capsys):
     assert cli.main(["--json", "--flatten", "-q"]) == 0
 
     payload = json.loads(capsys.readouterr().out)
-    assert set(payload) == {"collected_at", "accounts", "alerts"}
+    assert set(payload) == {"aiuse_version", "collected_at", "accounts", "alerts"}
+    assert payload["aiuse_version"] is None  # hand-built snapshot: no recorded build
     assert payload["accounts"] == []
     assert payload["alerts"] == []
 

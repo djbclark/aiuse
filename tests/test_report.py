@@ -802,7 +802,7 @@ def test_default_report_is_clock_matrix():
     text = render_report(snap, [empty, burn], config={}, color=False)
     assert "(full)" not in text
     assert "## Per-provider usage" not in text
-    assert "Detail: ai --full" not in text
+    assert "Detail: aiuse --full" not in text
     assert "\n\n" not in text
     lines = text.splitlines()
     # Header first, then one tagged row per account/pool, then any legend.
@@ -820,9 +820,9 @@ def test_default_report_is_clock_matrix():
     assert "grok" in text.lower()
     assert "openai" in text
     meta = render_stderr_meta(snap, [empty, burn], color=False)
-    assert "Collected at" in meta
+    assert "Collected by aiuse ? at" in meta  # hand-built snapshot: no recorded build
     assert "tokscale: boom" in meta
-    assert "Detail: ai --full" in meta
+    assert "Detail: aiuse --full" in meta
 
 
 def test_priority_ladder_sorts_by_use_urgency_not_alphabet():
@@ -1646,7 +1646,7 @@ def test_full_report_includes_providers():
     assert "(full)" in text
     assert "## Per-provider usage" in text
     assert "## Tips" in text
-    assert "Detail: ai --full" not in text
+    assert "Detail: aiuse --full" not in text
     assert "History:" in text
     assert "learning" in text
 

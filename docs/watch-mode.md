@@ -98,10 +98,18 @@ stdout report.
 - Reuse the plain `aiuse` matrix (`aiuse.report.render_clock_matrix_parts`:
   same bands, clocks, width adaptation, color roles), stacked differently.
   Top to bottom: the header line, the `sampler:` line, any `collect error:`
-  line, then one block centered over the table (the AI line
+  line, then one block over the table (the AI line
   ``AI: Use `aiuse --json` for machine-readable output``, the legend lines,
-  then `Collected at …` and `Detail: ai --full` with any collector errors),
-  and the table last. Nothing is printed below the table, so its bottom rows (the
+  then `Collected by aiuse X.Y.Z at …` and `Detail: aiuse --full` with any
+  collector errors), and the table last. When the AI line and the `Collected by
+aiuse …` meta line both fit on the terminal they share one row: AI flush
+  left, meta flush right at the table's width, or just far enough right to keep
+  three spaces between them when the table (capped at 110 columns) is narrower
+  than the two together (2026-11-21); on a narrower terminal they stack, each
+  centered, and nothing is truncated. The version is the one recorded on the
+  snapshot being shown (the build that collected it), so a frame reused from a
+  sampler run by another build shows that build; `-q` drops the meta line and
+  with it the version. Nothing is printed below the table, so its bottom rows (the
   ones most worth using) stay on screen.
 - Columns: `## TUI ACCT SCOPE PACE 5H WEEK MONTH OTHER`. `OTHER` appears
   only when a row has a note for it: omp's `$left` grant, a wallet
@@ -130,7 +138,7 @@ stdout report.
   (omp) shows `(AI: Do not use without asking operator)` centered across its
   empty 5H and WEEK cells instead of arrows
   ([`omp-cloud-credits.md`](omp-cloud-credits.md#operator-gate)).
-- `render_stderr_meta` content (collection time, capacity blurb, `Detail: ai --full`)
+- `render_stderr_meta` content (collection time and collecting build, capacity blurb, `Detail: aiuse --full`)
   goes **inside the screen, above the table**, not to stderr (stderr would
   corrupt the alternate-screen layout). `-q` suppresses it; the AI line stays,
   exactly once.

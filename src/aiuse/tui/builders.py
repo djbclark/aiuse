@@ -25,8 +25,8 @@ from aiuse.report import (
     _sorted_accounts,
     _Style,
     _tips_lines,
+    collected_meta_line,
 )
-from aiuse.timefmt import format_clock
 
 
 @dataclass(frozen=True)
@@ -63,12 +63,7 @@ def build_report_sections(
     n_actionable = sum(1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE))
     width = glance_width if glance_width is not None else ACTION_PLAN_WIDTH
 
-    meta = f"Collected at {format_clock(snapshot.collected_at, date=True)}"
-    meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
-    if n_actionable:
-        meta += f" · {n_actionable} alert{'s' if n_actionable != 1 else ''}"
-    else:
-        meta += " · no burn/conserve alerts"
+    meta = collected_meta_line(snapshot, n_accounts, n_actionable)
     analysis_cfg = (config or {}).get("analysis") or {}
     if not isinstance(analysis_cfg, dict):
         analysis_cfg = {}
@@ -205,7 +200,7 @@ def build_report_sections(
         sections.append(
             ReportSection(
                 title="",
-                lines=[s.dim("Detail: ai --full")],
+                lines=[s.dim("Detail: aiuse --full")],
                 kind="footer",
             )
         )

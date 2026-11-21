@@ -31,6 +31,25 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Added
+
+- `aiuse_version`, the aiuse build that collected the data, is recorded on every
+  persisted snapshot, burst sample and ledger sample and shown on the
+  `--json`, `--available --json` and serve envelopes (additive, JSON schema
+  1.7). Old records without it mean "unknown". A snapshot replayed from disk
+  shows its own recorded build. This lets history from a build later found buggy
+  be found and corrected ([`docs/data-corrections.md`](docs/data-corrections.md)).
+- Human output names the build: the meta line reads `Collected by aiuse X.Y.Z
+at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
+  `usage-sources`, `gate status` and the chat report show it once.
+
+### Changed
+
+- `aiuse watch` puts the `Collected by aiuse …` line on the same row as the AI
+  `--json` line, right-aligned, when the terminal is wide enough; narrower
+  terminals keep the two-row layout.
+- The plain `aiuse` hint reads `Detail: aiuse --full` (was `Detail: ai --full`).
+
 ### Fixed
 
 - Judge freshness per pool instead of with one global 30-minute threshold. A

@@ -188,6 +188,9 @@ def save_snapshot(
     )
     payload = {
         "schema_version": SCHEMA_VERSION,
+        # The build that collected this sample (null: unknown). Lets history be
+        # corrected retroactively when a version is later found buggy.
+        "aiuse_version": snap_dict.get("aiuse_version"),
         "collection_id": f"{ts}-{os.getpid()}",
         "complete": not partial,
         "started_at": snapshot.collected_at.isoformat(),
@@ -207,6 +210,7 @@ def save_snapshot(
         # can use `.snapshot.accounts[]` on BOTH the cache file and `aiuse
         # --json` without two code paths (flat `.accounts[]` still works).
         "snapshot": {
+            "aiuse_version": snap_dict.get("aiuse_version"),
             "collected_at": snap_dict.get("collected_at"),
             "accounts": snap_dict["accounts"],
             "cross_checks": snap_dict.get("cross_checks", []),

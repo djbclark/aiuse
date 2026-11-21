@@ -966,6 +966,12 @@ class Snapshot:
     # Policy that produced this collect. Watch and serve refuse to reuse a
     # snapshot whose fingerprint does not match the config they just loaded.
     config_fingerprint: str | None = None
+    # The aiuse build that COLLECTED this data (`aiuse.__version__` at collection
+    # time). Stamped by the collector runner, persisted with every record, and
+    # restored from disk as recorded: a loaded snapshot reports the build that
+    # collected it, not the build that displays it. None means unknown (a record
+    # written by 5.1.3 or earlier, or a Snapshot built by hand). See docs/data-corrections.md.
+    aiuse_version: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -996,4 +1002,6 @@ class Snapshot:
                 entry["pace_early"] = early
         if self.config_fingerprint:
             body["config_fingerprint"] = self.config_fingerprint
+        if self.aiuse_version:
+            body["aiuse_version"] = self.aiuse_version
         return body

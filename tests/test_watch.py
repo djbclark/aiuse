@@ -748,10 +748,10 @@ def test_format_clock_is_twelve_hour_without_leading_zeros():
 def test_board_footer_is_centered_over_the_table():
     from aiuse.watch import render_watch_board
 
-    rows = render_watch_board(_snap(), [], color=False).splitlines()
+    rows = render_watch_board(_snap(), [], color=False, width=100).splitlines()
     header = next(i for i, r in enumerate(rows) if r.split()[:2] == ["##", "POOL"])
     width = max(len(r) for r in rows[header:])
-    meta = next(r for r in rows if "Collected at" in r)
+    meta = next(r for r in rows if "Collected by aiuse" in r)
     left = len(meta) - len(meta.lstrip())
     assert left == max(0, (width - len(meta.strip())) // 2)
     assert "am ·" in meta or "pm ·" in meta

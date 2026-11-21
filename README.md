@@ -617,7 +617,7 @@ Unload with `launchctl bootout gui/$(id -u)/com.djbclark.aiuse-credits-refresh`.
 ```
 ================================================================================
 AI USAGE — USE IT OR LOSE IT
-Collected at … · 3 accounts · 2 alerts
+Collected by aiuse X.Y.Z at … · 3 accounts · 2 alerts
 ================================================================================
 
 ## Per-provider usage

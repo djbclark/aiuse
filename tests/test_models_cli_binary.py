@@ -103,7 +103,7 @@ def test_schema16_taxonomy_fields_and_legacy_aliases():
             "accounts": [{"source": "codexbar", "provider": "codex", "windows": []}],
         },
     )
-    assert SCHEMA_VERSION == "1.6"
+    assert SCHEMA_VERSION == "1.7"
     assert snap["accounts"][0]["vendor"] == "openai"
     assert snap["accounts"][0]["pool_id"] == "openai:codex"
     assert snap["accounts"][0]["transports"] == ["codex"]

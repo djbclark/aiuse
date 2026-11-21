@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import Any
 
+from aiuse import __version__
 from aiuse.analysis.history import find_carried_resets
 from aiuse.analysis.pace import independent_pool_key
 from aiuse.analysis.selfdescribe import FRESH_THRESHOLD_SECONDS_DEFAULT
@@ -226,7 +227,7 @@ def run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
 def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     config = config or {}
     collectors_cfg = config.get("collectors") or {}
-    snapshot = Snapshot(collected_at=utcnow())
+    snapshot = Snapshot(collected_at=utcnow(), aiuse_version=__version__)
     intervals = min_intervals(config)
     disabled_services = _disabled_services(config)
     # This run's --include/--exclude also keep a collector from running, but are

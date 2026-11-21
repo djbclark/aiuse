@@ -52,7 +52,7 @@ from aiuse.models import (
 )
 from aiuse.timefmt import format_as_of, format_clock, format_lead
 
-SCHEMA_VERSION = "1.6"
+SCHEMA_VERSION = "1.7"
 
 # state thresholds on remaining_percent
 EXHAUSTED_BELOW = 1.0  # remaining <= 1 -> exhausted
@@ -91,6 +91,7 @@ SEMANTICS: dict[str, Any] = {
         "bedrock": "aws:bedrock",
         "sipb": "sipb:default",
     },
+    "aiuse_version": "the aiuse build (package version) that COLLECTED the data, schema 1.7 additive; on an envelope or snapshot it is the build that took the readings, which is not necessarily the build serving them (a cache file keeps its collector's version). Absent or null means unknown: records written by 5.1.3 or earlier never carry it. Use it to find, discount or recompute data collected by a build with a known bug (docs/data-corrections.md)",
     "vendor": "billing vendor authority (schema 1.6 additive bridge; e.g. anthropic, openai, google, cursor)",
     "pool_id": "canonical <vendor>:<pool_family> identifier (schema 1.6 additive bridge; e.g. anthropic:subscription, openai:codex, google:gemini_argon)",
     "transports": "client harnesses/transports that can spend this pool (schema 1.6 additive bridge; e.g. ['claude'], ['cursor-agent', 'pi'])",

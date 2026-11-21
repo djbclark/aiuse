@@ -18,7 +18,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from aiuse import ledger
+from aiuse import __version__, ledger
 from aiuse.analysis import history
 from aiuse.collectors.base import CollectorError
 from aiuse.config import timeout_for
@@ -348,11 +348,21 @@ def build_report(
     unmapped_lit = _sum_rows(
         [r for r in litellm_rows if not r.get("quota_provider")], ("client", "model"), _LITELLM_FIELDS
     )
+    # Which builds collected the quota samples behind this report ("unknown" =
+    # a record written by 5.1.3 or earlier), so a known-buggy build can be spotted.
+    collected_by: dict[str, int] = {}
+    for sample in full + partial:
+        recorded = sample.get("aiuse_version")
+        label = recorded if isinstance(recorded, str) and recorded else "unknown"
+        collected_by[label] = collected_by.get(label, 0) + 1
     return {
         "schema_version": SCHEMA_VERSION,
+        # The build that computed this report; the samples' collectors are in coverage.
+        "aiuse_version": __version__,
         "since": since.isoformat(),
         "until": until.isoformat(),
         "coverage": {
+            "collected_by": dict(sorted(collected_by.items())),
             "quota_samples": len(full),
             "burst_samples": len(partial),
             "ledger_samples": len(samples),
@@ -492,4 +502,11 @@ def render_report(report: dict[str, Any], *, intervals: bool = False) -> str:
             )
     if not report["providers"]:
         lines += ["", "Nothing moved and no tokens were recorded in this range."]
+    collected_by = cov.get("collected_by") or {}
+    by_build = ", ".join(f"{v if v != 'unknown' else '?'} x{n}" for v, n in collected_by.items())
+    lines += [
+        "",
+        f"aiuse {report.get('aiuse_version') or '?'}"
+        + (f" · samples collected by aiuse {by_build}" if by_build else ""),
+    ]
     return "\n".join(lines)

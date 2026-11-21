@@ -416,7 +416,7 @@ def render_report(
 
     **Default** (and ``brief=True``): the clock matrix only (stdout), via
     ``render_clock_matrix`` — one row per account/pool, one column per reset
-    clock. Meta / errors / ``ai --full`` hint belong on stderr via
+    clock. Meta / errors / ``aiuse --full`` hint belong on stderr via
     ``render_stderr_meta``.
 
     **Full** (``full=True``): long report with per-provider detail.
@@ -440,12 +440,7 @@ def render_report(
     lines.append(s.bold("=" * width))
     title = "AI USAGE — USE IT OR LOSE IT (full)"
     lines.append(s.bold(s.cyan(title)))
-    meta = f"Collected at {format_clock(snapshot.collected_at, date=True)}"
-    meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
-    if n_actionable:
-        meta += f" · {n_actionable} alert{'s' if n_actionable != 1 else ''}"
-    else:
-        meta += " · no burn/conserve alerts"
+    meta = collected_meta_line(snapshot, n_accounts, n_actionable)
     lines.append(s.dim(meta))
     analysis_cfg = (config or {}).get("analysis") or {}
     if not isinstance(analysis_cfg, dict):
@@ -2263,6 +2258,8 @@ class ClockMatrixParts:
     table: list[str]
     legend: list[str] = field(default_factory=list)
     ai_line: str | None = None
+    # The same AI line, styled but not centered: what ``side_by_side`` joins.
+    ai_text: str | None = None
     center_width: int = 0
     avail: int = ACTION_PLAN_WIDTH
 
@@ -2271,6 +2268,26 @@ class ClockMatrixParts:
         if visible >= self.avail:
             return _clamp_display_width(text, self.avail)
         return _clamp_display_width(" " * max(0, (self.center_width - visible) // 2) + text, self.avail)
+
+    def side_by_side(self, left: str, right: str, *, gap: int = 3) -> str | None:
+        """``left`` flush left and ``right`` flush right on one row.
+
+        The row is as wide as the table (the board width) or, when the two do
+        not fit that narrowly, as wide as they need with ``gap`` spaces between
+        them (the table is capped at TABLE_MAX_WIDTH, a wide terminal is not).
+        None when even that exceeds the terminal width, or there is no table to
+        align to: the caller then stacks them as before. Never truncates; width
+        counts visible characters only, so ANSI styling does not shift the
+        right edge.
+        """
+        left_width = len(_strip_ansi(left))
+        right_width = len(_strip_ansi(right))
+        if self.center_width <= 0:
+            return None
+        width = max(self.center_width, left_width + gap + right_width)
+        if width > self.avail:
+            return None
+        return left + " " * (width - left_width - right_width) + right
 
 
 def render_clock_matrix(
@@ -2508,7 +2525,8 @@ def render_clock_matrix_parts(
     legend_items: list[tuple[str, str]] = [(" · ".join(legend_bits), s.dim(" · ".join(legend_bits)))]
 
     parts = ClockMatrixParts(table=lines, center_width=min(zebra_width, avail), avail=avail)
-    parts.ai_line = parts.center(s.dim(AI_JSON_NOTE))
+    parts.ai_text = s.dim(AI_JSON_NOTE)
+    parts.ai_line = parts.center(parts.ai_text)
     for plain_text, fmt_text in legend_items:
         visible = len(_strip_ansi(fmt_text))
         if visible >= avail and fmt_text == s.dim(plain_text) and _LEGEND_SEP in plain_text:
@@ -2656,7 +2674,7 @@ def render_stderr_meta(
     color: bool | None = None,
     ai_note: bool = True,
 ) -> str:
-    """Collection meta, errors, and ``ai --full`` hint for stderr (default mode).
+    """Collection meta, errors, and ``aiuse --full`` hint for stderr (default mode).
 
     With ``ai_note`` the AI ``--json`` line leads, so an AI reader meets it
     before the table; pair it with ``render_clock_matrix(ai_note=False)``.
@@ -2666,12 +2684,7 @@ def render_stderr_meta(
     n_accounts = len(accounts)
     n_actionable = sum(1 for a in alerts if a.urgency not in (Urgency.INFO, Urgency.NONE))
     lines: list[str] = [s.dim(AI_JSON_NOTE)] if ai_note else []
-    meta = f"Collected at {format_clock(snapshot.collected_at, date=True)}"
-    meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
-    if n_actionable:
-        meta += f" · {n_actionable} alert{'s' if n_actionable != 1 else ''}"
-    else:
-        meta += " · no burn/conserve alerts"
+    meta = collected_meta_line(snapshot, n_accounts, n_actionable)
     lines.append(s.dim(meta))
     if snapshot.collector_errors:
         lines.append(s.red("Collector errors:"))
@@ -2680,7 +2693,7 @@ def render_stderr_meta(
     if snapshot.uninstalled_tools:
         # Optional tools the operator never installed: expected, so dim, not red.
         lines.append(s.dim(f"Optional, not installed (expected): {', '.join(snapshot.uninstalled_tools)}"))
-    lines.append(s.dim("Detail: ai --full"))
+    lines.append(s.dim("Detail: aiuse --full"))
     return "\n".join(lines)
 
 
@@ -2983,6 +2996,22 @@ def _situation_text(note: str, width: int) -> str:
     if width <= overhead:
         return "* […]"
     return f"* [{body[: width - overhead]}…]"
+
+
+def collected_meta_line(snapshot: Snapshot, n_accounts: int, n_actionable: int) -> str:
+    """``Collected by aiuse X.Y.Z at …`` meta line shared by every report surface.
+
+    The version is the one RECORDED on the snapshot (the build that collected
+    it), so a snapshot replayed from disk shows its own collector, not the
+    running build; a record written by 5.1.3 or earlier (no recorded build) reads ``aiuse ?``.
+    """
+    meta = f"Collected by aiuse {snapshot.aiuse_version or '?'} at {format_clock(snapshot.collected_at, date=True)}"
+    meta += f" · {n_accounts} account{'s' if n_accounts != 1 else ''}"
+    if n_actionable:
+        meta += f" · {n_actionable} alert{'s' if n_actionable != 1 else ''}"
+    else:
+        meta += " · no burn/conserve alerts"
+    return meta
 
 
 def _clamp_display_width(text: str, width: int) -> str:

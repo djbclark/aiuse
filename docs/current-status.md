@@ -23,6 +23,14 @@ the envelope under `snapshot`, serve default port moved to **28787** with
 fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
 replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
 "How to read this".
+**Schema 1.7 (2026-11-21):** additive `aiuse_version` — the aiuse build that
+collected the data — on the `--json` / `--available` / serve envelopes, the
+`snapshot` object, and every persisted snapshot, burst sample and ledger
+sample; human output reads `Collected by aiuse X.Y.Z at …` and shows the
+version once per screen (a loaded snapshot shows its recorded build, `aiuse ?`
+when none). Lets history from a buggy build be found and corrected
+([`docs/data-corrections.md`](docs/data-corrections.md)). The watch board
+puts that meta line on the AI line's row when both fit.
 **Schema 1.2 (2026-10-12):** per-window pace (`pace_percent`, `pace_ratio`), per-account `overall_pace_percent`, PACE column replaces `$ UNUSED` in clock matrix with cell-level signed pace percentages and lined-up notes; pace in `summary_lines` and `aiuse --available`. Early readings (under 10% of the window elapsed) are marked `~` (JSON `pace_early`, `overall_pace_early`; released 3.4.1).
 
 **Schema 1.5 (2026-10-31, extended 2026-11-07):** additive `pool_family:

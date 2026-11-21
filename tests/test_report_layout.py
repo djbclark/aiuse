@@ -225,8 +225,8 @@ def test_stale_follows_other():
 def test_ai_line_leads_the_stderr_meta():
     meta = render_stderr_meta(_snapshot(errors=["tokscale: boom"]), [], color=False).splitlines()
     assert meta[0] == AI_JSON_NOTE
-    assert meta[1].startswith("Collected at")
-    assert meta[-1] == "Detail: ai --full"
+    assert meta[1].startswith("Collected by aiuse ? at")
+    assert meta[-1] == "Detail: aiuse --full"
     assert AI_JSON_NOTE not in render_stderr_meta(_snapshot(), [], color=False, ai_note=False)
 
 
@@ -240,34 +240,116 @@ def test_ai_line_leaves_the_legend_when_meta_shows_it():
     assert AI_JSON_NOTE not in render_report(snap, [], config={}, color=False, glance_width=200, ai_note=False)
 
 
-def test_watch_board_puts_ai_legend_and_footer_above_the_table():
+def _board(width, *, quiet=False, snapshot=None, errors=None):
     now = utcnow()
-    board = render_watch_board(
-        _snapshot(),
+    return render_watch_board(
+        snapshot or _snapshot(errors=errors),
         [],
         color=False,
+        quiet=quiet,
         now=now,
         next_in=47,
         sample_schedule=(now - timedelta(minutes=5), now + timedelta(minutes=10), "active"),
+        width=width,
     ).splitlines()
+
+
+def _table_header(board):
+    return next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "POOL"])
+
+
+def test_watch_board_puts_ai_legend_and_footer_above_the_table():
+    board = _board(80)
     assert board[0].startswith("aiuse watch")
     assert "sampler " in board[0]
-    assert board[1].strip() == AI_JSON_NOTE
     assert sum(AI_JSON_NOTE in line for line in board) == 1
-    header = next(i for i, line in enumerate(board) if line.split()[:2] == ["##", "POOL"])
-    collected = next(i for i, line in enumerate(board) if "Collected at" in line)
-    detail = next(i for i, line in enumerate(board) if line.strip() == "Detail: ai --full")
+    header = _table_header(board)
+    ai = next(i for i, line in enumerate(board) if AI_JSON_NOTE in line)
+    collected = next(i for i, line in enumerate(board) if "Collected by aiuse" in line)
+    detail = next(i for i, line in enumerate(board) if line.strip() == "Detail: aiuse --full")
     legend = next(i for i, line in enumerate(board) if "u/l = percent used" in line)
-    assert 0 < legend < collected < detail < header
+    assert 0 < ai < legend < detail < header
+    assert collected < header
     # Nothing below the table: the last line is a table row.
     assert board[-1].split()[0] in {"error", "empty", "n/a", "slow", "mid", "use"} or board[-1].startswith("     ")
-    assert not any("Collected at" in line or "u/l =" in line for line in board[header:])
+    assert not any("Collected by aiuse" in line or "u/l =" in line for line in board[header:])
+
+
+def test_watch_board_narrow_stacks_ai_and_meta_on_separate_rows():
+    board = _board(80)
+    ai = next(i for i, line in enumerate(board) if AI_JSON_NOTE in line)
+    meta = next(i for i, line in enumerate(board) if "Collected by aiuse" in line)
+    assert ai != meta
+    assert board[ai].strip() == AI_JSON_NOTE
+    assert board[1].strip() == AI_JSON_NOTE
+
+
+def test_watch_board_wide_puts_meta_right_of_the_ai_line_on_one_row():
+    board = _board(200)
+    header = _table_header(board)
+    table_width = max(len(line) for line in board[header:])
+    row = next(line for line in board if AI_JSON_NOTE in line)
+    assert row is board[1]
+    assert row.startswith(AI_JSON_NOTE)
+    assert "Collected by aiuse ? at" in row
+    meta = row[row.index("Collected by aiuse") :]
+    # Flush right: the table is capped narrower than the two lines together, so
+    # the row is exactly as wide as they need, with three spaces between.
+    assert len(row) == len(AI_JSON_NOTE) + 3 + len(meta)
+    assert len(row) == max(table_width, len(AI_JSON_NOTE) + 3 + len(meta))
+    assert row[len(AI_JSON_NOTE) :].startswith("   Collected by")
+    # The meta line is no longer repeated in the footer.
+    assert sum("Collected by aiuse" in line for line in board) == 1
+    assert "u/l =" in board[2]
+
+
+def test_side_by_side_right_aligns_to_the_board_width_and_ignores_ansi():
+    from aiuse.report import ClockMatrixParts
+
+    parts = ClockMatrixParts(table=[], center_width=40, avail=60)
+    row = parts.side_by_side("AI", "meta")
+    assert row == "AI" + " " * 34 + "meta"
+    styled = parts.side_by_side("\x1b[2mAI\x1b[0m", "\x1b[2mmeta\x1b[0m")
+    assert styled is not None
+    assert len(styled.replace("\x1b[2m", "").replace("\x1b[0m", "")) == 40
+    # Wider than the table but within the terminal: as wide as they need, 3-space gap.
+    assert parts.side_by_side("a" * 20, "b" * 30) == "a" * 20 + "   " + "b" * 30
+    # Beyond the terminal: never truncate, never overflow; the caller stacks.
+    assert parts.side_by_side("a" * 30, "b" * 30) is None
+    # No table to align to.
+    assert ClockMatrixParts(table=[], center_width=0, avail=60).side_by_side("a", "b") is None
+
+
+def test_watch_board_wide_keeps_collector_errors_and_detail_in_the_footer():
+    board = _board(200, errors=["tokscale: boom"])
+    header = _table_header(board)
+    assert any("tokscale: boom" in line for line in board[:header])
+    assert any(line.strip() == "Detail: aiuse --full" for line in board[:header])
+    assert sum("Collected by aiuse" in line for line in board) == 1
+
+
+def test_watch_board_wide_but_too_tight_for_both_falls_back_to_stacked_rows():
+    # Find the narrowest width where the two lines still share a row, then go one below.
+    joined = next(w for w in range(60, 260) if any(AI_JSON_NOTE in r and "Collected by" in r for r in _board(w)))
+    assert not any(AI_JSON_NOTE in r and "Collected by" in r for r in _board(joined - 1)) or joined == 60
+    stacked = _board(joined - 1)
+    assert sum("Collected by aiuse" in line for line in stacked) == 1
+    assert not any(AI_JSON_NOTE in line and "Collected by" in line for line in stacked)
 
 
 def test_watch_board_quiet_keeps_the_ai_line_and_drops_the_footer():
-    board = render_watch_board(_snapshot(), [], color=False, quiet=True).splitlines()
-    assert board[1].strip() == AI_JSON_NOTE
-    assert not any("Collected at" in line for line in board)
+    for width in (80, 200):
+        board = _board(width, quiet=True)
+        assert board[1].strip() == AI_JSON_NOTE
+        assert not any("Collected by aiuse" in line for line in board)
+
+
+def test_watch_board_meta_shows_the_version_recorded_on_the_snapshot():
+    snap = _snapshot()
+    snap.aiuse_version = "4.9.9"
+    meta = next(line for line in _board(200, snapshot=snap) if "Collected by" in line)
+    assert "Collected by aiuse 4.9.9 at" in meta
+    assert "aiuse ?" not in meta
 
 
 def test_situation_text_keeps_the_closing_bracket_when_it_truncates():

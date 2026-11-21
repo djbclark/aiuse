@@ -71,6 +71,38 @@ pool's limit too, and `stale_pools` (additive, schema 1.5) names the usable
 entries that are not: do not route on a stale usable entry without
 re-collecting.
 
+## What's new in schema 1.7 (2026-11-21)
+
+Schema 1.7 is additive: one new field, `aiuse_version`, so data can be traced
+to the aiuse build that collected it and corrected retroactively when that
+build is later found to have a bug (how-to:
+[data-corrections.md](data-corrections.md)).
+
+- **`aiuse_version`** (`string`, optional/nullable) = `aiuse.__version__` of the
+  build that **collected** the readings (not necessarily the build that serves
+  or displays them: a cache file keeps its collector's version). Where it
+  appears:
+  - the top-level envelope of `aiuse --json` (also `--alerts-only` and
+    `--flatten`), of `aiuse --available --json`, and of serve `/v1/snapshot`;
+  - the `snapshot` object (`snapshot.aiuse_version`);
+  - every record persisted under `~/.cache/aiuse/snapshots/` (full samples,
+    `latest.json`, and burst samples under `~/.cache/aiuse/samples/`), both top-level and in
+    the mirrored `snapshot` object, and every token ledger sample under
+    `~/.cache/aiuse/ledger/` (there it is the build that wrote the sample);
+  - `aiuse attribute --json`: top-level `aiuse_version` is the build that
+    computed the report, and `coverage.collected_by` counts the quota samples
+    in range per collecting build (`"unknown"` for records without the field);
+  - `aiuse usage-sources --json` and `aiuse gate status --json`: the build that
+    produced the (live, not stored) answer.
+- **Missing or `null` means unknown.** Records written by 5.1.3 or earlier
+  never carry the field, and `--available` reports `null` for such a cache. A
+  consumer must never fail on its absence.
+- Human output shows the same value: the meta line reads `Collected by aiuse
+X.Y.Z at …` (`aiuse ?` when unknown). A snapshot loaded from disk shows the
+  version **recorded in it**, never the running build.
+- `semantics.aiuse_version` describes the field. `semantics.taxonomy_version`
+  stays `"1.6"` (the taxonomy did not change).
+
 ## What's new in schema 1.6 (2026-11-16)
 
 Schema 1.6 is an additive taxonomy bridge from TUI-centric names to the 4-axis
@@ -246,6 +278,19 @@ surfaces (`aiuse --json`, on-disk cached snapshots, `aiuse serve`, and
     `overall_pace_percent`, and `overall_pace_early`.
 
 ### Changelog
+
+#### Schema 1.7 (2026-11-21)
+
+- Bump `schema_version` to **1.7** (additive).
+- New `aiuse_version` on the `aiuse --json` / `--available --json` / serve
+  `/v1/snapshot` envelopes, on `snapshot`, on every persisted snapshot, burst
+  sample and ledger sample, and on the `attribute`, `usage-sources` and
+  `gate status` JSON (see "What's new in schema 1.7"). Old records lack it and
+  mean "unknown".
+- Human output: the meta line is now `Collected by aiuse X.Y.Z at …` (was
+  `Collected at …`), the version shows once on every other screen, and the hint
+  reads `Detail: aiuse --full` (was `Detail: ai --full`). Layout strings are not
+  a contract.
 
 #### Additive (2026-11-13, Cursor `sibling_pools` — schema stays 1.5)
 
@@ -556,7 +601,8 @@ Default `aiuse --json` stdout:
 
 ```json
 {
-  "schema_version": "1.5",
+  "schema_version": "1.7",
+  "aiuse_version": "5.1.3",   // 1.7: the build that COLLECTED this data (null/absent = unknown)
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
 
@@ -591,6 +637,7 @@ with real values in `aiuse --available` output and in `aiuse serve`'s
 
 ```json
 {
+  "aiuse_version": "5.1.3",
   "collected_at": "2026-08-02T12:00:00+00:00",
   "accounts": [ ... ],
   "alerts": [ ... ]
@@ -598,7 +645,8 @@ with real values in `aiuse --available` output and in `aiuse serve`'s
 ```
 
 `--flatten` omits the live envelope's `snapshot`, `suggestion`, and `history`
-keys so callers get the same three-key shape used by on-disk cached snapshots.
+keys so callers get the same flat shape used by on-disk cached snapshots
+(`aiuse_version`, `collected_at`, `accounts`, `alerts`).
 
 ## On-Disk Snapshots (Launchd/Hourly Mode)
 
@@ -621,7 +669,8 @@ operator script reads it). Enriched fields (`state`, `usable_now`,
 
 ```json
 {
-  "schema_version": "1.5",
+  "schema_version": "1.7",
+  "aiuse_version": "5.1.3",
   "contract_url": "https://github.com/djbclark/aiuse/blob/main/docs/json-contract.md",
   "contract_command": "aiuse schema",
   "alerts": [ ... ],
@@ -724,7 +773,8 @@ sorted by headroom (most left first), each with `models_hint` and the local
 
 ```json
 {
-  "schema_version": "1.5",
+  "schema_version": "1.7",
+  "aiuse_version": "5.1.3",   // the build that COLLECTED the readings (a cache keeps its collector's); null for an old cache
   "generated_at": "2026-10-03T23:05:00+00:00",
   "source": "cache",
   "age_seconds": 412.0,
@@ -874,16 +924,17 @@ reset CodexBar reports for the same window.
 Schema `1.0`, separate from the collect envelope. Guide:
 [`attribution.md`](attribution.md).
 
-| Field                     | Meaning                                                                                                                                                           |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `since`, `until`          | The range, ISO 8601.                                                                                                                                              |
-| `coverage`                | `quota_samples`, `burst_samples`, `ledger_samples`, `ledger_span` (`[start, end]` of the session-file ledger, or `null`), `litellm` (`on`, `off`, or `error: …`). |
-| `providers[].windows[]`   | `label`, `account`, `start_used`, `end_used`, `burned_points` (can exceed 100 across resets), `resets`, `samples`.                                                |
-| `providers[].tokscale[]`  | Per `client` and `model`: `input`, `output`, `cache_read`, `cache_write`, `reasoning`, `messages`, `cost`, `share` (0–1).                                         |
-| `providers[].litellm[]`   | Per `client` (virtual-key alias) and `model`: `requests`, `failures`, `input`, `output`, `reasoning`, `share`.                                                    |
-| `providers[].per_point`   | Tokens per burned point of the longest window that moved, per ledger, over the span that ledger covers. Absent when nothing qualifies.                            |
-| `providers[].intervals[]` | `start`, `end`, `burned` (label → points), and per-client `tokscale` / `litellm` totals in that interval.                                                         |
-| `unmapped`                | Token rows with no quota provider mapped.                                                                                                                         |
+| Field                     | Meaning                                                                                                                                                                                                                                                               |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `since`, `until`          | The range, ISO 8601.                                                                                                                                                                                                                                                  |
+| `aiuse_version`           | The build that computed this report (1.7 additive; the envelope's `schema_version` stays `1.0`).                                                                                                                                                                      |
+| `coverage`                | `collected_by` (1.7: quota samples in range per collecting build, `"unknown"` = no recorded build), `quota_samples`, `burst_samples`, `ledger_samples`, `ledger_span` (`[start, end]` of the session-file ledger, or `null`), `litellm` (`on`, `off`, or `error: …`). |
+| `providers[].windows[]`   | `label`, `account`, `start_used`, `end_used`, `burned_points` (can exceed 100 across resets), `resets`, `samples`.                                                                                                                                                    |
+| `providers[].tokscale[]`  | Per `client` and `model`: `input`, `output`, `cache_read`, `cache_write`, `reasoning`, `messages`, `cost`, `share` (0–1).                                                                                                                                             |
+| `providers[].litellm[]`   | Per `client` (virtual-key alias) and `model`: `requests`, `failures`, `input`, `output`, `reasoning`, `share`.                                                                                                                                                        |
+| `providers[].per_point`   | Tokens per burned point of the longest window that moved, per ledger, over the span that ledger covers. Absent when nothing qualifies.                                                                                                                                |
+| `providers[].intervals[]` | `start`, `end`, `burned` (label → points), and per-client `tokscale` / `litellm` totals in that interval.                                                                                                                                                             |
+| `unmapped`                | Token rows with no quota provider mapped.                                                                                                                                                                                                                             |
 
 Burned points and tokens are different units; the report never converts one
 into the other.
@@ -893,6 +944,7 @@ into the other.
 | Field                | Type              | Notes                                                                                                                                                                                      |
 | -------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `collected_at`       | string (ISO-8601) | UTC collection time                                                                                                                                                                        |
+| `aiuse_version`      | string \| omitted | 1.7 — the aiuse build that collected this snapshot; omitted when unknown (records by 5.1.3 or earlier). See [data-corrections.md](data-corrections.md)                                     |
 | `accounts`           | array             | Selected live rows (see below)                                                                                                                                                             |
 | `cross_checks`       | array             | Informational tool comparisons                                                                                                                                                             |
 | `collector_errors`   | string[]          | Per-source failures (`"cswap: …"`)                                                                                                                                                         |
@@ -1173,6 +1225,7 @@ outputs render it scaled to hours, days or weeks — e.g. `locked out ~Sat 3:00p
 - **Renames / removals** of listed stable keys require a major version bump and README note.
 - **Meaning changes** that leave a field's shape alone (such as which window `suggestion` names) keep
   the schema version and are recorded in the Changelog.
+- `aiuse_version` (1.7) is provenance, not behaviour: never branch on it for parsing (the schema is self-describing); use it to find data a known-buggy build collected ([data-corrections.md](data-corrections.md)).
 - Message strings and pretty report layout are **not** a contract — use structured fields.
 - Provider id strings may gain new values as collectors expand; treat unknown providers as pass-through.
 

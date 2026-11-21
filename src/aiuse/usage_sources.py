@@ -148,7 +148,10 @@ def usage_source_report(
             }
         )
 
+    from aiuse import __version__
+
     return {
+        "aiuse_version": __version__,
         "note": (
             "Quota sources report plan windows and balances and do not need the vendor TUI. "
             "ACP reports context-window fill and per-turn tokens from existing acp-run logs. "
@@ -167,7 +170,7 @@ def usage_source_report(
 def render_usage_sources(report: dict[str, Any]) -> str:
     """Plain-text form of :func:`usage_source_report`."""
     lines = [
-        "usage sources",
+        f"usage sources (aiuse {report.get('aiuse_version') or '?'})",
         report["note"],
         "",
     ]
