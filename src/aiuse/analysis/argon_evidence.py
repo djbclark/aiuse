@@ -50,32 +50,85 @@ def account_key(provider: str, account: object) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def _load(path: Path) -> dict[str, dict[str, Any]]:
+def _aware(value: object) -> datetime | None:
+    """A timezone-aware UTC datetime from an ISO string; anything else (or an unrepresentable date) is None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = parse_dt(value)
+        return parsed.astimezone(timezone.utc) if parsed is not None else None
+    except (ValueError, OverflowError, TypeError):
+        return None
+
+
+_MAX_READINGS = 1_000_000
+
+
+def _clean_record(record: object, now: datetime) -> dict[str, Any] | None:
+    """A validated copy of one stored record, or None to reset it to "no evidence".
+
+    The store is a plain JSON file a person, an older build or a newer one may
+    have written: any field of the wrong type, a non-finite number, an
+    unparsable or unrepresentable date, or a timestamp in the future (clock
+    skew) throws the whole record away, so the account simply starts again.
+    """
+    if not isinstance(record, Mapping):
+        return None
+    last = _aware(record.get("last_reading"))
+    if last is None or last > now:
+        return None
+    stamps: dict[str, str | None] = {"last_reading": last.isoformat()}
+    for name in ("absent_since", "argon_last_seen"):
+        raw = record.get(name)
+        if raw is None:
+            stamps[name] = None
+            continue
+        parsed = _aware(raw)
+        if parsed is None or parsed > now:
+            return None
+        stamps[name] = parsed.isoformat()
+    since = _aware(stamps["absent_since"])
+    if since is not None and since > last:
+        return None
+    readings = record.get("readings_absent", 0)
+    if readings is None:
+        readings = 0
+    if isinstance(readings, bool) or not isinstance(readings, int) or not 0 <= readings <= _MAX_READINGS:
+        return None
+    return {**stamps, "readings_absent": readings}
+
+
+def _load(path: Path, now: datetime) -> dict[str, dict[str, Any]]:
+    """The valid records of the store; a missing, unreadable or foreign-shaped file reads as empty."""
     try:
         data = json.loads(path.read_text("utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return {}
     records = data.get("accounts") if isinstance(data, dict) else None
-    return {k: v for k, v in records.items() if isinstance(v, dict)} if isinstance(records, dict) else {}
+    if not isinstance(records, dict):
+        return {}
+    cleaned = {str(k): _clean_record(v, now) for k, v in records.items()}
+    return {k: v for k, v in cleaned.items() if v is not None}
 
 
 def _write(path: Path, records: Mapping[str, Any]) -> bool:
+    """Replace the store atomically; the temp file is created 0600 and removed on any failure."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps({"schema_version": 1, "accounts": records}, indent=1, sort_keys=True) + "\n", "utf-8")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps({"schema_version": 1, "accounts": records}, indent=1, sort_keys=True) + "\n")
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
         os.replace(tmp, path)
-        os.chmod(path, 0o600)
-    except OSError:
+    except (OSError, ValueError):
+        tmp.unlink(missing_ok=True)
         return False  # durability only: the in-process decision still applies
     return True
-
-
-def _aware(value: object) -> datetime | None:
-    parsed = parse_dt(value) if isinstance(value, str) else None
-    if parsed is not None and parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed
 
 
 def argon_hidden(hidden_pools: object) -> bool:
@@ -120,7 +173,7 @@ def record_readings(
     """
     target = Path(path) if path is not None else store_path()
     hidden = argon_hidden(hidden_pools)
-    records = _load(target)
+    records = _load(target, now)
     before = json.dumps(records, sort_keys=True)
     proven: dict[str, bool] = {}
     for account in accounts:
@@ -147,7 +200,7 @@ def record_readings(
                 since = _aware(record.get("absent_since"))
                 record.update(
                     absent_since=(since or read_at).isoformat(),
-                    readings_absent=int(record.get("readings_absent") or 0) + 1,
+                    readings_absent=min(int(record.get("readings_absent") or 0) + 1, _MAX_READINGS),
                     last_reading=read_at.isoformat(),
                 )
         proven[key] = not has_argon_window(windows) and _span_proves(record)
@@ -169,8 +222,7 @@ def _span_proves(record: Mapping[str, Any]) -> bool:
     last = _aware(record.get("last_reading"))
     if since is None or last is None:
         return False
-    try:
-        readings = int(record.get("readings_absent") or 0)
-    except (TypeError, ValueError):
+    readings = record.get("readings_absent")
+    if isinstance(readings, bool) or not isinstance(readings, int):
         return False
     return readings >= MIN_ABSENT_READINGS and (last - since).total_seconds() >= MIN_ABSENT_SECONDS

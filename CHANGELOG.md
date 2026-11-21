@@ -143,6 +143,13 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- The Argon evidence store no longer crashes on a corrupt or foreign-typed record.
+  A record field that is a string, list, dict, NaN, Infinity, a huge number, a
+  boolean, a negative count, an unparsable or unrepresentable date, or a date in the
+  future now resets just that record to "no evidence" instead of raising out of
+  `enrich_snapshot` (and so out of `--available`, `--json`, serve and the sampler).
+  The store file is also created 0600 from the start and its temp file is removed
+  when a write fails (schema 1.8 adversary round 2, important A).
 - The Argon model-to-pool map no longer assumes every account has an Argon
   window. `gemini-4-argon*` maps to `gemini_argon` only when the account
   reports an Argon-own window (Google AI Pro did); on Google AI Ultra, where

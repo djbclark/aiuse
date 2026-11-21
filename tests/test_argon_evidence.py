@@ -81,7 +81,9 @@ def test_an_older_reading_does_not_advance_the_evidence():
     for hours in (0, 4, 8):
         _feed(hours, FLASH)
     before = store_path().read_text()
-    assert _feed(2, FLASH, account="acct") is True  # state already proves it; the old reading adds nothing
+    old = _reading(2, FLASH)  # collected 6 h before the stored record, seen again at hour 8
+    proven = record_readings([old], now=T0 + timedelta(hours=8))
+    assert proven[account_key("antigravity", "acct")] is True  # state already proves it; the old reading adds nothing
     assert store_path().read_text() == before
 
 
@@ -104,3 +106,131 @@ def test_has_argon_window_reads_label_id_and_family():
     assert has_argon_window([ARGON])
     assert has_argon_window([{"label": "x", "pool_family": "gemini_argon"}])
     assert not has_argon_window([FLASH])
+
+
+_CORRUPT_RECORD_FIELDS = [
+    ("readings_absent", '"x"'),
+    ("readings_absent", "[1]"),
+    ("readings_absent", '{"a": 1}'),
+    ("readings_absent", "NaN"),
+    ("readings_absent", "Infinity"),
+    ("readings_absent", "-Infinity"),
+    ("readings_absent", "1e400"),
+    ("readings_absent", "true"),
+    ("readings_absent", "-4"),
+    ("readings_absent", "2.5"),
+    ("last_reading", "NaN"),
+    ("last_reading", "Infinity"),
+    ("last_reading", "[]"),
+    ("last_reading", '{"a": 1}'),
+    ("last_reading", '"not a date"'),
+    ("last_reading", "12345"),
+    ("last_reading", '"0001-01-01T00:00:00+05:00"'),
+    ("last_reading", '"9999-12-31T23:59:59+00:00"'),
+    ("absent_since", "NaN"),
+    ("absent_since", "[1, 2]"),
+    ("absent_since", '"0001-01-01T00:00:00+05:00"'),
+    ("absent_since", '"9999-12-31T23:59:59+00:00"'),
+    ("argon_last_seen", "Infinity"),
+    ("argon_last_seen", '"9999-12-31T23:59:59+00:00"'),
+]
+
+
+def _corrupt_store(field: str, raw: str) -> None:
+    key = account_key("antigravity", "acct")
+    last = (T0 - timedelta(hours=1)).isoformat()
+    fields = {
+        "absent_since": f'"{(T0 - timedelta(hours=9)).isoformat()}"',
+        "last_reading": f'"{last}"',
+        "readings_absent": "5",
+        "argon_last_seen": "null",
+    }
+    fields[field] = raw
+    body = ", ".join(f'"{name}": {value}' for name, value in fields.items())
+    store_path().write_text('{"schema_version": 1, "accounts": {"' + key + '": {' + body + "}}}")
+
+
+def test_a_corrupt_record_field_resets_that_record_and_never_raises():
+    import pytest
+
+    for field, raw in _CORRUPT_RECORD_FIELDS:
+        _corrupt_store(field, raw)
+        try:
+            proven = _feed(0, FLASH)
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"{field}={raw} raised {exc!r}")
+        assert proven is False, f"{field}={raw} must read as no evidence"
+        saved = json.loads(store_path().read_text())["accounts"][account_key("antigravity", "acct")]
+        assert saved["readings_absent"] == 1, f"{field}={raw}: the record restarts from this reading"
+
+
+def test_corrupt_records_do_not_hide_the_good_ones():
+    good = account_key("antigravity", "good")
+    bad = account_key("antigravity", "bad")
+    store_path().write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "accounts": {
+                    good: {
+                        "absent_since": (T0 - timedelta(hours=9)).isoformat(),
+                        "last_reading": (T0 - timedelta(hours=1)).isoformat(),
+                        "readings_absent": 5,
+                    },
+                    bad: {"readings_absent": "x", "last_reading": "y"},
+                },
+            }
+        )
+    )
+    assert _feed(0, FLASH, account="good") is True
+    assert _feed(0, FLASH, account="bad") is False
+
+
+def test_a_store_of_any_shape_never_raises():
+    shapes = [
+        "[]",
+        "null",
+        "7",
+        '"text"',
+        "{}",
+        '{"accounts": []}',
+        '{"accounts": {"k": []}}',
+        '{"accounts": {"k": 5}}',
+        '{"accounts": {"k": {"last_reading": NaN}}}',
+        "[" * 100000,
+        "\x00\xff garbage",
+    ]
+    for text in shapes:
+        store_path().write_text(text, encoding="utf-8", errors="replace")
+        assert _feed(0, FLASH) is False
+
+
+def test_a_non_finite_or_unparsable_reading_time_records_nothing(tmp_path):
+    reading = _reading(0, FLASH)
+    for bad in ("not a date", "0001-01-01T00:00:00+05:00", None, 7, float("nan"), float("inf")):
+        reading["collected_at"] = bad
+        proven = record_readings([reading], now=T0)
+        assert proven[account_key("antigravity", "acct")] is False
+    assert not store_path().exists()
+
+
+def test_the_store_is_created_private_from_the_start_and_no_temp_file_is_left(monkeypatch):
+    import os
+
+    modes: list[int] = []
+    real_replace = os.replace
+
+    def spy(src, dst):
+        modes.append(os.stat(src).st_mode & 0o777)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", spy)
+    _feed(0, FLASH)
+    assert modes == [0o600]
+    assert os.stat(store_path()).st_mode & 0o777 == 0o600
+
+
+def test_a_failed_write_unlinks_its_temp_file():
+    store_path().mkdir()  # os.replace onto a directory fails
+    assert _feed(0, FLASH) is False
+    assert [p.name for p in store_path().parent.iterdir() if p.name.endswith(".tmp")] == []
