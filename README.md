@@ -343,6 +343,17 @@ provider, in seconds. See
 antigravity = 900 # 0 disables
 ```
 
+On Google AI Ultra the Argon model shares the one Gemini pool, so an Argon
+refusal is folded into `gemini` only after aiuse has seen at least 3 consecutive
+readings over 6 hours with no Argon window. That evidence lives in
+`~/.local/state/aiuse/argon-evidence.json` (one hashed key per account, no
+email) and is written only where a reading is first collected: the sampler
+(`aiuse sample`) and any run that collects and saves a snapshot (`aiuse`,
+`aiuse --json --live`, `aiuse watch` with persistence, `aiuse serve` live refresh).
+`aiuse --available`, a cache `--json`, `serve`'s cache endpoints and a screen-only
+`watch` only read it, so re-reading one cached snapshot never advances it. See
+[Antigravity pools](docs/antigravity-pools.md).
+
 ## Daily workflow
 
 ```bash

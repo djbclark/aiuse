@@ -234,3 +234,93 @@ def test_a_failed_write_unlinks_its_temp_file():
     store_path().mkdir()  # os.replace onto a directory fails
     assert _feed(0, FLASH) is False
     assert [p.name for p in store_path().parent.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def _cached_snapshot(hours: float, *windows: dict, account: str = "acct") -> dict:
+    return {
+        "collected_at": (T0 + timedelta(hours=hours)).isoformat(),
+        "accounts": [_reading(hours, *windows, account=account)],
+    }
+
+
+def test_rereading_one_future_stamped_snapshot_never_advances_the_evidence():
+    """Review round 2, important B: a snapshot stamped 1 day ahead proved absence on its third re-read."""
+    from aiuse.analysis.argon_evidence import proven_absent
+
+    future = _reading(24, FLASH)
+    key = account_key("antigravity", "acct")
+    results = []
+    for hours in (0, 3, MIN_ABSENT_SECONDS / 3600 + 0.1):
+        now = T0 + timedelta(hours=hours)
+        results.append(record_readings([future], now=now)[key])
+        results.append(proven_absent([future], now=now)[key])
+    assert results == [False] * 6
+    assert not store_path().exists()  # a reading from the future is skipped, not clamped and recorded
+
+
+def test_the_read_path_never_writes_the_store_or_creates_its_directory(tmp_path, monkeypatch):
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    target = tmp_path / "not-yet" / "state" / "argon-evidence.json"
+    monkeypatch.setenv("AIUSE_ARGON_EVIDENCE_STORE", str(target))
+    for hours in (0, 4, 8):
+        enrich_snapshot(_cached_snapshot(hours, FLASH), now=T0 + timedelta(hours=hours))
+    assert not target.parent.exists()
+
+
+def test_enrich_snapshot_on_a_read_path_leaves_the_store_byte_identical():
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    record_readings([_reading(0, FLASH)], now=T0)
+    before = store_path().read_bytes()
+    for hours in (4, 8, 12):
+        enrich_snapshot(_cached_snapshot(hours, FLASH), now=T0 + timedelta(hours=hours))
+    assert store_path().read_bytes() == before
+
+
+def test_a_read_path_looks_the_proof_up_but_cannot_build_it():
+    from aiuse.analysis.argon_evidence import proven_absent
+
+    key = account_key("antigravity", "acct")
+    for hours in (0, 4):
+        record_readings([_reading(hours, FLASH)], now=T0 + timedelta(hours=hours))
+    for hours in (5, 8, 20):  # many cached re-reads never make the third reading
+        assert proven_absent([_reading(hours, FLASH)], now=T0 + timedelta(hours=hours))[key] is False
+    record_readings([_reading(8, FLASH)], now=T0 + timedelta(hours=8))
+    assert proven_absent([_reading(9, FLASH)], now=T0 + timedelta(hours=9))[key] is True
+    assert proven_absent([_reading(9, FLASH, ARGON)], now=T0 + timedelta(hours=9))[key] is False
+
+
+def test_the_collection_path_records_and_a_read_path_then_sees_the_proof():
+    from aiuse.analysis.argon_evidence import proven_absent
+    from aiuse.analysis.selfdescribe import enrich_snapshot
+
+    key = account_key("antigravity", "acct")
+    seen = []
+    for hours in (0, 4, 8):
+        now = T0 + timedelta(hours=hours)
+        snap = _cached_snapshot(hours, FLASH)
+        enrich_snapshot(snap, now=now, record_argon_evidence=True)
+        seen.append(proven_absent(snap["accounts"], now=now)[key])
+    assert seen == [False, False, True]
+
+
+def test_save_snapshot_is_the_collection_path_that_writes_the_store():
+    from aiuse.analysis.argon_evidence import proven_absent
+    from aiuse.analysis.history import save_snapshot
+    from aiuse.models import AccountUsage, QuotaWindow, Snapshot, utcnow
+
+    now = utcnow()
+    key = account_key("antigravity", "acct")
+    assert not store_path().exists()
+    for ago in (8.0, 4.0, 0.0):
+        row = AccountUsage(
+            source="codexbar",
+            provider="antigravity",
+            account="acct",
+            windows=[QuotaWindow(label="Gemini weekly", used_percent=5.0, remaining_percent=95.0)],
+        )
+        save_snapshot(Snapshot(collected_at=now - timedelta(hours=ago), accounts=[row]), [])
+    reading = _reading(0, FLASH)
+    reading["collected_at"] = now.isoformat()
+    assert proven_absent([reading], now=now)[key] is True

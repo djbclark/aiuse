@@ -110,7 +110,14 @@ wrong (`available_at`, the Argon model map).
   has no Argon window: at least 3 consecutive readings over at least 6 hours
   with antigravity windows and none of them an Argon window, kept in
   `~/.local/state/aiuse/argon-evidence.json` (hashed account keys, no emails;
-  `AIUSE_ARGON_EVIDENCE_STORE` overrides the path). A window that is hidden
+  `AIUSE_ARGON_EVIDENCE_STORE` overrides the path). Only the COLLECTION path
+  writes that file: the sampler and any run that saves a snapshot
+  (`history.save_snapshot`, which calls `enrich_snapshot(record_argon_evidence=True)`).
+  `--available`, a cache `--json`, the serve endpoints and a screen-only `watch`
+  read it without writing (and without creating its directory), a reading
+  stamped in the future (clock skew) is skipped, and a corrupt record resets to
+  "no evidence", so re-reading one cached snapshot never advances the evidence.
+  A window that is hidden
   (`[hidden_pools]`), unreadable or missing from one reading is never that
   evidence, and a hidden `gemini_argon` family counts as reported: until the
   evidence exists the note matches nothing (it never exhausts Flash), and the

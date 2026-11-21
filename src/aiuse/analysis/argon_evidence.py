@@ -17,6 +17,14 @@ that shows an Argon window resets the record. Everything else, including a
 hidden Argon family and a missing or corrupt store, reads as "Argon may exist":
 the family is treated as reported and nothing folds. The record is keyed by a
 hash of the account name so the file holds no email address.
+
+Only the COLLECTION path writes the store (``record_readings(record=True)``, reached
+from ``history.save_snapshot``). Every read path (``--available``, cache ``--json``,
+serve, watch) uses the read-only ``proven_absent``, which neither writes nor
+creates the directory, so re-reading one cached snapshot cannot advance the
+evidence. A reading stamped in the future (clock skew) is skipped, never
+clamped. A corrupt or foreign-typed record resets to "no evidence"; nothing in
+this module raises on a damaged store.
 """
 
 from __future__ import annotations
@@ -162,14 +170,23 @@ def record_readings(
     hidden_pools: object = None,
     now: datetime,
     path: str | Path | None = None,
+    record: bool = True,
 ) -> dict[str, bool]:
-    """Fold this snapshot's antigravity readings into the store; return ``account key -> proven``.
+    """Judge this snapshot's antigravity readings against the store; return ``account key -> proven``.
+
+    With ``record=True`` (the collection path only: ``history.save_snapshot``, where a
+    reading is first collected) each new reading is also folded into the store,
+    which is rewritten when it changed. With ``record=False`` (every read path:
+    ``--available``, cache ``--json``, serve, watch) the store is only read: nothing is
+    written and no directory is created, so re-reading one cached snapshot can
+    never advance the evidence. See :func:`proven_absent`.
 
     A reading counts only when the account has antigravity windows. A hidden
     Argon family is never evidence of absence (the window was dropped before
     this reading), so nothing is recorded and nothing is proven. A reading
-    older than the stored one is ignored, so re-enriching a cached snapshot
-    cannot advance the evidence.
+    older than the stored one is ignored. A reading stamped in the future (clock
+    skew) is skipped, never clamped to ``now``: clamping let one future-stamped
+    snapshot count as a fresh reading on every re-read.
     """
     target = Path(path) if path is not None else store_path()
     hidden = argon_hidden(hidden_pools)
@@ -182,28 +199,33 @@ def record_readings(
         windows = [w for w in (account.get("windows") or []) if isinstance(w, Mapping)]
         key = account_key("antigravity", account.get("account"))
         read_at = _aware(account.get("collected_at")) or _aware(collected_at)
-        if not windows or read_at is None or hidden:
+        if not windows or read_at is None or read_at > now or hidden:
             proven[key] = False
             continue
-        read_at = min(read_at, now)
-        record = records.setdefault(key, {})
-        last = _aware(record.get("last_reading"))
+        argon = has_argon_window(windows)
+        if not record:
+            proven[key] = not argon and _span_proves(records.get(key, {}))
+            continue
+        entry = records.setdefault(key, {})
+        last = _aware(entry.get("last_reading"))
         if last is None or read_at > last:
-            if has_argon_window(windows):
-                record.update(
+            if argon:
+                entry.update(
                     argon_last_seen=read_at.isoformat(),
                     absent_since=None,
                     readings_absent=0,
                     last_reading=read_at.isoformat(),
                 )
             else:
-                since = _aware(record.get("absent_since"))
-                record.update(
+                since = _aware(entry.get("absent_since"))
+                entry.update(
                     absent_since=(since or read_at).isoformat(),
-                    readings_absent=min(int(record.get("readings_absent") or 0) + 1, _MAX_READINGS),
+                    readings_absent=min(int(entry.get("readings_absent") or 0) + 1, _MAX_READINGS),
                     last_reading=read_at.isoformat(),
                 )
-        proven[key] = not has_argon_window(windows) and _span_proves(record)
+        proven[key] = not argon and _span_proves(entry)
+    if not record:
+        return proven
     cutoff = now - _PRUNE_AFTER
     for key in [k for k, r in records.items() if (_aware(r.get("last_reading")) or cutoff) < cutoff]:
         records.pop(key)
@@ -215,6 +237,20 @@ def record_readings(
     if json.dumps(records, sort_keys=True) != before:
         _write(target, records)
     return proven
+
+
+def proven_absent(
+    accounts: Iterable[Mapping[str, Any]],
+    *,
+    collected_at: object = None,
+    hidden_pools: object = None,
+    now: datetime,
+    path: str | Path | None = None,
+) -> dict[str, bool]:
+    """Read-only :func:`record_readings`: what the stored evidence proves, with no write of any kind."""
+    return record_readings(
+        accounts, collected_at=collected_at, hidden_pools=hidden_pools, now=now, path=path, record=False
+    )
 
 
 def _span_proves(record: Mapping[str, Any]) -> bool:

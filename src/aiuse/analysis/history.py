@@ -185,6 +185,7 @@ def save_snapshot(
         check_frozen=True,
         credit_overrides=credit_overrides,
         config=config,
+        record_argon_evidence=True,
     )
     payload = {
         "schema_version": SCHEMA_VERSION,

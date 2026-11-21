@@ -291,10 +291,14 @@ Argon-own window (Google AI Pro reported "Gemini 4 Argon weekly"), and to the sh
 (`pool_family_for_acp_model(provider, model, reported_families)`). An Argon refusal note or ACP turn, recorded under
 its nominal `gemini_argon` family, is applied to `gemini` only on an account with positive evidence of no Argon window
 (`aiuse.analysis.argon_evidence`: at least 3 consecutive readings over at least 6 hours with antigravity windows and none
-for Argon, kept per account, hashed, in `~/.local/state/aiuse/argon-evidence.json`). A window that is hidden by
+for Argon, kept per account, hashed, in `~/.local/state/aiuse/argon-evidence.json`). Only the collection path writes that file (the
+sampler and any run that saves a snapshot, through `history.save_snapshot`); `--available`, a cache `--json`, the
+serve endpoints and a screen-only `watch` only read it, so re-reading one cached snapshot cannot advance the evidence, and
+a reading stamped in the future (clock skew) is skipped rather than counted. A window that is hidden by
 `[hidden_pools]`, unreadable or missing from one reading is never that evidence: a Pro account whose Argon window is hidden
 keeps Flash usable under an Argon refusal note, and a Pro and an Ultra account fold independently. Until the evidence
-exists (a fresh install, 6 hours after a Pro-to-Ultra move) the note matches nothing, as before schema 1.8. Open: a single
+exists (a fresh install, 6 hours after a Pro-to-Ultra move, or an upgrade to a build with the store) the note matches
+nothing, as before schema 1.8: the shared `gemini` pool stays `usable_now: true` through an Argon refusal (it fails open). Open: a single
 call per model with a read between each (15 minute gate) would show whether one of them draws a different share.
 
 Placeholder resets: the 14:32Z live read still carried `Claude/GPT 5-hour` reset 19:32:13Z, which is

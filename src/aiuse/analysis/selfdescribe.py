@@ -897,13 +897,20 @@ def _throttle_lookup(config: Mapping[str, Any] | None) -> Callable[[str, float],
 
 
 def _apply_argon_evidence(
-    snap: Mapping[str, Any], accounts: list[dict[str, Any]], collected: object, *, now: datetime
+    snap: Mapping[str, Any],
+    accounts: list[dict[str, Any]],
+    collected: object,
+    *,
+    now: datetime,
+    record: bool = False,
 ) -> None:
     """Mark antigravity accounts whose plan is PROVEN to have no Argon-own window.
 
-    Records this snapshot's readings in the durable evidence store and sets the
-    private ``_argon_proven_absent`` marker ``enrich_account`` and the frozen-quota
-    pass read; removed again at the end of ``enrich_snapshot``.
+    Sets the private ``_argon_proven_absent`` marker ``enrich_account`` and the
+    frozen-quota pass read; removed again at the end of ``enrich_snapshot``. Only
+    the collection path (``record=True``, from ``history.save_snapshot``) writes this
+    snapshot's readings into the durable evidence store; every read path just
+    looks the stored evidence up.
     """
     from aiuse.analysis.argon_evidence import account_key, record_readings
 
@@ -911,7 +918,9 @@ def _apply_argon_evidence(
         account.pop("_argon_proven_absent", None)
     if not any(str(a.get("provider") or "") == "antigravity" for a in accounts):
         return
-    proven = record_readings(accounts, collected_at=collected, hidden_pools=snap.get("hidden_pools"), now=now)
+    proven = record_readings(
+        accounts, collected_at=collected, hidden_pools=snap.get("hidden_pools"), now=now, record=record
+    )
     for account in accounts:
         if str(account.get("provider") or "") == "antigravity" and proven.get(
             account_key("antigravity", account.get("account"))
@@ -1065,8 +1074,14 @@ def enrich_snapshot(
     acp_log_dir: str | None = None,
     credit_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     config: Mapping[str, Any] | None = None,
+    record_argon_evidence: bool = False,
 ) -> dict[str, Any]:
     """Enrich accounts in place and attach summary_lines / semantics.
+
+    ``record_argon_evidence`` is for the collection path alone (``save_snapshot``, where a
+    reading is first collected): it folds this snapshot's antigravity readings into
+    the durable Argon evidence store. Read paths leave it False and only look the
+    stored evidence up, so re-reading a cached snapshot never advances it.
 
     ``client_limits`` (provider -> entries, from aiuse.client_limits) replaces
     each matching account's ``client_limits``; read-time evidence wins over
@@ -1115,7 +1130,7 @@ def enrich_snapshot(
     waking_hours = float(analysis_cfg_map.get("waking_hours_per_day", 16.0)) if analysis_cfg_map else 16.0
     if plans_cfg is not None:
         from aiuse.config import plan_monthly_price
-    _apply_argon_evidence(snap, accounts, collected, now=now)
+    _apply_argon_evidence(snap, accounts, collected, now=now, record=record_argon_evidence)
     floors_cfg = config.get("floors") if isinstance(config, Mapping) else None
     for account in accounts:
         account.pop("measurement_frozen", None)

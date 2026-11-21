@@ -143,6 +143,20 @@ plan_monthly_price * 100, min_percent, max_percent)`, so a $199.99 plan
 
 ### Fixed
 
+- The Argon evidence store is written only on the collection path (schema 1.8
+  adversary round 2, important B). `aiuse --available`, a cache `--json`, the serve
+  endpoints and a screen-only `watch` used to write
+  `~/.local/state/aiuse/argon-evidence.json` through `enrich_snapshot`, and
+  re-reading one cached snapshot with a future `collected_at` could prove the
+  absence of an Argon window by itself (`[False, False, True]`). Now
+  `history.save_snapshot` (the sampler and every run that saves a snapshot) passes
+  `enrich_snapshot(record_argon_evidence=True)`; read paths use the read-only
+  `argon_evidence.proven_absent`, which neither writes nor creates the directory.
+  A reading stamped in the future (clock skew) is skipped instead of clamped.
+  **Upgrade consequence:** the fold needs evidence a build with the store has
+  collected itself, so after upgrading an existing Google AI Ultra account folds
+  nothing for at least 6 hours and 3 collected readings, and meanwhile an Argon
+  refusal leaves the shared `gemini` pool `usable_now: true` (it fails open).
 - The Argon evidence store no longer crashes on a corrupt or foreign-typed record.
   A record field that is a string, list, dict, NaN, Infinity, a huge number, a
   boolean, a negative count, an unparsable or unrepresentable date, or a date in the
