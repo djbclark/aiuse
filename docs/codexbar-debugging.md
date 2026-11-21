@@ -14,14 +14,18 @@ before guessing. Found 2026-11-21 while diagnosing the 0.85.0 fork build.
   Useful categories: `antigravity` (every request and parse attempt),
   `token-cost`, `keychain-preflight`, `cookie-cache`, `subprocess`,
   `openai-web`, `memory-pressure`, and `app` (refresh-cycle timing).
-- **Stale `widget-snapshot.json`:** the app-group write runs under a 10 s
-  bounded-I/O guard (`WidgetSnapshotStore`). If one write times out, for example
-  while macOS gates the app's access to the app-group folder, a circuit breaker
-  disables all container access **for that process until it restarts**, and the
-  only trace is one WARNING, "Widget snapshot I/O timed out; disabling container
-  access for this process". A plain write error logs nothing. So enable the file
-  log **before** launching the app, or the one warning is missed. aiuse does not
-  read that file; it reads the CLI and HTTP server.
+- **Stale `widget-snapshot.json` on a fork (ad-hoc) build:** the kernel log shows
+  `Sandbox: System Policy: CodexBar deny file-write-create .../Group Containers/<team>.com.steipete.codexbar/widget-snapshot.json`
+  and securityd says the `application-groups` entitlement "is ignored because of invalid application signature". A team-prefixed
+  group is only valid when the app is signed by that team, and an ad-hoc signature has none, so every widget write is denied
+  and CodexBar logs nothing (Trace adds nothing on this path). Find it with
+  `log show --last 5m --predicate 'process == "kernel" AND eventMessage CONTAINS "CodexBar"'`.
+  Fix (verified 2026-11-21): re-sign the built app with an Apple Development identity, using the signature's real team ID.
+  The team ID is the `TeamIdentifier` from `codesign -dvv`, not the id in the certificate's name (`R7NDWQV585` in the
+  name, team `XWZC8G497C`). Steps: set `CodexBarTeamID` in the app and widget Info.plist; sign Sparkle's XPC services,
+  Updater, Autoupdate, the framework, the helpers, then the widget (entitlements: app-sandbox plus group
+  `<team>.com.steipete.codexbar`), then the app (group only). The widget file then appears in a new
+  `<team>.com.steipete.codexbar` container. aiuse does not read that file; it reads the CLI and HTTP server.
 - **Other Debug screen sections that help:** Fetch strategy attempts (which
   source each provider tried and why it fell through), Probe logs (raw provider
   probe output), CLI paths (the `PATH` the app resolved), Caches (clear the
