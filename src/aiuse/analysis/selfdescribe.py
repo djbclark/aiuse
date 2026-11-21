@@ -110,9 +110,9 @@ SEMANTICS: dict[str, Any] = {
     "remaining_percent": "share still available; decide from this",
     "headroom_percent": "window: alias of remaining_percent; routing entry: least applicable headroom, with Fable's cap scaled to shared-weekly units",
     "state": "exhausted (<=1% left) | tight (<15% left) | ok | unknown (no data); never compute it yourself",
-    "usable_now": "false if any applicable window is exhausted or has under 5% left (near empty: work cannot finish on it; available_at is then that window's reset) or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
+    "usable_now": "false if any applicable window is exhausted or has under 5% left (near empty: work cannot finish on it; available_at is then the latest reset among the depleted windows) or no shared quota has data; Claude model caps restrict that model only, but shared limits restrict every Claude model",
     "binding_window": "label of the window with the least remaining_percent — the one that stops you first",
-    "available_at": "earliest resets_at among exhausted windows; null when nothing is exhausted or no reset time is known; for omp, the shared Claude window's reset while rate_gated_by is set",
+    "available_at": "when the whole pool is usable again: the LATEST resets_at among its depleted windows (exhausted, or under 5% left), because every one must reset first (before schema 1.8 this was the earliest, which named a reset after which the pool was still out); null when nothing is depleted or no reset time is known; for omp, the later of the shared Claude window's reset (rate_gated_by) and its own depleted windows",
     "pool_family": "routing family, not necessarily independent quota: antigravity gemini (Flash), gemini_argon (Gemini 4 Argon, its own weekly window; schema 1.5) and claude_gpt are independent; Claude default is shared quota and fable is a model sublimit within it",
     "model_pool_family": "antigravity model id -> pool_family, for dispatchers (aiuse.quota_refusals.pool_family_for_acp_model; schema 1.5): claude-* / gpt-* -> claude_gpt; gemini-4-argon* -> gemini_argon; every other gemini-* -> gemini. Do not map gemini-* to gemini wholesale: Argon draws its own window",
     "quota_scope": "shared or model_sublimit; a model_sublimit is not additional quota and cannot exhaust the whole account",
@@ -524,7 +524,7 @@ def enrich_account(
     elif isinstance(key_pool, dict):
         account["available_at"] = key_pool.get("available_at")
     elif reset_times:
-        account["available_at"] = min(reset_times).isoformat()
+        account["available_at"] = max(reset_times).isoformat()
     else:
         account["available_at"] = None
 
@@ -1234,16 +1234,16 @@ def pool_entries(snap: Mapping[str, Any], *, now: datetime | None = None) -> lis
             resets = [t for t in resets if t is not None]
             ceiling_resets = [parse_dt(w.get("resets_at")) for w in ceiling if w.get("resets_at")]
             ceiling_resets = [t for t in ceiling_resets if t is not None]
-            if ceiling_resets:
-                # Out until the ceiling AND the entry's own exhausted window both reset.
-                resets = [max(min(resets), min(ceiling_resets))] if resets else ceiling_resets
+            # The pool is usable again only when EVERY depleted window (its own, the
+            # Cursor monthly ceiling's, the omp shared-Claude gate's) has reset: the
+            # latest reset binds (2026-11-21: OpenCode Go read the weekly 11-23 reset
+            # while the monthly window stayed out until 11-27).
             gate_reset = parse_dt(gate.get("resets_at")) if gate else None
+            pending = resets + ceiling_resets + ([gate_reset] if gate_reset is not None else [])
             if is_blocked:
                 pool_available: datetime | None = None
-            elif gate_reset is not None and (not resets or gate_reset <= min(resets)):
-                pool_available = gate_reset
-            elif resets:
-                pool_available = min(resets)
+            elif pending:
+                pool_available = max(pending)
             elif isinstance(key_pool, dict) and not key_pool.get("usable"):
                 pool_available = parse_dt(key_pool.get("available_at"))
             else:
@@ -1420,7 +1420,7 @@ def _sibling_item(
     else:
         usable = state not in ("exhausted", "unknown")
         headroom = binding.get("headroom_percent")
-        available_at = min(resets).isoformat() if resets else None
+        available_at = max(resets).isoformat() if resets else None
         reason = "pool exhausted" if state == "exhausted" else "no reading"
     return {
         "pool_family": family,

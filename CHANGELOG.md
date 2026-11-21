@@ -122,6 +122,13 @@ at …` (`aiuse ?` when unrecorded), and `--available`, `attribute`,
 
 ### Fixed
 
+- `available_at` is the LATEST reset among a pool's depleted windows (exhausted,
+  or under 5% left), not the earliest: every depleted window must reset before
+  the pool works again. OpenCode Go account `t-e` read 2026-11-23 (the weekly
+  reset) while its monthly window stayed out until 2026-11-27. Applies to the
+  account's and the routing entry's `available_at` and to Cursor sibling pools;
+  the omp shared-Claude gate now combines with the entry's own depleted windows
+  the same way (schema 1.8; `docs/json-contract.md`).
 - Judge freshness per pool instead of with one global 30-minute threshold. A
   fast-draining pool (antigravity) now reads stale long before the global
   limit — `analysis.fresh_threshold_seconds_by_provider` ships `antigravity =
