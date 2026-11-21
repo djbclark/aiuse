@@ -299,7 +299,7 @@
 # [plans.cursor]
 # monthly_price = 200
 #
-# [plans.gemini]  # Antigravity (Google AI Pro $20 / Ultra $250)
+# [plans.gemini]  # Antigravity (Google AI Pro $20 / Ultra $199.99)
 # monthly_price = 20
 #
 # [plans.clinepass]

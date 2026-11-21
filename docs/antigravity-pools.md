@@ -252,3 +252,22 @@ plausible 0.4 to 5 points, so the numbers track real use).
   of `updatedAt + windowMinutes` on a 0%-used window; the cell reads `5h↻`
   until a real call starts the clock (the first test call turned it into a real
   17:12:52Z reset).
+
+## Google AI Ultra 20x ($199.99/month) and API credits (checked 2026-11-21)
+
+The operator moved from Google AI Pro ($19.99) to Ultra 20x ($199.99/month) on 2026-11-21, and
+`[plans.gemini] monthly_price` is 199.99. Google's plan table ([plans
+page](https://one.google.com/intl/en/about/google-ai-plans/?hl=en-US)) lists Ultra 5x at $99.99
+and Ultra 20x at $199.99, with Antigravity agent requests "Highest" on the 20x tier.
+
+- **Included API-style credits: $100/month of Google Cloud credits** (Pro $10, Ultra 5x $40, Ultra
+  20x $100), from Google Developer Program premium folded into the plan
+  ([announcement](https://blog.google/innovation-and-ai/technology/developers-tools/gdp-premium-ai-pro-ultra/)).
+  They must be activated in the Google Developer Program, and they are Google Cloud credits (usable
+  for Gemini API / Vertex usage billed to a Cloud project), not a Gemini API key balance. Whether
+  an AI Studio key draws on them is not stated; assumed no until tested.
+- **Antigravity "AI credits" are not included.** They are pay-as-you-go top-ups bought through Google
+  One once the baseline quota runs out, deducted at standard API prices. The 25,000/month figure on
+  the plans page is Google Flow credits, not Antigravity.
+- aiuse does not read either balance; the Cloud credit is a prepaid-style pool worth tracking only
+  if a Cloud billing collector is added.
