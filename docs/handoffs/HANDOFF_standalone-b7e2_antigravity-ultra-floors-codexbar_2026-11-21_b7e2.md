@@ -120,3 +120,9 @@ cd ~/src/aiuse && git fetch origin && git pull --ff-only && git log --oneline -6
 AIUSE_SKIP_HOMEBREW_FORMULA=1 ./aiuse-test.sh watch --once
 rg -n "_without_placeholder_reset|def _window" src/aiuse/collectors/codexbar.py
 ```
+
+## Follow-up: adversary review of schema 1.8 (abe8459, BLOCK) fixed
+
+One commit per item, all on main: ce47e75 (available_at null with an undated depleted window), aefece8 (omp account-level available_at is the later of gate and own windows), f49b58c (Argon folds into the shared Gemini pool only on per-account evidence, store `argon-evidence.json`: 3+ readings over 6h+ with no Argon window), 2dad050 (refresh-gate fields from throttle state), 7e06595 (`query_min_interval` inf/huge rejected, clamped to 7 days), 1135423 (floors min/max checked against the effective pair), d98e520 (`[floors.pool_families.<family>]` + built-in prepaid `openai_api` default, account field `floor_by_pool_family`), 894b8a2 (nits 7-13).
+
+Operator-visible effects: the operator's Ultra account will not fold Argon into the shared pool until the evidence store has seen 6 hours of Argon-less readings (about 6h after deploy); codex `openai_api` now reports floor 10 (`default`) instead of the plan-price floor. Other prepaid pools that might want the default if they appear as their own pool family: `anthropic_api` (omp API-key route), `codex_api` (pi). Not changed.
