@@ -3,8 +3,8 @@ class Aiuse < Formula
 
   desc "Aggregate AI subscription quotas and flag use-it-or-lose-it allotments"
   homepage "https://github.com/djbclark/aiuse"
-  url "https://github.com/djbclark/aiuse/archive/refs/tags/v5.3.2.tar.gz"
-  sha256 "b7f202e70a55cc76d43f0537d6acd4d693d4fb79da2a1c759739f719d1de28f8"
+  url "https://github.com/djbclark/aiuse/archive/refs/tags/v5.4.0.tar.gz"
+  sha256 "a24116ee14cd9fb7fee1640f038b882bba44dc1382079b2f686e1cbc52406746"
   license "MIT"
   head "https://github.com/djbclark/aiuse.git", branch: "main"
 
