@@ -36,3 +36,12 @@ before guessing. Found 2026-11-21 while diagnosing the 0.85.0 fork build.
 
 Never paste the log or the Probe logs into an issue unreviewed: they can hold
 account emails and paths.
+
+## Proving a CodexBar change from an agent (2026-11-22)
+
+What worked and what did not, from the PR 5142 and PR 5146 proof work:
+
+- **Build on CI, not the Mac.** `gh workflow run fork-build-app.yml --repo frdminc/CodexBar --ref ci/fork-build-app -f ref=<branch>` builds an ad-hoc-signed app and CLI on a hosted macOS runner (about 32 minutes); `gh run download <id> -n codexbar-fork-build` fetches them. Check the run with a one-shot `gh run view` every minute or more, never `gh run watch`.
+- **A plugin or CLI fix is provable without the GUI.** Run the downloaded `cli/codexbar usage --provider <id> --format json` next to the installed `codexbar` and show both outputs, with emails and IPs redacted. That is what ClawSweeper accepted as the proof shape for PR 5146.
+- **Launch a second instance with `open-clean -n <app>`** (never bare `open`); the installed app keeps running. Quit the test instance by its pid with `kill <pid>`, found through System Events by application file path, never by a process-name pattern.
+- **Driving Settings > Debug from an agent failed.** The status item menu works (`click menu bar item 1 of menu bar 2`, then the `Settings...` item), but the Settings window disappears as soon as another app, such as Paseo, takes focus, `entire contents` then finds no window, and neither a coordinate `click at`, a JXA CGEvent click nor an AXRow `select` changed the sidebar row. Every attempt also steals the operator's focus. Ask the operator for UI screenshots instead of retrying.

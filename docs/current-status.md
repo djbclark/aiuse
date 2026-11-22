@@ -23,7 +23,7 @@ the envelope under `snapshot`, serve default port moved to **28787** with
 fail-loudly + `/v1/health` identity. Operator's `aiuse-pools` stopgap can be
 replaced by `aiuse --available`. See [`docs/json-contract.md`](docs/json-contract.md)
 "How to read this".
-**Schema 1.8 (unreleased):** `available_at` is the latest reset among depleted
+**Schema 1.8 (released in 5.4.0, 2026-11-22):** `available_at` is the latest reset among depleted
 windows; the Argon model map follows the reported windows; `--available --json`
 gains `unavailable[]`; stale gated readings carry `refreshable_at` /
 `refresh_blocked_by_gate` / `gate_remaining_seconds`

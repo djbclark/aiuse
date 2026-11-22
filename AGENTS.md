@@ -29,7 +29,7 @@ watch `a` sweep leaves deprecated collectors at their configured state;
 reviewed 2026-10-22; 3.7.0 added the `omp` row, OTHER column, and
 PACE-after-SCOPE layout; 3.7.1 reworded the gate's JSON semantics). Fix-plan
 Steps **1–34** and product issues **#1–#9**
-done; JSON schema **1.7** (adds `aiuse_version`, the collecting build, on every envelope and persisted record: [`docs/data-corrections.md`](docs/data-corrections.md); self-describing output, `aiuse --available`,
+done; JSON schema **1.8** (released in 5.4.0: `unavailable[]` in `--available --json`, advisory per-service floors, the latest-reset `available_at`, refresh-gate fields and the evidence-gated Argon fold, see [`docs/json-contract.md`](docs/json-contract.md); 1.7 added `aiuse_version`, the collecting build, on every envelope and persisted record: [`docs/data-corrections.md`](docs/data-corrections.md); self-describing output, `aiuse --available`,
 `aiuse note-exhausted`; 1.5 gives Gemini 4 Argon its own `gemini_argon` pool family,
 publishes the model-to-family map, and reports omp's OpenAI API-key route as
 `pool_family: openai_api`; 1.4 added the omp `rate_gated_by` shared-Claude-window
