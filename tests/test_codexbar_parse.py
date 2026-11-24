@@ -1463,11 +1463,58 @@ def test_live_cli_placeholder_reset_on_unused_windows_is_dropped():
     assert by_label["Claude/GPT 5-hour"].resets_at is None
     assert by_label["Claude/GPT weekly"].resets_at is None
     assert by_label["Claude/GPT 5-hour"].window_minutes == 300
+    assert by_label["Claude/GPT weekly"].window_minutes == 10080
+    assert by_label["Claude/GPT 5-hour"].rolling is True
+    assert by_label["Claude/GPT weekly"].rolling is True
     # the slot copy of the same measurement is not left behind with a clock
     assert all(w.resets_at is None for w in acc.windows if w.label.startswith("Claude/GPT"))
     # a used window keeps its real reset
     assert by_label["Gemini 5-hour"].resets_at is not None
     assert by_label["Gemini weekly"].resets_at is not None
+
+
+def test_unused_rolling_weekly_windows_render_7d_unstarted_marker():
+    """Antigravity and Codex weekly windows are rolling (start on first use).
+
+    When CodexBar emits a sliding placeholder reset (`updatedAt + 7d`) at 0%
+    used, stripping the placeholder must leave the window marked `rolling=True`
+    so the board renders `0u/100l/7d↻` instead of bare `0u/100l`, and an
+    all-unused Codex account stays `SUBSCRIPTION_WINDOW`.
+    """
+    from aiuse.models import BillingKind, Snapshot
+    from aiuse.report import render_clock_matrix
+
+    updated = datetime(2026, 11, 24, 10, 45, 36, tzinfo=UTC)
+    agy = _from_row(_live_antigravity_row(gemini_used=3.2, third_party_used=0.0, updated=updated))
+    codex_row = {
+        "provider": "codex",
+        "source": "oauth",
+        "account": "user@gmail.com",
+        "usage": {
+            "updatedAt": updated.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "secondary": {
+                "usedPercent": 0.0,
+                "windowMinutes": 10080,
+                "resetsAt": (updated + timedelta(minutes=10080)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "resetDescription": "Dec 1 at 5:45 AM",
+            },
+        },
+    }
+    codex = _from_row(codex_row)
+    assert codex.billing_kind is BillingKind.SUBSCRIPTION_WINDOW
+    assert len(codex.windows) == 1
+    assert codex.windows[0].resets_at is None
+    assert codex.windows[0].rolling is True
+
+    board = render_clock_matrix(
+        [], snapshot=Snapshot(collected_at=updated, accounts=[agy, codex]), color=False, width=200
+    )
+    agy_3p_line = next(line for line in board.splitlines() if "claude/gpt" in line)
+    codex_line = next(line for line in board.splitlines() if "openai" in line)
+    assert "0u/100l/5h↻" in agy_3p_line
+    assert "0u/100l/7d↻" in agy_3p_line
+    assert "0u/100l/7d↻" in codex_line
+    assert "↻ = starts on first use" in board
 
 
 def test_live_cli_used_window_with_placeholder_shaped_reset_is_kept():

@@ -52,6 +52,9 @@ _PROVIDER_BY_SOURCE_ID: dict[str, str] = {
 
 _WINDOW_KIND_BY_ID = {"five_hour": "5h", "weekly": "weekly", "monthly": "monthly"}
 
+# Providers whose >= 1-day subscription windows are rolling timers (start on first use).
+_ROLLING_WINDOW_PROVIDERS = {"antigravity", "clinepass", "codex"}
+
 
 def collect_paseo(*, timeout: float = 30.0) -> list[AccountUsage]:
     if not which("paseo"):
@@ -120,6 +123,7 @@ def _window(provider: str, raw: dict[str, Any]) -> QuotaWindow | None:
         remaining_percent=remaining,
         window_minutes=WINDOW_NOMINAL_MINUTES.get(_window_kind(window_id)),
         resets_at=parse_dt(raw.get("resetsAt")),
+        rolling=provider in _ROLLING_WINDOW_PROVIDERS,
         raw=raw,
     )
 

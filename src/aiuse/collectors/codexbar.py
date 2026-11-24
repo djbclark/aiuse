@@ -67,10 +67,14 @@ PREPAID_HINTS = {
     "fireworks",
 }
 
-# Providers whose plan is always a subscription with rolling windows. Their API
-# omits `resetsAt` while a window sits at 0% (a fresh or idle plan), so the
-# "has a resets_at" test alone would call an unused plan `unknown`.
-SUBSCRIPTION_WINDOW_PROVIDERS = {"clinepass"}
+# Providers whose subscription windows are rolling clocks that start on first
+# use (including weekly/monthly windows >= 1 day). Their API omits `resetsAt`
+# — or CodexBar fills in a sliding `updatedAt + windowMinutes` placeholder that
+# `_without_placeholder_reset` strips — while a window sits at 0%. Marking them
+# here keeps an all-unused account classified as `SUBSCRIPTION_WINDOW` (not
+# `UNKNOWN`) and tags their windows `rolling=True` so the board renders
+# `0u/100l/7d↻` instead of bare `0u/100l`.
+SUBSCRIPTION_WINDOW_PROVIDERS = {"antigravity", "clinepass", "codex"}
 
 # CodexBar itself queries providers serially within a single invocation, so a
 # bundled "enabled providers" call costs the sum of every provider's latency.
@@ -1464,6 +1468,8 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
                     reset_description=window.reset_description,
                     raw=window.raw,
                 )
+            if provider in SUBSCRIPTION_WINDOW_PROVIDERS:
+                window.rolling = True
             extra_windows.append(window)
     windows.extend(extra_windows)
 
@@ -1477,7 +1483,7 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
         # extra/named window — do not drop real subscription slots just because
         # a prepaid balance blob also exists.
         if window and not any(window.same_measurement(extra) for extra in extra_windows):
-            if provider == "clinepass":
+            if provider in SUBSCRIPTION_WINDOW_PROVIDERS:
                 window.rolling = True
             windows.append(window)
 
