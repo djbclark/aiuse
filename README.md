@@ -78,12 +78,14 @@ percent left** (`l` is what you can still spend). For example, `12u/88l/3h7m -68
 means 12% consumed, 88% remaining, resetting in 3 hours 7 minutes, and burning 68%
 slower than an even spend across the window.
 
-A sub-day rolling window (the 5-hour kind) that has not been used yet sends no reset
-time — its clock starts on first use — so its cell shows the window's full length and a
-`↻` marker instead of a countdown, e.g. `0u/100l/5h↻`. Unused windows of a day or
-longer get no span. The legend line `↻ = starts on first use` appears
-only when at least one such cell is on the board. The marker is screen-only; `--json`
-is unchanged.
+A rolling window that has not been used yet sends no real reset time — its clock starts
+on first use — so its cell shows the window's full length and a `↻` marker instead of a
+countdown, e.g. `0u/100l/5h↻` (or `0u/100l/7d↻` / `0u/100l/30d↻` for providers whose
+weekly/monthly windows are rolling, such as Antigravity, Codex, and ClinePass). Calendar-
+or billing-anchored windows of a day or longer get no span when unused without a reset
+timestamp. The legend line `↻ = starts on first use` appears only when at least one such
+cell is on the board. The marker is screen-only; `--json` carries `rolling: true` on
+explicitly rolling windows.
 
 An in-use window whose source stops sending its reset time (CodexBar sends none for
 Antigravity's 5-hour windows; OpenUsage does) keeps its countdown: `aiuse` carries forward

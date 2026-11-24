@@ -12,6 +12,15 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Fixed
+
+- Mark `antigravity` and `codex` subscription windows as `rolling=True` (in both
+  the CodexBar and Paseo collectors) and include them in
+  `SUBSCRIPTION_WINDOW_PROVIDERS`, so unused weekly windows render
+  `0u/100l/7d↻` ("starts on first use") after placeholder reset stripping
+  instead of bare `0u/100l`, and all-unused accounts stay classified as
+  `subscription_window` rather than `unknown`.
+
 ## [5.4.0] - 2026-11-22
 
 ### Added
