@@ -17,6 +17,7 @@ from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .paseo import collect_paseo
 from .qwencloud import collect_qwencloud
+from .rfab import collect_rfab
 from .runner import run_collectors
 from .tokscale import collect_tokscale
 
@@ -37,6 +38,7 @@ __all__ = [
     "collect_deepseek",
     "collect_openrouter",
     "collect_qwencloud",
+    "collect_rfab",
     "collect_bailian",
     "collect_tokscale",
     "run_collectors",

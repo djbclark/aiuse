@@ -32,6 +32,7 @@ _ALL_COLLECTORS = (
     "opencode_zen",
     "openrouter",
     "deepseek",
+    "rfab",
     "sipb",
     "tokscale",
     "clinepass",

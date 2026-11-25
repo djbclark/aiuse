@@ -18,6 +18,7 @@ from aiuse.config import (
     canonical_disabled_services,
     collection_policy_fingerprint,
     collector_serves_requested,
+    provider_requires_operator_approval,
     requested_providers,
     timeout_for,
 )
@@ -58,6 +59,7 @@ from .openusage import collect_openusage_ai
 from .openusage_sh import collect_openusage_sh
 from .paseo import collect_paseo
 from .qwencloud import collect_qwencloud
+from .rfab import collect_rfab
 from .sipb import collect_sipb
 from .throttle import min_intervals
 from .tokscale import collect_tokscale
@@ -73,6 +75,7 @@ DEFAULT_SOURCE_PRIORITY: tuple[str, ...] = (
     "opencode_zen",
     "openrouter",
     "deepseek",
+    "rfab",
     "tokscale",
     "paseo",
     "clinepass",
@@ -131,6 +134,7 @@ PROVIDER_SOURCE_PRIORITY: dict[str, tuple[str, ...]] = {
     "omp": ("codexbar", "omp_agent_db", "acp"),
     # Native /user/balance is DeepSeek's own number; CodexBar cross-checks (#16).
     "deepseek": ("deepseek", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "acp"),
+    "rfab": ("rfab", "acp"),
     # Native /go page sees an expired plan; CodexBar local $caps cannot.
     "opencode-go": ("opencode_go", "codexbar", "caut", "openusage_ai", "openusage_sh", "tokscale", "acp"),
 }
@@ -146,6 +150,7 @@ SOURCE_LABELS: dict[str, str] = {
     "opencode_zen": "OpenCode Zen (native)",
     "openrouter": "OpenRouter (native)",
     "deepseek": "DeepSeek (native)",
+    "rfab": "rfab.ai (native)",
     "tokscale": "tokscale",
     "paseo": "Paseo (daemon)",
     "clinepass": "ClinePass (native)",
@@ -332,6 +337,17 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
         jobs.append(("openrouter", partial(collect_openrouter, timeout=timeout_for(config, "openrouter"))))
     if _enabled(collectors_cfg, "deepseek"):
         jobs.append(("deepseek", partial(collect_deepseek, timeout=timeout_for(config, "deepseek"))))
+    if _enabled(collectors_cfg, "rfab"):
+        jobs.append(
+            (
+                "rfab",
+                partial(
+                    collect_rfab,
+                    timeout=timeout_for(config, "rfab"),
+                    requires_operator_approval=provider_requires_operator_approval(config, "rfab", "rfab"),
+                ),
+            )
+        )
     if _enabled(collectors_cfg, "sipb"):
         sipb_cfg = collectors_cfg.get("sipb") if isinstance(collectors_cfg.get("sipb"), dict) else {}
         ignore_expired = bool(
@@ -457,6 +473,7 @@ def _run_collectors(config: dict[str, Any] | None = None) -> Snapshot:
     )
     _carry_forward_resets(snapshot)
     _apply_lapsed_accounts(snapshot.accounts, config)
+    _apply_operator_gates(snapshot.accounts, config)
     _apply_client_limit_notes(snapshot.accounts, config)
     snapshot.config_fingerprint = collection_policy_fingerprint(config)
     return snapshot
@@ -619,6 +636,17 @@ def _apply_lapsed_accounts(accounts: list[AccountUsage], config: dict[str, Any] 
             account.error = None
             account.notes.append(f"analysis.lapsed_accounts marks this account empty: {description}.")
             break
+
+
+def _apply_operator_gates(accounts: list[AccountUsage], config: dict[str, Any] | None) -> None:
+    """Honor config-declared operator gates (``operator_gated`` / ``requires_operator_approval``)."""
+    if not config:
+        return
+    for account in accounts:
+        if account.requires_operator_approval:
+            continue
+        if provider_requires_operator_approval(config, account.provider, account.source):
+            account.requires_operator_approval = True
 
 
 def _enabled(collectors_cfg: dict[str, Any], name: str) -> bool:

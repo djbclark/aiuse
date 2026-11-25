@@ -41,6 +41,8 @@ OPENUSAGE_SH_TIMEOUT = 90.0
 # `caam limits --format json` sweeps four providers under caam's own 60s
 # deadline; the same 90s budget as OpenUsage.sh covers a slow sweep.
 CAAM_TIMEOUT = 90.0
+# Direct JSON GET against api.rfab.ai/api/tokens/balance.
+RFAB_TIMEOUT = 15.0
 # Minimum seconds between live quota queries per provider, shared by every aiuse
 # process (collectors/throttle.py). agy answers probes in quick succession with
 # 429s on every model, so its quota is read at most once per 15 minutes.
@@ -78,6 +80,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cswap": CSWAP_TIMEOUT,
         "openusage_sh": OPENUSAGE_SH_TIMEOUT,
         "caam": CAAM_TIMEOUT,
+        "rfab": RFAB_TIMEOUT,
     },
     "analysis": {
         "min_remaining_percent": 40,
@@ -269,6 +272,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "name": "OpenRouter (prepaid)",
             "notes": "API credits usually roll until spent (not use-or-lose).",
         },
+        "rfab": {
+            "name": "Reality Fabricator (rfab.ai)",
+            "notes": "Prepaid token balance (50,000 tokens = $1.00 USD); purchased tokens do not expire.",
+        },
         "muse": {
             "name": "Muse Spark / Muse Code",
             "notes": "Pay-as-you-go via Meta Model API ($1.25/$4.25 per 1M; contributor $0.10/$4.25). Rate limits 3k/4M tokens/min (contributor 60/2.1M). No subscription windows.",
@@ -407,6 +414,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "acp": {"enabled": True, "max_age_hours": 168},
         "openrouter": {"enabled": True},
         "deepseek": {"enabled": True},
+        "rfab": {"enabled": True},
         "clinepass": {"enabled": True},
     },
     # Provider -> "blend" (default) or one collector id. A collector id is the
@@ -479,6 +487,7 @@ KNOWN_TOP_LEVEL_KEYS = frozenset(
         "attribution",
         "disabled_services",
         "hidden_pools",
+        "operator_gated",
         "usage_sources",
         "floors",
     }
@@ -508,6 +517,7 @@ KNOWN_TIMEOUT_KEYS = frozenset(
         "bailian",
         "openrouter",
         "deepseek",
+        "rfab",
         "clinepass",
         "grok_billing",
     }
@@ -531,6 +541,7 @@ KNOWN_COLLECTOR_KEYS = frozenset(
         "openrouter",
         "sipb",
         "deepseek",
+        "rfab",
         "clinepass",
         "grok_billing",
         "acp",
@@ -561,6 +572,8 @@ KNOWN_COLLECTOR_ENTRY_KEYS = frozenset(
         "accounts",
         "ignore_expired_certificates",
         "verify_ssl",
+        "operator_gated",
+        "requires_operator_approval",
     }
 )
 KNOWN_MACOS_KEYS = frozenset({"codesign_identity"})
@@ -584,6 +597,7 @@ SINGLE_PROVIDER_COLLECTORS: dict[str, str] = {
     "clinepass": "clinepass",
     "openrouter": "openrouter",
     "deepseek": "deepseek",
+    "rfab": "rfab",
     "omp_agent_db": "omp",
 }
 
@@ -640,6 +654,8 @@ _POLICY_COLLECTOR_KEYS = (
     "all_accounts",
     "include_disabled",
     "accounts",
+    "operator_gated",
+    "requires_operator_approval",
 )
 
 
@@ -660,6 +676,57 @@ def canonical_disabled_services(config: dict[str, Any] | None) -> dict[str, str]
         reason = value.strip() if isinstance(value, str) and value.strip() else "disabled by operator"
         disabled[provider] = reason
     return disabled
+
+
+def canonical_operator_gated(config: dict[str, Any] | None) -> dict[str, str]:
+    """Canonical provider -> reason from top-level ``[operator_gated]``."""
+    raw = (config or {}).get("operator_gated")
+    if not isinstance(raw, dict):
+        return {}
+    gated: dict[str, str] = {}
+    for key, value in raw.items():
+        provider = canonical_provider(str(key).split("/", 1)[0].strip())
+        if not provider:
+            continue
+        if value is True:
+            gated[provider] = "operator gated"
+        elif isinstance(value, str) and value.strip():
+            gated[provider] = value.strip()
+    return gated
+
+
+def provider_requires_operator_approval(
+    config: Mapping[str, Any] | None,
+    provider: str,
+    collector_name: str | None = None,
+) -> bool:
+    """Whether config marks ``provider`` (or its collector) as operator-gated.
+
+    Recognizes ``[collectors.<name>] operator_gated = true`` /
+    ``requires_operator_approval = true``, top-level ``[operator_gated]``, and
+    ``[plans.<provider>] operator_gated`` / ``requires_operator_approval``.
+    """
+    if not isinstance(config, Mapping):
+        return False
+    canon = canonical_provider(provider)
+    collectors = config.get("collectors")
+    if isinstance(collectors, Mapping):
+        for key in filter(None, (collector_name, provider, canon)):
+            entry = collectors.get(key)
+            if isinstance(entry, Mapping) and (
+                entry.get("requires_operator_approval") is True or entry.get("operator_gated") is True
+            ):
+                return True
+    if canon in canonical_operator_gated(dict(config)):
+        return True
+    plans = config.get("plans")
+    if isinstance(plans, Mapping):
+        meta = _plan_meta_lookup(plans, provider)
+        if isinstance(meta, Mapping) and (
+            meta.get("requires_operator_approval") is True or meta.get("operator_gated") is True
+        ):
+            return True
+    return False
 
 
 def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
@@ -696,6 +763,9 @@ def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
     if include or exclude:
         # Only when a flag is given, so every fingerprint without one is unchanged.
         payload["provider_selection"] = {"include": sorted(include), "exclude": sorted(exclude)}
+    gated = canonical_operator_gated(cfg)
+    if gated:
+        payload["operator_gated"] = gated
     raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -1260,6 +1330,9 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                 issues.append(
                     f"error: collectors.{name}.ignore_expired_certificates must be a boolean (got {entry['ignore_expired_certificates']!r})"
                 )
+            for gate_key in ("operator_gated", "requires_operator_approval"):
+                if gate_key in entry and not isinstance(entry[gate_key], bool):
+                    issues.append(f"error: collectors.{name}.{gate_key} must be a boolean (got {entry[gate_key]!r})")
             for age_key in ("max_cache_age_seconds", "max_cache_age"):
                 if age_key in entry:
                     try:
@@ -1453,6 +1526,16 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                         f"warning: collectors.{name} enabled override has no effect — "
                         f"provider {provider} is disabled overall via [disabled_services]"
                     )
+
+    operator_gated = cfg.get("operator_gated")
+    if operator_gated is not None and not isinstance(operator_gated, dict):
+        issues.append("error: operator_gated must be a provider -> reason or bool mapping")
+    elif isinstance(operator_gated, dict):
+        for key, value in operator_gated.items():
+            if not str(key).split("/", 1)[0].strip():
+                issues.append(f"error: operator_gated key {key!r} needs a provider")
+            if not (isinstance(value, bool) or (isinstance(value, str) and value.strip())):
+                issues.append(f"error: operator_gated.{key} needs a reason string or boolean")
 
     plans = cfg.get("plans")
     if plans is not None and not isinstance(plans, dict):
@@ -1870,6 +1953,8 @@ def _default_toml_text() -> str:
         "# hermes = 45",
         "# grok_billing = 15",
         "# openrouter = 45",
+        "# deepseek = 45",
+        "# rfab = 15",
         "# clinepass = 45",
         "",
         "# CLI `--timeout` / `-t` overrides every tool for that run.",

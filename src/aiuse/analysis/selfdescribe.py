@@ -96,6 +96,7 @@ SEMANTICS: dict[str, Any] = {
         "clinepass": "clinepass:default",
         "zai": "zai:default",
         "deepseek": "deepseek:default",
+        "rfab": "rfab:default",
         "bedrock": "aws:bedrock",
         "sipb": "sipb:default",
     },
@@ -1637,7 +1638,7 @@ def pool_entries(
                     **(
                         {"spent_usd": account["spent_usd"], "balance_usd": account.get("balance_usd")}
                         if account.get("spent_usd") is not None
-                        else {}
+                        else ({"balance_usd": account["balance_usd"]} if account.get("balance_usd") is not None else {})
                     ),
                     **(
                         {"requires_operator_approval": True, "ai_notice": OPERATOR_APPROVAL_NOTICE}

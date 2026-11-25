@@ -43,6 +43,7 @@ QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
     ),  # grant dollars via CodexBar's Claude Platform row; key-pool presence via omp's agent.db
     "deepseek": ("deepseek", "codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
     "openrouter": ("openrouter", "codexbar", "openusage_ai", "hermes"),
+    "rfab": ("rfab",),
     "qwencloud": ("qwencloud", "codexbar"),
     "alibaba": ("bailian", "codexbar"),
     "sipb": ("sipb",),
@@ -74,6 +75,7 @@ _CREDENTIAL_ENV: dict[str, str] = {
     "opencode_zen": "AIUSE_OPENCODE_ZEN_COOKIE",
     "openrouter": "AIUSE_OPENROUTER_MANAGEMENT_KEY",
     "deepseek": "AIUSE_DEEPSEEK_API_KEY",
+    "rfab": "RFAB_API_KEY",
 }
 
 _OPENUSAGE_APP = Path("/Applications/OpenUsage.app/Contents/Helpers/openusage")
