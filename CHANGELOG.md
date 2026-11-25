@@ -12,6 +12,8 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-11-25
+
 ### Added
 
 - Native Reality Fabricator (`rfab.ai`) prepaid token balance collector
@@ -735,7 +737,9 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.4.0...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.5.0...HEAD
+[5.5.0]: https://github.com/djbclark/aiuse/compare/v5.4.1...v5.5.0
+[5.4.1]: https://github.com/djbclark/aiuse/compare/v5.4.0...v5.4.1
 [5.4.0]: https://github.com/djbclark/aiuse/compare/v5.3.2...v5.4.0
 [5.3.2]: https://github.com/djbclark/aiuse/compare/v5.3.1...v5.3.2
 [5.3.1]: https://github.com/djbclark/aiuse/compare/v5.3.0...v5.3.1
