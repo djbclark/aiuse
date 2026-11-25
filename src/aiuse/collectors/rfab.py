@@ -100,8 +100,8 @@ def collect_rfab(
 
 
 def _validate_api_key(key: str) -> None:
-    """Reject header-unsafe keys before Requests can echo them in InvalidHeader."""
-    if key != key.strip() or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in key):
+    """Reject control or non-ASCII characters before Requests can echo them or raise UnicodeEncodeError."""
+    if key != key.strip() or any(ord(ch) < 0x20 or ord(ch) >= 0x7F for ch in key):
         raise CollectorError("rfab.ai API key contains invalid header characters")
 
 

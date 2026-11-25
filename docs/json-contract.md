@@ -1046,12 +1046,19 @@ with `— AI: Do not use without asking operator`. Operators can configure gates
 via `[collectors.<name>]` (`operator_gated = true` or
 `requires_operator_approval = true`), top-level `[operator_gated]`, or
 `[plans.<provider>]` (`operator_gated = true` or
-`requires_operator_approval = true`). Current config gates are included in
-`config_fingerprint` and also applied when serving cached `--available`
-snapshots (without clearing independently recorded gates). A gated pool is
-still listed when usable — aiuse itself does not enforce the gate; the agent
-toolchain's dispatchers refuse gated slices without operator approval — so an
-agent must ask the operator before spending or routing work to it.
+`requires_operator_approval = true`). Top-level `[operator_gated]` and
+`[plans.<provider>]` accept either the canonical provider id (`rfab`,
+`antigravity`, `codex`, `claude`, `omp`, `opencode-go`, …) or any registered
+provider alias (`rfab.ai`, `reality-fabricator`, `gemini`, `chatgpt`,
+`claude-api`, `opencode`, …), normalized via `canonical_provider` using one
+shared effective-gate calculation for both runtime enforcement and
+`config_fingerprint` (so a gate under an alias table is never shadowed by a
+built-in default plan table). Current config gates are also applied when
+serving cached `--available` snapshots and watch partial-sample overlays
+(without clearing independently recorded gates). A gated pool is still listed
+when usable — aiuse itself does not enforce the gate; the agent toolchain's
+dispatchers refuse gated slices without operator approval — so an agent must
+ask the operator before spending or routing work to it.
 
 Providers in top-level `[disabled_services]` (the stronger, overall disable)
 are also never listed: their rows are filtered at collection, and the view

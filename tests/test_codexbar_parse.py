@@ -1040,15 +1040,19 @@ def test_providers_filter_skips_clinepass_collector(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_tokscale", lambda **_kw: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_acp", lambda **_kw: [])
 
-    def fail_rfab(**_kw):
-        raise AssertionError("rfab should be filtered out")
+    rfab_ran: list[bool] = []
 
-    monkeypatch.setattr("aiuse.collectors.runner.collect_rfab", fail_rfab)
+    def fake_rfab(**_kw):
+        rfab_ran.append(True)
+        return []
+
+    monkeypatch.setattr("aiuse.collectors.runner.collect_rfab", fake_rfab)
     monkeypatch.setattr("aiuse.collectors.runner.collect_hermes", lambda **_kw: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_paseo", lambda **_kw: [])
 
     run_collectors({"collectors": {"codexbar": {"providers": "cursor"}, "clinepass": {"enabled": True}}})
     assert clinepass_ran == []
+    assert rfab_ran == []
 
 
 def test_generate_config_includes_collectors_section(monkeypatch, tmp_path):

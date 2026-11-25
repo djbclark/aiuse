@@ -726,6 +726,75 @@ def test_watch_frame_overlays_newer_burst_samples_on_the_full_snapshot(monkeypat
     assert seen == [snapshot], "alerts are re-derived from the overlaid readings"
 
 
+def test_watch_frame_preserves_and_reapplies_operator_gates_across_partial_overlays(monkeypatch):
+    from datetime import timedelta
+
+    from aiuse.analysis.history import save_snapshot
+    from aiuse.config import collection_policy_fingerprint
+    from aiuse.models import OPERATOR_APPROVAL_NOTICE
+
+    def gated_window_account(provider: str, used: float, *, gated: bool) -> AccountUsage:
+        window = QuotaWindow(
+            label=f"{provider} weekly",
+            used_percent=used,
+            remaining_percent=100.0 - used,
+            resets_at=utcnow() + timedelta(hours=12),
+            window_minutes=10080,
+        )
+        return AccountUsage(
+            source="codexbar",
+            provider=provider,
+            billing_kind=BillingKind.SUBSCRIPTION_WINDOW,
+            windows=[window],
+            requires_operator_approval=gated,
+        )
+
+    config = {
+        "analysis": {"persist_snapshots": True},
+        "plans": {
+            "clinepass": {"monthly_price": 20, "requires_operator_approval": True},
+            "codex": {"monthly_price": 20},
+        },
+    }
+    full_at = utcnow() - timedelta(minutes=5)
+    # Full snapshot matches policy: clinepass is config-gated (even if stored ungated), codex carries a recorded gate.
+    save_snapshot(
+        Snapshot(
+            collected_at=full_at,
+            accounts=[
+                gated_window_account("clinepass", 10, gated=False),
+                gated_window_account("codex", 10, gated=True),
+            ],
+            config_fingerprint=collection_policy_fingerprint(config),
+        ),
+        [],
+        config=config,
+    )
+    # Newer burst partials arrived ungated (e.g. from a sampler under older config).
+    burst = Snapshot(
+        collected_at=full_at + timedelta(minutes=3),
+        accounts=[
+            gated_window_account("clinepass", 15, gated=False),
+            gated_window_account("codex", 15, gated=False),
+        ],
+    )
+    save_snapshot(burst, [], partial_providers=["clinepass", "codex"])
+
+    monkeypatch.setattr("aiuse.watch.run_collectors", lambda _c: pytest.fail("must not collect"))
+    monkeypatch.setattr("aiuse.watch.maybe_local_runtime_alerts", lambda *_a, **_k: [])
+
+    snapshot, alerts = collect_watch_frame(config, max_age=600)
+    by_provider = {a.provider: a for a in snapshot.accounts}
+    assert by_provider["clinepass"].windows[0].used_percent == 15
+    assert by_provider["codex"].windows[0].used_percent == 15
+    assert by_provider["clinepass"].requires_operator_approval is True
+    assert by_provider["codex"].requires_operator_approval is True
+    assert {alert.provider for alert in alerts} == {"clinepass", "codex"}
+    for alert in alerts:
+        assert alert.requires_operator_approval is True
+        assert OPERATOR_APPROVAL_NOTICE in alert.message
+
+
 def test_format_clock_is_twelve_hour_without_leading_zeros():
     from datetime import datetime
 

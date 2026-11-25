@@ -695,6 +695,57 @@ def canonical_operator_gated(config: dict[str, Any] | None) -> dict[str, str]:
     return gated
 
 
+def _plan_gate_providers(config: Mapping[str, Any] | None) -> frozenset[str]:
+    """Canonical providers gated under any ``[plans.<key>]`` spelling.
+
+    Scans every plan table rather than stopping at ``_plan_meta_lookup``'s first
+    pricing table, so a gate under ``[plans.antigravity]`` or ``[plans."rfab.ai"]``
+    is never shadowed by a built-in default table under another spelling
+    (``[plans.gemini]``, ``[plans.rfab]``).
+    """
+    if not isinstance(config, Mapping):
+        return frozenset()
+    plans = config.get("plans")
+    if not isinstance(plans, Mapping):
+        return frozenset()
+    gated: set[str] = set()
+    for key, meta in plans.items():
+        if not isinstance(meta, Mapping):
+            continue
+        if meta.get("requires_operator_approval") is True or meta.get("operator_gated") is True:
+            provider = canonical_provider(str(key).strip())
+            if provider:
+                gated.add(provider)
+    return frozenset(gated)
+
+
+def effective_operator_gated_providers(config: Mapping[str, Any] | None) -> frozenset[str]:
+    """Canonical providers gated by top-level ``[operator_gated]`` or any ``[plans.*]`` table."""
+    if not isinstance(config, Mapping):
+        return frozenset()
+    gated = set(canonical_operator_gated(dict(config)))
+    gated.update(_plan_gate_providers(config))
+    return frozenset(gated)
+
+
+def effective_operator_gated_collectors(config: Mapping[str, Any] | None) -> frozenset[str]:
+    """Collector keys gated via ``[collectors.<name>]`` (``operator_gated`` / ``requires_operator_approval``)."""
+    if not isinstance(config, Mapping):
+        return frozenset()
+    collectors = config.get("collectors")
+    if not isinstance(collectors, Mapping):
+        return frozenset()
+    gated: set[str] = set()
+    for key, entry in collectors.items():
+        if isinstance(entry, Mapping) and (
+            entry.get("requires_operator_approval") is True or entry.get("operator_gated") is True
+        ):
+            name = str(key).strip()
+            if name:
+                gated.add(name)
+    return frozenset(gated)
+
+
 def provider_requires_operator_approval(
     config: Mapping[str, Any] | None,
     provider: str,
@@ -704,47 +755,23 @@ def provider_requires_operator_approval(
 
     Recognizes ``[collectors.<name>] operator_gated = true`` /
     ``requires_operator_approval = true``, top-level ``[operator_gated]``, and
-    ``[plans.<provider>] operator_gated`` / ``requires_operator_approval``.
+    ``[plans.<provider>] operator_gated`` / ``requires_operator_approval`` across
+    canonical provider ids and registered aliases (shared with
+    :func:`collection_policy_fingerprint`).
     """
     if not isinstance(config, Mapping):
         return False
     canon = canonical_provider(provider)
-    collectors = config.get("collectors")
-    if isinstance(collectors, Mapping):
-        for key in filter(None, (collector_name, provider, canon)):
-            entry = collectors.get(key)
-            if isinstance(entry, Mapping) and (
-                entry.get("requires_operator_approval") is True or entry.get("operator_gated") is True
-            ):
-                return True
-    if canon in canonical_operator_gated(dict(config)):
+    if canon in effective_operator_gated_providers(config):
         return True
-    plans = config.get("plans")
-    if isinstance(plans, Mapping):
-        meta = _plan_meta_lookup(plans, provider)
-        if isinstance(meta, Mapping) and (
-            meta.get("requires_operator_approval") is True or meta.get("operator_gated") is True
-        ):
+    gated_collectors = effective_operator_gated_collectors(config)
+    if any(key in gated_collectors for key in filter(None, (collector_name, provider, canon))):
+        return True
+    for name in gated_collectors:
+        mapped = SINGLE_PROVIDER_COLLECTORS.get(name)
+        if mapped is not None and canonical_provider(mapped) == canon:
             return True
     return False
-
-
-def _plan_operator_gated(config: Mapping[str, Any] | None) -> dict[str, bool]:
-    """Canonical provider -> True for plans that set ``operator_gated`` or ``requires_operator_approval``."""
-    if not isinstance(config, Mapping):
-        return {}
-    plans = config.get("plans")
-    if not isinstance(plans, Mapping):
-        return {}
-    gated: dict[str, bool] = {}
-    for key, meta in plans.items():
-        if not isinstance(meta, Mapping):
-            continue
-        if meta.get("requires_operator_approval") is True or meta.get("operator_gated") is True:
-            provider = canonical_provider(str(key).strip())
-            if provider:
-                gated[provider] = True
-    return gated
 
 
 def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
@@ -781,12 +808,9 @@ def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
     if include or exclude:
         # Only when a flag is given, so every fingerprint without one is unchanged.
         payload["provider_selection"] = {"include": sorted(include), "exclude": sorted(exclude)}
-    gated = canonical_operator_gated(cfg)
-    if gated:
-        payload["operator_gated"] = gated
-    plan_gated = _plan_operator_gated(cfg)
-    if plan_gated:
-        payload["plan_operator_gated"] = plan_gated
+    effective_gated = sorted(effective_operator_gated_providers(cfg))
+    if effective_gated:
+        payload["effective_operator_gated"] = effective_gated
     raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

@@ -22,6 +22,8 @@ from aiuse.config import (
     KNOWN_COLLECTOR_KEYS,
     SINGLE_PROVIDER_COLLECTORS,
     collection_policy_fingerprint,
+    load_config,
+    provider_requires_operator_approval,
     snapshot_matches_policy,
     timeout_for,
     validate_config,
@@ -290,7 +292,16 @@ def test_timeout_and_network_errors_raise_without_leaking_key_or_traceback_cause
     assert SECRET_KEY not in formatted_tb
 
 
-@pytest.mark.parametrize("bad_key", [f"{SECRET_KEY}\nX-Evil: 1", f"{SECRET_KEY}\r\nX-Evil: 1", f"{SECRET_KEY}\x00tail"])
+@pytest.mark.parametrize(
+    "bad_key",
+    [
+        f"{SECRET_KEY}\nX-Evil: 1",
+        f"{SECRET_KEY}\r\nX-Evil: 1",
+        f"{SECRET_KEY}\x00tail",
+        f"{SECRET_KEY}_€_non_latin1",
+        f"{SECRET_KEY}_🚀",
+    ],
+)
 def test_multiline_or_control_char_key_rejected_before_http_without_traceback_leak(monkeypatch, bad_key):
     monkeypatch.setattr(requests, "get", lambda *a, **k: pytest.fail("invalid key must not reach requests.get"))
 
@@ -583,7 +594,8 @@ def test_cached_available_json_applies_newly_configured_gate_without_clearing_ex
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text(config_toml, encoding="utf-8")
 
-    # Never invoke live collectors during cached --available
+    # Never invoke live collectors during cached --available (patch cli binding directly).
+    monkeypatch.setattr(cli, "run_collectors", lambda *_a, **_k: pytest.fail("should read cached latest.json"))
     monkeypatch.setattr(runner, "run_collectors", lambda *_a, **_k: pytest.fail("should read cached latest.json"))
 
     rc = cli.main(["--config", str(cfg_path), "--available", "--json"])
@@ -597,3 +609,39 @@ def test_cached_available_json_applies_newly_configured_gate_without_clearing_ex
     # Independently recorded gate on cached account is preserved even when config does not gate deepseek.
     assert by_provider["deepseek"]["requires_operator_approval"] is True
     assert by_provider["deepseek"]["ai_notice"] == OPERATOR_APPROVAL_NOTICE
+
+
+@pytest.mark.parametrize(
+    ("provider", "canonical_plan", "alias_plan"),
+    [
+        ("antigravity", "antigravity", "gemini"),
+        ("rfab", "rfab", "rfab.ai"),
+    ],
+)
+def test_merged_load_config_plan_gates_match_runtime_and_fingerprint_across_aliases(
+    tmp_path, provider, canonical_plan, alias_plan
+):
+    base_path = tmp_path / "base.toml"
+    base_path.write_text("", encoding="utf-8")
+    base_cfg = load_config(base_path)
+    assert provider_requires_operator_approval(base_cfg, provider) is False
+    base_fp = collection_policy_fingerprint(base_cfg)
+
+    canon_path = tmp_path / "canon.toml"
+    canon_path.write_text(f'[plans."{canonical_plan}"]\nrequires_operator_approval = true\n', encoding="utf-8")
+    canon_cfg = load_config(canon_path)
+    assert provider_requires_operator_approval(canon_cfg, provider) is True
+    canon_fp = collection_policy_fingerprint(canon_cfg)
+    assert canon_fp != base_fp
+
+    alias_path = tmp_path / "alias.toml"
+    alias_path.write_text(f'[plans."{alias_plan}"]\nrequires_operator_approval = true\n', encoding="utf-8")
+    alias_cfg = load_config(alias_path)
+    assert provider_requires_operator_approval(alias_cfg, provider) is True
+    alias_fp = collection_policy_fingerprint(alias_cfg)
+    assert alias_fp != base_fp
+    # Moving the gate between canonical and alias plan tables yields the same runtime behavior and same fingerprint.
+    assert alias_fp == canon_fp
+    assert snapshot_matches_policy({"config_fingerprint": base_fp}, canon_cfg) is False
+    assert snapshot_matches_policy({"config_fingerprint": base_fp}, alias_cfg) is False
+    assert snapshot_matches_policy({"config_fingerprint": canon_fp}, alias_cfg) is True

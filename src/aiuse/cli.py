@@ -1306,7 +1306,7 @@ def _run_available(args: argparse.Namespace) -> int:
         snap_dict = snapshot.to_dict()
         source = "live"
 
-    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, apply_operator_gates_dict, filter_ceiling_pools
+    from aiuse.analysis.selfdescribe import apply_hidden_pools_dict, filter_ceiling_pools
     from aiuse.client_limits import load_client_limits
 
     recorded_version = snap_dict.get("aiuse_version")
@@ -1320,7 +1320,6 @@ def _run_available(args: argparse.Namespace) -> int:
             a for a in snap_dict.get("accounts", []) if isinstance(a, dict) and _wanted(str(a.get("provider") or ""))
         ]
     apply_hidden_pools_dict(snap_dict, config)
-    apply_operator_gates_dict(snap_dict, config)
     from aiuse.credits_override import load_overrides
 
     enrich_snapshot(

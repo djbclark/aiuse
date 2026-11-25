@@ -29,7 +29,12 @@ from aiuse.analysis.local_runtimes import maybe_local_runtime_alerts
 from aiuse.analysis.selfdescribe import apply_shared_rate_gate_to_snapshot
 from aiuse.analysis.use_or_lose import analyze_use_or_lose
 from aiuse.collectors.runner import run_collectors
-from aiuse.config import DEPRECATED_COLLECTORS, collection_policy_fingerprint, snapshot_matches_policy
+from aiuse.config import (
+    DEPRECATED_COLLECTORS,
+    collection_policy_fingerprint,
+    provider_requires_operator_approval,
+    snapshot_matches_policy,
+)
 from aiuse.credits_override import apply_credit_overrides_to_snapshot, overrides_signature
 from aiuse.homebrew_formula import reexec_target
 from aiuse.ledger import load_json_range, save_ledger
@@ -102,8 +107,23 @@ def _overlay_burst_samples(snapshot: Snapshot) -> bool:
             target = exact[0] if exact else same[0] if len(same) == 1 else None
             if target is None:
                 continue
-            fresh.account = fresh.account or snapshot.accounts[target].account
+            existing = snapshot.accounts[target]
+            fresh.account = fresh.account or existing.account
+            if existing.requires_operator_approval:
+                fresh.requires_operator_approval = True
             snapshot.accounts[target] = fresh
+            applied = True
+    return applied
+
+
+def _apply_operator_gates_to_snapshot(snapshot: Snapshot, config: dict[str, Any]) -> bool:
+    """Apply current config operator gates onto a loaded/overlaid snapshot without clearing recorded gates."""
+    applied = False
+    for account in snapshot.accounts:
+        if account.requires_operator_approval:
+            continue
+        if provider_requires_operator_approval(config, account.provider, account.source):
+            account.requires_operator_approval = True
             applied = True
     return applied
 
@@ -122,7 +142,8 @@ def _frame_from_disk(max_age: float, config: dict[str, Any]) -> tuple[Snapshot, 
     burst_applied = _overlay_burst_samples(snapshot)
     overrides_applied = apply_credit_overrides_to_snapshot(snapshot, config)
     gate_applied = apply_shared_rate_gate_to_snapshot(snapshot)
-    if burst_applied or overrides_applied or gate_applied:
+    operator_gate_applied = _apply_operator_gates_to_snapshot(snapshot, config)
+    if burst_applied or overrides_applied or gate_applied or operator_gate_applied:
         # The stored alerts describe the older readings; re-derive them.
         alerts = analyze_use_or_lose(snapshot, config)
         alerts.extend(maybe_local_runtime_alerts(snapshot, config=config))
