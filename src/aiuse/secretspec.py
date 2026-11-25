@@ -25,6 +25,7 @@ revision = \"1.0\"
 OPENCODE_ZEN_COOKIE = { description = \"OpenCode console-session Cookie header for direct Zen balance collection; the Zen API key alone cannot read this balance.\", required = false }
 OPENROUTER_MANAGEMENT_KEY = { description = \"OpenRouter management key for fetching account-level prepaid credit balances.\", required = false }
 DEEPSEEK_API_KEY = { description = \"DeepSeek API key for the read-only prepaid balance endpoint (GET /user/balance); costs no tokens.\", required = false }
+RFAB_API_KEY = { description = \"Reality Fabricator (rfab.ai) API key for the prepaid token balance endpoint (GET /api/tokens/balance, X-API-Key).\", required = false }
 MUSE_COOKIE = { description = \"Meta Model API (dev.meta.ai) Cookie header for Muse free-credit balance via GraphQL; refresh with aiuse credential refresh muse --from chrome.\", required = false }
 MUSE_API_KEY = { description = \"Optional Muse / Meta Model API Bearer key (same as muse login providers.meta.api_key).\", required = false }
 ANTHROPIC_ADMIN_KEY = { description = \"Anthropic Admin API key (sk-ant-admin...) for `aiuse refresh-credits omp`, read through sudo-secretspec run only; reads the org cost report.\", required = false }
@@ -40,6 +41,10 @@ _OPTIONAL_SECRET_LINES = {
     "DEEPSEEK_API_KEY": (
         'DEEPSEEK_API_KEY = { description = "DeepSeek API key for the read-only prepaid balance endpoint '
         '(GET /user/balance); costs no tokens.", required = false }\n'
+    ),
+    "RFAB_API_KEY": (
+        'RFAB_API_KEY = { description = "Reality Fabricator (rfab.ai) API key for the prepaid token balance endpoint '
+        '(GET /api/tokens/balance, X-API-Key).", required = false }\n'
     ),
     "MUSE_COOKIE": (
         'MUSE_COOKIE = { description = "Meta Model API (dev.meta.ai) Cookie header for Muse '

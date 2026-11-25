@@ -14,6 +14,15 @@ Releases before 3.9.0 are in the
 
 ### Added
 
+- Native Reality Fabricator (`rfab.ai`) prepaid token balance collector
+  (`src/aiuse/collectors/rfab.py`): reads `GET https://api.rfab.ai/api/tokens/balance`
+  using `X-API-Key` (redirects disabled) from `AIUSE_RFAB_API_KEY`,
+  `RFAB_API_KEY`, or `sudo-secretspec` (`RFAB_API_KEY`), converts
+  `tokenBalance` at `50,000 tokens = $1.00 USD`, surfaces both USD balance and
+  token count in normal output and `--available --json`, skips quietly when no
+  key is configured, and honors `[collectors.rfab]` / `[operator_gated]` /
+  `[plans.rfab]` (`operator_gated` / `requires_operator_approval`) config flags
+  (including cached `--available` reads and `config_fingerprint`).
 - Nix flake (`flake.nix`, nixpkgs-unstable): `nix run github:djbclark/aiuse`,
   `nix profile install github:djbclark/aiuse`, a dev shell, and a `nix` CI job
   running `nix flake check` (the build runs the test suite).

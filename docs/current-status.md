@@ -55,9 +55,9 @@ Matrix scope: `openai-api`; pool key: `omp_openai`.
 See [`json-contract.md`](json-contract.md).
 The
 per-release narrative lives in [`docs/handoffs/`](docs/handoffs/); this line
-tracks only what a fresh session must know. **21 registered collectors**
+tracks only what a fresh session must know. **22 registered collectors**
 (cswap, CodexBar, caut, caam, OpenUsage.ai/.sh, OpenCode Go/Zen, tokscale,
-hermes, muse, qwencloud, bailian, openrouter, deepseek, clinepass,
+hermes, muse, qwencloud, bailian, openrouter, deepseek, rfab, clinepass,
 grok_billing, `omp_agent_db` — omp's Anthropic API-key pool from
 `~/.omp/agent/agent.db` plus OpenAI API-key route from
 `~/.omp/agent/models.yml`, presence rows that coexist with a CodexBar grant

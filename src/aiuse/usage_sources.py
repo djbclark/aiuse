@@ -43,6 +43,7 @@ QUOTA_COVERAGE: dict[str, tuple[str, ...]] = {
     ),  # grant dollars via CodexBar's Claude Platform row; key-pool presence via omp's agent.db
     "deepseek": ("deepseek", "codexbar", "openusage_ai", "openusage_sh", "tokscale", "hermes"),
     "openrouter": ("openrouter", "codexbar", "openusage_ai", "hermes"),
+    "rfab": ("rfab",),
     "qwencloud": ("qwencloud", "codexbar"),
     "alibaba": ("bailian", "codexbar"),
     "sipb": ("sipb",),
@@ -69,11 +70,12 @@ _TOOL: dict[str, str] = {
     "grok_billing": "grok",
 }
 
-_CREDENTIAL_ENV: dict[str, str] = {
+_CREDENTIAL_ENV: dict[str, str | tuple[str, ...]] = {
     "opencode_go": "AIUSE_OPENCODE_ZEN_COOKIE",
     "opencode_zen": "AIUSE_OPENCODE_ZEN_COOKIE",
     "openrouter": "AIUSE_OPENROUTER_MANAGEMENT_KEY",
     "deepseek": "AIUSE_DEEPSEEK_API_KEY",
+    "rfab": ("AIUSE_RFAB_API_KEY", "RFAB_API_KEY"),
 }
 
 _OPENUSAGE_APP = Path("/Applications/OpenUsage.app/Contents/Helpers/openusage")
@@ -254,11 +256,14 @@ def _quota_availability(
         if lookup("openusage"):
             return "active", "openusage on PATH (confirm it is OpenUsage.app, not openusage.sh)." + extra
         return "inactive", "OpenUsage.app CLI not found; loopback HTTP may still answer." + extra
-    env_name = _CREDENTIAL_ENV.get(source)
-    if env_name:
-        if env.get(env_name, "").strip():
-            return "active", f"{env_name} is set."
-        return "enabled", f"collector on; quiet until {env_name} or its SecretSpec key is set."
+    env_spec = _CREDENTIAL_ENV.get(source)
+    if env_spec:
+        env_names = (env_spec,) if isinstance(env_spec, str) else env_spec
+        for env_name in env_names:
+            if env.get(env_name, "").strip():
+                return "active", f"{env_name} is set."
+        joined = " / ".join(env_names)
+        return "enabled", f"collector on; quiet until {joined} or its SecretSpec key is set."
     if source == "sipb":
         if env.get("MIT_SIPB_API_KEY", "").strip():
             return "active", "MIT_SIPB_API_KEY is set."

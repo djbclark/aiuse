@@ -21,6 +21,7 @@
 # bailian = 45             # bailian-cli / bl (`bl auth login --console` once)
 # openrouter = 45
 # deepseek = 45
+# rfab = 15                # native Reality Fabricator (rfab.ai) prepaid token balance
 # clinepass = 45
 # grok_billing = 15        # native Grok Extra Usage Credits billing (~/.grok/auth.json)
 # sipb = 5                 # MIT SIPB probe (keep short so a dead host does not hold the collect)
@@ -81,6 +82,13 @@
 # Native DeepSeek prepaid balance (GET /user/balance, read-only, no tokens).
 # Quiet until AIUSE_DEEPSEEK_API_KEY or SecretSpec DEEPSEEK_API_KEY is set.
 # enabled = true
+
+[collectors.rfab]
+# Native Reality Fabricator (rfab.ai) prepaid token balance
+# (GET https://api.rfab.ai/api/tokens/balance, X-API-Key; 50,000 tokens = $1.00).
+# Quiet until AIUSE_RFAB_API_KEY, RFAB_API_KEY, or sudo-secretspec RFAB_API_KEY is set.
+# enabled = true
+# operator_gated = false          # set true (or requires_operator_approval = true) to gate AI routing
 
 [collectors.clinepass]
 # Native ClinePass 5h/weekly/monthly limits. One unlabelled key by default:

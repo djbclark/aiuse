@@ -434,6 +434,8 @@ def test_run_collectors_runs_sources_concurrently_not_sequentially(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_go", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_clinepass", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openrouter", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_deepseek", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_rfab", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_hermes", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_muse", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_qwencloud", lambda **_k: [])
@@ -475,6 +477,8 @@ def test_run_collectors_keeps_other_sources_when_one_raises(monkeypatch):
     monkeypatch.setattr("aiuse.collectors.runner.collect_opencode_go", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_clinepass", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_openrouter", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_deepseek", lambda **_k: [])
+    monkeypatch.setattr("aiuse.collectors.runner.collect_rfab", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_hermes", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_muse", lambda **_k: [])
     monkeypatch.setattr("aiuse.collectors.runner.collect_qwencloud", lambda **_k: [])
@@ -668,6 +672,8 @@ _ALL_COLLECTORS = (
     "opencode_go",
     "opencode_zen",
     "openrouter",
+    "deepseek",
+    "rfab",
     "tokscale",
     "clinepass",
     "hermes",

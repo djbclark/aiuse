@@ -1036,13 +1036,28 @@ routing entries read; the account's own `floor_percent` keeps describing its oth
 pools.
 
 An expiring dollar grant (`omp`) adds `spent_usd` and `balance_usd` to its
-routing entry, so a reader sees the dollars without opening the account.
+routing entry, and any prepaid account with a balance (`rfab`, etc.) also
+exposes optional `balance_usd` on its routing entry so a reader sees the
+dollars without opening the account.
 
-A routing entry for an operator-gated account (today `omp`) carries
+A routing entry for an operator-gated account carries
 `requires_operator_approval: true` and `ai_notice`, and its summary line ends
-with `— AI: Do not use without asking operator`. It is still listed when
-usable — aiuse itself does not enforce the gate; the agent toolchain's
-dispatchers refuse an omp slice without operator approval — but an agent must
+with `— AI: Do not use without asking operator`. Operators can configure gates
+via `[collectors.<name>]` (`operator_gated = true` or
+`requires_operator_approval = true`), top-level `[operator_gated]`, or
+`[plans.<provider>]` (`operator_gated = true` or
+`requires_operator_approval = true`). Top-level `[operator_gated]` and
+`[plans.<provider>]` accept either the canonical provider id (`rfab`,
+`antigravity`, `codex`, `claude`, `omp`, `opencode-go`, …) or any registered
+provider alias (`rfab.ai`, `reality-fabricator`, `gemini`, `chatgpt`,
+`claude-api`, `opencode`, …), normalized via `canonical_provider` using one
+shared effective-gate calculation for both runtime enforcement and
+`config_fingerprint` (so a gate under an alias table is never shadowed by a
+built-in default plan table). Current config gates are also applied when
+serving cached `--available` snapshots and watch partial-sample overlays
+(without clearing independently recorded gates). A gated pool is still listed
+when usable — aiuse itself does not enforce the gate; the agent toolchain's
+dispatchers refuse gated slices without operator approval — so an agent must
 ask the operator before spending or routing work to it.
 
 Providers in top-level `[disabled_services]` (the stronger, overall disable)
@@ -1173,7 +1188,7 @@ into the other.
 
 | Field                                                                 | Type                 | Stable?                                                                                                                                                                                                                                                                                                                                                                                                        |
 | --------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`                                                              | string               | yes — `cswap` \| `codexbar` \| `caut` \| `caam` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing` \| `acp`; grows as collectors are added                                                                                                                                                                   |
+| `source`                                                              | string               | yes — `cswap` \| `codexbar` \| `caut` \| `caam` \| `openusage_ai` \| `openusage_sh` \| `tokscale` \| `clinepass` \| `hermes` \| `openrouter` \| `deepseek` \| `rfab` \| `muse` \| `qwencloud` \| `bailian` \| `grok_billing` \| `acp`; grows as collectors are added                                                                                                                                           |
 | `provider`                                                            | string               | yes — collector id (e.g. `claude`, `codex`, `antigravity`)                                                                                                                                                                                                                                                                                                                                                     |
 | `cli_binary`                                                          | string \| null       | local CLI binary that spends this quota; `null` = API-only / cloud-run (see below)                                                                                                                                                                                                                                                                                                                             |
 | `account`                                                             | string \| null       | email or label when known                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -1183,7 +1198,7 @@ into the other.
 | `balance_usd`                                                         | number \| null       | prepaid balance                                                                                                                                                                                                                                                                                                                                                                                                |
 | `credits_remaining`                                                   | number \| null       | legacy credits field                                                                                                                                                                                                                                                                                                                                                                                           |
 | `spent_usd`                                                           | number \| omitted    | 2026-10-15 — dollars already spent from an expiring dollar grant (`omp`), or (2026-11-03) the organization API spend on a pay-as-you-go `pi` meter; pairs with `balance_usd` (left) when a balance is known. Not `usage_credits`. Omitted when not reported                                                                                                                                                    |
-| `requires_operator_approval`                                          | bool \| omitted      | 2026-10-15 — `true` when the operator gated this account (today `omp`): an agent must not spend it, route work to it, or recommend burning it without asking the operator first. aiuse only reports it; the agent toolchain's dispatchers enforce it. Omitted when false                                                                                                                                       |
+| `requires_operator_approval`                                          | bool \| omitted      | 2026-10-15 — `true` when the operator gated this account (configurable via `[collectors.<name>]`, `[operator_gated]`, or `[plans.<provider>]`): an agent must not spend it, route work to it, or recommend burning it without asking the operator first. aiuse only reports it; the agent toolchain's dispatchers enforce it. Omitted when false                                                               |
 | `ai_notice`                                                           | string \| omitted    | 2026-10-15 — the gate in words, `AI: Do not use without asking operator`; present exactly when `requires_operator_approval` is true                                                                                                                                                                                                                                                                            |
 | `usage_credits`                                                       | object \| omitted    | extra/pay-as-you-go wallet when present                                                                                                                                                                                                                                                                                                                                                                        |
 | `error`                                                               | string \| null       | row-level error                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -1211,7 +1226,7 @@ coding TUI you launch to burn the allotment (`agy`, `zcode`, `cursor-agent`,
 It is deliberately **not** the quota-measurement tool a collector shells out to
 (`qwencloud`, `bl`, `caut`, `tokscale`, `openusage`, `cswap`, `codexbar`
 report quota but do not consume it). Providers with no local CLI — API-only or
-cloud-run, e.g. `openrouter`, `deepseek` — emit `null`. Added in **3.0.40**;
+cloud-run, e.g. `openrouter`, `deepseek`, `rfab` — emit `null`. Added in **3.0.40**;
 additive per the stability policy below.
 
 ### `windows[]` (`QuotaWindow`)
@@ -1347,6 +1362,28 @@ set for that call. The operator lifted the gate on 2026-10-19 (commit
 carries the flag today. Current delegation approval and launch admission are
 the configured toolchain's responsibility; aiuse reports requirements and
 quota, and does not grant permission to launch.
+
+### `rfab` — prepaid token balance
+
+Provider `rfab` (Reality Fabricator, `rfab.ai`; `source: "rfab"`,
+`vendor: "rfab"`, `pool_id: "rfab:default"`, `cli_binary: null`,
+`billing_kind: "prepaid_balance"`) reads `GET https://api.rfab.ai/api/tokens/balance`
+with `X-API-Key` (redirects disabled). Because prepaid tokens do not expire and
+have no billing-cycle cap, its single `rfab-token-balance` window uses binary
+funded/exhausted headroom: `remaining_percent: 100.0` (`state: "ok"`,
+`usable_now: true`) when `tokenBalance > 0`, and `remaining_percent: 0.0`
+(`state: "exhausted"`, `usable_now: false`, listed under `unavailable[]` with
+`reason: "exhausted"`) when `tokenBalance <= 0`.
+
+- `balance_usd` stores the exact unrounded conversion `max(0.0, tokenBalance) / 50000.0`
+  (50,000 tokens = $1.00 USD) and is also surfaced as optional `balance_usd` on
+  its `--available` routing entry.
+- `credits_remaining` stores the clamped token count (`float`).
+- `windows[0].reset_description` formats the rounded USD display and exact token
+  count, e.g. `↓ $12.66 prepaid (633,020 tokens; no reset)`.
+- Operator gates configured via `[collectors.rfab]`, `[operator_gated]`, or
+  `[plans.rfab]` set `requires_operator_approval: true` and `ai_notice` on the
+  account, `--available` routing entry (including cached reads), and alerts.
 
 ### `usage_credits` (optional)
 

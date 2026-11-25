@@ -149,6 +149,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "omp": "claude-api",
     "pi": "openai-api",
     "openrouter": "openrouter",
+    "rfab": "rfab",
     "muse": "muse",
     "qwencloud": "qwen",
     "alibaba": "alibaba",
@@ -200,6 +201,9 @@ PROVIDER_ID_ALIASES: dict[str, str] = {
     "alibabatokenplan": "alibaba",
     "alibabacodingplan": "alibaba",
     "bailian": "alibaba",
+    "rfab.ai": "rfab",
+    "rfab-ai": "rfab",
+    "reality-fabricator": "rfab",
 }
 
 # Map canonical collector provider keys to config plan/override keys.
@@ -295,6 +299,7 @@ PROVIDER_VENDORS: dict[str, str] = {
     "opencode-go": "opencode",
     "opencode-zen": "opencode",
     "deepseek": "deepseek",
+    "rfab": "rfab",
     "bedrock": "aws",
     "sipb": "sipb",
 }
