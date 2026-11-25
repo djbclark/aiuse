@@ -12,6 +12,8 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [5.4.1] - 2026-11-25
+
 ### Fixed
 
 - Scope `Codex reset credits: N available.` tail notes in the matrix to the
