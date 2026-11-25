@@ -373,3 +373,46 @@ def test_situation_note_keeps_scope_before_the_first_data_column():
     scope_and_note = error[header.index("SCOPE") :]
     assert scope_and_note.split("*", 1)[0].strip() == "—"
     assert scope_and_note[scope_and_note.index("*") :].startswith("* [session expired]")
+
+
+def test_codex_openai_api_row_hides_reset_credits_and_explains_no_reset():
+    now = utcnow()
+    codex = AccountUsage(
+        source="codexbar",
+        provider="codex",
+        account="user@example.com",
+        plan="pro",
+        credits_remaining=0.0,
+        notes=["Codex reset credits: 3 available."],
+        windows=[
+            QuotaWindow(
+                label="Codex weekly quota (2)",
+                window_id="secondary",
+                used_percent=4.0,
+                remaining_percent=96.0,
+                resets_at=now + timedelta(days=5),
+                window_minutes=10080,
+            ),
+            # Simulate a cached snapshot window without reset_description.
+            QuotaWindow(
+                label="OpenAI API credits",
+                window_id="codex-api-credits",
+                used_percent=None,
+                remaining_percent=0.0,
+                raw={"credits_remaining": 0.0},
+            ),
+        ],
+    )
+    snap = Snapshot(collected_at=now, accounts=[codex])
+    rows = _build_matrix_rows([], snap, {})
+    by_scope = {row.scope: row for row in rows}
+    assert by_scope["codex"].tail_note == "3 reset credits"
+    assert by_scope["openai-api"].tail_note is None
+    assert by_scope["openai-api"].note == "↓ 0 credits · prepaid (no reset)"
+
+    text = render_clock_matrix([], snapshot=snap, color=False, width=200)
+    api_line = _row_line(text, "openai-api")
+    sub_line = next(line for line in text.splitlines() if "openai" in line and "openai-api" not in line)
+    assert "3 reset credits" in sub_line
+    assert "3 reset credits" not in api_line
+    assert "* [↓ 0 credits · prepaid (no reset)]" in api_line

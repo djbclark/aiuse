@@ -1750,6 +1750,18 @@ def _build_matrix_rows(
                     if window.reset_description:
                         note = window.reset_description
                         break
+                if note is None and pool_id == "codex_openai_api":
+                    rem: float | None = None
+                    for window in pool:
+                        raw_rem = window.raw.get("credits_remaining") if isinstance(window.raw, dict) else None
+                        if isinstance(raw_rem, (int, float)) and not isinstance(raw_rem, bool):
+                            rem = 0.0 if raw_rem == 0 else float(raw_rem)
+                            break
+                    if rem is None and account.credits_remaining is not None:
+                        rem = 0.0 if account.credits_remaining == 0 else float(account.credits_remaining)
+                    note = (
+                        f"↓ {rem:g} credits · prepaid (no reset)" if rem is not None else "prepaid credits · no reset"
+                    )
             wallet = _overage_remaining_usd(account)
             if wallet is not None and _matrix_row_shows_wallet(account, pool_id):
                 # A wallet is inventory, not a clock: it annotates the row
@@ -1766,7 +1778,11 @@ def _build_matrix_rows(
                 tail_note = dollar_meter("down", "plan", account.balance_usd, _usd_refill_total(account), compact=True)
             if tail_note is None:
                 for note_line in account.notes:
-                    if note_line.startswith("Codex reset credits: ") and note_line.endswith(" available."):
+                    if (
+                        pool_id != "codex_openai_api"
+                        and note_line.startswith("Codex reset credits: ")
+                        and note_line.endswith(" available.")
+                    ):
                         count = note_line[len("Codex reset credits: ") : -len(" available.")].strip()
                         if count:
                             tail_note = f"{count} reset credits"

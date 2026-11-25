@@ -376,6 +376,7 @@ def test_codex_openai_api_credits_window_exhausted_at_zero():
     credits = _codex_credits_window(acc)
     assert credits.label == "OpenAI API credits"
     assert credits.remaining_percent == 0.0
+    assert credits.reset_description == "↓ 0 credits · prepaid (no reset)"
 
 
 def test_codex_openai_api_credits_window_exhausted_when_negative():

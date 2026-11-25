@@ -1549,12 +1549,14 @@ def _from_row(row: dict[str, Any]) -> AccountUsage:
     # window's headroom for those API models.
     if provider == "codex" and credits_remaining is not None:
         rem_pct = 0.0 if credits_remaining <= 0 else None
+        shown_credits = 0.0 if credits_remaining == 0 else credits_remaining
         windows.append(
             QuotaWindow(
                 label="OpenAI API credits",
                 window_id="codex-api-credits",
                 used_percent=None,
                 remaining_percent=rem_pct,
+                reset_description=f"↓ {shown_credits:g} credits · prepaid (no reset)",
                 raw={"credits_remaining": credits_remaining},
             )
         )
