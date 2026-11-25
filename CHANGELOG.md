@@ -14,6 +14,12 @@ Releases before 3.9.0 are in the
 
 ### Fixed
 
+- Scope `Codex reset credits: N available.` tail notes in the matrix to the
+  Codex subscription row (`openai/codex`) rather than leaking them onto the
+  independent `openai/openai-api` prepaid credits row, and set a
+  `↓ <N> credits · prepaid (no reset)` description on `codex-api-credits`
+  (with a report fallback for older cached snapshots) so the row explains its
+  prepaid balance instead of showing blank `—` clock cells.
 - Mark `antigravity` and `codex` subscription windows as `rolling=True` (in both
   the CodexBar and Paseo collectors) and include them in
   `SUBSCRIPTION_WINDOW_PROVIDERS`, so unused weekly windows render
