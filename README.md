@@ -235,6 +235,31 @@ brew trust djbclark/aiuse
 brew install aiuse
 ```
 
+**Nix (flake, Linux and macOS):**
+
+```bash
+nix run github:djbclark/aiuse -- --version      # try it without installing
+nix profile install github:djbclark/aiuse       # install aiuse and ai
+nix run github:djbclark/aiuse/v5.4.1             # pin a release tag
+```
+
+The flake also exposes `packages.<system>.aiuse`, `apps.<system>.aiuse` and
+a `devShells.<system>.default` (Python, uv, just, bun). The build runs the test
+suite against nixpkgs-unstable.
+
+**Debian 12+ / Ubuntu 24.04+ (.deb):** each GitHub release carries an
+architecture-independent `aiuse_<version>_all.deb` that uses the distro's
+`python3-yaml`, `python3-requests` and `python3-rich`:
+
+```bash
+gh release download --repo djbclark/aiuse --pattern 'aiuse_*_all.deb'
+sudo apt install ./aiuse_*_all.deb
+```
+
+Build one yourself with `just deb` (`packaging/build_deb.py`; reproducible for
+a given wheel and `SOURCE_DATE_EPOCH`). Other Linux: use `pipx install aiuse`
+or `uv tool install aiuse`.
+
 **Developers (editable):**
 
 ```bash

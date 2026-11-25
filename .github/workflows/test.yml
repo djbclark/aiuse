@@ -30,3 +30,31 @@ jobs:
         run: uv run pre-commit run --all-files
       - name: Check justfile formatting
         run: just --fmt --check
+
+  deb:
+    # Build the Debian package, install it with apt, and run it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Build .deb
+        run: python3 packaging/build_deb.py --out-dir dist-deb
+      - name: Install .deb
+        run: sudo apt-get update && sudo apt-get install -y ./dist-deb/aiuse_*_all.deb
+      - name: Smoke test
+        run: |
+          /usr/bin/aiuse --version
+          /usr/bin/ai --version
+          /usr/bin/aiuse --help >/dev/null
+
+  nix:
+    # Build the flake (runs the test suite in the Nix sandbox) and check outputs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: nix flake check
+        run: nix flake check -L
+      - name: nix run
+        run: nix run . -- --version

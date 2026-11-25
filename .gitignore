@@ -34,3 +34,6 @@ htmlcov/
 # Local OpenCode MCP config
 opencode.json
 
+/dist-deb/
+/result
+/result-*

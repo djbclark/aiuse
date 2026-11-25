@@ -97,6 +97,14 @@ format:
     uv run --extra dev ruff format .
     bunx prettier --plugin=prettier-plugin-toml --write README.md pyproject.toml
 
+# Build the reproducible Debian/Ubuntu package into dist-deb/ (needs dpkg-deb).
+deb *args:
+    python3 packaging/build_deb.py "$@"
+
+# Build and check the Nix flake (runs the test suite in the Nix sandbox).
+nix-check:
+    nix flake check -L
+
 # Full release (PyPI via OIDC + Homebrew). Example: `just release 2.1.16`
 # Extra flags pass through: `just release 2.1.16 --dry-run`
 # Quote values with spaces: `just release 2.1.16 --notes 'Fable cap (pace) fix'`

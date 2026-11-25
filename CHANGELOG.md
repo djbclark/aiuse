@@ -12,6 +12,16 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+### Added
+
+- Nix flake (`flake.nix`, nixpkgs-unstable): `nix run github:djbclark/aiuse`,
+  `nix profile install github:djbclark/aiuse`, a dev shell, and a `nix` CI job
+  running `nix flake check` (the build runs the test suite).
+- Debian/Ubuntu package: `packaging/build_deb.py` builds a reproducible
+  `aiuse_<version>_all.deb` against the distro's Python libraries; the publish
+  workflow attaches it to each GitHub release and `test.yml` installs and runs
+  it on Ubuntu. `just deb` builds one locally.
+
 ## [5.4.1] - 2026-11-25
 
 ### Fixed

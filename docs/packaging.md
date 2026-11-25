@@ -23,14 +23,17 @@ aggregator CLI). Install all seven with:
 
 ## Status
 
-| Channel                              | Status                                                                             |
-| ------------------------------------ | ---------------------------------------------------------------------------------- |
-| Editable / venv (`pip install -e .`) | Supported (dev)                                                                    |
-| **pipx** from PyPI                   | Live: `pipx install aiuse` → https://pypi.org/project/aiuse/                       |
-| **pipx** from GitHub                 | `pipx install 'git+https://github.com/djbclark/aiuse.git'`                         |
-| **PyPI Trusted Publishing (OIDC)**   | **Live and verified** — see below                                                  |
-| **Homebrew** personal tap            | Live: `brew tap djbclark/aiuse && brew trust djbclark/aiuse && brew install aiuse` |
-| homebrew-core                        | Not submitted                                                                      |
+| Channel                              | Status                                                                              |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| Editable / venv (`pip install -e .`) | Supported (dev)                                                                     |
+| **pipx** from PyPI                   | Live: `pipx install aiuse` → https://pypi.org/project/aiuse/                        |
+| **pipx** from GitHub                 | `pipx install 'git+https://github.com/djbclark/aiuse.git'`                          |
+| **PyPI Trusted Publishing (OIDC)**   | **Live and verified** — see below                                                   |
+| **Homebrew** personal tap            | Live: `brew tap djbclark/aiuse && brew trust djbclark/aiuse && brew install aiuse`  |
+| homebrew-core                        | Not submitted                                                                       |
+| **Nix flake**                        | Live: `nix run github:djbclark/aiuse` / `nix profile install github:djbclark/aiuse` |
+| **Debian/Ubuntu `.deb`**             | Live: `aiuse_<version>_all.deb` on each GitHub release (`publish.yml` `deb` job)    |
+| nixpkgs                              | Not submitted                                                                       |
 
 ## Version note
 
@@ -195,6 +198,48 @@ sync `Formula/aiuse.rb` in the tap:
 curl -sL "https://github.com/djbclark/aiuse/archive/refs/tags/vX.Y.Z.tar.gz" \
   | shasum -a 256
 ```
+
+## Nix flake
+
+[`flake.nix`](../flake.nix) builds aiuse with
+`python3Packages.buildPythonApplication` from nixpkgs-unstable (pinned in
+`flake.lock`; refresh with `nix flake update`). The version is read from
+`pyproject.toml`, so `just release` needs no Nix edits. The build runs pytest
+(three tests that execute repo shell scripts are deselected because the
+sandbox has no `/usr/bin/env bash`) and checks `aiuse --version` and
+`ai --version`. Bash and zsh completions are installed.
+
+```bash
+nix build .#aiuse && ./result/bin/aiuse --version
+nix flake check
+nix develop            # Python + uv + just + bun
+```
+
+CI (`test.yml` `nix` job) runs `nix flake check` on every push and PR. A
+nixpkgs submission would reuse the same derivation with a `fetchFromGitHub`
+source; it has not been submitted.
+
+## Debian package
+
+[`packaging/build_deb.py`](../packaging/build_deb.py) turns the pure-Python
+wheel into `aiuse_<version>_all.deb`: the package goes to
+`/usr/lib/python3/dist-packages`, `aiuse` and `ai` to `/usr/bin`, completions
+to the bash-completion and zsh vendor directories. Dependencies come from the
+distro (`python3 (>= 3.11)`, `python3-yaml`, `python3-requests`,
+`python3-rich (>= 13)`), so Debian 12+ and Ubuntu 24.04+ are supported. The
+`.deb` is byte-for-byte reproducible for a given wheel and
+`SOURCE_DATE_EPOCH` (default: the wheel's newest member timestamp).
+
+```bash
+just deb                                     # wheel from this tree -> dist-deb/
+python3 packaging/build_deb.py --wheel dist/aiuse-X.Y.Z-py3-none-any.whl
+```
+
+On every published release the `publish.yml` `deb` job builds the `.deb` from
+the release's own wheel and uploads it with `gh release upload`. `test.yml`
+builds, installs and runs the `.deb` on `ubuntu-latest`. For an older release
+without a `.deb`, download its wheel and run the script with `--wheel`, then
+`gh release upload vX.Y.Z dist-deb/aiuse_X.Y.Z_all.deb`.
 
 ## Config paths
 
