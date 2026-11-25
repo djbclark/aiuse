@@ -8,12 +8,13 @@ does not expire on a subscription cycle:
         "totalInteractions": 5, "recentTransactions": [...]}
 
 Note: ``/api/tokens/balance`` requires ``X-API-Key`` (``Authorization: Bearer``
-returns ``401 AUTH_REQUIRED``).
+returns ``401 AUTH_REQUIRED``). Redirects are disabled so the credential header
+cannot cross origins.
 
 Like the DeepSeek and OpenRouter collectors, this stays quiet until an API key
-is supplied via ``AIUSE_RFAB_API_KEY``, ``RFAB_API_KEY``, ``sudo-secretspec get
-RFAB_API_KEY --reason aiuse-rfab-balance``, or plain ``secretspec``. The key is
-never written to config, snapshots, logs, or error strings.
+is supplied via ``AIUSE_RFAB_API_KEY``, ``RFAB_API_KEY``, or
+``sudo-secretspec get RFAB_API_KEY --reason aiuse-rfab-balance``. The key is
+never written to config, snapshots, logs, tracebacks, or error strings.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ from typing import Any
 import requests
 
 from aiuse.models import AccountUsage, BillingKind, QuotaWindow
-from aiuse.secretspec import resolve_manifest_path
 
 from .base import CollectorError
 
@@ -54,17 +54,21 @@ def collect_rfab(
     key = _resolve_key(env, timeout, allow_secretspec=environ is None)
     if not key:
         return []
+    _validate_api_key(key)
 
     try:
         response = requests.get(
             _API_URL,
             timeout=timeout,
+            allow_redirects=False,
             headers={
                 "X-API-Key": key,
                 "Accept": "application/json",
                 "User-Agent": _USER_AGENT,
             },
         )
+        if 300 <= response.status_code < 400:
+            raise CollectorError(f"rfab.ai API returned unexpected redirect (HTTP {response.status_code})")
         if response.status_code in (401, 403):
             return [
                 AccountUsage(
@@ -79,22 +83,35 @@ def collect_rfab(
                 )
             ]
         response.raise_for_status()
-        data = response.json()
+    except CollectorError:
+        raise
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"
-        raise CollectorError(f"rfab.ai API returned HTTP {status}") from exc
+        raise CollectorError(f"rfab.ai API returned HTTP {status}") from None
     except requests.RequestException as exc:
-        raise CollectorError(f"rfab.ai API request failed: {exc.__class__.__name__}") from exc
-    except ValueError as exc:
-        raise CollectorError("rfab.ai API returned invalid JSON") from exc
+        raise CollectorError(f"rfab.ai API request failed: {exc.__class__.__name__}") from None
+
+    try:
+        data = response.json()
+    except (requests.exceptions.JSONDecodeError, ValueError):
+        raise CollectorError("rfab.ai API returned invalid JSON") from None
 
     return [_account_from_payload(data, requires_operator_approval=requires_operator_approval)]
+
+
+def _validate_api_key(key: str) -> None:
+    """Reject header-unsafe keys before Requests can echo them in InvalidHeader."""
+    if key != key.strip() or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in key):
+        raise CollectorError("rfab.ai API key contains invalid header characters")
 
 
 def _finite_number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    num = float(value)
+    try:
+        num = float(value)
+    except OverflowError:
+        return None
     return num if math.isfinite(num) else None
 
 
@@ -113,7 +130,7 @@ def _account_from_payload(
         raise CollectorError("rfab.ai API response missing numeric tokenBalance")
 
     tokens_remaining = max(0.0, raw_balance)
-    balance_usd = round(tokens_remaining / _TOKENS_PER_USD, 4)
+    balance_usd = tokens_remaining / _TOKENS_PER_USD
     tokens_int = int(round(tokens_remaining))
     used_tokens = _finite_number(data.get("totalTokensUsed"))
     interactions = _finite_number(data.get("totalInteractions"))
@@ -168,7 +185,7 @@ def _account_from_payload(
 
 
 def _resolve_key(env: Mapping[str, str], timeout: float, *, allow_secretspec: bool = True) -> str | None:
-    """Return an explicit API key or a SecretSpec value without exposing either."""
+    """Return an explicit API key or a managed sudo-secretspec value without exposing either."""
     for name in (_KEY_ENV, _KEY_ENV_FALLBACK):
         explicit = str(env.get(name) or "").strip()
         if explicit:
@@ -177,25 +194,12 @@ def _resolve_key(env: Mapping[str, str], timeout: float, *, allow_secretspec: bo
         return None
 
     sudo_exec = shutil.which("sudo-secretspec")
-    if sudo_exec is not None:
-        key = _run_secret_cmd(
-            [sudo_exec, "get", _KEY_SECRET, "--reason", _SECRETSPEC_REASON],
-            timeout,
-        )
-        if key:
-            return key
-
-    plain_exec = shutil.which("secretspec")
-    if plain_exec is not None:
-        manifest = str(resolve_manifest_path(env))
-        key = _run_secret_cmd(
-            [plain_exec, "get", "--file", manifest, "--reason", _SECRETSPEC_REASON, _KEY_SECRET],
-            timeout,
-        )
-        if key:
-            return key
-
-    return None
+    if sudo_exec is None:
+        return None
+    return _run_secret_cmd(
+        [sudo_exec, "get", _KEY_SECRET, "--reason", _SECRETSPEC_REASON],
+        timeout,
+    )
 
 
 def _run_secret_cmd(argv: list[str], timeout: float) -> str | None:

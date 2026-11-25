@@ -1119,6 +1119,7 @@ def enrich_snapshot(
 
         apply_credit_overrides(snap, credit_overrides, now=now, config=config)
     accounts = [a for a in (snap.get("accounts") or []) if isinstance(a, dict)]
+    apply_operator_gates_dict(snap, config)
     collected = snap.get("collected_at")
     plans_cfg = (
         config.get("plans") if isinstance(config, Mapping) and isinstance(config.get("plans"), Mapping) else None
@@ -2144,6 +2145,26 @@ def _window_hidden_by_rules(
         if window_matches_rule(provider, family, rule_provider, rule_family):
             return reason
     return None
+
+
+def apply_operator_gates_dict(snap: dict[str, Any], config: Mapping[str, Any] | None) -> None:
+    """Apply config-declared operator gates onto account dicts without clearing recorded gates."""
+    if not isinstance(config, Mapping):
+        return
+    from aiuse.config import provider_requires_operator_approval
+
+    for account in snap.get("accounts") or []:
+        if not isinstance(account, dict):
+            continue
+        if account.get("requires_operator_approval"):
+            account.setdefault("ai_notice", OPERATOR_APPROVAL_NOTICE)
+            continue
+        provider = str(account.get("provider") or "")
+        source = account.get("source")
+        collector_name = str(source) if isinstance(source, str) and source else None
+        if provider_requires_operator_approval(config, provider, collector_name):
+            account["requires_operator_approval"] = True
+            account["ai_notice"] = OPERATOR_APPROVAL_NOTICE
 
 
 def apply_hidden_pools_dict(snap: dict[str, Any], config: dict[str, Any]) -> dict[str, str]:

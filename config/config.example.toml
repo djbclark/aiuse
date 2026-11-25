@@ -86,7 +86,7 @@
 [collectors.rfab]
 # Native Reality Fabricator (rfab.ai) prepaid token balance
 # (GET https://api.rfab.ai/api/tokens/balance, X-API-Key; 50,000 tokens = $1.00).
-# Quiet until AIUSE_RFAB_API_KEY, RFAB_API_KEY, or SecretSpec RFAB_API_KEY is set.
+# Quiet until AIUSE_RFAB_API_KEY, RFAB_API_KEY, or sudo-secretspec RFAB_API_KEY is set.
 # enabled = true
 # operator_gated = false          # set true (or requires_operator_approval = true) to gate AI routing
 

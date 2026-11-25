@@ -729,6 +729,24 @@ def provider_requires_operator_approval(
     return False
 
 
+def _plan_operator_gated(config: Mapping[str, Any] | None) -> dict[str, bool]:
+    """Canonical provider -> True for plans that set ``operator_gated`` or ``requires_operator_approval``."""
+    if not isinstance(config, Mapping):
+        return {}
+    plans = config.get("plans")
+    if not isinstance(plans, Mapping):
+        return {}
+    gated: dict[str, bool] = {}
+    for key, meta in plans.items():
+        if not isinstance(meta, Mapping):
+            continue
+        if meta.get("requires_operator_approval") is True or meta.get("operator_gated") is True:
+            provider = canonical_provider(str(key).strip())
+            if provider:
+                gated[provider] = True
+    return gated
+
+
 def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
     """Stable id for the config knobs that decide which services a collect returns.
 
@@ -766,6 +784,9 @@ def collection_policy_fingerprint(config: dict[str, Any] | None) -> str:
     gated = canonical_operator_gated(cfg)
     if gated:
         payload["operator_gated"] = gated
+    plan_gated = _plan_operator_gated(cfg)
+    if plan_gated:
+        payload["plan_operator_gated"] = plan_gated
     raw = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -1559,6 +1580,9 @@ def validate_config(config: dict[str, Any] | None) -> list[str]:
                     issues.append(
                         f"warning: plans.{name}.{limit_key} must be a non-negative number (got {meta[limit_key]!r})"
                     )
+            for gate_key in ("operator_gated", "requires_operator_approval"):
+                if gate_key in meta and not isinstance(meta[gate_key], bool):
+                    issues.append(f"error: plans.{name}.{gate_key} must be a boolean (got {meta[gate_key]!r})")
             _, _, bounds_ok = _plan_entry_bounds(meta)
             if not bounds_ok:
                 issues.append(

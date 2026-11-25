@@ -163,6 +163,7 @@ def test_sipb_ignore_expired_certificates(monkeypatch):
 
 def test_runner_passes_ignore_expired_to_sipb(monkeypatch):
     from aiuse.collectors.runner import _run_collectors
+    from aiuse.config import KNOWN_COLLECTOR_KEYS
 
     captured = {}
 
@@ -171,9 +172,11 @@ def test_runner_passes_ignore_expired_to_sipb(monkeypatch):
         return []
 
     monkeypatch.setattr("aiuse.collectors.runner.collect_sipb", mock_collect_sipb)
+    collectors = {name: {"enabled": False} for name in KNOWN_COLLECTOR_KEYS}
+    collectors["sipb"] = {"enabled": True, "ignore_expired_certificates": True}
     _run_collectors(
         {
-            "collectors": {"sipb": {"enabled": True, "ignore_expired_certificates": True}},
+            "collectors": collectors,
             "disabled_services": {},
         }
     )
