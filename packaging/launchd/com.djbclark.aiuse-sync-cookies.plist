@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: push CodexBar cursor/grok cookies to the box every 6 hours.
+     Edit the aiuse path and SSH host, then:
+       cp this ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.djbclark.aiuse-sync-cookies.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.djbclark.aiuse-sync-cookies</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/aiuse</string>
+    <string>sync-cookies</string>
+    <string>push</string>
+    <string>--to</string><string>grok-bot-box</string>
+  </array>
+  <key>StartInterval</key><integer>21600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/aiuse-sync-cookies.log</string>
+  <key>StandardErrorPath</key><string>/tmp/aiuse-sync-cookies.log</string>
+</dict>
+</plist>
