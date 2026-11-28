@@ -12,6 +12,22 @@ Releases before 3.9.0 are in the
 
 ## [Unreleased]
 
+## [5.6.0] - 2026-11-28
+
+### Added
+
+- `aiuse sync-cookies`: copy CodexBar web-session cookies for Cursor and Grok
+  from a Mac to a headless Linux box. `push` (Mac) extracts the cursor-agent
+  Keychain access token and grok.com Chrome cookies, then writes them over
+  ssh into a drop directory. `ingest` (box) applies them with
+  `codexbar config set-cookie --stdin` and shreds the drop files. `status`
+  shows when each cookie was applied and when it expires. The CodexBar
+  collector also runs ingest before each collection, so a pushed cookie is
+  picked up on the next `aiuse` run. Cookie values are never printed, logged,
+  or placed in argv. See [`docs/sync-cookies.md`](docs/sync-cookies.md),
+  `scripts/box-cookie-drop-setup.sh`, and the launchd template in
+  `packaging/launchd/`.
+
 ## [5.5.0] - 2026-11-25
 
 ### Added
@@ -737,7 +753,8 @@ monthly_spend_limit = 100`). Anchors the spend meter in the `MONTH` column
   hydration expires, and `watch` survives a `brew upgrade`.
 
 [5.1.3]: https://github.com/djbclark/aiuse/compare/v5.1.2...v5.1.3
-[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.5.0...HEAD
+[Unreleased]: https://github.com/djbclark/aiuse/compare/v5.6.0...HEAD
+[5.6.0]: https://github.com/djbclark/aiuse/compare/v5.5.0...v5.6.0
 [5.5.0]: https://github.com/djbclark/aiuse/compare/v5.4.1...v5.5.0
 [5.4.1]: https://github.com/djbclark/aiuse/compare/v5.4.0...v5.4.1
 [5.4.0]: https://github.com/djbclark/aiuse/compare/v5.3.2...v5.4.0
