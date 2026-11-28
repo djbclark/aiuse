@@ -18,6 +18,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from aiuse.analysis.pace import canonical_gemini_label
+from aiuse.cookie_sync import ingest_quietly
 from aiuse.models import (
     PROVIDER_DISPLAY_NAMES,
     REUSED_QUERY_NOTE_MARKER,
@@ -417,6 +418,9 @@ def collect_codexbar(
     snapshot and the CLI. A server that is down falls back to those. The
     token is sent only as an Authorization bearer header.
     """
+    # Apply any cursor/grok cookie a Mac pushed to this host's drop directory
+    # (``aiuse sync-cookies``); a no-op unless the directory exists.
+    ingest_quietly()
     reset = _CODEXBAR_HTTP.set(_codexbar_http_if_up(http_url, http_token))
     try:
         return _collect_codexbar_impl(

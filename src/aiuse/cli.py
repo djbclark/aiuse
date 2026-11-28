@@ -523,6 +523,10 @@ def _main_inner(argv: list[str] | None = None) -> int:
         from aiuse.credentials import run_credential_command
 
         return run_credential_command(raw[1:])
+    if raw and raw[0] == "sync-cookies":
+        from aiuse.cookie_sync import run_sync_cookies_command
+
+        return run_sync_cookies_command(raw[1:])
     if raw and raw[0] == "refresh-credits":
         from aiuse.anthropic_cost import run_refresh_credits
 
