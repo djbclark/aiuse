@@ -1,3 +1,3 @@
 """Aggregate provider quotas and flag use-it-or-lose-it allotments."""
 
-__version__ = "5.5.0"
+__version__ = "5.6.0"
